@@ -462,12 +462,13 @@ CREATE TABLE IF NOT EXISTS player_form_factors (
 -- 选手特性表
 CREATE TABLE IF NOT EXISTS player_traits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_id TEXT NOT NULL,
     player_id INTEGER NOT NULL,
     trait_type TEXT NOT NULL,
     acquired_season INTEGER,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
-    UNIQUE(player_id, trait_type)
+    UNIQUE(save_id, player_id, trait_type)
 );
 
 -- 选手赛季统计表 (数据中心)

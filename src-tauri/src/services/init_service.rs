@@ -145,59 +145,6 @@ impl InitService {
         (base + power_bonus) * 10000 // 转换为实际金额
     }
 
-    /// 生成选手（使用真实数据或随机生成）
-    fn generate_players_for_team(
-        team_id: u64,
-        team_short_name: &str,
-        team_power: f64,
-        current_season: u32,
-    ) -> Vec<Player> {
-        let real_players = get_team_players(team_short_name);
-
-        if !real_players.is_empty() {
-            // 使用真实选手数据
-            Self::create_players_from_config(team_id, &real_players, current_season)
-        } else {
-            // 回退到随机生成
-            Self::generate_random_players(team_id, team_power, current_season)
-        }
-    }
-
-    /// 从配置创建选手
-    fn create_players_from_config(
-        team_id: u64,
-        configs: &[PlayerConfig],
-        current_season: u32,
-    ) -> Vec<Player> {
-        let mut rng = rand::thread_rng();
-
-        configs.iter().map(|config| {
-            let tag = Self::determine_player_tag(config.ability, config.potential, config.age);
-            let salary = Self::calculate_initial_salary(config.ability, config.potential, tag);
-
-            Player {
-                id: 0,
-                game_id: config.game_id.to_string(),
-                real_name: config.real_name.map(|s| s.to_string()),
-                nationality: Some(config.nationality.to_string()),
-                age: config.age,
-                ability: config.ability,
-                potential: config.potential,
-                stability: Player::calculate_stability(config.age),
-                tag,
-                status: PlayerStatus::Active,
-                position: Some(config.position),
-                team_id: Some(team_id),
-                salary,
-                market_value: Self::calculate_market_value(config.ability, config.potential, config.age),
-                contract_end_season: Some(current_season + rng.gen_range(1..4)),
-                join_season: current_season,
-                retire_season: None,
-                is_starter: config.is_starter,
-            }
-        }).collect()
-    }
-
     /// 从配置创建单个选手
     fn create_player_from_config(
         team_id: u64,

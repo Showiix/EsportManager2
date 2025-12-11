@@ -5,7 +5,9 @@ use crate::db::{
 use crate::engines::EventEngine;
 use crate::models::{
     EventType, GameEvent, LeagueStanding, SeasonPhase, Tournament, TournamentStatus,
-    TournamentType,
+    TournamentType, GameTimeState, PhaseStatus, PhaseProgress, TournamentProgress,
+    SeasonProgress, PhaseInfo, TimeAction, FastForwardTarget, FastForwardResult,
+    CompleteAndAdvanceResult, HonorInfo,
 };
 use crate::services::{LeagueService, HonorService};
 use serde::{Deserialize, Serialize};
@@ -871,6 +873,412 @@ impl GameFlowService {
 
         Ok(save.current_season)
     }
+
+    // ========== 时间推进系统核心方法 ==========
+
+    /// 获取完整的游戏时间状态（统一入口）
+    pub async fn get_time_state(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+    ) -> Result<GameTimeState, String> {
+        // 获取存档信息
+        let save = SaveRepository::get_by_id(pool, save_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let current_phase = save.current_phase;
+        let current_season = save.current_season;
+
+        // 获取阶段进度
+        let phase_progress = self.get_phase_progress(pool, save_id, current_season as u64, current_phase).await?;
+
+        // 判断阶段状态
+        let phase_status = if phase_progress.total_matches == 0 && !is_non_tournament_phase(current_phase) {
+            PhaseStatus::NotInitialized
+        } else if phase_progress.completed_matches >= phase_progress.total_matches {
+            PhaseStatus::Completed
+        } else {
+            PhaseStatus::InProgress
+        };
+
+        // 获取赛季进度
+        let season_progress = self.get_season_progress(current_phase);
+
+        // 获取可用操作
+        let available_actions = self.get_available_actions(current_phase, &phase_status);
+
+        // 判断是否可以推进
+        let can_advance = phase_status == PhaseStatus::Completed;
+
+        // 获取下一阶段
+        let next_phase = current_phase.next().map(|p| p.name().to_string());
+
+        Ok(GameTimeState {
+            save_id: save_id.to_string(),
+            current_season,
+            current_phase,
+            phase_display_name: current_phase.name().to_string(),
+            phase_status,
+            phase_progress,
+            season_progress,
+            available_actions,
+            can_advance,
+            next_phase,
+        })
+    }
+
+    /// 获取阶段进度
+    async fn get_phase_progress(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+        phase: SeasonPhase,
+    ) -> Result<PhaseProgress, String> {
+        let tournament_type = phase_to_tournament_type(phase);
+
+        if let Some(t_type) = tournament_type {
+            let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
+
+            let mut tournament_progress_list = Vec::new();
+            let mut total_matches = 0u32;
+            let mut completed_matches = 0u32;
+
+            for tournament in tournaments {
+                // 查询比赛数量
+                let counts = sqlx::query(
+                    r#"
+                    SELECT
+                        COUNT(*) as total,
+                        SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as completed
+                    FROM matches
+                    WHERE tournament_id = ?
+                    "#
+                )
+                .bind(tournament.id as i64)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let t_total: i64 = counts.get("total");
+                let t_completed: i64 = counts.get("completed");
+
+                total_matches += t_total as u32;
+                completed_matches += t_completed as u32;
+
+                let status = if t_completed >= t_total && t_total > 0 {
+                    "completed"
+                } else if t_completed > 0 {
+                    "in_progress"
+                } else {
+                    "upcoming"
+                };
+
+                tournament_progress_list.push(TournamentProgress {
+                    tournament_id: tournament.id,
+                    tournament_name: tournament.name.clone(),
+                    region: tournament.region_id.map(|r| get_region_name(r).to_string()),
+                    total_matches: t_total as u32,
+                    completed_matches: t_completed as u32,
+                    status: status.to_string(),
+                });
+            }
+
+            let percentage = if total_matches > 0 {
+                (completed_matches as f32 / total_matches as f32) * 100.0
+            } else {
+                0.0
+            };
+
+            Ok(PhaseProgress {
+                tournaments: tournament_progress_list,
+                total_matches,
+                completed_matches,
+                percentage,
+            })
+        } else {
+            // 非赛事阶段（转会期、选秀、赛季结束）
+            Ok(PhaseProgress {
+                tournaments: Vec::new(),
+                total_matches: 0,
+                completed_matches: 0,
+                percentage: 0.0,
+            })
+        }
+    }
+
+    /// 获取赛季进度
+    fn get_season_progress(&self, current_phase: SeasonPhase) -> SeasonProgress {
+        let all_phases = vec![
+            SeasonPhase::SpringRegular,
+            SeasonPhase::SpringPlayoffs,
+            SeasonPhase::Msi,
+            SeasonPhase::MadridMasters,
+            SeasonPhase::SummerRegular,
+            SeasonPhase::SummerPlayoffs,
+            SeasonPhase::ClaudeIntercontinental,
+            SeasonPhase::WorldChampionship,
+            SeasonPhase::ShanghaiMasters,
+            SeasonPhase::IcpIntercontinental,
+            SeasonPhase::SuperIntercontinental,
+            SeasonPhase::TransferWindow,
+            SeasonPhase::Draft,
+            SeasonPhase::SeasonEnd,
+        ];
+
+        let current_index = all_phases.iter().position(|&p| p == current_phase).unwrap_or(0) as u32;
+        let total_phases = all_phases.len() as u32;
+
+        let phases: Vec<PhaseInfo> = all_phases.iter().enumerate().map(|(i, &phase)| {
+            let status = if (i as u32) < current_index {
+                "completed"
+            } else if (i as u32) == current_index {
+                "current"
+            } else {
+                "upcoming"
+            };
+
+            PhaseInfo {
+                phase: format!("{:?}", phase),
+                display_name: phase.name().to_string(),
+                status: status.to_string(),
+                index: i as u32,
+            }
+        }).collect();
+
+        let percentage = (current_index as f32 / total_phases as f32) * 100.0;
+
+        SeasonProgress {
+            phases,
+            current_phase_index: current_index,
+            total_phases,
+            percentage,
+        }
+    }
+
+    /// 获取当前阶段可用的操作
+    fn get_available_actions(&self, phase: SeasonPhase, status: &PhaseStatus) -> Vec<TimeAction> {
+        let mut actions = Vec::new();
+
+        match phase {
+            SeasonPhase::TransferWindow => {
+                actions.push(TimeAction::StartTransferWindow);
+                actions.push(TimeAction::ExecuteTransferRound);
+            }
+            SeasonPhase::Draft => {
+                actions.push(TimeAction::StartDraft);
+            }
+            SeasonPhase::SeasonEnd => {
+                actions.push(TimeAction::ExecuteSeasonSettlement);
+                actions.push(TimeAction::StartNewSeason);
+            }
+            _ => {
+                // 赛事阶段
+                match status {
+                    PhaseStatus::NotInitialized => {
+                        actions.push(TimeAction::InitializePhase);
+                    }
+                    PhaseStatus::InProgress => {
+                        actions.push(TimeAction::SimulateNextMatch);
+                        actions.push(TimeAction::SimulateAllMatches);
+                    }
+                    PhaseStatus::Completed => {
+                        actions.push(TimeAction::CompleteAndAdvance);
+                    }
+                }
+            }
+        }
+
+        // 快进选项（始终可用，除了赛季结束阶段）
+        if phase != SeasonPhase::SeasonEnd {
+            actions.push(TimeAction::FastForwardPhase);
+
+            // 根据当前阶段添加快进目标
+            if is_before_phase(phase, SeasonPhase::SummerRegular) {
+                actions.push(TimeAction::FastForwardToSummer);
+            }
+            if is_before_phase(phase, SeasonPhase::WorldChampionship) {
+                actions.push(TimeAction::FastForwardToWorlds);
+            }
+            actions.push(TimeAction::FastForwardToSeasonEnd);
+        }
+
+        actions
+    }
+
+    /// 完成当前阶段并推进到下一阶段
+    pub async fn complete_and_advance(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+    ) -> Result<CompleteAndAdvanceResult, String> {
+        // 获取当前存档
+        let mut save = SaveRepository::get_by_id(pool, save_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let current_phase = save.current_phase;
+        let season_id = save.current_season as u64;
+
+        // 完成当前阶段（颁发荣誉）
+        let complete_result = self.complete_phase(pool, save_id, season_id, current_phase).await?;
+
+        let mut honors_awarded: Vec<HonorInfo> = complete_result.honors_awarded.iter().map(|h| {
+            HonorInfo {
+                honor_type: h.honor_type.clone(),
+                recipient_name: h.recipient_name.clone(),
+                tournament_name: h.tournament_name.clone(),
+            }
+        }).collect();
+
+        // 推进到下一阶段
+        let new_phase = if let Some(next) = current_phase.next() {
+            save.current_phase = next;
+            save.phase_completed = false;
+            save.updated_at = chrono::Utc::now();
+
+            SaveRepository::update(pool, &save)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            // 自动初始化下一阶段
+            let init_result = self.initialize_phase(pool, save_id, season_id, next).await?;
+
+            Some(next.name().to_string())
+        } else {
+            // 赛季结束
+            None
+        };
+
+        // 获取更新后的时间状态
+        let new_time_state = self.get_time_state(pool, save_id).await?;
+
+        Ok(CompleteAndAdvanceResult {
+            success: true,
+            completed_phase: current_phase.name().to_string(),
+            new_phase,
+            honors_awarded,
+            message: complete_result.message,
+            new_time_state,
+        })
+    }
+
+    /// 快进到目标阶段
+    pub async fn fast_forward_to(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        target: FastForwardTarget,
+    ) -> Result<FastForwardResult, String> {
+        let save = SaveRepository::get_by_id(pool, save_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let start_phase = save.current_phase;
+        let target_phase = match target {
+            FastForwardTarget::NextPhase => start_phase.next(),
+            FastForwardTarget::ToPhase(phase) => Some(phase),
+            FastForwardTarget::SeasonEnd => Some(SeasonPhase::SeasonEnd),
+        };
+
+        if target_phase.is_none() {
+            return Ok(FastForwardResult {
+                success: false,
+                start_phase: start_phase.name().to_string(),
+                end_phase: start_phase.name().to_string(),
+                phases_advanced: 0,
+                matches_simulated: 0,
+                message: "已经是赛季最后阶段".to_string(),
+            });
+        }
+
+        let target_phase = target_phase.unwrap();
+        let mut current_phase = start_phase;
+        let mut phases_advanced = 0u32;
+        let mut total_matches_simulated = 0u32;
+
+        // 循环推进直到到达目标阶段
+        while current_phase != target_phase {
+            // 获取当前状态
+            let time_state = self.get_time_state(pool, save_id).await?;
+
+            // 根据状态执行操作
+            match time_state.phase_status {
+                PhaseStatus::NotInitialized => {
+                    // 初始化阶段
+                    self.initialize_phase(pool, save_id, time_state.current_season as u64, current_phase).await?;
+                }
+                PhaseStatus::InProgress => {
+                    // 模拟所有比赛
+                    let matches_simulated = self.simulate_all_phase_matches(pool, save_id, current_phase).await?;
+                    total_matches_simulated += matches_simulated;
+                }
+                PhaseStatus::Completed => {
+                    // 完成并推进
+                    let result = self.complete_and_advance(pool, save_id).await?;
+                    phases_advanced += 1;
+
+                    // 更新当前阶段
+                    let save = SaveRepository::get_by_id(pool, save_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    current_phase = save.current_phase;
+                }
+            }
+
+            // 防止无限循环
+            if phases_advanced > 20 {
+                break;
+            }
+        }
+
+        Ok(FastForwardResult {
+            success: true,
+            start_phase: start_phase.name().to_string(),
+            end_phase: current_phase.name().to_string(),
+            phases_advanced,
+            matches_simulated: total_matches_simulated,
+            message: format!("快进完成：从{}到{}", start_phase.name(), current_phase.name()),
+        })
+    }
+
+    /// 模拟当前阶段的所有比赛（简化版，实际应调用比赛模拟引擎）
+    async fn simulate_all_phase_matches(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        phase: SeasonPhase,
+    ) -> Result<u32, String> {
+        // 获取当前阶段所有未完成的比赛
+        let tournament_type = phase_to_tournament_type(phase);
+
+        if tournament_type.is_none() {
+            return Ok(0);
+        }
+
+        // 将所有未完成比赛标记为已完成（简化处理，实际应该调用比赛模拟引擎）
+        let result = sqlx::query(
+            r#"
+            UPDATE matches
+            SET status = 'COMPLETED',
+                home_score = CASE WHEN home_score IS NULL THEN 2 ELSE home_score END,
+                away_score = CASE WHEN away_score IS NULL THEN 1 ELSE away_score END
+            WHERE tournament_id IN (
+                SELECT id FROM tournaments
+                WHERE save_id = ? AND tournament_type = ?
+            )
+            AND status != 'COMPLETED'
+            "#
+        )
+        .bind(save_id)
+        .bind(format!("{:?}", tournament_type.unwrap()))
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(result.rows_affected() as u32)
+    }
 }
 
 /// 获取赛区名称
@@ -929,6 +1337,42 @@ fn parse_tournament_status_local(s: &str) -> TournamentStatus {
         "InProgress" => TournamentStatus::InProgress,
         "Completed" => TournamentStatus::Completed,
         _ => TournamentStatus::Upcoming,
+    }
+}
+
+/// 判断是否为非赛事阶段（转会期、选秀、赛季结束）
+fn is_non_tournament_phase(phase: SeasonPhase) -> bool {
+    matches!(
+        phase,
+        SeasonPhase::TransferWindow | SeasonPhase::Draft | SeasonPhase::SeasonEnd
+    )
+}
+
+/// 判断当前阶段是否在目标阶段之前
+fn is_before_phase(current: SeasonPhase, target: SeasonPhase) -> bool {
+    let phase_order = [
+        SeasonPhase::SpringRegular,
+        SeasonPhase::SpringPlayoffs,
+        SeasonPhase::Msi,
+        SeasonPhase::MadridMasters,
+        SeasonPhase::SummerRegular,
+        SeasonPhase::SummerPlayoffs,
+        SeasonPhase::ClaudeIntercontinental,
+        SeasonPhase::WorldChampionship,
+        SeasonPhase::ShanghaiMasters,
+        SeasonPhase::IcpIntercontinental,
+        SeasonPhase::SuperIntercontinental,
+        SeasonPhase::TransferWindow,
+        SeasonPhase::Draft,
+        SeasonPhase::SeasonEnd,
+    ];
+
+    let current_idx = phase_order.iter().position(|&p| p == current);
+    let target_idx = phase_order.iter().position(|&p| p == target);
+
+    match (current_idx, target_idx) {
+        (Some(c), Some(t)) => c < t,
+        _ => false,
     }
 }
 

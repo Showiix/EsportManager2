@@ -1,341 +1,286 @@
 <template>
   <div class="team-edit-view">
-    <!-- 返回按钮 -->
-    <div class="back-link">
-      <el-button text @click="goBack">
-        <el-icon><ArrowLeft /></el-icon>
-        返回战队详情
-      </el-button>
-    </div>
-
-    <!-- 页面标题 -->
+    <!-- 页面头部 -->
     <div class="page-header">
-      <div>
-        <h1>编辑战队</h1>
-        <p>修改战队基本信息和配置</p>
+      <div class="header-left">
+        <el-button text @click="goBack" class="back-btn">
+          <el-icon><ArrowLeft /></el-icon>
+          返回
+        </el-button>
+        <div class="header-title" v-if="team">
+          <h1>{{ team.name }}</h1>
+          <el-tag :type="getRegionType(regionCode)" effect="dark">
+            {{ regionCode }}
+          </el-tag>
+        </div>
+      </div>
+      <div class="header-actions">
+        <el-button @click="goBack">取消</el-button>
+        <el-button type="primary" @click="handleSubmit" :loading="submitting">
+          <el-icon><Check /></el-icon>
+          保存修改
+        </el-button>
       </div>
     </div>
 
-    <!-- 编辑表单 -->
-    <el-row :gutter="20">
-      <el-col :span="16">
-        <el-card class="form-card">
-          <template #header>
-            <div class="card-header">
-              <h2>
+    <!-- 加载状态 -->
+    <div v-if="loading" class="loading-container">
+      <el-skeleton :rows="10" animated />
+    </div>
+
+    <template v-else-if="team">
+      <!-- 战队概览卡片 (只读) -->
+      <div class="overview-card" :class="regionCode.toLowerCase()">
+        <div class="overview-left">
+          <div class="team-avatar">
+            {{ team.short_name || team.name.slice(0, 2) }}
+          </div>
+          <div class="team-meta">
+            <div class="team-name">{{ team.name }}</div>
+            <el-tag :type="getRegionType(regionCode)" effect="dark" size="large">
+              {{ regionCode }}
+            </el-tag>
+          </div>
+        </div>
+        <div class="overview-stats">
+          <div class="stat-item">
+            <span class="stat-value">{{ team.power_rating.toFixed(1) }}</span>
+            <span class="stat-label">战力</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value gold">{{ team.annual_points }}</span>
+            <span class="stat-label">积分</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value">{{ team.wins }}-{{ team.total_matches - team.wins }}</span>
+            <span class="stat-label">战绩</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value" :class="getWinRateClass(team.win_rate)">
+              {{ (team.win_rate * 100).toFixed(1) }}%
+            </span>
+            <span class="stat-label">胜率</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 编辑区域 -->
+      <el-row :gutter="20">
+        <!-- 基本信息 -->
+        <el-col :span="12">
+          <el-card class="edit-card">
+            <template #header>
+              <div class="card-header">
                 <el-icon><Setting /></el-icon>
-                基本信息
-              </h2>
-            </div>
-          </template>
-
-          <el-form
-            ref="formRef"
-            :model="form"
-            :rules="rules"
-            label-width="100px"
-            label-position="top"
-            class="edit-form"
-          >
-            <el-row :gutter="20">
-              <el-col :span="12">
-                <el-form-item label="战队名称" prop="name">
-                  <el-input
-                    v-model="form.name"
-                    placeholder="请输入战队名称"
-                    maxlength="50"
-                    show-word-limit
-                  >
-                    <template #prefix>
-                      <el-icon><OfficeBuilding /></el-icon>
-                    </template>
-                  </el-input>
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item label="所属赛区" prop="region">
-                  <el-select v-model="form.region" placeholder="请选择赛区" style="width: 100%">
-                    <el-option
-                      v-for="region in regionOptions"
-                      :key="region.value"
-                      :label="region.label"
-                      :value="region.value"
-                    >
-                      <span class="region-option">
-                        <span class="region-flag">{{ region.flag }}</span>
-                        <span>{{ region.label }}</span>
-                      </span>
-                    </el-option>
-                  </el-select>
-                </el-form-item>
-              </el-col>
-            </el-row>
-
-            <el-form-item label="战力值" prop="power">
-              <div class="power-slider">
-                <el-slider
-                  v-model="form.power"
-                  :min="0"
-                  :max="100"
-                  :step="0.1"
-                  :marks="powerMarks"
-                  show-stops
-                />
-                <div class="power-display">
-                  <div class="power-number" :style="{ color: getPowerColor(form.power) }">
-                    {{ form.power.toFixed(1) }}
-                  </div>
-                  <div class="power-level">{{ getPowerLevel(form.power) }}</div>
-                </div>
+                <span>基本信息</span>
               </div>
-            </el-form-item>
+            </template>
+            <el-form label-position="top" class="edit-form">
+              <el-form-item label="战队名称">
+                <el-input
+                  v-model="form.name"
+                  placeholder="请输入战队名称"
+                  maxlength="50"
+                  show-word-limit
+                >
+                  <template #prefix>
+                    <el-icon><OfficeBuilding /></el-icon>
+                  </template>
+                </el-input>
+              </el-form-item>
 
-            <el-divider />
+              <el-form-item label="战队简写">
+                <el-input
+                  v-model="form.shortName"
+                  placeholder="2-4个字符"
+                  maxlength="4"
+                >
+                  <template #prefix>
+                    <el-icon><Ticket /></el-icon>
+                  </template>
+                </el-input>
+                <div class="form-hint">显示在战队头像上的简写</div>
+              </el-form-item>
 
-            <el-row :gutter="20">
-              <el-col :span="12">
-                <el-form-item label="资金余额">
+              <el-form-item label="所属赛区">
+                <el-input :value="regionCode" disabled>
+                  <template #prefix>
+                    <el-icon><Location /></el-icon>
+                  </template>
+                </el-input>
+                <div class="form-hint readonly">赛区不可修改</div>
+              </el-form-item>
+            </el-form>
+          </el-card>
+        </el-col>
+
+        <!-- 财务管理 -->
+        <el-col :span="12">
+          <el-card class="edit-card">
+            <template #header>
+              <div class="card-header">
+                <el-icon><Wallet /></el-icon>
+                <span>财务管理</span>
+              </div>
+            </template>
+            <div class="finance-section">
+              <div class="balance-display">
+                <div class="balance-label">当前余额</div>
+                <div class="balance-value">{{ formatMoney(team.balance) }}</div>
+              </div>
+
+              <el-divider />
+
+              <div class="balance-adjust">
+                <div class="adjust-label">调整金额</div>
+                <div class="adjust-input">
                   <el-input-number
-                    v-model="form.balance"
-                    :min="0"
+                    v-model="adjustAmount"
+                    :min="-team.balance"
                     :max="999999999"
                     :step="100000"
                     controls-position="right"
-                    style="width: 100%"
+                    style="width: 200px"
                   />
-                  <div class="form-hint">当前: {{ formatMoney(form.balance) }}</div>
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item label="年度积分">
-                  <el-input-number
-                    v-model="form.points"
-                    :min="0"
-                    :max="9999"
-                    :step="10"
-                    controls-position="right"
-                    style="width: 100%"
-                  />
-                </el-form-item>
-              </el-col>
-            </el-row>
-
-            <el-row :gutter="20">
-              <el-col :span="12">
-                <el-form-item label="胜场">
-                  <el-input-number
-                    v-model="form.wins"
-                    :min="0"
-                    :max="999"
-                    controls-position="right"
-                    style="width: 100%"
-                  />
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item label="负场">
-                  <el-input-number
-                    v-model="form.losses"
-                    :min="0"
-                    :max="999"
-                    controls-position="right"
-                    style="width: 100%"
-                  />
-                </el-form-item>
-              </el-col>
-            </el-row>
-          </el-form>
-
-          <div class="form-actions">
-            <el-button @click="resetForm">
-              <el-icon><Refresh /></el-icon>
-              重置
-            </el-button>
-            <el-button type="primary" @click="handleSubmit" :loading="submitting">
-              <el-icon><Check /></el-icon>
-              保存修改
-            </el-button>
-          </div>
-        </el-card>
-      </el-col>
-
-      <!-- 右侧预览 -->
-      <el-col :span="8">
-        <el-card class="preview-card">
-          <template #header>
-            <div class="card-header">
-              <h2>
-                <el-icon><View /></el-icon>
-                预览
-              </h2>
-            </div>
-          </template>
-
-          <div class="preview-content">
-            <div class="preview-avatar" :class="form.region.toLowerCase()">
-              {{ form.name.substring(0, 2) || '??' }}
-            </div>
-
-            <h3 class="preview-name">{{ form.name || '战队名称' }}</h3>
-
-            <el-tag :type="getRegionType(form.region)" size="large" effect="dark">
-              {{ form.region || '赛区' }}
-            </el-tag>
-
-            <div class="preview-stats">
-              <div class="preview-stat">
-                <span class="stat-value" :style="{ color: getPowerColor(form.power) }">
-                  {{ form.power.toFixed(1) }}
-                </span>
-                <span class="stat-label">战力</span>
-              </div>
-              <div class="preview-stat">
-                <span class="stat-value gold">{{ form.points }}</span>
-                <span class="stat-label">积分</span>
-              </div>
-              <div class="preview-stat">
-                <span class="stat-value green">{{ formatMoney(form.balance) }}</span>
-                <span class="stat-label">资金</span>
+                </div>
+                <div class="adjust-actions">
+                  <el-button type="success" @click="adjustBalance(true)" :disabled="adjustAmount <= 0">
+                    <el-icon><Plus /></el-icon>
+                    增加 {{ formatMoney(adjustAmount) }}
+                  </el-button>
+                  <el-button type="danger" @click="adjustBalance(false)" :disabled="adjustAmount <= 0 || adjustAmount > team.balance">
+                    <el-icon><Minus /></el-icon>
+                    减少 {{ formatMoney(adjustAmount) }}
+                  </el-button>
+                </div>
               </div>
             </div>
+          </el-card>
+        </el-col>
+      </el-row>
 
-            <div class="preview-record">
-              <span class="record-wins">{{ form.wins }}胜</span>
-              <span class="record-divider">-</span>
-              <span class="record-losses">{{ form.losses }}负</span>
-            </div>
-
-            <div class="preview-winrate">
-              胜率: {{ winRate }}%
-            </div>
+      <!-- 战队简介 -->
+      <el-card class="edit-card description-card">
+        <template #header>
+          <div class="card-header">
+            <el-icon><Document /></el-icon>
+            <span>战队简介</span>
           </div>
-        </el-card>
+        </template>
+        <el-input
+          v-model="form.description"
+          type="textarea"
+          :rows="5"
+          placeholder="请输入战队简介、历史荣誉等信息..."
+          maxlength="1000"
+          show-word-limit
+        />
+      </el-card>
 
-        <!-- 危险操作 -->
-        <el-card class="danger-card">
-          <template #header>
-            <div class="card-header danger">
-              <h2>
-                <el-icon><Warning /></el-icon>
-                危险操作
-              </h2>
-            </div>
-          </template>
-
-          <div class="danger-content">
-            <p class="danger-text">以下操作不可撤销，请谨慎操作</p>
-
-            <el-button type="danger" plain @click="handleDissolve">
-              <el-icon><Delete /></el-icon>
-              解散战队
-            </el-button>
+      <!-- 危险操作 -->
+      <el-card class="danger-card">
+        <template #header>
+          <div class="card-header danger">
+            <el-icon><Warning /></el-icon>
+            <span>危险操作</span>
           </div>
-        </el-card>
-      </el-col>
-    </el-row>
+        </template>
+        <div class="danger-content">
+          <p class="danger-text">以下操作不可撤销，请谨慎操作</p>
+          <el-button type="danger" plain @click="handleDissolve">
+            <el-icon><Delete /></el-icon>
+            解散战队
+          </el-button>
+        </div>
+      </el-card>
+    </template>
+
+    <!-- 无数据 -->
+    <el-empty v-else description="战队不存在" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
+  Check,
   Setting,
   OfficeBuilding,
-  Refresh,
-  Check,
-  View,
+  Ticket,
+  Location,
+  Wallet,
+  Plus,
+  Minus,
+  Document,
   Warning,
   Delete,
 } from '@element-plus/icons-vue'
+import { teamApi, financeApi, queryApi, type Team, type Region } from '@/api/tauri'
 
 const route = useRoute()
 const router = useRouter()
-const teamId = route.params.id
+const teamId = computed(() => Number(route.params.id))
 
-// 表单引用
-const formRef = ref<FormInstance>()
+// 状态
+const loading = ref(true)
 const submitting = ref(false)
+const team = ref<Team | null>(null)
+const regions = ref<Region[]>([])
+const adjustAmount = ref(100000)
 
 // 表单数据
 const form = ref({
-  name: 'T1',
-  region: 'LCK',
-  power: 85.5,
-  balance: 12000000,
-  points: 180,
-  wins: 15,
-  losses: 3,
+  name: '',
+  shortName: '',
+  description: '',
 })
 
-// 原始数据（用于重置）
-const originalForm = ref({ ...form.value })
-
-// 赛区选项
-const regionOptions = [
-  { value: 'LPL', label: 'LPL 中国赛区', flag: '🇨🇳' },
-  { value: 'LCK', label: 'LCK 韩国赛区', flag: '🇰🇷' },
-  { value: 'LEC', label: 'LEC 欧洲赛区', flag: '🇪🇺' },
-  { value: 'LCS', label: 'LCS 北美赛区', flag: '🇺🇸' },
-]
-
-// 战力标记
-const powerMarks = {
-  0: '0',
-  25: '25',
-  50: '50',
-  75: '75',
-  100: '100',
-}
-
-// 表单验证规则
-const rules: FormRules = {
-  name: [
-    { required: true, message: '请输入战队名称', trigger: 'blur' },
-    { min: 2, max: 50, message: '战队名称长度在 2 到 50 个字符', trigger: 'blur' },
-  ],
-  region: [
-    { required: true, message: '请选择赛区', trigger: 'change' },
-  ],
-  power: [
-    { required: true, message: '请设置战力值', trigger: 'blur' },
-  ],
-}
-
-// 计算属性
-const winRate = computed(() => {
-  const total = form.value.wins + form.value.losses
-  if (total === 0) return 0
-  return ((form.value.wins / total) * 100).toFixed(1)
+// 计算赛区代码
+const regionCode = computed(() => {
+  if (!team.value) return ''
+  const region = regions.value.find(r => r.id === team.value!.region_id)
+  return region?.code || ''
 })
+
+// 加载数据
+const loadData = async () => {
+  loading.value = true
+  try {
+    const [teamData, regionsData] = await Promise.all([
+      teamApi.getTeam(teamId.value),
+      queryApi.getAllRegions(),
+    ])
+    team.value = teamData
+    regions.value = regionsData
+
+    // 初始化表单
+    form.value.name = teamData.name
+    form.value.shortName = teamData.short_name || ''
+    form.value.description = '' // 暂无此字段
+  } catch (error) {
+    console.error('加载战队数据失败:', error)
+    ElMessage.error('加载战队数据失败')
+  } finally {
+    loading.value = false
+  }
+}
 
 // 方法
 const goBack = () => {
-  router.push(`/teams/${teamId}`)
+  router.push(`/teams/${teamId.value}`)
 }
 
 const formatMoney = (value: number) => {
   if (value >= 10000000) {
-    return `${(value / 10000000).toFixed(1)}千万`
+    return `${(value / 10000000).toFixed(2)} 千万`
   }
-  return `${(value / 10000).toFixed(0)}万`
-}
-
-const getPowerColor = (power: number) => {
-  if (power >= 85) return '#ef4444'
-  if (power >= 75) return '#f59e0b'
-  if (power >= 65) return '#3b82f6'
-  return '#22c55e'
-}
-
-const getPowerLevel = (power: number) => {
-  if (power >= 90) return '传奇'
-  if (power >= 80) return '史诗'
-  if (power >= 70) return '稀有'
-  if (power >= 60) return '普通'
-  return '一般'
+  if (value >= 10000) {
+    return `${(value / 10000).toFixed(0)} 万`
+  }
+  return `${value}`
 }
 
 const getRegionType = (region: string) => {
@@ -348,26 +293,49 @@ const getRegionType = (region: string) => {
   return types[region] || 'info'
 }
 
-const resetForm = () => {
-  form.value = { ...originalForm.value }
-  formRef.value?.clearValidate()
-  ElMessage.info('表单已重置')
+const getWinRateClass = (rate: number) => {
+  if (rate >= 0.7) return 'win-rate-high'
+  if (rate >= 0.5) return 'win-rate-mid'
+  return 'win-rate-low'
 }
 
-const handleSubmit = async () => {
-  if (!formRef.value) return
+// 调整余额
+const adjustBalance = async (isAdd: boolean) => {
+  if (!team.value || adjustAmount.value <= 0) return
+
+  const amount = isAdd ? adjustAmount.value : -adjustAmount.value
+  const description = isAdd ? '手动增加资金' : '手动扣除资金'
 
   try {
-    const valid = await formRef.value.validate()
-    if (!valid) return
+    await financeApi.recordTransaction(
+      teamId.value,
+      amount,
+      'ADJUSTMENT',
+      description
+    )
 
-    submitting.value = true
+    // 更新本地数据
+    team.value.balance += amount
+    ElMessage.success(`${isAdd ? '增加' : '减少'} ${formatMoney(Math.abs(amount))} 成功`)
+    adjustAmount.value = 100000
+  } catch (error) {
+    console.error('调整余额失败:', error)
+    ElMessage.error('调整余额失败')
+  }
+}
 
-    // 模拟 API 调用
-    await new Promise(resolve => setTimeout(resolve, 1000))
+// 保存修改
+const handleSubmit = async () => {
+  if (!team.value) return
+
+  submitting.value = true
+  try {
+    // TODO: 后端暂无更新战队基本信息的 API
+    // 这里暂时模拟成功
+    await new Promise(resolve => setTimeout(resolve, 500))
 
     ElMessage.success('战队信息保存成功')
-    router.push(`/teams/${teamId}`)
+    router.push(`/teams/${teamId.value}`)
   } catch (error) {
     console.error('保存失败:', error)
     ElMessage.error('保存失败，请重试')
@@ -376,6 +344,7 @@ const handleSubmit = async () => {
   }
 }
 
+// 解散战队
 const handleDissolve = async () => {
   try {
     await ElMessageBox.confirm(
@@ -389,9 +358,8 @@ const handleDissolve = async () => {
       }
     )
 
-    // 模拟 API 调用
-    ElMessage.success('战队已解散')
-    router.push('/teams')
+    // TODO: 后端暂无解散战队的 API
+    ElMessage.info('功能开发中...')
   } catch {
     // 用户取消
   }
@@ -399,9 +367,7 @@ const handleDissolve = async () => {
 
 // 初始化
 onMounted(() => {
-  // 这里会从 API 加载战队数据
-  // 目前使用模拟数据
-  originalForm.value = { ...form.value }
+  loadData()
 })
 </script>
 
@@ -410,101 +376,168 @@ onMounted(() => {
   padding: 0;
 }
 
-.back-link {
-  margin-bottom: 16px;
+/* 页面头部 */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-light);
 }
 
-.back-link .el-button {
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.back-btn {
   color: var(--text-secondary);
-  font-size: 14px;
 }
 
-.back-link .el-button:hover {
+.back-btn:hover {
   color: var(--primary-color);
 }
 
-.page-header {
-  margin-bottom: 20px;
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.page-header h1 {
+.header-title h1 {
   font-size: 24px;
   font-weight: 700;
   color: var(--text-primary);
-  margin: 0 0 8px 0;
-}
-
-.page-header p {
-  font-size: 14px;
-  color: var(--text-tertiary);
   margin: 0;
 }
 
-/* 表单卡片 */
-.form-card {
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+/* 加载状态 */
+.loading-container {
+  padding: 40px;
+}
+
+/* 概览卡片 */
+.overview-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 32px;
+  border-radius: 16px;
+  margin-bottom: 24px;
+  color: white;
+}
+
+.overview-card.lpl {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+}
+
+.overview-card.lck {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+}
+
+.overview-card.lec {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+}
+
+.overview-card.lcs {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+
+.overview-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.team-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.team-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.team-name {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.overview-stats {
+  display: flex;
+  gap: 40px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.stat-value.gold {
+  color: #fef08a;
+}
+
+.stat-value.win-rate-high {
+  color: #86efac;
+}
+
+.stat-value.win-rate-mid {
+  color: #fef08a;
+}
+
+.stat-value.win-rate-low {
+  color: #fca5a5;
+}
+
+.stat-label {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+/* 编辑卡片 */
+.edit-card {
+  margin-bottom: 20px;
   border-radius: 12px;
 }
 
 .card-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card-header h2 {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-  display: flex;
   align-items: center;
   gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
-.card-header.danger h2 {
+.card-header.danger {
   color: #ef4444;
 }
 
 .edit-form {
-  margin-top: 8px;
-}
-
-.region-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.region-flag {
-  font-size: 16px;
-}
-
-/* 战力滑块 */
-.power-slider {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-
-.power-slider .el-slider {
-  flex: 1;
-}
-
-.power-display {
-  flex-shrink: 0;
-  text-align: center;
-}
-
-.power-number {
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.power-level {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  margin-top: 4px;
+  padding-top: 8px;
 }
 
 .form-hint {
@@ -513,119 +546,58 @@ onMounted(() => {
   margin-top: 4px;
 }
 
-.form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border-light);
+.form-hint.readonly {
+  color: #f59e0b;
 }
 
-/* 预览卡片 */
-.preview-card {
-  border-radius: 12px;
+/* 财务区域 */
+.finance-section {
+  padding: 8px 0;
+}
+
+.balance-display {
+  text-align: center;
+  padding: 16px 0;
+}
+
+.balance-label {
+  font-size: 14px;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+
+.balance-value {
+  font-size: 36px;
+  font-weight: 700;
+  color: #22c55e;
+}
+
+.balance-adjust {
+  text-align: center;
+}
+
+.adjust-label {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.adjust-input {
+  margin-bottom: 16px;
+}
+
+.adjust-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+/* 简介卡片 */
+.description-card {
   margin-bottom: 20px;
 }
 
-.preview-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-.preview-avatar {
-  width: 100px;
-  height: 100px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
-  font-size: 28px;
-}
-
-.preview-avatar.lpl {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-}
-
-.preview-avatar.lck {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-}
-
-.preview-avatar.lec {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
-}
-
-.preview-avatar.lcs {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-}
-
-.preview-name {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.preview-stats {
-  display: flex;
-  gap: 24px;
-}
-
-.preview-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.preview-stat .stat-value {
-  font-size: 20px;
-  font-weight: 700;
-}
-
-.preview-stat .stat-value.gold {
-  color: #fbbf24;
-}
-
-.preview-stat .stat-value.green {
-  color: #22c55e;
-}
-
-.preview-stat .stat-label {
-  font-size: 12px;
-  color: var(--text-tertiary);
-}
-
-.preview-record {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.record-wins {
-  color: #22c55e;
-}
-
-.record-divider {
-  color: var(--text-tertiary);
-}
-
-.record-losses {
-  color: #ef4444;
-}
-
-.preview-winrate {
-  font-size: 14px;
-  color: var(--text-secondary);
-}
-
-/* 危险操作卡片 */
+/* 危险操作 */
 .danger-card {
   border-radius: 12px;
   border: 1px solid #fecaca;
@@ -633,6 +605,7 @@ onMounted(() => {
 
 .danger-content {
   text-align: center;
+  padding: 8px 0;
 }
 
 .danger-text {
@@ -642,16 +615,13 @@ onMounted(() => {
 }
 
 /* Element Plus 覆盖 */
-:deep(.el-slider__marks-text) {
-  font-size: 12px;
-}
-
-:deep(.el-input-number) {
-  width: 100%;
-}
-
 :deep(.el-form-item__label) {
   font-weight: 500;
   color: var(--text-primary);
+}
+
+:deep(.el-textarea__inner) {
+  font-size: 14px;
+  line-height: 1.6;
 }
 </style>

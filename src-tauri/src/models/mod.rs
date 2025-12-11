@@ -12,6 +12,7 @@ pub mod standings;
 pub mod event;
 pub mod player_stats;
 pub mod tournament_result;
+pub mod game_time;
 
 pub use player::*;
 pub use team::*;
@@ -27,3 +28,4 @@ pub use standings::*;
 pub use event::*;
 pub use player_stats::*;
 pub use tournament_result::*;
+pub use game_time::*;
