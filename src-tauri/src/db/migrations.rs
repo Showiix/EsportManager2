@@ -1,0 +1,62 @@
+use sqlx::{Pool, Sqlite};
+
+/// 数据库迁移管理
+pub struct MigrationManager;
+
+impl MigrationManager {
+    /// 检查并运行需要的迁移
+    pub async fn run_pending_migrations(pool: &Pool<Sqlite>) -> Result<(), String> {
+        // 创建迁移记录表
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS _migrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // 检查并运行迁移
+        let migrations = vec![
+            ("001_initial", include_str!("../../migrations/001_initial.sql")),
+        ];
+
+        for (name, _sql) in migrations {
+            let applied: Option<(i64,)> = sqlx::query_as(
+                "SELECT id FROM _migrations WHERE name = ?"
+            )
+            .bind(name)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            if applied.is_none() {
+                // 迁移已在 connection.rs 的 SCHEMA_SQL 中处理
+                // 这里只记录迁移已应用
+                sqlx::query("INSERT INTO _migrations (name) VALUES (?)")
+                    .bind(name)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 获取当前迁移版本
+    pub async fn get_current_version(pool: &Pool<Sqlite>) -> Result<i32, String> {
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM _migrations"
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(count.0 as i32)
+    }
+}

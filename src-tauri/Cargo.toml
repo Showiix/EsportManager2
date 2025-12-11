@@ -1,0 +1,55 @@
+[package]
+name = "esport-manager-2"
+version = "0.1.0"
+description = "电竞比赛模拟器 2 - 一款基于战力值和正态分布算法的电竞赛事模拟游戏"
+authors = ["Developer"]
+license = "MIT"
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.3" }
+
+[dependencies]
+# Tauri 框架
+tauri = { version = "2.9.4", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-shell = "2"
+
+# 序列化
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# 数据库
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "mysql", "uuid", "chrono"] }
+
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+
+# 时间处理
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# 随机数
+rand = "0.8"
+rand_distr = "0.4"
+
+# 错误处理
+thiserror = "1"
+anyhow = "1"
+
+# 日志
+log = "0.4"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
