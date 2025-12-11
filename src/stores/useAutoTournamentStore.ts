@@ -312,7 +312,7 @@ export const useAutoTournamentStore = defineStore('autoTournament', () => {
 
     // 返回最新季后赛的冠军（简化为第一支队伍）
     const latestPlayoff = regionPlayoffs.sort((a, b) =>
-      new Date(b.scheduledAt || '').getTime() - new Date(a.scheduledAt || '').getTime()
+      new Date(b.startDate || '').getTime() - new Date(a.startDate || '').getTime()
     )[0]
 
     return latestPlayoff.teams[0] || null
@@ -321,7 +321,7 @@ export const useAutoTournamentStore = defineStore('autoTournament', () => {
   // 获取当前赛季ID
   const getCurrentSeasonId = (): string => {
     const currentSeason = eventStore.currentSeason
-    return currentSeason?.id || '1'
+    return currentSeason?.id?.toString() || '1'
   }
 
   // 添加日志

@@ -154,7 +154,7 @@
                 :color="getStrengthColor(row.power_rating)"
                 :stroke-width="10"
               />
-              <span class="strength-value">{{ row.power_rating.toFixed(0) }}</span>
+              <span class="strength-value">{{ row.power_rating.toFixed(2) }}</span>
             </div>
           </template>
         </el-table-column>
@@ -162,10 +162,10 @@
         <el-table-column label="比赛数据" width="160">
           <template #default="{ row }">
             <div class="match-stats">
-              <span>总场次: {{ row.wins + row.losses }}</span>
+              <span>总场次: {{ row.total_matches }}</span>
               <div class="win-loss">
                 <span class="wins">胜: {{ row.wins }}</span>
-                <span class="losses">负: {{ row.losses }}</span>
+                <span class="losses">负: {{ row.total_matches - row.wins }}</span>
               </div>
             </div>
           </template>
@@ -179,9 +179,9 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="championship_points" label="总积分" width="100">
+        <el-table-column prop="annual_points" label="年度积分" width="100">
           <template #default="{ row }">
-            <span class="points">{{ row.championship_points }}</span>
+            <span class="points">{{ row.annual_points }}</span>
           </template>
         </el-table-column>
 
@@ -214,7 +214,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import {
@@ -227,11 +227,9 @@ import {
   Edit,
 } from '@element-plus/icons-vue'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
-import { useGameStore } from '@/stores/useGameStore'
 
 const router = useRouter()
 const teamStore = useTeamStoreTauri()
-const gameStore = useGameStore()
 
 // 从 store 获取响应式数据
 const { regions, teams, isLoading } = storeToRefs(teamStore)
@@ -247,16 +245,17 @@ const pageSize = ref(20)
 // 初始化加载数据
 onMounted(async () => {
   await teamStore.loadRegions()
-  // 默认加载第一个赛区的队伍，或者加载全部
-  if (regions.value.length > 0) {
-    await teamStore.selectRegion(regions.value[0].id)
-  }
+  // 加载所有赛区的队伍
+  await teamStore.loadAllTeams()
 })
 
 // 监听赛区变化
 const onRegionChange = async (regionId: number) => {
   if (regionId && regionId > 0) {
     await teamStore.selectRegion(regionId)
+  } else {
+    // 选择"全部赛区"时，重新加载所有队伍
+    await teamStore.loadAllTeams()
   }
 }
 
@@ -309,7 +308,7 @@ const averageWinRate = computed(() => {
 })
 
 const totalMatches = computed(() =>
-  displayTeams.value.reduce((sum, t) => sum + t.wins + t.losses, 0)
+  displayTeams.value.reduce((sum, t) => sum + t.total_matches, 0)
 )
 
 // 筛选操作
@@ -333,19 +332,19 @@ const getRegionName = (regionId: number) => {
 
 const getRegionShortName = (regionId: number) => {
   const region = regions.value.find(r => r.id === regionId)
-  return region?.short_name ?? '???'
+  return region?.code ?? '???'
 }
 
 const getRegionClass = (regionId: number) => {
   const region = regions.value.find(r => r.id === regionId)
-  return region?.short_name?.toLowerCase() ?? 'unknown'
+  return region?.code?.toLowerCase() ?? 'unknown'
 }
 
 const getRegionTagType = (regionId: number) => {
   const region = regions.value.find(r => r.id === regionId)
-  const shortName = region?.short_name ?? ''
+  const code = region?.code ?? ''
   const types: Record<string, string> = { LPL: 'danger', LCK: 'primary', LEC: 'success', LCS: 'warning' }
-  return types[shortName] || 'info'
+  return types[code] || 'info'
 }
 
 // 辅助函数 - 样式

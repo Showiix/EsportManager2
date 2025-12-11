@@ -879,6 +879,410 @@ fn determine_next_matches(stage: &str, match_order: u32) -> Vec<(String, u32, bo
     }
 }
 
+/// 创建ICP洲际对抗赛
+#[tauri::command]
+pub async fn create_icp_tournament(
+    state: State<'_, AppState>,
+    region_teams: Vec<Vec<u64>>, // 4个赛区各4队的ID [[lck_ids], [lpl_ids], [lec_ids], [lcs_ids]]
+) -> Result<CommandResult<u64>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 验证参数：需要4个赛区，每赛区4队
+    if region_teams.len() != 4 {
+        return Ok(CommandResult::err("ICP tournament requires exactly 4 regions"));
+    }
+    for (i, region) in region_teams.iter().enumerate() {
+        if region.len() != 4 {
+            return Ok(CommandResult::err(format!("Region {} must have exactly 4 teams", i + 1)));
+        }
+    }
+
+    let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+        .bind(&save_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let current_season: i64 = save_row.get("current_season");
+
+    let tournament_id: i64 = sqlx::query(
+        r#"
+        INSERT INTO tournaments (save_id, name, tournament_type, season_id, region_id, status)
+        VALUES (?, ?, 'IcpIntercontinental', ?, NULL, 'InProgress')
+        RETURNING id
+        "#,
+    )
+    .bind(&save_id)
+    .bind(format!("ICP Intercontinental {}", current_season))
+    .bind(current_season)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .get("id");
+
+    // 获取各赛区队伍信息
+    let mut all_region_teams = Vec::new();
+    for region_ids in &region_teams {
+        let teams = get_teams_by_ids(&pool, region_ids).await?;
+        all_region_teams.push(teams);
+    }
+
+    let service = TournamentService::new();
+    let matches = service.generate_icp_bracket(tournament_id as u64, all_region_teams);
+
+    for m in matches {
+        sqlx::query(
+            r#"
+            INSERT INTO matches (
+                tournament_id, stage, round, match_order, format,
+                home_team_id, away_team_id, home_score, away_score, winner_id, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, 'Scheduled')
+            "#,
+        )
+        .bind(tournament_id)
+        .bind(&m.stage)
+        .bind(m.round)
+        .bind(m.match_order)
+        .bind(format!("{:?}", m.format))
+        .bind(if m.home_team_id > 0 { Some(m.home_team_id as i64) } else { None })
+        .bind(if m.away_team_id > 0 { Some(m.away_team_id as i64) } else { None })
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(CommandResult::ok(tournament_id as u64))
+}
+
+/// 获取小组赛积分榜
+#[tauri::command]
+pub async fn get_group_standings(
+    state: State<'_, AppState>,
+    tournament_id: u64,
+) -> Result<CommandResult<Vec<GroupStandingInfo>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取所有小组赛比赛
+    let match_rows = sqlx::query(
+        r#"
+        SELECT m.stage, m.home_team_id, m.away_team_id, m.home_score, m.away_score, m.winner_id, m.status,
+               ht.name as home_name, at.name as away_name
+        FROM matches m
+        LEFT JOIN teams ht ON m.home_team_id = ht.id
+        LEFT JOIN teams at ON m.away_team_id = at.id
+        WHERE m.tournament_id = ? AND m.stage LIKE 'GROUP_%'
+        ORDER BY m.stage, m.id
+        "#,
+    )
+    .bind(tournament_id as i64)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // 按小组统计
+    let mut group_stats: std::collections::HashMap<String, std::collections::HashMap<u64, TeamGroupStats>> =
+        std::collections::HashMap::new();
+
+    for row in &match_rows {
+        let stage: String = row.get("stage");
+        let home_id: Option<i64> = row.get("home_team_id");
+        let away_id: Option<i64> = row.get("away_team_id");
+        let home_score: i64 = row.get("home_score");
+        let away_score: i64 = row.get("away_score");
+        let winner_id: Option<i64> = row.get("winner_id");
+        let status: String = row.get("status");
+
+        let group_entry = group_stats.entry(stage.clone()).or_default();
+
+        // 初始化队伍
+        if let Some(hid) = home_id {
+            let home_name: String = row.get("home_name");
+            group_entry.entry(hid as u64).or_insert(TeamGroupStats {
+                team_id: hid as u64,
+                team_name: home_name,
+                wins: 0,
+                losses: 0,
+                games_won: 0,
+                games_lost: 0,
+                points: 0,
+            });
+        }
+        if let Some(aid) = away_id {
+            let away_name: String = row.get("away_name");
+            group_entry.entry(aid as u64).or_insert(TeamGroupStats {
+                team_id: aid as u64,
+                team_name: away_name,
+                wins: 0,
+                losses: 0,
+                games_won: 0,
+                games_lost: 0,
+                points: 0,
+            });
+        }
+
+        // 更新统计
+        if status == "Completed" {
+            if let (Some(hid), Some(aid), Some(wid)) = (home_id, away_id, winner_id) {
+                let home_stats = group_entry.get_mut(&(hid as u64)).unwrap();
+                home_stats.games_won += home_score as u32;
+                home_stats.games_lost += away_score as u32;
+
+                if wid == hid {
+                    home_stats.wins += 1;
+                    // 2:0胜积3分，2:1胜积2分
+                    home_stats.points += if away_score == 0 { 3 } else { 2 };
+                } else {
+                    home_stats.losses += 1;
+                    // 2:1负积1分，2:0负积0分
+                    if home_score > 0 {
+                        home_stats.points += 1;
+                    }
+                }
+
+                let away_stats = group_entry.get_mut(&(aid as u64)).unwrap();
+                away_stats.games_won += away_score as u32;
+                away_stats.games_lost += home_score as u32;
+
+                if wid == aid {
+                    away_stats.wins += 1;
+                    away_stats.points += if home_score == 0 { 3 } else { 2 };
+                } else {
+                    away_stats.losses += 1;
+                    if away_score > 0 {
+                        away_stats.points += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // 转换为返回格式
+    let mut standings: Vec<GroupStandingInfo> = Vec::new();
+    for (group_name, teams) in group_stats {
+        let mut team_list: Vec<TeamGroupStats> = teams.into_values().collect();
+        // 按积分、净胜场、胜场排序
+        team_list.sort_by(|a, b| {
+            let a_diff = a.games_won as i32 - a.games_lost as i32;
+            let b_diff = b.games_won as i32 - b.games_lost as i32;
+            b.points.cmp(&a.points)
+                .then(b_diff.cmp(&a_diff))
+                .then(b.wins.cmp(&a.wins))
+        });
+
+        standings.push(GroupStandingInfo {
+            group_name: group_name.replace("GROUP_", ""),
+            teams: team_list,
+        });
+    }
+
+    // 按组名排序
+    standings.sort_by(|a, b| a.group_name.cmp(&b.group_name));
+
+    Ok(CommandResult::ok(standings))
+}
+
+/// 小组积分榜信息
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GroupStandingInfo {
+    pub group_name: String,
+    pub teams: Vec<TeamGroupStats>,
+}
+
+/// 队伍小组赛统计
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TeamGroupStats {
+    pub team_id: u64,
+    pub team_name: String,
+    pub wins: u32,
+    pub losses: u32,
+    pub games_won: u32,
+    pub games_lost: u32,
+    pub points: u32,
+}
+
+/// 生成淘汰赛对阵 (小组赛结束后调用)
+#[tauri::command]
+pub async fn generate_knockout_bracket(
+    state: State<'_, AppState>,
+    tournament_id: u64,
+) -> Result<CommandResult<Vec<u64>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取赛事类型
+    let tournament_row = sqlx::query(
+        "SELECT tournament_type FROM tournaments WHERE id = ?"
+    )
+    .bind(tournament_id as i64)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let tournament_type: String = match tournament_row {
+        Some(r) => r.get("tournament_type"),
+        None => return Ok(CommandResult::err("Tournament not found")),
+    };
+
+    // 获取小组积分榜
+    drop(guard);
+    let standings_result = get_group_standings(state.clone(), tournament_id).await?;
+    let standings = match standings_result.data {
+        Some(s) => s,
+        None => return Ok(CommandResult::err("Failed to get group standings")),
+    };
+
+    // 根据赛事类型确定晋级规则
+    let mut qualified_teams: Vec<(u64, u32)> = Vec::new(); // (team_id, seed)
+
+    match tournament_type.as_str() {
+        "MadridMasters" | "ClaudeIntercontinental" => {
+            // 每组前2名晋级，共16队
+            for group in &standings {
+                for (idx, team) in group.teams.iter().enumerate() {
+                    if idx < 2 {
+                        qualified_teams.push((team.team_id, (idx + 1) as u32));
+                    }
+                }
+            }
+        }
+        _ => {
+            // 默认每组前2名
+            for group in &standings {
+                for (idx, team) in group.teams.iter().enumerate() {
+                    if idx < 2 {
+                        qualified_teams.push((team.team_id, (idx + 1) as u32));
+                    }
+                }
+            }
+        }
+    }
+
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 更新淘汰赛对阵
+    // 东半区：A组1 vs D组2, B组1 vs C组2, A组2 vs D组1, B组2 vs C组1
+    // 西半区：E组1 vs H组2, F组1 vs G组2, E组2 vs H组1, F组2 vs G组1
+    let east_matches = vec![
+        ("EAST_R1", 1), ("EAST_R1", 2), ("EAST_R1", 3), ("EAST_R1", 4),
+    ];
+    let west_matches = vec![
+        ("WEST_R1", 1), ("WEST_R1", 2), ("WEST_R1", 3), ("WEST_R1", 4),
+    ];
+
+    let mut updated_match_ids = Vec::new();
+
+    // 简化：按顺序填充淘汰赛
+    let mut east_teams: Vec<u64> = Vec::new();
+    let mut west_teams: Vec<u64> = Vec::new();
+
+    for (idx, group) in standings.iter().enumerate() {
+        if idx < 4 {
+            // 东半区 A-D组
+            if group.teams.len() >= 2 {
+                east_teams.push(group.teams[0].team_id);
+                east_teams.push(group.teams[1].team_id);
+            }
+        } else {
+            // 西半区 E-H组
+            if group.teams.len() >= 2 {
+                west_teams.push(group.teams[0].team_id);
+                west_teams.push(group.teams[1].team_id);
+            }
+        }
+    }
+
+    // 更新东半区
+    for (i, (stage, order)) in east_matches.iter().enumerate() {
+        if i * 2 + 1 < east_teams.len() {
+            let home_id = east_teams[i * 2];
+            let away_id = east_teams[i * 2 + 1];
+
+            let result = sqlx::query(
+                "UPDATE matches SET home_team_id = ?, away_team_id = ? WHERE tournament_id = ? AND stage = ? AND match_order = ? RETURNING id"
+            )
+            .bind(home_id as i64)
+            .bind(away_id as i64)
+            .bind(tournament_id as i64)
+            .bind(stage)
+            .bind(*order as i64)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            if let Some(row) = result {
+                let id: i64 = row.get("id");
+                updated_match_ids.push(id as u64);
+            }
+        }
+    }
+
+    // 更新西半区
+    for (i, (stage, order)) in west_matches.iter().enumerate() {
+        if i * 2 + 1 < west_teams.len() {
+            let home_id = west_teams[i * 2];
+            let away_id = west_teams[i * 2 + 1];
+
+            let result = sqlx::query(
+                "UPDATE matches SET home_team_id = ?, away_team_id = ? WHERE tournament_id = ? AND stage = ? AND match_order = ? RETURNING id"
+            )
+            .bind(home_id as i64)
+            .bind(away_id as i64)
+            .bind(tournament_id as i64)
+            .bind(stage)
+            .bind(*order as i64)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            if let Some(row) = result {
+                let id: i64 = row.get("id");
+                updated_match_ids.push(id as u64);
+            }
+        }
+    }
+
+    Ok(CommandResult::ok(updated_match_ids))
+}
+
 /// 获取阶段显示名称
 fn get_stage_display_name(stage: &str) -> String {
     match stage {

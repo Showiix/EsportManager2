@@ -400,12 +400,12 @@ const grandFinalMatch = computed(() => {
   return allMatches.value.find(m => m.matchType === 'grand_final')
 })
 
-const handleSimulate = (match: MSIMatch) => {
-  emit('simulate-match', match)
+const handleSimulate = (match: any) => {
+  emit('simulate-match', match as MSIMatch)
 }
 
-const handleViewDetail = (match: MSIMatch) => {
-  emit('view-match', match)
+const handleViewDetail = (match: any) => {
+  emit('view-match', match as MSIMatch)
 }
 
 const getWinnerName = (match: any): string => {

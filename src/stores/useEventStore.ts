@@ -6,10 +6,6 @@ import {
   type CompetitionType,
   type CompetitionStatus,
   type CompetitionFormat,
-  type SeasonStatus,
-  type Team,
-  type Match,
-  type ApiResponse
 } from '@/types'
 
 export const useEventStore = defineStore('event', () => {

@@ -435,14 +435,23 @@ export interface MSIQualification {
 // MSI比赛类型
 export type MSIMatchType =
   | 'qualifier_knockout' // 资格赛组单淘汰
+  | 'qualifier' // 资格赛组 (别名)
   | 'challenger_match' // 挑战者组对决
+  | 'challenger' // 挑战者组 (别名)
   | 'losers_round_1' // 败者组第一轮
+  | 'loser_r1' // 败者组第一轮 (别名)
   | 'losers_round_2' // 败者组第二轮
+  | 'loser_r2' // 败者组第二轮 (别名)
   | 'winners_round_1' // 胜者组第一轮(传奇组对决)
+  | 'winner_r1' // 胜者组第一轮 (别名)
   | 'losers_round_3' // 败者组第三轮
+  | 'loser_r3' // 败者组第三轮 (别名)
   | 'losers_round_4' // 败者组第四轮(攀登者赛)
+  | 'loser_r4' // 败者组第四轮 (别名)
   | 'winners_round_2' // 胜者组第二轮
+  | 'winner_final' // 胜者组决赛 (别名)
   | 'losers_final' // 败者组决赛
+  | 'loser_final' // 败者组决赛 (别名)
   | 'grand_final' // 总决赛
 
 // MSI比赛

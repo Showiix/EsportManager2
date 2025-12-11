@@ -86,9 +86,14 @@
             <span>积分排名</span>
           </el-menu-item>
 
-          <el-menu-item index="/player-statistics">
+          <el-menu-item index="/data-center">
             <el-icon><DataLine /></el-icon>
-            <span>选手统计</span>
+            <span>数据中心</span>
+          </el-menu-item>
+
+          <el-menu-item index="/annual-top">
+            <el-icon><Star /></el-icon>
+            <span>IM年度评选</span>
           </el-menu-item>
 
           <el-menu-item index="/honors">
@@ -141,6 +146,7 @@ import {
   VideoPlay,
   FolderOpened,
   DataLine,
+  Star,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -163,7 +169,8 @@ const breadcrumbs = computed(() => {
     draft: '选秀系统',
     transfer: '转会市场',
     rankings: '积分排名',
-    'player-statistics': '选手统计',
+    'data-center': '数据中心',
+    'annual-top': 'IM年度评选',
     honors: '荣誉殿堂',
     settings: '系统设置',
     lpl: 'LPL 中国赛区',

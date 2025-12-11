@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Team, TeamStatistics, QueryOptions } from '@/types'
+import type { Team, QueryOptions } from '@/types'
 import { teamApi, mockData } from '@/api'
 
 export const useTeamStore = defineStore('team', () => {

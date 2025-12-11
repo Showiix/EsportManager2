@@ -42,8 +42,8 @@
               <el-tag v-if="currentSave?.id === save.id" size="small" type="success">当前</el-tag>
             </div>
             <div class="save-meta">
-              <el-tag size="small" type="primary">{{ save.season }}</el-tag>
-              <span class="save-phase">{{ save.phase }}</span>
+              <el-tag size="small" type="primary">第{{ save.current_season }}赛季</el-tag>
+              <span class="save-phase">{{ save.current_phase }}</span>
             </div>
           </div>
           <div class="save-time">{{ formatDate(save.updated_at) }}</div>
@@ -294,10 +294,11 @@ import {
   Reading,
 } from '@element-plus/icons-vue'
 import GameGuide from '@/components/settings/GameGuide.vue'
-import { useGameStore, type SaveInfo } from '@/stores/useGameStore'
+import { useGameStore } from '@/stores/useGameStore'
+import type { SaveInfo } from '@/api/tauri'
 
 const gameStore = useGameStore()
-const { saves, currentSave, isLoading, error } = storeToRefs(gameStore)
+const { saves, currentSave, isLoading, isInitialized } = storeToRefs(gameStore)
 
 // 新建存档对话框
 const showNewSaveDialog = ref(false)
@@ -317,7 +318,12 @@ const gameSettings = reactive({
 
 // 初始化加载存档列表
 onMounted(async () => {
-  await gameStore.loadSaves()
+  try {
+    await gameStore.loadSaves()
+  } catch (e) {
+    // 数据库未初始化，忽略错误
+    console.log('数据库未初始化，请先初始化数据库')
+  }
 })
 
 // 格式化日期
@@ -357,6 +363,11 @@ const handleInitDatabase = async () => {
 
 // 新建存档
 const handleCreateSave = async () => {
+  if (!isInitialized.value) {
+    ElMessage.error('请先初始化数据库！')
+    return
+  }
+
   if (!newSaveForm.name.trim()) {
     ElMessage.warning('请输入存档名称')
     return
@@ -374,6 +385,11 @@ const handleCreateSave = async () => {
 
 // 加载存档
 const handleLoadSave = async (save: SaveInfo) => {
+  if (!isInitialized.value) {
+    ElMessage.error('请先初始化数据库！')
+    return
+  }
+
   try {
     await gameStore.loadSave(save.id)
     ElMessage.success(`已加载存档: ${save.name}`)

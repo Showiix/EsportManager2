@@ -309,11 +309,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Trophy, Medal, Star, Flag, ArrowRight } from '@element-plus/icons-vue'
+import { honorApi, teamApi, queryApi } from '@/api/tauri'
+import type { Team } from '@/api/tauri'
 
 // 类型定义
-interface Team {
+interface TeamInfo {
   name: string
   short: string
   region: string
@@ -324,10 +326,10 @@ interface Tournament {
   name: string
   season: string
   type: 'international' | 'league'
-  champion: Team
-  runnerUp: Team
-  third: Team
-  fourth: Team
+  champion: TeamInfo
+  runnerUp: TeamInfo
+  third: TeamInfo
+  fourth: TeamInfo
   mvp?: string
 }
 
@@ -346,75 +348,182 @@ const selectedSeason = ref('all')
 const tournamentFilter = ref('all')
 const showDetailDialog = ref(false)
 const selectedTournament = ref<Tournament | null>(null)
+const loading = ref(false)
 
-// 模拟数据 - 赛事记录
-const tournaments = ref<Tournament[]>([
-  {
-    id: 1,
-    name: 'S1 春季赛',
-    season: 'S1',
-    type: 'league',
-    champion: { name: 'JD Gaming', short: 'JDG', region: 'LPL' },
-    runnerUp: { name: 'Bilibili Gaming', short: 'BLG', region: 'LPL' },
-    third: { name: 'Top Esports', short: 'TES', region: 'LPL' },
-    fourth: { name: 'Weibo Gaming', short: 'WBG', region: 'LPL' },
-    mvp: '369',
-  },
-  {
-    id: 2,
-    name: 'S1 LCK 春季赛',
-    season: 'S1',
-    type: 'league',
-    champion: { name: 'T1', short: 'T1', region: 'LCK' },
-    runnerUp: { name: 'Gen.G', short: 'GEN', region: 'LCK' },
-    third: { name: 'KT Rolster', short: 'KT', region: 'LCK' },
-    fourth: { name: 'Dplus KIA', short: 'DK', region: 'LCK' },
-    mvp: 'Faker',
-  },
-  {
-    id: 3,
-    name: 'S1 MSI',
-    season: 'S1',
-    type: 'international',
-    champion: { name: 'T1', short: 'T1', region: 'LCK' },
-    runnerUp: { name: 'JD Gaming', short: 'JDG', region: 'LPL' },
-    third: { name: 'G2 Esports', short: 'G2', region: 'LEC' },
-    fourth: { name: 'Cloud9', short: 'C9', region: 'LCS' },
-    mvp: 'Gumayusi',
-  },
-  {
-    id: 4,
-    name: 'S1 夏季赛',
-    season: 'S1',
-    type: 'league',
-    champion: { name: 'Bilibili Gaming', short: 'BLG', region: 'LPL' },
-    runnerUp: { name: 'JD Gaming', short: 'JDG', region: 'LPL' },
-    third: { name: 'Top Esports', short: 'TES', region: 'LPL' },
-    fourth: { name: 'LNG Esports', short: 'LNG', region: 'LPL' },
-    mvp: 'Elk',
-  },
-  {
-    id: 5,
-    name: 'S1 世界赛',
-    season: 'S1',
-    type: 'international',
-    champion: { name: 'T1', short: 'T1', region: 'LCK' },
-    runnerUp: { name: 'Bilibili Gaming', short: 'BLG', region: 'LPL' },
-    third: { name: 'Gen.G', short: 'GEN', region: 'LCK' },
-    fourth: { name: 'JD Gaming', short: 'JDG', region: 'LPL' },
-    mvp: 'Faker',
-  },
-])
+// 数据
+const tournaments = ref<Tournament[]>([])
+const teamHonors = ref<TeamHonor[]>([])
 
-// 战队荣誉统计
-const teamHonors = ref<TeamHonor[]>([
-  { name: 'T1', short: 'T1', region: 'LCK', champions: 3, runnerUps: 0, topFour: 0, points: 15 },
-  { name: 'JD Gaming', short: 'JDG', region: 'LPL', champions: 1, runnerUps: 2, topFour: 1, points: 9 },
-  { name: 'Bilibili Gaming', short: 'BLG', region: 'LPL', champions: 1, runnerUps: 2, topFour: 0, points: 8 },
-  { name: 'Gen.G', short: 'GEN', region: 'LCK', champions: 0, runnerUps: 1, topFour: 1, points: 4 },
-  { name: 'Top Esports', short: 'TES', region: 'LPL', champions: 0, runnerUps: 0, topFour: 2, points: 2 },
-  { name: 'G2 Esports', short: 'G2', region: 'LEC', champions: 0, runnerUps: 0, topFour: 1, points: 1 },
-])
+// 缓存的队伍和赛区数据
+const teamsMap = ref<Map<number, Team>>(new Map())
+const regionsMap = ref<Map<number, string>>(new Map())
+
+// 加载数据
+onMounted(async () => {
+  loading.value = true
+  try {
+    // 并行加载所有队伍和赛区信息
+    const [teams, regions] = await Promise.all([
+      teamApi.getAllTeams(),
+      queryApi.getAllRegions(),
+    ])
+
+    // 构建队伍ID到队伍信息的映射
+    teams.forEach((team: Team) => {
+      teamsMap.value.set(team.id, team)
+    })
+
+    // 构建赛区ID到赛区代码的映射
+    regions.forEach((region: { id: number; code: string }) => {
+      regionsMap.value.set(region.id, region.code)
+    })
+
+    // 加载荣誉数据
+    await loadHonors()
+  } catch (error) {
+    console.error('Failed to load data:', error)
+  } finally {
+    loading.value = false
+  }
+})
+
+// 加载荣誉数据
+async function loadHonors() {
+  try {
+    // 获取所有冠军和MVP记录
+    const [champions, mvps] = await Promise.all([
+      honorApi.getAllChampions(),
+      honorApi.getAllMvps(),
+    ])
+
+    // 按赛事ID分组荣誉记录
+    const tournamentHonorsMap = new Map<number, {
+      champion?: any
+      runnerUp?: any
+      third?: any
+      fourth?: any
+      mvp?: string
+      tournamentName: string
+      tournamentType: string
+      seasonId: number
+    }>()
+
+    // 处理冠军、亚军、季军、殿军
+    champions.forEach((honor: any) => {
+      const tournamentId = honor.tournament_id
+      if (!tournamentHonorsMap.has(tournamentId)) {
+        tournamentHonorsMap.set(tournamentId, {
+          tournamentName: honor.tournament_name,
+          tournamentType: honor.tournament_type,
+          seasonId: honor.season_id,
+        })
+      }
+      const entry = tournamentHonorsMap.get(tournamentId)!
+
+      const teamInfo = getTeamInfo(honor.team_id, honor.team_name)
+
+      if (honor.honor_type === 'TEAM_CHAMPION') {
+        entry.champion = teamInfo
+      } else if (honor.honor_type === 'TEAM_RUNNER_UP') {
+        entry.runnerUp = teamInfo
+      } else if (honor.honor_type === 'TEAM_THIRD') {
+        entry.third = teamInfo
+      } else if (honor.honor_type === 'TEAM_FOURTH') {
+        entry.fourth = teamInfo
+      }
+    })
+
+    // 处理MVP
+    mvps.forEach((honor: any) => {
+      const tournamentId = honor.tournament_id
+      if (tournamentHonorsMap.has(tournamentId) && honor.honor_type === 'TOURNAMENT_MVP') {
+        tournamentHonorsMap.get(tournamentId)!.mvp = honor.player_name
+      }
+    })
+
+    // 转换为Tournament数组
+    const tournamentList: Tournament[] = []
+    tournamentHonorsMap.forEach((data, id) => {
+      if (data.champion) {
+        const defaultTeam = { name: '未知', short: '?', region: 'LPL' }
+        tournamentList.push({
+          id,
+          name: data.tournamentName,
+          season: `S${data.seasonId}`,
+          type: isInternationalType(data.tournamentType) ? 'international' : 'league',
+          champion: data.champion,
+          runnerUp: data.runnerUp || defaultTeam,
+          third: data.third || defaultTeam,
+          fourth: data.fourth || defaultTeam,
+          mvp: data.mvp,
+        })
+      }
+    })
+
+    tournaments.value = tournamentList
+
+    // 计算战队荣誉统计
+    const teamStatsMap = new Map<number, TeamHonor>()
+    champions.forEach((honor: any) => {
+      if (!honor.team_id) return
+
+      if (!teamStatsMap.has(honor.team_id)) {
+        const teamInfo = getTeamInfo(honor.team_id, honor.team_name)
+        teamStatsMap.set(honor.team_id, {
+          name: teamInfo.name,
+          short: teamInfo.short,
+          region: teamInfo.region,
+          champions: 0,
+          runnerUps: 0,
+          topFour: 0,
+          points: 0,
+        })
+      }
+
+      const stats = teamStatsMap.get(honor.team_id)!
+      if (honor.honor_type === 'TEAM_CHAMPION') {
+        stats.champions++
+        stats.points += 5
+      } else if (honor.honor_type === 'TEAM_RUNNER_UP') {
+        stats.runnerUps++
+        stats.points += 3
+      } else if (honor.honor_type === 'TEAM_THIRD' || honor.honor_type === 'TEAM_FOURTH') {
+        stats.topFour++
+        stats.points += 1
+      }
+    })
+
+    // 排序并设置
+    teamHonors.value = Array.from(teamStatsMap.values())
+      .sort((a, b) => b.points - a.points)
+  } catch (error) {
+    console.error('Failed to load honors:', error)
+  }
+}
+
+// 获取队伍信息
+function getTeamInfo(teamId: number | undefined, teamName: string | undefined): TeamInfo {
+  if (teamId && teamsMap.value.has(teamId)) {
+    const team = teamsMap.value.get(teamId)!
+    const regionCode = regionsMap.value.get(team.region_id) || 'LPL'
+    return {
+      name: team.name,
+      short: team.short_name || team.name.slice(0, 3),
+      region: regionCode,
+    }
+  }
+  return {
+    name: teamName || '未知',
+    short: teamName ? teamName.slice(0, 3) : '?',
+    region: 'LPL',
+  }
+}
+
+// 判断是否是国际赛事
+function isInternationalType(tournamentType: string): boolean {
+  const internationalTypes = ['msi', 'worlds', 'madrid_masters', 'shanghai_masters', 'super']
+  return internationalTypes.includes(tournamentType.toLowerCase())
+}
 
 // 计算属性
 const totalTournaments = computed(() => {

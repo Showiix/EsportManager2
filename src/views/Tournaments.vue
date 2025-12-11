@@ -1,42 +1,16 @@
 <template>
   <div class="tournaments-view">
-    <!-- 历史赛季提示 -->
-    <el-alert
-      v-if="isViewingHistory"
-      type="warning"
-      show-icon
-      :closable="false"
-      class="history-alert"
-    >
-      <template #title>
-        <div class="history-alert-content">
-          <span>您正在查看 {{ viewingSeasonId }} 赛季的历史数据</span>
-          <el-button type="primary" size="small" @click="returnToActiveSeason">
-            返回当前赛季 ({{ activeSeasonId }})
-          </el-button>
-        </div>
-      </template>
-    </el-alert>
-
     <!-- 页面标题 -->
     <div class="page-header">
       <div>
         <h1>赛事管理</h1>
-        <p>{{ viewingSeasonId }} 赛季赛事概览</p>
+        <p>{{ currentSeason }} 赛季赛事概览</p>
       </div>
       <div class="header-actions">
-        <el-select
-          v-model="selectedSeason"
-          placeholder="选择赛季"
-          @change="onSeasonChange"
-        >
-          <el-option
-            v-for="season in availableSeasons"
-            :key="season.id"
-            :label="season.label"
-            :value="season.id"
-          />
-        </el-select>
+        <el-button type="primary" @click="refreshTournaments" :loading="isLoading">
+          <el-icon><Refresh /></el-icon>
+          刷新
+        </el-button>
       </div>
     </div>
 
@@ -96,23 +70,22 @@
       </el-col>
     </el-row>
 
+    <!-- 加载状态 -->
+    <el-card v-if="isLoading" class="loading-card">
+      <el-skeleton :rows="10" animated />
+    </el-card>
+
     <!-- 赛事卡片网格 -->
-    <el-row :gutter="20">
+    <el-row v-else :gutter="20">
       <el-col :span="8" v-for="tournament in tournaments" :key="tournament.id">
-        <el-card class="tournament-card" :class="tournament.status">
-          <!-- 赛事头部图片 -->
-          <div class="tournament-header" :class="tournament.type">
+        <el-card class="tournament-card" :class="getTournamentStatus(tournament)">
+          <!-- 赛事头部 -->
+          <div class="tournament-header" :class="tournament.region_id ? 'league' : 'international'">
             <div class="tournament-badge">
-              {{ tournament.type === 'league' ? '联赛' : '国际赛' }}
+              {{ tournament.region_id ? '联赛' : '国际赛' }}
             </div>
-            <img
-              v-if="tournament.poster"
-              :src="tournament.poster"
-              :alt="tournament.name"
-              class="tournament-poster"
-            />
-            <div v-else class="tournament-icon">
-              {{ tournament.type === 'league' ? '🏆' : '🌍' }}
+            <div class="tournament-icon">
+              {{ tournament.region_id ? '🏆' : '🌍' }}
             </div>
           </div>
 
@@ -120,36 +93,32 @@
           <div class="tournament-content">
             <div class="tournament-title-row">
               <h3 class="tournament-name">{{ tournament.name }}</h3>
-              <el-tag :type="getStatusTagType(tournament.status)" size="default">
-                {{ getStatusText(tournament.status) }}
+              <el-tag :type="getStatusTagType(tournament)" size="default">
+                {{ getStatusText(tournament) }}
               </el-tag>
             </div>
 
-            <p class="tournament-description">{{ tournament.description }}</p>
+            <p class="tournament-description">{{ tournament.tournament_type }}</p>
 
             <div class="tournament-info">
-              <div class="info-item" v-if="tournament.teams">
+              <div class="info-item">
                 <el-icon><UserFilled /></el-icon>
-                <span>{{ tournament.teams }} 支队伍</span>
+                <span>{{ tournament.champion_team_name ?? '待定' }}</span>
               </div>
-              <div class="info-item" v-if="tournament.matches">
+              <div class="info-item">
                 <el-icon><VideoPlay /></el-icon>
-                <span>{{ tournament.matches }} 场比赛</span>
-              </div>
-              <div class="info-item" v-if="tournament.prize">
-                <el-icon><Trophy /></el-icon>
-                <span>{{ tournament.prize }}</span>
+                <span>第 {{ tournament.season_id }} 赛季</span>
               </div>
             </div>
 
             <!-- 进度条 -->
-            <div class="tournament-progress" v-if="tournament.status === 'active'">
+            <div class="tournament-progress" v-if="getTournamentStatus(tournament) === 'active'">
               <div class="progress-label">
                 <span>比赛进度</span>
-                <span>{{ tournament.progress }}%</span>
+                <span>{{ getProgress(tournament) }}%</span>
               </div>
               <el-progress
-                :percentage="tournament.progress"
+                :percentage="getProgress(tournament)"
                 :stroke-width="8"
                 :show-text="false"
                 :color="'#67c23a'"
@@ -159,7 +128,7 @@
             <!-- 操作按钮 -->
             <div class="tournament-actions">
               <el-button
-                v-if="tournament.status === 'active'"
+                v-if="getTournamentStatus(tournament) === 'active'"
                 type="success"
                 @click="continueTournament(tournament)"
               >
@@ -167,7 +136,7 @@
                 继续比赛
               </el-button>
               <el-button
-                v-else-if="tournament.status === 'upcoming'"
+                v-else-if="getTournamentStatus(tournament) === 'upcoming'"
                 type="primary"
                 disabled
               >
@@ -191,12 +160,17 @@
       </el-col>
     </el-row>
 
+    <!-- 空状态 -->
+    <el-card v-if="!isLoading && tournaments.length === 0" class="empty-card">
+      <el-empty description="暂无赛事数据，请先加载存档" />
+    </el-card>
+
     <!-- 赛季时间线 -->
-    <el-card class="timeline-card">
+    <el-card v-if="tournaments.length > 0" class="timeline-card">
       <template #header>
         <div class="timeline-header">
           <h2>赛季时间线</h2>
-          <el-tag type="primary" effect="dark">{{ viewingSeasonId }}</el-tag>
+          <el-tag type="primary" effect="dark">{{ currentSeason }}</el-tag>
         </div>
       </template>
 
@@ -204,22 +178,21 @@
         <el-timeline-item
           v-for="tournament in tournaments"
           :key="tournament.id"
-          :type="getTimelineType(tournament.status)"
-          :hollow="tournament.status === 'upcoming'"
-          :timestamp="tournament.time"
+          :type="getTimelineType(tournament)"
+          :hollow="getTournamentStatus(tournament) === 'upcoming'"
           placement="top"
         >
           <div class="timeline-content">
             <div class="timeline-title">
               <span class="timeline-name">{{ tournament.name }}</span>
               <el-tag
-                :type="getStatusTagType(tournament.status)"
+                :type="getStatusTagType(tournament)"
                 size="small"
               >
-                {{ getStatusText(tournament.status) }}
+                {{ getStatusText(tournament) }}
               </el-tag>
             </div>
-            <p class="timeline-desc">{{ tournament.description }}</p>
+            <p class="timeline-desc">{{ tournament.tournament_type }}</p>
           </div>
         </el-timeline-item>
       </el-timeline>
@@ -228,7 +201,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import {
@@ -238,187 +211,67 @@ import {
   CircleCheck,
   UserFilled,
   View,
+  Refresh,
 } from '@element-plus/icons-vue'
-import { useSeasonStore } from '@/stores/useSeasonStore'
-
-// 导入海报图片
-import msiPoster from '@/assets/posters/msi.png'
-import madridPoster from '@/assets/posters/马德里.png'
-import claudePoster from '@/assets/posters/claude.png'
-import worldsPoster from '@/assets/posters/s世界赛.png'
-import shanghaiPoster from '@/assets/posters/shanghai.png'
+import { useTournamentStoreTauri } from '@/stores/useTournamentStoreTauri'
+import { useGameStore } from '@/stores/useGameStore'
 
 const router = useRouter()
-const seasonStore = useSeasonStore()
+const tournamentStore = useTournamentStoreTauri()
+const gameStore = useGameStore()
 
-// 从store获取响应式数据
-const {
-  viewingSeasonId,
-  activeSeasonId,
-  availableSeasons,
-  isViewingHistory
-} = storeToRefs(seasonStore)
+// 从 store 获取响应式数据
+const { tournaments, isLoading } = storeToRefs(tournamentStore)
+const { currentSeason, gameState } = storeToRefs(gameStore)
 
-// 本地选择的赛季（与store同步）
-const selectedSeason = ref('S1')
-
-// 赛季切换
-const onSeasonChange = (seasonId: string) => {
-  seasonStore.switchViewingSeason(seasonId)
-}
-
-const returnToActiveSeason = () => {
-  seasonStore.returnToActiveSeason()
-  selectedSeason.value = activeSeasonId.value
-}
-
-// 初始化
-onMounted(() => {
-  seasonStore.loadSeasons()
-  selectedSeason.value = viewingSeasonId.value
+// 初始化加载数据
+onMounted(async () => {
+  if (gameState.value?.current_season) {
+    await tournamentStore.loadSeasonTournaments(gameState.value.current_season)
+  }
 })
 
-// 监听store中的赛季变化
-watch(viewingSeasonId, (newVal) => {
-  selectedSeason.value = newVal
-})
-
-// 模拟数据
-const tournaments = ref([
-  {
-    id: 1,
-    name: '春季赛',
-    type: 'league',
-    status: 'active',
-    description: '四大赛区春季常规赛与季后赛',
-    teams: 56,
-    matches: 224,
-    prize: '冠军积分 300',
-    progress: 45,
-    time: '1月-4月',
-    poster: null,
-  },
-  {
-    id: 2,
-    name: 'MSI 季中邀请赛',
-    type: 'international',
-    status: 'upcoming',
-    description: '春季赛冠亚季军参加的国际赛事',
-    teams: 12,
-    matches: 48,
-    prize: '冠军积分 200',
-    progress: 0,
-    time: '5月',
-    poster: msiPoster,
-  },
-  {
-    id: 3,
-    name: '马德里大师赛',
-    type: 'international',
-    status: 'upcoming',
-    description: '各赛区前8名参加的邀请赛',
-    teams: 32,
-    matches: 64,
-    prize: '荣誉赛事',
-    progress: 0,
-    time: '5月',
-    poster: madridPoster,
-  },
-  {
-    id: 4,
-    name: '夏季赛',
-    type: 'league',
-    status: 'upcoming',
-    description: '四大赛区夏季常规赛与季后赛',
-    teams: 56,
-    matches: 224,
-    prize: '冠军积分 300',
-    progress: 0,
-    time: '6月-9月',
-    poster: null,
-  },
-  {
-    id: 5,
-    name: 'Claude 洲际赛',
-    type: 'international',
-    status: 'upcoming',
-    description: 'LPL vs LCK vs LEC vs LCS 四赛区对抗',
-    teams: 32,
-    matches: 48,
-    prize: '荣誉赛事',
-    progress: 0,
-    time: '7月',
-    poster: claudePoster,
-  },
-  {
-    id: 6,
-    name: 'S 世界赛',
-    type: 'international',
-    status: 'upcoming',
-    description: '全球最高荣誉的年度总决赛',
-    teams: 16,
-    matches: 64,
-    prize: '冠军积分 500',
-    progress: 0,
-    time: '10月-11月',
-    poster: worldsPoster,
-  },
-  {
-    id: 7,
-    name: '上海大师赛',
-    type: 'international',
-    status: 'upcoming',
-    description: '夏季赛冠亚季军参加的邀请赛',
-    teams: 12,
-    matches: 32,
-    prize: '荣誉赛事',
-    progress: 0,
-    time: '9月',
-    poster: shanghaiPoster,
-  },
-  {
-    id: 8,
-    name: 'ICP 洲际对抗赛',
-    type: 'international',
-    status: 'upcoming',
-    description: '四大赛区年度对抗表演赛',
-    teams: 16,
-    matches: 24,
-    prize: '荣誉赛事',
-    progress: 0,
-    time: '8月',
-    poster: null,
-  },
-  {
-    id: 9,
-    name: 'Super 洲际邀请赛',
-    type: 'international',
-    status: 'upcoming',
-    description: '年度积分前16名参加的年终盛典',
-    teams: 16,
-    matches: 32,
-    prize: '冠军积分 100',
-    progress: 0,
-    time: '12月',
-    poster: null,
-  },
-])
+// 刷新赛事列表
+const refreshTournaments = async () => {
+  if (gameState.value?.current_season) {
+    await tournamentStore.loadSeasonTournaments(gameState.value.current_season)
+  }
+}
 
 // 计算属性
 const activeTournaments = computed(() =>
-  tournaments.value.filter(t => t.status === 'active').length
+  tournaments.value.filter(t => getTournamentStatus(t) === 'active').length
 )
 
 const upcomingTournaments = computed(() =>
-  tournaments.value.filter(t => t.status === 'upcoming').length
+  tournaments.value.filter(t => getTournamentStatus(t) === 'upcoming').length
 )
 
 const completedTournaments = computed(() =>
-  tournaments.value.filter(t => t.status === 'completed').length
+  tournaments.value.filter(t => getTournamentStatus(t) === 'completed').length
 )
 
+// 获取赛事状态
+const getTournamentStatus = (tournament: any): 'active' | 'upcoming' | 'completed' => {
+  // TournamentInfo has status field with values like 'Scheduled', 'InProgress', 'Completed'
+  const status = tournament.status?.toLowerCase() ?? ''
+  if (status === 'completed' || tournament.champion_team_id) return 'completed'
+  if (status === 'inprogress' || status === 'in_progress') return 'active'
+  return 'upcoming'
+}
+
+// 获取进度 (simplified since we don't have match_count)
+const getProgress = (tournament: any): number => {
+  // Without match counts in TournamentInfo, we return 50% for active tournaments
+  const status = getTournamentStatus(tournament)
+  if (status === 'completed') return 100
+  if (status === 'active') return 50
+  return 0
+}
+
 // 方法
-const getStatusTagType = (status: string) => {
+const getStatusTagType = (tournament: any) => {
+  const status = getTournamentStatus(tournament)
   switch (status) {
     case 'active': return 'success'
     case 'upcoming': return 'info'
@@ -427,7 +280,8 @@ const getStatusTagType = (status: string) => {
   }
 }
 
-const getStatusText = (status: string) => {
+const getStatusText = (tournament: any) => {
+  const status = getTournamentStatus(tournament)
   switch (status) {
     case 'active': return '进行中'
     case 'upcoming': return '未开始'
@@ -436,7 +290,8 @@ const getStatusText = (status: string) => {
   }
 }
 
-const getTimelineType = (status: string) => {
+const getTimelineType = (tournament: any) => {
+  const status = getTournamentStatus(tournament)
   switch (status) {
     case 'active': return 'success'
     case 'completed': return 'primary'
@@ -444,336 +299,109 @@ const getTimelineType = (status: string) => {
   }
 }
 
-const continueTournament = (tournament: any) => {
-  console.log('Continue tournament:', tournament.name)
+const continueTournament = async (tournament: any) => {
+  await tournamentStore.selectTournament(tournament.id)
   navigateToDetail(tournament)
 }
 
-const viewResults = (tournament: any) => {
-  console.log('View results:', tournament.name)
+const viewResults = async (tournament: any) => {
+  await tournamentStore.selectTournament(tournament.id)
   navigateToDetail(tournament)
 }
 
-const viewDetails = (tournament: any) => {
-  console.log('View details:', tournament.name)
+const viewDetails = async (tournament: any) => {
+  await tournamentStore.selectTournament(tournament.id)
   navigateToDetail(tournament)
 }
 
 const navigateToDetail = (tournament: any) => {
   // 根据赛事类型跳转到不同的详情页
-  switch (tournament.id) {
-    case 1: // 春季赛
-      router.push(`/tournaments/${tournament.id}`)
-      break
-    case 2: // MSI 季中邀请赛
-      router.push('/tournaments/msi')
-      break
-    case 3: // 马德里大师赛
-      router.push(`/tournaments/madrid/${tournament.id}`)
-      break
-    case 4: // 夏季赛
-      router.push(`/tournaments/summer/${tournament.id}`)
-      break
-    case 5: // Claude 洲际赛
-      router.push(`/tournaments/clauch/${tournament.id}`)
-      break
-    case 6: // S 世界赛
-      router.push('/tournaments/worlds')
-      break
-    case 7: // 上海大师赛（与MSI相同赛制）
-      router.push('/tournaments/shanghai')
-      break
-    case 8: // ICP 洲际对抗赛
-      router.push(`/tournaments/icp/${tournament.id}`)
-      break
-    case 9: // Super 洲际年度邀请赛
-      router.push(`/tournaments/super/${tournament.id}`)
-      break
-    default: // 其他赛事
-      router.push(`/tournaments/${tournament.id}`)
+  // 后端返回 PascalCase 格式如 SpringRegular，直接比较原始值
+  const type = tournament.tournament_type || ''
+
+  // 联赛 - 根据类型跳转
+  if (type === 'SpringRegular' || type === 'SpringPlayoffs') {
+    router.push(`/tournaments/spring/${tournament.id}`)
+  } else if (type === 'SummerRegular' || type === 'SummerPlayoffs') {
+    router.push(`/tournaments/summer/${tournament.id}`)
+  } else if (type === 'Msi') {
+    router.push('/tournaments/msi')
+  } else if (type === 'WorldChampionship') {
+    router.push('/tournaments/worlds')
+  } else if (type === 'ShanghaiMasters') {
+    router.push('/tournaments/shanghai')
+  } else if (type === 'MadridMasters') {
+    router.push(`/tournaments/madrid/${tournament.id}`)
+  } else if (type === 'ClaudeIntercontinental') {
+    router.push(`/tournaments/clauch/${tournament.id}`)
+  } else if (type === 'IcpIntercontinental') {
+    router.push(`/tournaments/icp/${tournament.id}`)
+  } else if (type === 'SuperIntercontinental') {
+    router.push(`/tournaments/super/${tournament.id}`)
+  } else {
+    // 默认跳转
+    router.push(`/tournaments/${tournament.id}`)
   }
 }
 </script>
 
 <style scoped>
-.tournaments-view {
-  padding: 0;
-}
+.tournaments-view { padding: 0; }
 
-/* 历史赛季提示 */
-.history-alert {
-  margin-bottom: 16px;
-  border-radius: 8px;
-}
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+.page-header h1 { font-size: 24px; font-weight: 700; color: #303133; margin: 0 0 8px 0; }
+.page-header p { font-size: 14px; color: #909399; margin: 0; }
+.header-actions { display: flex; gap: 12px; }
 
-.history-alert-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-}
+.stats-row { margin-bottom: 20px; }
+.stat-card { border-radius: 12px; }
+.stat-content { display: flex; align-items: center; gap: 16px; padding: 8px 0; }
+.stat-icon { width: 56px; height: 56px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; }
+.stat-icon.blue { background: linear-gradient(135deg, #667eea, #764ba2); }
+.stat-icon.green { background: linear-gradient(135deg, #11998e, #38ef7d); }
+.stat-icon.orange { background: linear-gradient(135deg, #f093fb, #f5576c); }
+.stat-icon.purple { background: linear-gradient(135deg, #4facfe, #00f2fe); }
+.stat-info { flex: 1; }
+.stat-number { font-size: 28px; font-weight: 700; color: #303133; line-height: 1; }
+.stat-label { font-size: 14px; color: #909399; margin-top: 4px; }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 20px;
-}
-
-.page-header h1 {
-  font-size: 24px;
-  font-weight: 700;
-  color: #303133;
-  margin: 0 0 8px 0;
-}
-
-.page-header p {
-  font-size: 14px;
-  color: #909399;
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.stats-row {
-  margin-bottom: 20px;
-}
-
-.stat-card {
-  border-radius: 12px;
-}
-
-.stat-content {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 8px 0;
-}
-
-.stat-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-}
-
-.stat-icon.blue {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-}
-
-.stat-icon.green {
-  background: linear-gradient(135deg, #11998e, #38ef7d);
-}
-
-.stat-icon.orange {
-  background: linear-gradient(135deg, #f093fb, #f5576c);
-}
-
-.stat-icon.purple {
-  background: linear-gradient(135deg, #4facfe, #00f2fe);
-}
-
-.stat-info {
-  flex: 1;
-}
-
-.stat-number {
-  font-size: 28px;
-  font-weight: 700;
-  color: #303133;
-  line-height: 1;
-}
-
-.stat-label {
-  font-size: 14px;
-  color: #909399;
-  margin-top: 4px;
-}
+.loading-card, .empty-card { border-radius: 12px; margin-bottom: 20px; }
 
 /* 赛事卡片 */
-.tournament-card {
-  margin-bottom: 20px;
-  border-radius: 12px;
-  overflow: hidden;
-  transition: all 0.3s ease;
-}
+.tournament-card { margin-bottom: 20px; border-radius: 12px; overflow: hidden; transition: all 0.3s ease; }
+.tournament-card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15); }
+.tournament-card.active { border-left: 4px solid #67c23a; }
+.tournament-card.upcoming { border-left: 4px solid #409eff; }
+.tournament-card.completed { border-left: 4px solid #909399; }
+.tournament-card :deep(.el-card__body) { padding: 0; }
 
-.tournament-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
-}
+.tournament-header { height: 140px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+.tournament-header.league { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+.tournament-header.international { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+.tournament-badge { position: absolute; top: 12px; left: 12px; padding: 4px 12px; background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(4px); border-radius: 20px; color: white; font-size: 12px; font-weight: 500; z-index: 1; }
+.tournament-icon { font-size: 48px; }
 
-.tournament-card.active {
-  border-left: 4px solid #67c23a;
-}
+.tournament-content { padding: 20px; }
+.tournament-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.tournament-name { font-size: 18px; font-weight: 700; color: #303133; margin: 0; }
+.tournament-description { font-size: 14px; color: #909399; margin: 0 0 16px 0; line-height: 1.5; }
 
-.tournament-card.upcoming {
-  border-left: 4px solid #409eff;
-}
+.tournament-info { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
+.info-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #606266; }
+.info-item .el-icon { color: #909399; }
 
-.tournament-card.completed {
-  border-left: 4px solid #909399;
-}
+.tournament-progress { margin-bottom: 16px; }
+.progress-label { display: flex; justify-content: space-between; font-size: 13px; color: #606266; margin-bottom: 8px; }
 
-.tournament-card :deep(.el-card__body) {
-  padding: 0;
-}
-
-.tournament-header {
-  height: 140px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  overflow: hidden;
-}
-
-.tournament-header.league {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-.tournament-header.international {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-}
-
-.tournament-poster {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  position: absolute;
-  top: 0;
-  left: 0;
-}
-
-.tournament-badge {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  padding: 4px 12px;
-  background: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(4px);
-  border-radius: 20px;
-  color: white;
-  font-size: 12px;
-  font-weight: 500;
-  z-index: 1;
-}
-
-.tournament-icon {
-  font-size: 48px;
-}
-
-.tournament-content {
-  padding: 20px;
-}
-
-.tournament-title-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.tournament-name {
-  font-size: 18px;
-  font-weight: 700;
-  color: #303133;
-  margin: 0;
-}
-
-.tournament-description {
-  font-size: 14px;
-  color: #909399;
-  margin: 0 0 16px 0;
-  line-height: 1.5;
-}
-
-.tournament-info {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.info-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #606266;
-}
-
-.info-item .el-icon {
-  color: #909399;
-}
-
-.tournament-progress {
-  margin-bottom: 16px;
-}
-
-.progress-label {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  color: #606266;
-  margin-bottom: 8px;
-}
-
-.tournament-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.tournament-actions .el-button {
-  flex: 1;
-}
+.tournament-actions { display: flex; gap: 8px; }
+.tournament-actions .el-button { flex: 1; }
 
 /* 时间线 */
-.timeline-card {
-  margin-top: 20px;
-  border-radius: 12px;
-}
-
-.timeline-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.timeline-header h2 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #303133;
-  margin: 0;
-}
-
-.timeline-content {
-  padding: 12px 16px;
-  background: #f5f7fa;
-  border-radius: 8px;
-}
-
-.timeline-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.timeline-name {
-  font-weight: 600;
-  color: #303133;
-}
-
-.timeline-desc {
-  font-size: 13px;
-  color: #909399;
-  margin: 0;
-}
+.timeline-card { margin-top: 20px; border-radius: 12px; }
+.timeline-header { display: flex; justify-content: space-between; align-items: center; }
+.timeline-header h2 { font-size: 18px; font-weight: 600; color: #303133; margin: 0; }
+.timeline-content { padding: 12px 16px; background: #f5f7fa; border-radius: 8px; }
+.timeline-title { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.timeline-name { font-weight: 600; color: #303133; }
+.timeline-desc { font-size: 13px; color: #909399; margin: 0; }
 </style>

@@ -8,6 +8,9 @@ pub mod power_engine;
 pub mod financial;
 pub mod honor;
 pub mod event;
+pub mod market_value;
+pub mod condition;
+pub mod traits;
 
 pub use match_simulation::*;
 pub use player_performance::*;
@@ -19,3 +22,6 @@ pub use power_engine::*;
 pub use financial::*;
 pub use honor::*;
 pub use event::*;
+pub use market_value::*;
+pub use condition::*;
+pub use traits::*;

@@ -80,10 +80,13 @@ export const useGameStore = defineStore('game', () => {
 
     try {
       saves.value = await saveApi.getSaves()
+      // 如果能成功加载存档列表，说明数据库已初始化
+      isInitialized.value = true
       console.log(`Loaded ${saves.value.length} saves`)
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load saves'
       console.error('Failed to load saves:', e)
+      // 保持 isInitialized 为 false，表示数据库未初始化
       throw e
     } finally {
       isLoading.value = false
@@ -98,16 +101,16 @@ export const useGameStore = defineStore('game', () => {
     error.value = null
 
     try {
-      const saveId = await saveApi.createSave(name)
-      console.log(`Created save: ${saveId}`)
+      const saveInfo = await saveApi.createSave(name)
+      console.log(`Created save: ${saveInfo.id}`)
 
       // 重新加载存档列表
       await loadSaves()
 
       // 自动加载新创建的存档
-      await loadSave(saveId)
+      await loadSave(saveInfo.id)
 
-      return saveId
+      return saveInfo.id
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to create save'
       console.error('Failed to create save:', e)

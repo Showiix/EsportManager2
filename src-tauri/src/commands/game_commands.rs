@@ -1,11 +1,13 @@
 use crate::commands::save_commands::{AppState, CommandResult};
-use crate::db::{MatchRepository, SaveRepository, StandingRepository, TournamentRepository};
+use crate::db::{MatchRepository, SaveRepository, StandingRepository, TeamRepository, TournamentRepository};
 use crate::engines::SeasonProgressEngine;
 use crate::models::{SeasonPhase, TournamentStatus};
-use crate::services::LeagueService;
+use crate::services::{
+    GameFlowService, LeagueService, PhaseCompleteResult, PhaseInitResult, SeasonSettlementResult,
+};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use chrono::Utc;
 
 /// 游戏状态信息
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,6 +39,7 @@ pub struct MatchInfo {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StandingInfo {
     pub team_id: u64,
+    pub team_name: Option<String>,
     pub rank: Option<u32>,
     pub matches_played: u32,
     pub wins: u32,
@@ -208,6 +211,12 @@ pub async fn get_standings(
         None => return Ok(CommandResult::err("Database not initialized")),
     };
 
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
     let pool = match db.get_pool().await {
         Ok(p) => p,
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
@@ -218,10 +227,23 @@ pub async fn get_standings(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get standings: {}", e))),
     };
 
+    // 获取所有队伍信息以获取队名
+    let teams = match TeamRepository::get_all(&pool, &save_id).await {
+        Ok(t) => t,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get teams: {}", e))),
+    };
+
+    // 创建 team_id -> team_name 映射
+    let team_names: std::collections::HashMap<u64, String> = teams
+        .into_iter()
+        .map(|t| (t.id, t.name))
+        .collect();
+
     let infos: Vec<StandingInfo> = standings
         .into_iter()
         .map(|s| StandingInfo {
             team_id: s.team_id,
+            team_name: team_names.get(&s.team_id).cloned(),
             rank: s.rank,
             matches_played: s.matches_played,
             wins: s.wins,
@@ -400,5 +422,162 @@ fn get_phase_display_name(phase: &SeasonPhase) -> String {
         SeasonPhase::TransferWindow => "转会期".to_string(),
         SeasonPhase::Draft => "选秀大会".to_string(),
         SeasonPhase::SeasonEnd => "赛季结算".to_string(),
+    }
+}
+
+// ==================== 游戏流程命令 ====================
+
+/// 初始化当前阶段 - 创建对应赛事
+#[tauri::command]
+pub async fn initialize_current_phase(
+    state: State<'_, AppState>,
+) -> Result<CommandResult<PhaseInitResult>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let save = match SaveRepository::get_by_id(&pool, &save_id).await {
+        Ok(s) => s,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get save: {}", e))),
+    };
+
+    let game_flow = GameFlowService::new();
+    match game_flow
+        .initialize_phase(&pool, &save_id, save.current_season as u64, save.current_phase)
+        .await
+    {
+        Ok(result) => Ok(CommandResult::ok(result)),
+        Err(e) => Ok(CommandResult::err(format!("Failed to initialize phase: {}", e))),
+    }
+}
+
+/// 完成当前阶段 - 颁发荣誉并准备下一阶段
+#[tauri::command]
+pub async fn complete_current_phase(
+    state: State<'_, AppState>,
+) -> Result<CommandResult<PhaseCompleteResult>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let save = match SaveRepository::get_by_id(&pool, &save_id).await {
+        Ok(s) => s,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get save: {}", e))),
+    };
+
+    let game_flow = GameFlowService::new();
+    match game_flow
+        .complete_phase(&pool, &save_id, save.current_season as u64, save.current_phase)
+        .await
+    {
+        Ok(result) => Ok(CommandResult::ok(result)),
+        Err(e) => Ok(CommandResult::err(format!("Failed to complete phase: {}", e))),
+    }
+}
+
+/// 执行赛季结算 (游戏流程版)
+#[tauri::command]
+pub async fn run_season_settlement(
+    state: State<'_, AppState>,
+) -> Result<CommandResult<SeasonSettlementResult>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let save = match SaveRepository::get_by_id(&pool, &save_id).await {
+        Ok(s) => s,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get save: {}", e))),
+    };
+
+    // 只能在赛季结束阶段执行结算
+    if save.current_phase != SeasonPhase::SeasonEnd {
+        return Ok(CommandResult::err("只能在赛季结算阶段执行此操作"));
+    }
+
+    let game_flow = GameFlowService::new();
+    match game_flow
+        .execute_season_settlement(&pool, &save_id, save.current_season)
+        .await
+    {
+        Ok(result) => Ok(CommandResult::ok(result)),
+        Err(e) => Ok(CommandResult::err(format!("Failed to execute settlement: {}", e))),
+    }
+}
+
+/// 开始新赛季
+#[tauri::command]
+pub async fn start_new_season(
+    state: State<'_, AppState>,
+) -> Result<CommandResult<u32>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let save = match SaveRepository::get_by_id(&pool, &save_id).await {
+        Ok(s) => s,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get save: {}", e))),
+    };
+
+    // 只能在赛季结束阶段开始新赛季
+    if save.current_phase != SeasonPhase::SeasonEnd {
+        return Ok(CommandResult::err("只能在赛季结算阶段开始新赛季"));
+    }
+
+    let game_flow = GameFlowService::new();
+    match game_flow.advance_to_new_season(&pool, &save_id).await {
+        Ok(new_season) => Ok(CommandResult::ok(new_season)),
+        Err(e) => Ok(CommandResult::err(format!("Failed to start new season: {}", e))),
     }
 }

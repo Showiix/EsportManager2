@@ -10,6 +10,8 @@ pub mod financial;
 pub mod save;
 pub mod standings;
 pub mod event;
+pub mod player_stats;
+pub mod tournament_result;
 
 pub use player::*;
 pub use team::*;
@@ -23,3 +25,5 @@ pub use financial::*;
 pub use save::*;
 pub use standings::*;
 pub use event::*;
+pub use player_stats::*;
+pub use tournament_result::*;

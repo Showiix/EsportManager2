@@ -3,13 +3,8 @@ import { defineStore } from 'pinia'
 import { clauchApi } from '@/api'
 import type {
   ClauchBracket,
-  ClauchQualification,
-  ClauchGroupStanding,
-  ClauchMatch,
-  ClauchGroup,
   GenerateClauchRequest,
   SimulateClauchMatchRequest,
-  ClauchEligibilityResponse
 } from '@/types'
 
 export const useClauchStore = defineStore('clauch', () => {

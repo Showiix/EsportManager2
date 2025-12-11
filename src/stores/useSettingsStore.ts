@@ -190,7 +190,7 @@ function mergeSettings(
   for (const key in savedSettings) {
     const category = key as keyof SystemSettings
     if (savedSettings[category] && typeof savedSettings[category] === 'object') {
-      result[category] = { ...defaultSettings[category], ...savedSettings[category] }
+      (result as any)[category] = { ...defaultSettings[category], ...savedSettings[category] }
     }
   }
 

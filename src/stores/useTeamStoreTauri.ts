@@ -106,6 +106,30 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
   }
 
   /**
+   * 加载所有队伍（所有赛区）
+   */
+  const loadAllTeams = async () => {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const rawTeams = await teamApi.getAllTeams()
+      // 格式化战力值为两位小数
+      teams.value = rawTeams.map(team => ({
+        ...team,
+        power_rating: Math.round(team.power_rating * 100) / 100
+      }))
+      console.log(`Loaded ${teams.value.length} teams from all regions`)
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to load all teams'
+      console.error('Failed to load all teams:', e)
+      throw e
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
    * 选择赛区并加载队伍
    */
   const selectRegion = async (regionId: number) => {
@@ -116,7 +140,11 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
       // 获取赛区详情（包含队伍）
       const detail = await queryApi.getRegionDetail(regionId)
       selectedRegion.value = detail.region
-      teams.value = detail.teams
+      // 格式化战力值为两位小数
+      teams.value = detail.teams.map(team => ({
+        ...team,
+        power_rating: Math.round(team.power_rating * 100) / 100
+      }))
       console.log(`Selected region: ${detail.region.name}, ${teams.value.length} teams`)
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load region'
@@ -135,7 +163,12 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
     error.value = null
 
     try {
-      teams.value = await teamApi.getTeamsByRegion(regionId)
+      const rawTeams = await teamApi.getTeamsByRegion(regionId)
+      // 格式化战力值为两位小数
+      teams.value = rawTeams.map(team => ({
+        ...team,
+        power_rating: Math.round(team.power_rating * 100) / 100
+      }))
       console.log(`Loaded ${teams.value.length} teams for region ${regionId}`)
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load teams'
@@ -309,6 +342,7 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
 
     // Actions
     loadRegions,
+    loadAllTeams,
     selectRegion,
     loadTeamsByRegion,
     selectTeam,

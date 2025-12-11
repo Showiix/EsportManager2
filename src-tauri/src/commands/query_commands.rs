@@ -4,7 +4,8 @@ use sqlx::Row;
 use tauri::State;
 
 /// 赛区信息
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+
 pub struct RegionInfo {
     pub id: u64,
     pub code: String,
@@ -14,8 +15,45 @@ pub struct RegionInfo {
     pub is_major: bool,
 }
 
+/// 赛区详情（包含队伍列表）
+#[derive(Debug, Serialize, Deserialize)]
+
+pub struct RegionDetail {
+    pub region: RegionInfo,
+    pub teams: Vec<TeamFullInfo>,
+    pub current_tournament: Option<TournamentInfoSimple>,
+}
+
+/// 队伍完整信息
+#[derive(Debug, Serialize, Deserialize)]
+
+pub struct TeamFullInfo {
+    pub id: u64,
+    pub region_id: u64,
+    pub name: String,
+    pub short_name: Option<String>,
+    pub power_rating: f64,
+    pub total_matches: u32,
+    pub wins: u32,
+    pub win_rate: f64,
+    pub annual_points: i32,
+    pub cross_year_points: i32,
+    pub balance: i64,
+}
+
+/// 赛事简单信息
+#[derive(Debug, Serialize, Deserialize)]
+
+pub struct TournamentInfoSimple {
+    pub id: u64,
+    pub name: String,
+    pub tournament_type: String,
+    pub status: String,
+}
+
 /// 赛事信息
 #[derive(Debug, Serialize, Deserialize)]
+
 pub struct TournamentInfo {
     pub id: u64,
     pub name: String,
@@ -29,6 +67,7 @@ pub struct TournamentInfo {
 
 /// 赛事详细信息
 #[derive(Debug, Serialize, Deserialize)]
+
 pub struct TournamentDetailInfo {
     pub id: u64,
     pub name: String,
@@ -42,6 +81,7 @@ pub struct TournamentDetailInfo {
 
 /// 队伍简要信息
 #[derive(Debug, Serialize, Deserialize)]
+
 pub struct TeamBriefInfo {
     pub id: u64,
     pub name: String,
@@ -51,6 +91,7 @@ pub struct TeamBriefInfo {
 
 /// 赛事阶段信息
 #[derive(Debug, Serialize, Deserialize)]
+
 pub struct QueryStageInfo {
     pub name: String,
     pub total_matches: u32,
@@ -59,6 +100,7 @@ pub struct QueryStageInfo {
 
 /// 赛季信息
 #[derive(Debug, Serialize, Deserialize)]
+
 pub struct SeasonInfo {
     pub season_id: u64,
     pub current_phase: String,
@@ -68,6 +110,7 @@ pub struct SeasonInfo {
 
 /// 赛事简要信息
 #[derive(Debug, Serialize, Deserialize)]
+
 pub struct TournamentBriefInfo {
     pub id: u64,
     pub name: String,
@@ -99,10 +142,10 @@ pub async fn get_all_regions(
 
     let rows = sqlx::query(
         r#"
-        SELECT r.id, r.code, r.name, r.full_name, r.is_major,
-               (SELECT COUNT(*) FROM teams t WHERE t.region_id = r.id AND t.save_id = ?) as team_count
+        SELECT r.id, r.name, r.short_name, r.team_count
         FROM regions r
-        ORDER BY r.is_major DESC, r.id ASC
+        WHERE r.save_id = ?
+        ORDER BY r.id ASC
         "#,
     )
     .bind(&save_id)
@@ -114,11 +157,11 @@ pub async fn get_all_regions(
         .iter()
         .map(|row| RegionInfo {
             id: row.get::<i64, _>("id") as u64,
-            code: row.get("code"),
+            code: row.get("name"),  // 使用 name (如 "LPL") 作为 code
             name: row.get("name"),
-            full_name: row.get("full_name"),
+            full_name: row.get("name"),
             team_count: row.get::<i64, _>("team_count") as u32,
-            is_major: row.get::<i64, _>("is_major") != 0,
+            is_major: true,
         })
         .collect();
 
@@ -130,7 +173,7 @@ pub async fn get_all_regions(
 pub async fn get_region_detail(
     state: State<'_, AppState>,
     region_id: u64,
-) -> Result<CommandResult<RegionInfo>, String> {
+) -> Result<CommandResult<RegionDetail>, String> {
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
         Some(db) => db,
@@ -148,12 +191,12 @@ pub async fn get_region_detail(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
     };
 
-    let row = sqlx::query(
+    // 获取赛区信息
+    let region_row = sqlx::query(
         r#"
-        SELECT r.id, r.code, r.name, r.full_name, r.is_major,
-               (SELECT COUNT(*) FROM teams t WHERE t.region_id = r.id AND t.save_id = ?) as team_count
+        SELECT r.id, r.name, r.short_name, r.team_count
         FROM regions r
-        WHERE r.id = ?
+        WHERE r.save_id = ? AND r.id = ?
         "#,
     )
     .bind(&save_id)
@@ -162,17 +205,61 @@ pub async fn get_region_detail(
     .await
     .map_err(|e| e.to_string())?;
 
-    match row {
-        Some(r) => Ok(CommandResult::ok(RegionInfo {
-            id: r.get::<i64, _>("id") as u64,
-            code: r.get("code"),
-            name: r.get("name"),
-            full_name: r.get("full_name"),
-            team_count: r.get::<i64, _>("team_count") as u32,
-            is_major: r.get::<i64, _>("is_major") != 0,
-        })),
-        None => Ok(CommandResult::err("Region not found")),
-    }
+    let region_row = match region_row {
+        Some(r) => r,
+        None => return Ok(CommandResult::err("Region not found")),
+    };
+
+    let region = RegionInfo {
+        id: region_row.get::<i64, _>("id") as u64,
+        code: region_row.get("name"),  // 使用 name (如 "LPL") 作为 code
+        name: region_row.get("name"),
+        full_name: region_row.get("name"),
+        team_count: region_row.get::<i64, _>("team_count") as u32,
+        is_major: true,
+    };
+
+    // 获取该赛区的队伍
+    let team_rows = sqlx::query(
+        r#"
+        SELECT id, region_id, name, short_name, power_rating,
+               total_matches, wins, win_rate, annual_points, cross_year_points, balance
+        FROM teams
+        WHERE save_id = ? AND region_id = ?
+        ORDER BY power_rating DESC
+        "#,
+    )
+    .bind(&save_id)
+    .bind(region_id as i64)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let teams: Vec<TeamFullInfo> = team_rows
+        .iter()
+        .map(|row| TeamFullInfo {
+            id: row.get::<i64, _>("id") as u64,
+            region_id: row.get::<i64, _>("region_id") as u64,
+            name: row.get("name"),
+            short_name: row.get("short_name"),
+            power_rating: row.get("power_rating"),
+            total_matches: row.get::<i64, _>("total_matches") as u32,
+            wins: row.get::<i64, _>("wins") as u32,
+            win_rate: row.get("win_rate"),
+            annual_points: row.get::<i64, _>("annual_points") as i32,
+            cross_year_points: row.get::<i64, _>("cross_year_points") as i32,
+            balance: row.get("balance"),
+        })
+        .collect();
+
+    // 暂时不获取当前赛事，返回 None
+    let current_tournament: Option<TournamentInfoSimple> = None;
+
+    Ok(CommandResult::ok(RegionDetail {
+        region,
+        teams,
+        current_tournament,
+    }))
 }
 
 /// 获取赛季所有赛事

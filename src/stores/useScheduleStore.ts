@@ -327,7 +327,7 @@ export const useScheduleStore = defineStore('schedule', () => {
             if (regionId) {
               await rankingStore.updateRegionalStandings(
                 regionId,
-                currentCompetition.value.seasonId,
+                currentCompetition.value.seasonId.toString(),
                 competitionType as 'spring' | 'summer'
               )
             }
@@ -412,7 +412,7 @@ export const useScheduleStore = defineStore('schedule', () => {
               if (regionId) {
                 await rankingStore.updateRegionalStandings(
                   regionId,
-                  currentCompetition.value.seasonId,
+                  currentCompetition.value.seasonId.toString(),
                   competitionType as 'spring' | 'summer'
                 )
               }
@@ -434,7 +434,7 @@ export const useScheduleStore = defineStore('schedule', () => {
   }
 
   // 模拟当前轮次的所有赛区比赛
-  async function simulateRegionCurrentRound(regionKey?: string): Promise<SimulationResult> {
+  async function simulateRegionCurrentRound(_regionKey?: string): Promise<SimulationResult> {
     if (isSimulating.value) {
       throw new Error('Simulation already in progress')
     }
@@ -445,7 +445,7 @@ export const useScheduleStore = defineStore('schedule', () => {
       // 调用后端API模拟整轮比赛
       if (currentCompetition.value?.id) {
         const { competitionApi } = await import('@/api')
-        const response = await competitionApi.simulateRound(currentCompetition.value.id)
+        const response = await competitionApi.simulateRound(currentCompetition.value.id.toString())
 
         if (response.data) {
           console.log(`🎮 后端模拟轮次返回数据:`, response.data)
@@ -624,7 +624,7 @@ export const useScheduleStore = defineStore('schedule', () => {
   */
 
   // 单场模拟功能已禁用，始终抛出错误
-  async function simulateSingleMatch(matchId: string): Promise<void> {
+  async function simulateSingleMatch(_matchId: string): Promise<void> {
     throw new Error('单场模拟功能已禁用，请使用"模拟第X轮（所有赛区）"按钮')
   }
 
@@ -746,7 +746,7 @@ export const useScheduleStore = defineStore('schedule', () => {
       // 如果是季后赛、MSI、世界赛更新年度积分排名
       // 注意：洲际赛不计入年度积分，所以不需要触发年度积分更新
       if (['spring', 'summer', 'msi', 'worlds'].includes(competition.type)) {
-        await rankingStore.updateSeasonRankings(competition.seasonId)
+        await rankingStore.updateSeasonRankings(competition.seasonId.toString())
       }
 
       // 洲际赛结束时只更新荣誉殿堂，不更新年度积分排名
@@ -763,7 +763,7 @@ export const useScheduleStore = defineStore('schedule', () => {
     if (!currentCompetition.value) return
 
     try {
-      await rankingStore.refreshAllRankings(currentCompetition.value.seasonId)
+      await rankingStore.refreshAllRankings(currentCompetition.value.seasonId.toString())
     } catch (error) {
       console.error('刷新所有排名失败:', error)
       throw error
@@ -807,7 +807,7 @@ export const useScheduleStore = defineStore('schedule', () => {
               competitionId: String(currentCompetition.value.id),
               seasonId: String(currentCompetition.value.seasonId),
               regionId: region,
-              type: currentCompetition.value.type as 'spring' | 'summer'
+              competitionType: currentCompetition.value.type as 'spring' | 'summer'
             })
 
             if (playoffResult.data) {

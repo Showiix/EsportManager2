@@ -13,8 +13,9 @@
       </div>
       <div class="header-actions">
         <el-select v-model="selectedSeason" placeholder="选择赛季" style="width: 140px">
-          <el-option label="2024赛季" value="2024" />
-          <el-option label="2023赛季" value="2023" />
+          <el-option label="S1赛季" value="S1" />
+          <el-option label="S2赛季" value="S2" />
+          <el-option label="S3赛季" value="S3" />
         </el-select>
         <el-select v-model="selectedRegion" placeholder="全部赛区" style="width: 120px" clearable>
           <el-option label="LPL" value="LPL" />
@@ -26,9 +27,9 @@
           <el-icon><Refresh /></el-icon>
           刷新数据
         </el-button>
-        <el-button type="success" @click="generateMockData" :loading="generating">
-          <el-icon><Plus /></el-icon>
-          生成模拟数据
+        <el-button type="danger" @click="clearAllData">
+          <el-icon><Delete /></el-icon>
+          清空数据
         </el-button>
       </div>
     </div>
@@ -256,21 +257,19 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { DataLine, Refresh, Plus, Trophy, Medal } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { DataLine, Refresh, Trophy, Medal, Delete } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
-import type { PlayerSeasonStats, PlayerPosition, Player } from '@/types/player'
+import type { PlayerPosition } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
-import { PowerEngine } from '@/engines'
 
 const playerStore = usePlayerStore()
 const matchDetailStore = useMatchDetailStore()
 
 // 状态
-const selectedSeason = ref('2024')
+const selectedSeason = ref('S1')
 const selectedRegion = ref('')
-const generating = ref(false)
 
 // 计算属性 - 统计概览
 const overviewStats = computed(() => {
@@ -330,120 +329,24 @@ const refreshData = () => {
   matchDetailStore.loadFromStorage()
 }
 
-// 生成模拟数据
-const generateMockData = async () => {
-  generating.value = true
-
+// 清空所有数据
+const clearAllData = async () => {
   try {
-    // 模拟队伍名称
-    const teamNames = [
-      { id: 'T1', name: 'T1', regionId: 'LCK' },
-      { id: 'GEN', name: 'Gen.G', regionId: 'LCK' },
-      { id: 'HLE', name: 'Hanwha Life', regionId: 'LCK' },
-      { id: 'DK', name: 'Dplus KIA', regionId: 'LCK' },
-      { id: 'BLG', name: 'Bilibili Gaming', regionId: 'LPL' },
-      { id: 'TES', name: 'Top Esports', regionId: 'LPL' },
-      { id: 'JDG', name: 'JD Gaming', regionId: 'LPL' },
-      { id: 'WBG', name: 'Weibo Gaming', regionId: 'LPL' },
-    ]
+    await ElMessageBox.confirm(
+      '确定要清空所有比赛统计数据吗？此操作不可恢复。',
+      '清空数据',
+      {
+        confirmButtonText: '确定清空',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
 
-    const positions: PlayerPosition[] = ['TOP', 'JUG', 'MID', 'ADC', 'SUP']
-    const playerNames: Record<PlayerPosition, string[]> = {
-      TOP: ['Zeus', 'Kiin', 'Bin', '369', 'Breathe', 'Doran', 'Morgan', 'Rich'],
-      JUG: ['Oner', 'Canyon', 'Tarzan', 'Kanavi', 'Peanut', 'Wei', 'Jiejie', 'Xun'],
-      MID: ['Faker', 'Chovy', 'Zeka', 'Knight', 'Rookie', 'Scout', 'Yagao', 'Creme'],
-      ADC: ['Gumayusi', 'Peyz', 'Viper', 'Elk', 'JackeyLove', 'Ruler', 'Light', 'Photic'],
-      SUP: ['Keria', 'Lehends', 'Meiko', 'Ming', 'ON', 'Beryl', 'Missing', 'Crisp']
-    }
-
-    // 为每个队伍生成5名选手
-    const generateTeamPlayers = (teamId: string, teamName: string): Player[] => {
-      return positions.map((pos, idx) => {
-        const names = playerNames[pos]
-        const playerName = names[Math.floor(Math.random() * names.length)]
-        return {
-          id: `${teamId}-${pos}`,
-          gameId: playerName,
-          name: playerName,
-          teamId: teamId,
-          position: pos,
-          regionId: teamId.startsWith('T') || teamId.startsWith('G') || teamId.startsWith('H') || teamId.startsWith('D') ? 'LCK' : 'LPL',
-          ability: 70 + Math.floor(Math.random() * 25),
-          potential: 80 + Math.floor(Math.random() * 15),
-          stability: 60 + Math.floor(Math.random() * 35),
-          condition: Math.floor(Math.random() * 11) - 5,
-          age: 18 + Math.floor(Math.random() * 10),
-          tag: Math.random() > 0.7 ? 'GENIUS' : Math.random() > 0.4 ? 'NORMAL' : 'ORDINARY'
-        } as Player
-      })
-    }
-
-    // 模拟10场比赛
-    for (let i = 0; i < 10; i++) {
-      // 随机选择两个队伍
-      const shuffled = [...teamNames].sort(() => Math.random() - 0.5)
-      const teamA = shuffled[0]
-      const teamB = shuffled[1]
-
-      const teamAPlayers = generateTeamPlayers(teamA.id, teamA.name)
-      const teamBPlayers = generateTeamPlayers(teamB.id, teamB.name)
-
-      // 模拟比赛
-      const matchId = `mock-match-${Date.now()}-${i}`
-      const matchDetail = PowerEngine.simulateMatch(
-        teamA.id,
-        teamA.name,
-        teamAPlayers,
-        teamB.id,
-        teamB.name,
-        teamBPlayers,
-        Math.random() > 0.5 ? 3 : 5 // BO3 或 BO5
-      )
-      matchDetail.matchId = matchId
-
-      // 保存比赛详情
-      matchDetailStore.saveMatchDetail(matchId, matchDetail)
-
-      // 记录选手表现
-      matchDetail.games.forEach(game => {
-        game.teamAPlayers.forEach(perf => {
-          playerStore.recordPerformance(
-            perf.playerId,
-            perf.playerName,
-            teamA.id,
-            perf.position,
-            perf.impactScore,
-            perf.actualAbility,
-            selectedSeason.value,
-            teamA.regionId
-          )
-        })
-        game.teamBPlayers.forEach(perf => {
-          playerStore.recordPerformance(
-            perf.playerId,
-            perf.playerName,
-            teamB.id,
-            perf.position,
-            perf.impactScore,
-            perf.actualAbility,
-            selectedSeason.value,
-            teamB.regionId
-          )
-        })
-      })
-
-      // 添加延迟使UI更流畅
-      await new Promise(resolve => setTimeout(resolve, 100))
-    }
-
-    ElMessage.success('已生成10场模拟比赛数据！')
-    playerStore.saveToStorage()
-    refreshData()
-  } catch (error) {
-    console.error('生成模拟数据失败:', error)
-    ElMessage.error('生成模拟数据失败')
-  } finally {
-    generating.value = false
+    matchDetailStore.clearAll()
+    playerStore.clearAll()
+    ElMessage.success('数据已清空')
+  } catch (e) {
+    // 用户取消
   }
 }
 

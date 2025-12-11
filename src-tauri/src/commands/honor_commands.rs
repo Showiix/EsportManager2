@@ -56,13 +56,18 @@ pub async fn get_honor_hall(
 #[tauri::command]
 pub async fn get_team_honors(
     state: State<'_, AppState>,
-    save_id: String,
     team_id: u64,
 ) -> Result<ApiResponse<Vec<Honor>>, String> {
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
         Some(db) => db,
         None => return Ok(ApiResponse::error("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(ApiResponse::error("No save loaded")),
     };
 
     let pool = match db.get_pool().await {
@@ -80,13 +85,18 @@ pub async fn get_team_honors(
 #[tauri::command]
 pub async fn get_player_honors(
     state: State<'_, AppState>,
-    save_id: String,
     player_id: u64,
 ) -> Result<ApiResponse<Vec<Honor>>, String> {
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
         Some(db) => db,
         None => return Ok(ApiResponse::error("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(ApiResponse::error("No save loaded")),
     };
 
     let pool = match db.get_pool().await {
@@ -311,12 +321,17 @@ pub async fn get_champions_by_type(
 #[tauri::command]
 pub async fn get_all_champions(
     state: State<'_, AppState>,
-    save_id: String,
 ) -> Result<ApiResponse<Vec<Honor>>, String> {
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
         Some(db) => db,
         None => return Ok(ApiResponse::error("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(ApiResponse::error("No save loaded")),
     };
 
     let pool = match db.get_pool().await {
@@ -334,12 +349,17 @@ pub async fn get_all_champions(
 #[tauri::command]
 pub async fn get_all_mvps(
     state: State<'_, AppState>,
-    save_id: String,
 ) -> Result<ApiResponse<Vec<Honor>>, String> {
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
         Some(db) => db,
         None => return Ok(ApiResponse::error("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(ApiResponse::error("No save loaded")),
     };
 
     let pool = match db.get_pool().await {

@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use crate::models::{
-    Honor, HonorHallData, HonorStats, HonorType, PlayerTournamentStats, TournamentHonors,
+use crate::models::honor::{
+    Honor, HonorHallData, HonorStats, HonorType,
 };
+use crate::models::tournament_result::{PlayerTournamentStats, TournamentHonors};
 
 /// 荣誉引擎 - 统一管理所有荣誉记录
 pub struct HonorEngine;
@@ -262,23 +263,26 @@ impl HonorEngine {
             player_performances
         {
             let entry = stats_map.entry(*player_id).or_insert_with(|| {
-                PlayerTournamentStats {
-                    player_id: *player_id,
-                    player_name: player_name.clone(),
-                    team_id: *team_id,
-                    team_name: team_name.clone(),
-                    position: position.clone(),
-                    ..Default::default()
-                }
+                PlayerTournamentStats::new(
+                    String::new(),
+                    0,
+                    0,
+                    String::new(),
+                    *player_id,
+                    player_name.clone(),
+                    *team_id,
+                    team_name.clone(),
+                    position.clone(),
+                )
             });
 
             entry.total_impact += impact;
             entry.games_played += 1;
             if *is_winner {
-                entry.wins += 1;
+                entry.games_won += 1;
             }
             if *is_mvp {
-                entry.mvp_count += 1;
+                entry.game_mvp_count += 1;
             }
         }
 
@@ -627,25 +631,25 @@ mod tests {
         assert_eq!(mvp.player_name, "Faker");
         assert_eq!(mvp.total_impact, 27.0);
         assert_eq!(mvp.games_played, 2);
-        assert_eq!(mvp.wins, 2);
-        assert_eq!(mvp.mvp_count, 1);
+        assert_eq!(mvp.games_won, 2);
+        assert_eq!(mvp.game_mvp_count, 1);
     }
 
     #[test]
     fn test_process_tournament_honors() {
         let engine = HonorEngine::new();
 
-        let mvp_stats = PlayerTournamentStats {
-            player_id: 1,
-            player_name: "Faker".to_string(),
-            team_id: 1,
-            team_name: "T1".to_string(),
-            position: "MID".to_string(),
-            total_impact: 50.0,
-            games_played: 10,
-            wins: 8,
-            mvp_count: 3,
-        };
+        let mvp_stats = PlayerTournamentStats::new(
+            "save1".to_string(),
+            1,
+            100,
+            "worlds".to_string(),
+            1,
+            "Faker".to_string(),
+            1,
+            "T1".to_string(),
+            "MID".to_string(),
+        );
 
         let champion_players = vec![
             (1, "Faker", "MID"),

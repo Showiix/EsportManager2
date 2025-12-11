@@ -119,7 +119,7 @@
               <template #default="{ row }">
                 <div class="team-cell">
                   <div class="team-avatar" :class="row.region.toLowerCase()">
-                    {{ row.name.slice(0, 2) }}
+                    {{ row.short }}
                   </div>
                   <div class="team-info">
                     <div class="team-name">{{ row.name }}</div>
@@ -214,7 +214,7 @@
               <template #default="{ row }">
                 <div class="team-cell">
                   <div class="team-avatar" :class="row.region.toLowerCase()">
-                    {{ row.name.slice(0, 2) }}
+                    {{ row.short }}
                   </div>
                   <div class="team-info">
                     <div class="team-name">{{ row.name }}</div>
@@ -278,7 +278,7 @@
           </div>
           <div class="team-badge">
             <div class="team-avatar large" :class="selectedTeam.region.toLowerCase()">
-              {{ selectedTeam.name.slice(0, 2) }}
+              {{ selectedTeam.short }}
             </div>
             <div class="team-meta">
               <div class="team-name-large">{{ selectedTeam.name }}</div>
@@ -495,7 +495,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   UserFilled,
@@ -512,6 +512,8 @@ import {
   Promotion,
   Star,
 } from '@element-plus/icons-vue'
+import { teamApi, queryApi } from '@/api/tauri'
+import type { Team, Region } from '@/api/tauri'
 
 const router = useRouter()
 
@@ -521,38 +523,73 @@ const selectedRegion = ref('')
 const selectedSeason = ref('S1')
 const pointsDetailVisible = ref(false)
 const selectedTeam = ref<any>(null)
+const loading = ref(false)
 
-// 模拟数据 - 年度积分榜
-const annualRankings = ref([
-  { rank: 1, name: 'T1', region: 'LCK', points: 920, spring: 300, msi: 200, madrid: 8, summer: 320, worlds: 100, shanghai: 16 },
-  { rank: 2, name: 'Gen.G', region: 'LCK', points: 900, spring: 280, msi: 150, madrid: 16, summer: 300, worlds: 170, shanghai: 8 },
-  { rank: 3, name: 'JD Gaming', region: 'LPL', points: 850, spring: 320, msi: 180, madrid: 20, summer: 280, worlds: 70, shanghai: 12 },
-  { rank: 4, name: 'Bilibili Gaming', region: 'LPL', points: 780, spring: 280, msi: 0, madrid: 12, summer: 320, worlds: 180, shanghai: 20 },
-  { rank: 5, name: 'Hanwha Life', region: 'LCK', points: 750, spring: 250, msi: 0, madrid: 6, summer: 280, worlds: 220, shanghai: 6 },
-  { rank: 6, name: 'Top Esports', region: 'LPL', points: 720, spring: 260, msi: 0, madrid: 4, summer: 300, worlds: 160, shanghai: 4 },
-  { rank: 7, name: 'Weibo Gaming', region: 'LPL', points: 680, spring: 220, msi: 120, madrid: 2, summer: 240, worlds: 100, shanghai: 0 },
-  { rank: 8, name: 'G2 Esports', region: 'LEC', points: 650, spring: 300, msi: 100, madrid: 4, summer: 180, worlds: 70, shanghai: 0 },
-  { rank: 9, name: 'Fnatic', region: 'LEC', points: 600, spring: 250, msi: 0, madrid: 2, summer: 280, worlds: 70, shanghai: 0 },
-  { rank: 10, name: 'Cloud9', region: 'LCS', points: 520, spring: 280, msi: 0, madrid: 2, summer: 180, worlds: 60, shanghai: 0 },
-  { rank: 11, name: 'Team Liquid', region: 'LCS', points: 480, spring: 220, msi: 80, madrid: 2, summer: 150, worlds: 30, shanghai: 0 },
-  { rank: 12, name: 'FlyQuest', region: 'LCS', points: 450, spring: 180, msi: 0, madrid: 2, summer: 200, worlds: 70, shanghai: 0 },
-])
+// 赛区映射
+const regionsMap = ref<Map<number, string>>(new Map())
 
-// 模拟数据 - 战力排名榜
-const powerRankings = ref([
-  { rank: 1, name: 'T1', region: 'LCK', power: 90, change: 0 },
-  { rank: 2, name: 'Gen.G', region: 'LCK', power: 89, change: 1 },
-  { rank: 3, name: 'JD Gaming', region: 'LPL', power: 88, change: -1 },
-  { rank: 4, name: 'Bilibili Gaming', region: 'LPL', power: 86, change: 2 },
-  { rank: 5, name: 'Hanwha Life', region: 'LCK', power: 85, change: 0 },
-  { rank: 6, name: 'Top Esports', region: 'LPL', power: 85, change: -2 },
-  { rank: 7, name: 'Weibo Gaming', region: 'LPL', power: 84, change: 1 },
-  { rank: 8, name: 'Dplus KIA', region: 'LCK', power: 83, change: -1 },
-  { rank: 9, name: 'G2 Esports', region: 'LEC', power: 82, change: 0 },
-  { rank: 10, name: 'Fnatic', region: 'LEC', power: 80, change: 2 },
-  { rank: 11, name: 'MAD Lions', region: 'LEC', power: 78, change: -1 },
-  { rank: 12, name: 'Cloud9', region: 'LCS', power: 76, change: 0 },
-])
+// 数据 - 年度积分榜
+const annualRankings = ref<any[]>([])
+
+// 数据 - 战力排名榜
+const powerRankings = ref<any[]>([])
+
+// 加载数据
+onMounted(async () => {
+  loading.value = true
+  try {
+    // 并行加载队伍和赛区数据
+    const [teams, regions] = await Promise.all([
+      teamApi.getAllTeams(),
+      queryApi.getAllRegions(),
+    ])
+
+    // 构建赛区ID到赛区代码的映射
+    regions.forEach((region: Region) => {
+      regionsMap.value.set(region.id, region.code)
+    })
+
+    // 处理年度积分榜数据
+    const annualData = teams
+      .map((team: Team) => ({
+        id: team.id,
+        name: team.name,
+        short: team.short_name || team.name.slice(0, 3),
+        region: regionsMap.value.get(team.region_id) || 'LPL',
+        points: team.annual_points,
+        // 暂时没有详细积分来源，显示总分
+        spring: 0,
+        msi: 0,
+        madrid: 0,
+        summer: 0,
+        worlds: 0,
+        shanghai: 0,
+      }))
+      .sort((a, b) => b.points - a.points)
+      .map((team, index) => ({ ...team, rank: index + 1 }))
+
+    annualRankings.value = annualData
+
+    // 处理战力排名榜数据
+    const powerData = teams
+      .map((team: Team) => ({
+        id: team.id,
+        name: team.name,
+        short: team.short_name || team.name.slice(0, 3),
+        region: regionsMap.value.get(team.region_id) || 'LPL',
+        power: Math.round(team.power_rating),
+        change: 0, // 暂时没有历史数据对比
+      }))
+      .sort((a, b) => b.power - a.power)
+      .map((team, index) => ({ ...team, rank: index + 1 }))
+
+    powerRankings.value = powerData
+  } catch (error) {
+    console.error('Failed to load rankings data:', error)
+  } finally {
+    loading.value = false
+  }
+})
 
 // 计算属性
 const filteredAnnualRankings = computed(() => {
@@ -579,151 +616,20 @@ const averagePower = computed(() => {
   return powerRankings.value.reduce((sum, t) => sum + t.power, 0) / powerRankings.value.length
 })
 
-// 积分详情数据（模拟数据，实际应从store获取）
-const pointsDetailData: Record<string, any> = {
-  'T1': {
-    spring: { total: 300, regular: 0, regularDesc: '', playoffs: 12, playoffsDesc: '冠军' },
-    msi: { total: 200, desc: '冠军 (20分)' },
-    madrid: { total: 8, desc: '殿军 (8分)' },
-    summer: { total: 320, regular: 0, regularDesc: '', playoffs: 12, playoffsDesc: '冠军' },
-    claude: { total: 8, desc: '殿军 (8分)' },
-    worlds: { total: 100, desc: '四强 (8分)' },
-    shanghai: { total: 16, desc: '亚军 (16分)' },
-    icp: { total: 12, desc: '最强赛区参赛队伍 (12分)' },
-    super: { total: 0, desc: '' },
-  },
-  'Gen.G': {
-    spring: { total: 280, regular: 0, regularDesc: '', playoffs: 10, playoffsDesc: '亚军' },
-    msi: { total: 150, desc: '季军 (12分)' },
-    madrid: { total: 16, desc: '亚军 (16分)' },
-    summer: { total: 300, regular: 0, regularDesc: '', playoffs: 10, playoffsDesc: '亚军' },
-    claude: { total: 12, desc: '季军 (12分)' },
-    worlds: { total: 170, desc: '亚军 (16分)' },
-    shanghai: { total: 8, desc: '殿军 (8分)' },
-    icp: { total: 12, desc: '最强赛区参赛队伍 (12分)' },
-    super: { total: 0, desc: '' },
-  },
-  'JD Gaming': {
-    spring: { total: 320, regular: 0, regularDesc: '', playoffs: 12, playoffsDesc: '冠军' },
-    msi: { total: 180, desc: '亚军 (16分)' },
-    madrid: { total: 20, desc: '冠军 (20分)' },
-    summer: { total: 280, regular: 0, regularDesc: '', playoffs: 10, playoffsDesc: '亚军' },
-    claude: { total: 16, desc: '亚军 (16分)' },
-    worlds: { total: 70, desc: '八强 (6分)' },
-    shanghai: { total: 12, desc: '季军 (12分)' },
-    icp: { total: 8, desc: '第二名赛区参赛队伍 (8分)' },
-    super: { total: 0, desc: '' },
-  },
-  'Bilibili Gaming': {
-    spring: { total: 280, regular: 0, regularDesc: '', playoffs: 10, playoffsDesc: '亚军' },
-    msi: { total: 0, desc: '' },
-    madrid: { total: 12, desc: '季军 (12分)' },
-    summer: { total: 320, regular: 0, regularDesc: '', playoffs: 12, playoffsDesc: '冠军' },
-    claude: { total: 20, desc: '冠军 (20分)' },
-    worlds: { total: 180, desc: '冠军 (20分)' },
-    shanghai: { total: 20, desc: '冠军 (20分)' },
-    icp: { total: 8, desc: '第二名赛区参赛队伍 (8分)' },
-    super: { total: 0, desc: '' },
-  },
-  'Hanwha Life': {
-    spring: { total: 250, regular: 0, regularDesc: '', playoffs: 8, playoffsDesc: '季军' },
-    msi: { total: 0, desc: '' },
-    madrid: { total: 6, desc: '半决赛败者 (6分)' },
-    summer: { total: 280, regular: 0, regularDesc: '', playoffs: 10, playoffsDesc: '亚军' },
-    claude: { total: 6, desc: '半决赛败者 (6分)' },
-    worlds: { total: 220, desc: '季军 (12分)' },
-    shanghai: { total: 6, desc: '败者组第二轮 (6分)' },
-    icp: { total: 12, desc: '最强赛区参赛队伍 (12分)' },
-    super: { total: 0, desc: '' },
-  },
-  'Top Esports': {
-    spring: { total: 260, regular: 0, regularDesc: '', playoffs: 8, playoffsDesc: '季军' },
-    msi: { total: 0, desc: '' },
-    madrid: { total: 4, desc: '四分之一决赛败者 (4分)' },
-    summer: { total: 300, regular: 0, regularDesc: '', playoffs: 10, playoffsDesc: '亚军' },
-    claude: { total: 4, desc: '四分之一决赛败者 (4分)' },
-    worlds: { total: 160, desc: '殿军 (8分)' },
-    shanghai: { total: 4, desc: '败者组第一轮 (4分)' },
-    icp: { total: 8, desc: '第二名赛区参赛队伍 (8分)' },
-    super: { total: 0, desc: '' },
-  },
-  'Weibo Gaming': {
-    spring: { total: 220, regular: 0, regularDesc: '', playoffs: 6, playoffsDesc: '第四名' },
-    msi: { total: 120, desc: '殿军 (8分)' },
-    madrid: { total: 2, desc: '首轮败者 (2分)' },
-    summer: { total: 240, regular: 0, regularDesc: '', playoffs: 8, playoffsDesc: '季军' },
-    claude: { total: 2, desc: '首轮败者 (2分)' },
-    worlds: { total: 100, desc: '八强 (6分)' },
-    shanghai: { total: 0, desc: '' },
-    icp: { total: 8, desc: '第二名赛区参赛队伍 (8分)' },
-    super: { total: 0, desc: '' },
-  },
-  'G2 Esports': {
-    spring: { total: 300, regular: 0, regularDesc: '', playoffs: 12, playoffsDesc: '冠军' },
-    msi: { total: 100, desc: '八强 (6分)' },
-    madrid: { total: 4, desc: '四分之一决赛败者 (4分)' },
-    summer: { total: 180, regular: 0, regularDesc: '', playoffs: 6, playoffsDesc: '第四名' },
-    claude: { total: 0, desc: '' },
-    worlds: { total: 70, desc: '小组赛 (4分)' },
-    shanghai: { total: 0, desc: '' },
-    icp: { total: 6, desc: '第三名赛区参赛队伍 (6分)' },
-    super: { total: 0, desc: '' },
-  },
-  'Fnatic': {
-    spring: { total: 250, regular: 0, regularDesc: '', playoffs: 10, playoffsDesc: '亚军' },
-    msi: { total: 0, desc: '' },
-    madrid: { total: 2, desc: '首轮败者 (2分)' },
-    summer: { total: 280, regular: 0, regularDesc: '', playoffs: 12, playoffsDesc: '冠军' },
-    claude: { total: 0, desc: '' },
-    worlds: { total: 70, desc: '小组赛 (4分)' },
-    shanghai: { total: 0, desc: '' },
-    icp: { total: 6, desc: '第三名赛区参赛队伍 (6分)' },
-    super: { total: 0, desc: '' },
-  },
-  'Cloud9': {
-    spring: { total: 280, regular: 0, regularDesc: '', playoffs: 12, playoffsDesc: '冠军' },
-    msi: { total: 0, desc: '' },
-    madrid: { total: 2, desc: '首轮败者 (2分)' },
-    summer: { total: 180, regular: 0, regularDesc: '', playoffs: 6, playoffsDesc: '第四名' },
-    claude: { total: 0, desc: '' },
-    worlds: { total: 60, desc: '小组赛 (4分)' },
-    shanghai: { total: 0, desc: '' },
-    icp: { total: 4, desc: '第四名赛区参赛队伍 (4分)' },
-    super: { total: 0, desc: '' },
-  },
-  'Team Liquid': {
-    spring: { total: 220, regular: 0, regularDesc: '', playoffs: 8, playoffsDesc: '季军' },
-    msi: { total: 80, desc: '八强 (6分)' },
-    madrid: { total: 2, desc: '首轮败者 (2分)' },
-    summer: { total: 150, regular: 0, regularDesc: '', playoffs: 6, playoffsDesc: '第四名' },
-    claude: { total: 0, desc: '' },
-    worlds: { total: 30, desc: '入围赛淘汰 (2分)' },
-    shanghai: { total: 0, desc: '' },
-    icp: { total: 4, desc: '第四名赛区参赛队伍 (4分)' },
-    super: { total: 0, desc: '' },
-  },
-  'FlyQuest': {
-    spring: { total: 180, regular: 0, regularDesc: '', playoffs: 6, playoffsDesc: '第四名' },
-    msi: { total: 0, desc: '' },
-    madrid: { total: 2, desc: '首轮败者 (2分)' },
-    summer: { total: 200, regular: 0, regularDesc: '', playoffs: 8, playoffsDesc: '季军' },
-    claude: { total: 0, desc: '' },
-    worlds: { total: 70, desc: '八强 (6分)' },
-    shanghai: { total: 0, desc: '' },
-    icp: { total: 4, desc: '第四名赛区参赛队伍 (4分)' },
-    super: { total: 0, desc: '' },
-  },
-}
-
-// 获取选中战队的详细积分数据
+// 积分详情数据（从实际团队数据获取）
 const selectedTeamDetail = computed(() => {
   if (!selectedTeam.value) return {}
-  const teamName = selectedTeam.value.name
-  return pointsDetailData[teamName] || {
-    spring: { total: selectedTeam.value.spring || 0, regular: 0, regularDesc: '', playoffs: selectedTeam.value.spring || 0, playoffsDesc: '参赛' },
-    msi: { total: selectedTeam.value.msi || 0, desc: selectedTeam.value.msi > 0 ? '参赛' : '' },
-    summer: { total: selectedTeam.value.summer || 0, regular: 0, regularDesc: '', playoffs: selectedTeam.value.summer || 0, playoffsDesc: '参赛' },
-    worlds: { total: selectedTeam.value.worlds || 0, desc: selectedTeam.value.worlds > 0 ? '参赛' : '' },
+  // 对于新存档，暂时没有详细积分来源
+  return {
+    spring: { total: 0, regular: 0, regularDesc: '', playoffs: 0, playoffsDesc: '暂无数据' },
+    msi: { total: 0, desc: '暂无数据' },
+    madrid: { total: 0, desc: '暂无数据' },
+    summer: { total: 0, regular: 0, regularDesc: '', playoffs: 0, playoffsDesc: '暂无数据' },
+    claude: { total: 0, desc: '暂无数据' },
+    worlds: { total: 0, desc: '暂无数据' },
+    shanghai: { total: 0, desc: '暂无数据' },
+    icp: { total: 0, desc: '暂无数据' },
+    super: { total: 0, desc: '暂无数据' },
   }
 })
 
@@ -735,13 +641,13 @@ const showPointsDetail = (team: any) => {
 
 const goToTeamDetail = () => {
   if (selectedTeam.value) {
-    router.push(`/teams/${selectedTeam.value.rank}`)
+    router.push(`/teams/${selectedTeam.value.id}`)
     pointsDetailVisible.value = false
   }
 }
 
 const viewTeam = (team: any) => {
-  router.push(`/teams/${team.rank}`)
+  router.push(`/teams/${team.id}`)
 }
 
 const getRankTagType = (rank: number) => {

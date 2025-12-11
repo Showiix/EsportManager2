@@ -310,8 +310,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, reactive, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Trophy,
@@ -329,24 +329,31 @@ import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
 import { PowerEngine } from '@/engines/PowerEngine'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
-import type { Player, PlayerPosition } from '@/types/player'
+import { useGameStore } from '@/stores/useGameStore'
+import { internationalApi, matchApi, queryApi } from '@/api/tauri'
+import type { BracketInfo, MatchBracketInfo, GroupStandingInfo, DetailedMatchResult, DetailedGameResult, PlayerGameStats } from '@/api/tauri'
 import type { MatchDetail } from '@/types/matchDetail'
+import type { Player, PlayerPosition } from '@/types/player'
 import type {
   SuperMatch,
   SuperGroup,
   SuperGroupStanding as SuperGroupStandingType,
   SuperBracket,
-  QualifiedTeam,
-  ChallengerStage,
-  ChampionPrepStage,
-  FinalStage
+  QualifiedTeam
 } from '@/types/super'
 
 const router = useRouter()
+const route = useRoute()
+const gameStore = useGameStore()
 
 // Stores
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
+
+// 后端数据
+const tournamentId = ref<number | null>(null)
+const bracketData = ref<BracketInfo | null>(null)
+const groupStandings = ref<GroupStandingInfo[]>([])
 
 // 比赛详情弹窗状态
 const showMatchDetailDialog = ref(false)
@@ -364,161 +371,233 @@ const simulatingFinal = ref(false)
 const simulationProgress = ref(0)
 const activeFighterGroup = ref('A')
 
-// 生成模拟的参赛队伍数据
-const generateQualifiedTeams = () => {
-  const teams: QualifiedTeam[] = [
-    // 传奇组 (1-4名)
-    { teamId: '1', teamName: 'JDG', regionName: 'LPL', annualPoints: 156, globalRank: 1 },
-    { teamId: '2', teamName: 'T1', regionName: 'LCK', annualPoints: 148, globalRank: 2 },
-    { teamId: '3', teamName: 'BLG', regionName: 'LPL', annualPoints: 142, globalRank: 3 },
-    { teamId: '4', teamName: 'GEN', regionName: 'LCK', annualPoints: 138, globalRank: 4 },
-    // 挑战者组 (5-8名)
-    { teamId: '5', teamName: 'G2', regionName: 'LEC', annualPoints: 132, globalRank: 5 },
-    { teamId: '6', teamName: 'TES', regionName: 'LPL', annualPoints: 128, globalRank: 6 },
-    { teamId: '7', teamName: 'DK', regionName: 'LCK', annualPoints: 124, globalRank: 7 },
-    { teamId: '8', teamName: 'C9', regionName: 'LCS', annualPoints: 118, globalRank: 8 },
-    // Fighter组 (9-16名)
-    { teamId: '9', teamName: 'WBG', regionName: 'LPL', annualPoints: 112, globalRank: 9 },
-    { teamId: '10', teamName: 'KT', regionName: 'LCK', annualPoints: 108, globalRank: 10 },
-    { teamId: '11', teamName: 'FNC', regionName: 'LEC', annualPoints: 104, globalRank: 11 },
-    { teamId: '12', teamName: 'TL', regionName: 'LCS', annualPoints: 98, globalRank: 12 },
-    { teamId: '13', teamName: 'LNG', regionName: 'LPL', annualPoints: 94, globalRank: 13 },
-    { teamId: '14', teamName: 'HLE', regionName: 'LCK', annualPoints: 90, globalRank: 14 },
-    { teamId: '15', teamName: 'MAD', regionName: 'LEC', annualPoints: 86, globalRank: 15 },
-    { teamId: '16', teamName: '100T', regionName: 'LCS', annualPoints: 82, globalRank: 16 }
-  ]
+/**
+ * 从后端加载赛事数据
+ */
+const loadTournamentData = async () => {
+  if (!tournamentId.value) return
 
-  return {
-    legendGroup: teams.slice(0, 4),
-    challengerGroup: teams.slice(4, 8),
-    fighterGroup: teams.slice(8, 16)
+  try {
+    // 获取对阵数据
+    bracketData.value = await internationalApi.getTournamentBracket(tournamentId.value)
+
+    // 获取小组积分榜
+    groupStandings.value = await internationalApi.getGroupStandings(tournamentId.value)
+
+    // 转换数据到前端格式
+    convertBracketToSuperFormat()
+  } catch (error) {
+    console.error('加载赛事数据失败:', error)
   }
 }
 
-// 生成Fighter组小组数据
-const generateFighterGroups = (fighterTeams: QualifiedTeam[]): SuperGroup[] => {
-  // 随机分成A、B两组
-  const shuffled = [...fighterTeams].sort(() => Math.random() - 0.5)
-  const groupA = shuffled.slice(0, 4)
-  const groupB = shuffled.slice(4, 8)
+/**
+ * 将后端数据转换为 Super 前端格式
+ */
+const convertBracketToSuperFormat = () => {
+  if (!bracketData.value) return
 
-  const createGroupData = (groupName: string, teams: QualifiedTeam[]): SuperGroup => {
-    const standings: SuperGroupStandingType[] = teams.map((team, i) => ({
-      teamId: team.teamId,
-      teamName: team.teamName,
-      regionName: team.regionName,
-      position: i + 1,
-      matchesPlayed: 0,
-      wins: 0,
-      losses: 0,
-      points: 0,
-      roundsWon: 0,
-      roundsLost: 0,
-      roundDifferential: 0,
-      qualified: false
-    }))
+  // 转换 Fighter 组小组赛数据
+  convertFighterGroupsData()
 
-    // 生成BO3单循环赛程（每队打3场）
-    const matches: SuperMatch[] = []
-    let matchId = 1
+  // 转换各阶段淘汰赛数据
+  convertKnockoutData()
 
-    // 第一轮
-    matches.push({
-      id: `${groupName}-${matchId++}`,
-      teamAId: teams[0].teamId,
-      teamAName: teams[0].teamName,
-      teamARegion: teams[0].regionName,
-      teamBId: teams[3].teamId,
-      teamBName: teams[3].teamName,
-      teamBRegion: teams[3].regionName,
-      status: 'scheduled',
-      bestOf: 3,
-      stage: 'fighter_group',
-      groupName,
-      roundNumber: 1
-    })
-    matches.push({
-      id: `${groupName}-${matchId++}`,
-      teamAId: teams[1].teamId,
-      teamAName: teams[1].teamName,
-      teamARegion: teams[1].regionName,
-      teamBId: teams[2].teamId,
-      teamBName: teams[2].teamName,
-      teamBRegion: teams[2].regionName,
-      status: 'scheduled',
-      bestOf: 3,
-      stage: 'fighter_group',
-      groupName,
-      roundNumber: 1
-    })
+  // 更新状态
+  updateTournamentStatus()
+}
 
-    // 第二轮
-    matches.push({
-      id: `${groupName}-${matchId++}`,
-      teamAId: teams[0].teamId,
-      teamAName: teams[0].teamName,
-      teamARegion: teams[0].regionName,
-      teamBId: teams[1].teamId,
-      teamBName: teams[1].teamName,
-      teamBRegion: teams[1].regionName,
-      status: 'scheduled',
-      bestOf: 3,
-      stage: 'fighter_group',
-      groupName,
-      roundNumber: 2
-    })
-    matches.push({
-      id: `${groupName}-${matchId++}`,
-      teamAId: teams[2].teamId,
-      teamAName: teams[2].teamName,
-      teamARegion: teams[2].regionName,
-      teamBId: teams[3].teamId,
-      teamBName: teams[3].teamName,
-      teamBRegion: teams[3].regionName,
-      status: 'scheduled',
-      bestOf: 3,
-      stage: 'fighter_group',
-      groupName,
-      roundNumber: 2
-    })
+/**
+ * 转换 Fighter 组小组赛数据
+ */
+const convertFighterGroupsData = () => {
+  if (!bracketData.value || groupStandings.value.length === 0) return
 
-    // 第三轮
-    matches.push({
-      id: `${groupName}-${matchId++}`,
-      teamAId: teams[0].teamId,
-      teamAName: teams[0].teamName,
-      teamARegion: teams[0].regionName,
-      teamBId: teams[2].teamId,
-      teamBName: teams[2].teamName,
-      teamBRegion: teams[2].regionName,
-      status: 'scheduled',
-      bestOf: 3,
-      stage: 'fighter_group',
-      groupName,
-      roundNumber: 3
-    })
-    matches.push({
-      id: `${groupName}-${matchId++}`,
-      teamAId: teams[1].teamId,
-      teamAName: teams[1].teamName,
-      teamARegion: teams[1].regionName,
-      teamBId: teams[3].teamId,
-      teamBName: teams[3].teamName,
-      teamBRegion: teams[3].regionName,
-      status: 'scheduled',
-      bestOf: 3,
-      stage: 'fighter_group',
-      groupName,
-      roundNumber: 3
-    })
+  // 获取 Fighter 组的比赛
+  const fighterMatches = bracketData.value.matches.filter(m => m.stage.startsWith('FIGHTER_GROUP'))
 
-    return { groupName, standings, matches }
+  // 按组分类
+  const groupAMatches = fighterMatches.filter(m => m.stage === 'FIGHTER_GROUP_A')
+  const groupBMatches = fighterMatches.filter(m => m.stage === 'FIGHTER_GROUP_B')
+
+  // 获取积分榜
+  const groupAStanding = groupStandings.value.find(g => g.group_name === 'FIGHTER_A')
+  const groupBStanding = groupStandings.value.find(g => g.group_name === 'FIGHTER_B')
+
+  superBracket.fighterGroups = [
+    {
+      groupName: 'A',
+      standings: groupAStanding ? groupAStanding.teams.map((t, i) => ({
+        teamId: String(t.team_id),
+        teamName: t.team_name,
+        regionName: '', // 后端可能没有返回
+        position: i + 1,
+        matchesPlayed: t.wins + t.losses,
+        wins: t.wins,
+        losses: t.losses,
+        points: t.points,
+        roundsWon: t.games_won,
+        roundsLost: t.games_lost,
+        roundDifferential: t.games_won - t.games_lost,
+        qualified: i === 0
+      })) : [],
+      matches: groupAMatches.map(m => convertMatchFormat(m))
+    },
+    {
+      groupName: 'B',
+      standings: groupBStanding ? groupBStanding.teams.map((t, i) => ({
+        teamId: String(t.team_id),
+        teamName: t.team_name,
+        regionName: '',
+        position: i + 1,
+        matchesPlayed: t.wins + t.losses,
+        wins: t.wins,
+        losses: t.losses,
+        points: t.points,
+        roundsWon: t.games_won,
+        roundsLost: t.games_lost,
+        roundDifferential: t.games_won - t.games_lost,
+        qualified: i === 0
+      })) : [],
+      matches: groupBMatches.map(m => convertMatchFormat(m))
+    }
+  ]
+}
+
+/**
+ * 转换淘汰赛数据
+ */
+const convertKnockoutData = () => {
+  if (!bracketData.value) return
+
+  const matches = bracketData.value.matches
+
+  // 挑战者组阶段
+  const positioningMatches = matches.filter(m => m.stage === 'CHALLENGER_POSITIONING')
+  const promotionMatches = matches.filter(m => m.stage === 'CHALLENGER_PROMOTION')
+
+  if (positioningMatches.length > 0 || promotionMatches.length > 0) {
+    superBracket.challengerStage = {
+      positioningMatches: positioningMatches.map(m => convertMatchFormat(m)),
+      promotionMatches: promotionMatches.map(m => convertMatchFormat(m))
+    }
   }
 
-  return [
-    createGroupData('A', groupA),
-    createGroupData('B', groupB)
-  ]
+  // 冠军预备战阶段
+  const winnersMatch = matches.find(m => m.stage === 'CHAMPION_PREP_WINNERS')
+  const losersMatch = matches.find(m => m.stage === 'CHAMPION_PREP_LOSERS')
+  const losersFinal = matches.find(m => m.stage === 'CHAMPION_PREP_LOSERS_FINAL')
+
+  if (winnersMatch || losersMatch || losersFinal) {
+    superBracket.championPrepStage = {
+      winnersMatch: winnersMatch ? convertMatchFormat(winnersMatch) : null,
+      losersMatch: losersMatch ? convertMatchFormat(losersMatch) : null,
+      losersFinal: losersFinal ? convertMatchFormat(losersFinal) : null
+    }
+  }
+
+  // 终极冠军赛阶段
+  const round1Matches = matches.filter(m => m.stage === 'FINAL_ROUND1')
+  const round2Matches = matches.filter(m => m.stage === 'FINAL_ROUND2')
+  const thirdPlaceMatch = matches.find(m => m.stage === 'THIRD_PLACE')
+  const grandFinal = matches.find(m => m.stage === 'GRAND_FINAL')
+
+  if (round1Matches.length > 0 || grandFinal) {
+    superBracket.finalStage = {
+      round1: round1Matches.map(m => convertMatchFormat(m)),
+      round2: round2Matches.map(m => convertMatchFormat(m)),
+      thirdPlaceMatch: thirdPlaceMatch ? convertMatchFormat(thirdPlaceMatch) : null,
+      grandFinal: grandFinal ? convertMatchFormat(grandFinal) : null
+    }
+  }
+
+  // 设置最终排名
+  setFinalStandings()
+}
+
+/**
+ * 转换比赛格式
+ */
+const convertMatchFormat = (m: MatchBracketInfo): SuperMatch => {
+  return {
+    id: String(m.match_id),
+    teamAId: m.home_team?.id ? String(m.home_team.id) : '',
+    teamAName: m.home_team?.name || '待定',
+    teamARegion: m.home_team?.region_code || '',
+    teamBId: m.away_team?.id ? String(m.away_team.id) : '',
+    teamBName: m.away_team?.name || '待定',
+    teamBRegion: m.away_team?.region_code || '',
+    scoreA: m.home_score,
+    scoreB: m.away_score,
+    winnerId: m.winner_id ? String(m.winner_id) : undefined,
+    status: m.status === 'Completed' ? 'completed' : 'scheduled',
+    bestOf: m.format === 'BO5' ? 5 : 3,
+    stage: m.stage as any,
+    matchType: m.stage as any
+  }
+}
+
+/**
+ * 更新赛事状态
+ */
+const updateTournamentStatus = () => {
+  if (!bracketData.value) return
+
+  const matches = bracketData.value.matches
+
+  // 检查各阶段完成状态
+  const fighterMatches = matches.filter(m => m.stage.startsWith('FIGHTER_GROUP'))
+  const fighterComplete = fighterMatches.length > 0 && fighterMatches.every(m => m.status === 'Completed')
+
+  const challengerMatches = matches.filter(m => m.stage.startsWith('CHALLENGER'))
+  const challengerComplete = challengerMatches.length > 0 && challengerMatches.every(m => m.status === 'Completed')
+
+  const championPrepMatches = matches.filter(m => m.stage.startsWith('CHAMPION_PREP'))
+  const championPrepComplete = championPrepMatches.length > 0 && championPrepMatches.every(m => m.status === 'Completed')
+
+  const grandFinal = matches.find(m => m.stage === 'GRAND_FINAL')
+  const tournamentComplete = grandFinal?.status === 'Completed'
+
+  // 设置状态
+  if (tournamentComplete) {
+    superBracket.status = 'completed'
+  } else if (championPrepComplete && superBracket.finalStage) {
+    superBracket.status = 'final_stage'
+  } else if (challengerComplete && superBracket.championPrepStage) {
+    superBracket.status = 'champion_prep_stage'
+  } else if (fighterComplete && superBracket.challengerStage) {
+    superBracket.status = 'challenger_stage'
+  } else if (fighterMatches.length > 0) {
+    superBracket.status = 'fighter_stage'
+  }
+}
+
+/**
+ * 设置最终排名
+ */
+const setFinalStandings = () => {
+  if (!superBracket.finalStage?.grandFinal || superBracket.finalStage.grandFinal.status !== 'completed') return
+
+  const gf = superBracket.finalStage.grandFinal
+  const tp = superBracket.finalStage.thirdPlaceMatch
+
+  if (gf.winnerId === gf.teamAId) {
+    superBracket.champion = { teamId: gf.teamAId!, teamName: gf.teamAName || '', regionName: gf.teamARegion || '', annualPoints: 0, globalRank: 0 }
+    superBracket.runnerUp = { teamId: gf.teamBId!, teamName: gf.teamBName || '', regionName: gf.teamBRegion || '', annualPoints: 0, globalRank: 0 }
+  } else {
+    superBracket.champion = { teamId: gf.teamBId!, teamName: gf.teamBName || '', regionName: gf.teamBRegion || '', annualPoints: 0, globalRank: 0 }
+    superBracket.runnerUp = { teamId: gf.teamAId!, teamName: gf.teamAName || '', regionName: gf.teamARegion || '', annualPoints: 0, globalRank: 0 }
+  }
+
+  if (tp && tp.winnerId) {
+    if (tp.winnerId === tp.teamAId) {
+      superBracket.thirdPlace = { teamId: tp.teamAId!, teamName: tp.teamAName || '', regionName: tp.teamARegion || '', annualPoints: 0, globalRank: 0 }
+      superBracket.fourthPlace = { teamId: tp.teamBId!, teamName: tp.teamBName || '', regionName: tp.teamBRegion || '', annualPoints: 0, globalRank: 0 }
+    } else {
+      superBracket.thirdPlace = { teamId: tp.teamBId!, teamName: tp.teamBName || '', regionName: tp.teamBRegion || '', annualPoints: 0, globalRank: 0 }
+      superBracket.fourthPlace = { teamId: tp.teamAId!, teamName: tp.teamAName || '', regionName: tp.teamARegion || '', annualPoints: 0, globalRank: 0 }
+    }
+  }
 }
 
 // Super洲际赛数据
@@ -615,29 +694,6 @@ const getStatusText = (status: string) => {
 }
 
 /**
- * 生成队伍选手数据
- */
-const generateTeamPlayers = (teamId: string, teamName: string, regionName: string = 'Unknown'): Player[] => {
-  const positions: PlayerPosition[] = ['TOP', 'JUG', 'MID', 'ADC', 'SUP']
-  return positions.map((pos, idx) => ({
-    id: `${teamId}-${pos}`,
-    gameId: `Player${idx + 1}`,
-    name: `Player${idx + 1}`,
-    teamId: teamId,
-    teamName: teamName,
-    position: pos,
-    regionId: regionName,
-    regionName: regionName,
-    ability: 70 + Math.floor(Math.random() * 25),
-    potential: 80 + Math.floor(Math.random() * 15),
-    stability: 60 + Math.floor(Math.random() * 35),
-    condition: Math.floor(Math.random() * 11) - 5,
-    age: 18 + Math.floor(Math.random() * 10),
-    tag: Math.random() > 0.7 ? 'GENIUS' : Math.random() > 0.4 ? 'NORMAL' : 'ORDINARY'
-  } as Player))
-}
-
-/**
  * 查看比赛详情
  */
 const viewMatchDetails = (match: SuperMatch) => {
@@ -677,13 +733,22 @@ const handleStartTournament = async () => {
 
     starting.value = true
 
-    await new Promise(resolve => setTimeout(resolve, 500))
+    // TODO: 从后端获取年度积分排名队伍
+    // 目前使用示例数据，实际应从后端获取
+    const legendaryTeamIds = [1, 2, 3, 4]      // 传奇组: 年度积分 1-4 名
+    const challengerTeamIds = [5, 6, 7, 8]      // 挑战者组: 年度积分 5-8 名
+    const fighterTeamIds = [9, 10, 11, 12, 13, 14, 15, 16]  // Fighter组: 年度积分 9-16 名
 
-    // 生成参赛队伍
-    superBracket.qualifiedTeams = generateQualifiedTeams()
+    // 调用后端创建赛事
+    const id = await internationalApi.createSuperTournament(
+      legendaryTeamIds,
+      challengerTeamIds,
+      fighterTeamIds
+    )
+    tournamentId.value = id
 
-    // 生成Fighter组预选赛
-    superBracket.fighterGroups = generateFighterGroups(superBracket.qualifiedTeams.fighterGroup)
+    // 加载赛事数据
+    await loadTournamentData()
 
     superBracket.status = 'fighter_stage'
     ElMessage.success('Super洲际赛已开始！Fighter组预选赛抽签完成。')
@@ -701,108 +766,94 @@ const handleStartTournament = async () => {
  * 模拟单场比赛
  */
 const handleSimulateMatch = async (match: SuperMatch) => {
-  // 生成选手数据
-  const teamAPlayers = generateTeamPlayers(match.teamAId!, match.teamAName || '队伍A', match.teamARegion || 'Unknown')
-  const teamBPlayers = generateTeamPlayers(match.teamBId!, match.teamBName || '队伍B', match.teamBRegion || 'Unknown')
+  try {
+    const matchId = Number(match.id)
+    const result = await matchApi.simulateMatchDetailed(matchId)
 
-  // 使用 PowerEngine 模拟比赛
-  const matchDetail = PowerEngine.simulateMatch(
-    match.teamAId!,
-    match.teamAName || '队伍A',
-    teamAPlayers,
-    match.teamBId!,
-    match.teamBName || '队伍B',
-    teamBPlayers,
-    match.bestOf || 3
-  )
+    // 更新比赛状态
+    match.scoreA = result.home_score
+    match.scoreB = result.away_score
+    match.winnerId = String(result.winner_id)
+    match.status = 'completed'
+    match.completedAt = new Date()
 
-  // 更新比赛状态
-  match.scoreA = matchDetail.finalScoreA
-  match.scoreB = matchDetail.finalScoreB
-  match.winnerId = matchDetail.winnerId
-  match.status = 'completed'
-  match.completedAt = new Date()
-
-  // 保存比赛详情
-  matchDetail.matchId = match.id
-  matchDetail.tournamentType = 'super'
-  matchDetail.seasonId = String(superBracket.seasonYear)
-  matchDetailStore.saveMatchDetail(match.id, matchDetail)
-
-  // 记录选手表现
-  matchDetail.games.forEach(game => {
-    game.teamAPlayers.forEach(perf => {
-      playerStore.recordPerformance(
-        perf.playerId,
-        String(superBracket.seasonYear),
-        perf.impactScore
-      )
+    // 转换选手表现数据
+    const convertPlayerPerformance = (p: PlayerGameStats, teamId: string) => ({
+      playerId: String(p.player_id),
+      playerName: p.player_name,
+      position: p.position as PlayerPosition,
+      teamId: teamId,
+      baseAbility: p.base_ability,
+      conditionBonus: p.condition_bonus,
+      stabilityNoise: p.stability_noise,
+      actualAbility: p.actual_ability,
+      impactScore: p.impact_score
     })
-    game.teamBPlayers.forEach(perf => {
-      playerStore.recordPerformance(
-        perf.playerId,
-        String(superBracket.seasonYear),
-        perf.impactScore
-      )
-    })
-  })
 
-  // 更新积分榜（如果是Fighter组比赛）
-  if (match.stage === 'fighter_group' && match.groupName) {
-    updateFighterGroupStandings(match)
-  }
-
-  ElMessage.success(`比赛完成: ${match.teamAName} ${matchDetail.finalScoreA} - ${matchDetail.finalScoreB} ${match.teamBName}`)
-
-  // 检查是否所有比赛都完成了
-  if (superBracket.status === 'final_stage') {
-    checkFinalCompletion()
-  }
-}
-
-/**
- * 更新Fighter组积分榜
- */
-const updateFighterGroupStandings = (match: SuperMatch) => {
-  const group = superBracket.fighterGroups.find(g => g.groupName === match.groupName)
-  if (!group) return
-
-  const teamA = group.standings.find(s => String(s.teamId) === String(match.teamAId))
-  const teamB = group.standings.find(s => String(s.teamId) === String(match.teamBId))
-
-  if (teamA && teamB) {
-    teamA.matchesPlayed++
-    teamB.matchesPlayed++
-    teamA.roundsWon += match.scoreA || 0
-    teamA.roundsLost += match.scoreB || 0
-    teamB.roundsWon += match.scoreB || 0
-    teamB.roundsLost += match.scoreA || 0
-    teamA.roundDifferential = teamA.roundsWon - teamA.roundsLost
-    teamB.roundDifferential = teamB.roundsWon - teamB.roundsLost
-
-    if (match.winnerId === match.teamAId) {
-      teamA.wins++
-      teamB.losses++
-      teamA.points += match.scoreA === 2 && match.scoreB === 0 ? 3 : 2
-      teamB.points += match.scoreB === 1 ? 1 : 0
-    } else {
-      teamB.wins++
-      teamA.losses++
-      teamB.points += match.scoreB === 2 && match.scoreA === 0 ? 3 : 2
-      teamA.points += match.scoreA === 1 ? 1 : 0
+    // 构建比赛详情
+    const matchDetail: MatchDetail = {
+      matchId: match.id,
+      tournamentId: String(tournamentId.value),
+      tournamentType: 'super',
+      seasonId: String(superBracket.seasonYear),
+      teamAId: match.teamAId || '',
+      teamAName: match.teamAName || '',
+      teamBId: match.teamBId || '',
+      teamBName: match.teamBName || '',
+      finalScoreA: result.home_score,
+      finalScoreB: result.away_score,
+      winnerId: String(result.winner_id),
+      bestOf: match.bestOf || 5,
+      games: result.games.map((game: DetailedGameResult) => ({
+        gameNumber: game.game_number,
+        winnerId: String(game.winner_id),
+        duration: game.duration_minutes,
+        teamAPerformance: game.home_performance,
+        teamBPerformance: game.away_performance,
+        teamAPlayers: game.home_players.map(p => convertPlayerPerformance(p, match.teamAId || '')),
+        teamBPlayers: game.away_players.map(p => convertPlayerPerformance(p, match.teamBId || '')),
+        mvp: {
+          playerId: String(game.game_mvp.player_id),
+          playerName: game.game_mvp.player_name,
+          teamId: String(game.game_mvp.team_id),
+          position: game.game_mvp.position as PlayerPosition,
+          mvpScore: game.game_mvp.mvp_score
+        }
+      })),
+      matchMvp: result.match_mvp ? {
+        playerId: String(result.match_mvp.player_id),
+        playerName: result.match_mvp.player_name,
+        teamId: String(result.match_mvp.team_id),
+        position: result.match_mvp.position as PlayerPosition,
+        mvpScore: result.match_mvp.mvp_score
+      } : undefined,
+      completedAt: new Date()
     }
 
-    // 重新排序并更新位置
-    group.standings.sort((a, b) => {
-      if (b.points !== a.points) return b.points - a.points
-      if (b.roundDifferential !== a.roundDifferential) return b.roundDifferential - a.roundDifferential
-      return b.wins - a.wins
-    })
+    // 保存比赛详情
+    matchDetailStore.saveMatchDetail(match.id, matchDetail)
 
-    group.standings.forEach((s, i) => {
-      s.position = i + 1
-      s.qualified = i === 0
-    })
+    // 调用后端推进对阵 (如果是淘汰赛)
+    if (tournamentId.value && result.winner_id) {
+      try {
+        await internationalApi.advanceBracket(tournamentId.value, matchId, result.winner_id)
+      } catch (e) {
+        // 可能不是淘汰赛，忽略错误
+      }
+    }
+
+    // 重新加载数据
+    await loadTournamentData()
+
+    ElMessage.success(`比赛完成: ${match.teamAName} ${result.home_score} - ${result.away_score} ${match.teamBName}`)
+
+    // 检查是否所有比赛都完成了
+    if (superBracket.status === 'final_stage') {
+      checkFinalCompletion()
+    }
+  } catch (error) {
+    console.error('模拟比赛失败:', error)
+    ElMessage.error('模拟比赛失败')
   }
 }
 
@@ -824,18 +875,30 @@ const batchSimulateFighterStage = async () => {
     simulatingFighter.value = true
     simulationProgress.value = 0
 
-    const allMatches = superBracket.fighterGroups.flatMap(g => g.matches)
-    const uncompletedMatches = allMatches.filter(m => m.status !== 'completed')
+    // 从后端获取未完成的 Fighter 组比赛
+    const fighterMatches = bracketData.value?.matches.filter(
+      m => m.stage.startsWith('FIGHTER_GROUP') && m.status !== 'Completed'
+    ) || []
 
-    for (let i = 0; i < uncompletedMatches.length; i++) {
-      const match = uncompletedMatches[i]
-      await simulateMatch(match)
-      if (match.stage === 'fighter_group' && match.groupName) {
-        updateFighterGroupStandings(match)
+    for (let i = 0; i < fighterMatches.length; i++) {
+      const match = fighterMatches[i]
+      const result = await matchApi.simulateMatchDetailed(match.match_id)
+
+      // 推进对阵
+      if (tournamentId.value && result.winner_id) {
+        try {
+          await internationalApi.advanceBracket(tournamentId.value, match.match_id, result.winner_id)
+        } catch (e) {
+          // 忽略
+        }
       }
-      simulationProgress.value = Math.floor(((i + 1) / uncompletedMatches.length) * 100)
+
+      simulationProgress.value = Math.floor(((i + 1) / fighterMatches.length) * 100)
       await new Promise(resolve => setTimeout(resolve, 100))
     }
+
+    // 重新加载数据
+    await loadTournamentData()
 
     ElMessage.success('Fighter组预选赛模拟完成！现在可以生成第二阶段。')
   } catch (error: any) {
@@ -853,81 +916,22 @@ const batchSimulateFighterStage = async () => {
  * 生成第二阶段（挑战者组）
  */
 const handleGenerateChallengerStage = async () => {
+  if (!tournamentId.value) return
+
   generatingChallenger.value = true
 
   try {
-    await new Promise(resolve => setTimeout(resolve, 500))
+    // 调用后端生成挑战者组阶段
+    await internationalApi.generateKnockoutBracket(tournamentId.value)
 
-    // 获取Fighter组两个小组的第一名
-    const fighterWinners = superBracket.fighterGroups.map(group => {
-      const sorted = [...group.standings].sort((a, b) => b.points - a.points)
-      return sorted[0]
-    })
-
-    // 获取挑战者组队伍
-    const challengers = superBracket.qualifiedTeams.challengerGroup
-
-    // 生成定位赛（5vs8, 6vs7）
-    const positioningMatches: SuperMatch[] = [
-      {
-        id: 'pos-1',
-        teamAId: challengers[0].teamId,
-        teamAName: challengers[0].teamName,
-        teamARegion: challengers[0].regionName,
-        teamBId: challengers[3].teamId,
-        teamBName: challengers[3].teamName,
-        teamBRegion: challengers[3].regionName,
-        status: 'scheduled',
-        bestOf: 5,
-        matchType: 'positioning'
-      },
-      {
-        id: 'pos-2',
-        teamAId: challengers[1].teamId,
-        teamAName: challengers[1].teamName,
-        teamARegion: challengers[1].regionName,
-        teamBId: challengers[2].teamId,
-        teamBName: challengers[2].teamName,
-        teamBRegion: challengers[2].regionName,
-        status: 'scheduled',
-        bestOf: 5,
-        matchType: 'positioning'
-      }
-    ]
-
-    // 生成晋级赛（Fighter胜者 vs 定位赛败者，待定）
-    const promotionMatches: SuperMatch[] = [
-      {
-        id: 'promo-1',
-        teamAId: fighterWinners[0].teamId,
-        teamAName: fighterWinners[0].teamName,
-        teamARegion: fighterWinners[0].regionName,
-        teamBId: '',
-        teamBName: '待定 (定位赛1败者)',
-        status: 'scheduled',
-        bestOf: 5,
-        matchType: 'promotion'
-      },
-      {
-        id: 'promo-2',
-        teamAId: fighterWinners[1].teamId,
-        teamAName: fighterWinners[1].teamName,
-        teamARegion: fighterWinners[1].regionName,
-        teamBId: '',
-        teamBName: '待定 (定位赛2败者)',
-        status: 'scheduled',
-        bestOf: 5,
-        matchType: 'promotion'
-      }
-    ]
-
-    superBracket.challengerStage = {
-      positioningMatches,
-      promotionMatches
-    }
+    // 重新加载数据
+    await loadTournamentData()
 
     superBracket.status = 'challenger_stage'
     ElMessage.success('第二阶段生成成功！')
+  } catch (error) {
+    console.error('生成第二阶段失败:', error)
+    ElMessage.error('生成第二阶段失败')
   } finally {
     generatingChallenger.value = false
   }
@@ -937,7 +941,7 @@ const handleGenerateChallengerStage = async () => {
  * 批量模拟挑战者组阶段
  */
 const batchSimulateChallengerStage = async () => {
-  if (!superBracket.challengerStage) return
+  if (!tournamentId.value) return
 
   try {
     await ElMessageBox.confirm(
@@ -952,41 +956,28 @@ const batchSimulateChallengerStage = async () => {
 
     simulatingChallenger.value = true
 
-    // 先模拟定位赛
-    for (const match of superBracket.challengerStage.positioningMatches) {
-      if (match.status !== 'completed') {
-        await simulateMatch(match)
-        await new Promise(resolve => setTimeout(resolve, 200))
+    // 获取挑战者组阶段的比赛
+    const challengerMatches = bracketData.value?.matches.filter(
+      m => m.stage.startsWith('CHALLENGER') && m.status !== 'Completed'
+    ) || []
+
+    for (const match of challengerMatches) {
+      const result = await matchApi.simulateMatchDetailed(match.match_id)
+
+      // 推进对阵
+      if (tournamentId.value && result.winner_id) {
+        try {
+          await internationalApi.advanceBracket(tournamentId.value, match.match_id, result.winner_id)
+        } catch (e) {
+          // 忽略
+        }
       }
+
+      await new Promise(resolve => setTimeout(resolve, 200))
     }
 
-    // 更新晋级赛的对阵（定位赛败者）
-    const pos1 = superBracket.challengerStage.positioningMatches[0]
-    const pos2 = superBracket.challengerStage.positioningMatches[1]
-
-    const loser1 = pos1.winnerId === pos1.teamAId
-      ? { id: pos1.teamBId, name: pos1.teamBName, region: pos1.teamBRegion }
-      : { id: pos1.teamAId, name: pos1.teamAName, region: pos1.teamARegion }
-
-    const loser2 = pos2.winnerId === pos2.teamAId
-      ? { id: pos2.teamBId, name: pos2.teamBName, region: pos2.teamBRegion }
-      : { id: pos2.teamAId, name: pos2.teamAName, region: pos2.teamARegion }
-
-    superBracket.challengerStage.promotionMatches[0].teamBId = loser1.id
-    superBracket.challengerStage.promotionMatches[0].teamBName = loser1.name
-    superBracket.challengerStage.promotionMatches[0].teamBRegion = loser1.region
-
-    superBracket.challengerStage.promotionMatches[1].teamBId = loser2.id
-    superBracket.challengerStage.promotionMatches[1].teamBName = loser2.name
-    superBracket.challengerStage.promotionMatches[1].teamBRegion = loser2.region
-
-    // 模拟晋级赛
-    for (const match of superBracket.challengerStage.promotionMatches) {
-      if (match.status !== 'completed') {
-        await simulateMatch(match)
-        await new Promise(resolve => setTimeout(resolve, 200))
-      }
-    }
+    // 重新加载数据
+    await loadTournamentData()
 
     ElMessage.success('挑战者组阶段模拟完成！现在可以生成第三阶段。')
   } catch (error: any) {
@@ -1391,15 +1382,17 @@ const batchSimulateFinalStage = async () => {
  */
 const simulateMatch = async (match: SuperMatch) => {
   // 生成选手数据
-  const teamAPlayers = generateTeamPlayers(match.teamAId!, match.teamAName || '队伍A', match.teamARegion || 'Unknown')
-  const teamBPlayers = generateTeamPlayers(match.teamBId!, match.teamBName || '队伍B', match.teamBRegion || 'Unknown')
+  const teamAId = String(match.teamAId || '')
+  const teamBId = String(match.teamBId || '')
+  const teamAPlayers = generateTeamPlayers(teamAId, match.teamAName || '队伍A', match.teamARegion || 'Unknown')
+  const teamBPlayers = generateTeamPlayers(teamBId, match.teamBName || '队伍B', match.teamBRegion || 'Unknown')
 
   // 使用 PowerEngine 模拟比赛
   const matchDetail = PowerEngine.simulateMatch(
-    match.teamAId!,
+    teamAId,
     match.teamAName || '队伍A',
     teamAPlayers,
-    match.teamBId!,
+    teamBId,
     match.teamBName || '队伍B',
     teamBPlayers,
     match.bestOf || 5
@@ -1423,15 +1416,25 @@ const simulateMatch = async (match: SuperMatch) => {
     game.teamAPlayers.forEach(perf => {
       playerStore.recordPerformance(
         perf.playerId,
+        perf.playerName,
+        perf.teamId,
+        perf.position,
+        perf.impactScore,
+        perf.actualAbility,
         String(superBracket.seasonYear),
-        perf.impactScore
+        'INTL'
       )
     })
     game.teamBPlayers.forEach(perf => {
       playerStore.recordPerformance(
         perf.playerId,
+        perf.playerName,
+        perf.teamId,
+        perf.position,
+        perf.impactScore,
+        perf.actualAbility,
         String(superBracket.seasonYear),
-        perf.impactScore
+        'INTL'
       )
     })
   })
@@ -1481,6 +1484,40 @@ const showChampionCelebration = (championName: string) => {
     }
   )
 }
+
+/**
+ * 初始化Super赛事数据
+ */
+const initSuperData = async () => {
+  try {
+    // 获取当前存档和赛季
+    const currentSave = gameStore.currentSave
+    if (!currentSave) {
+      console.warn('未找到当前存档')
+      return
+    }
+
+    const seasonId = currentSave.currentSeason || 1
+
+    // 获取 Super 赛事ID (类型为 'SuperCup')
+    const tournaments = await internationalApi.getTournamentsByType('SuperCup', seasonId)
+    if (tournaments && tournaments.length > 0) {
+      tournamentId.value = tournaments[0].id
+
+      // 加载赛事数据
+      await loadTournamentData()
+    } else {
+      console.warn('未找到 Super 赛事')
+    }
+  } catch (error) {
+    console.error('初始化 Super 数据失败:', error)
+  }
+}
+
+// 生命周期钩子
+onMounted(() => {
+  initSuperData()
+})
 </script>
 
 <style scoped lang="scss">

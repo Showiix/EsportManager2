@@ -190,7 +190,7 @@ export class PowerEngine {
       mvpPlayerName: analysis.mvp?.playerName,
       mvpTeamId: analysis.mvp?.teamId,
       mvpTotalImpact: analysis.mvp?.totalImpact,
-      keyPlayer: analysis.keyPlayer,
+      keyPlayer: analysis.keyPlayer ?? undefined,
       playedAt: new Date()
     }
   }
@@ -200,7 +200,7 @@ export class PowerEngine {
    */
   private static analyzeMatch(
     games: GameDetail[],
-    teamAId: string
+    _teamAId: string
   ): {
     mvp: { playerId: string; playerName: string; teamId: string; totalImpact: number } | null
     keyPlayer: {

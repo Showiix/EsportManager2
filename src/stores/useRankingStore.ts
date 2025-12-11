@@ -7,7 +7,6 @@ import { pointsApi } from '@/api'
 import type {
   Team,
   Competition,
-  CompetitionType
 } from '@/types'
 
 // 积分排名相关类型定义

@@ -9,6 +9,7 @@ pub mod query_commands;
 pub mod international_commands;
 pub mod match_commands;
 pub mod event_commands;
+pub mod stats_commands;
 
 pub use save_commands::*;
 pub use team_commands::*;
@@ -21,6 +22,7 @@ pub use query_commands::*;
 pub use international_commands::*;
 pub use match_commands::*;
 pub use event_commands::*;
+pub use stats_commands::*;
 
 use serde::{Deserialize, Serialize};
 

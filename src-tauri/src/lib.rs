@@ -9,10 +9,13 @@ use commands::{
     // 存档命令
     init_database, create_save, get_saves, load_save, delete_save, get_current_save_id,
     // 队伍命令
-    get_teams_by_region, get_team, get_team_roster, get_team_starters, get_player, set_starter,
+    get_teams_by_region, get_all_teams, get_team, get_team_roster, get_team_starters, get_player, set_starter,
+    update_player_market_value, update_all_market_values,
     // 游戏命令
     get_game_state, advance_phase, get_tournament_matches, get_standings,
     simulate_next_match, simulate_all_matches,
+    // 游戏流程命令
+    initialize_current_phase, complete_current_phase, run_season_settlement, start_new_season,
     // 荣誉命令
     get_honor_hall, get_team_honors, get_player_honors, get_season_honors, get_tournament_honors,
     get_team_champion_count, get_player_champion_count, get_player_mvp_count,
@@ -24,6 +27,9 @@ use commands::{
     // 转会命令
     get_transfer_market, get_free_agents, list_player_for_transfer, cancel_transfer_listing,
     buy_listed_player, sign_free_agent, get_transfer_history,
+    // AI 转会窗口命令
+    start_transfer_window, execute_transfer_round, fast_forward_transfers,
+    get_transfer_window_status, get_transfer_events,
     // 财务命令
     get_team_finance_summary, get_all_teams_finance, get_team_transactions,
     record_transaction, get_season_finance_report, pay_team_salaries,
@@ -34,14 +40,21 @@ use commands::{
     search_teams, search_players,
     // 国际赛事命令
     create_msi_tournament, create_worlds_tournament, create_masters_tournament,
-    create_super_tournament, get_tournament_bracket, advance_bracket,
+    create_super_tournament, create_icp_tournament, get_tournament_bracket, advance_bracket,
     get_swiss_round_status, generate_next_swiss_round,
+    get_group_standings, generate_knockout_bracket,
     // 比赛模拟命令
     simulate_match_detailed, get_player_season_stats, get_match_prediction,
     // 事件系统命令
     preview_season_settlement, execute_season_settlement, get_season_events,
     get_player_events, get_events_by_type, update_players_age,
     get_retiring_candidates, get_expiring_contracts,
+    // 数据中心命令
+    record_player_performance, batch_record_player_performance, record_championship,
+    get_season_impact_ranking, get_position_ranking, get_player_stats,
+    get_team_player_stats, clear_season_stats,
+    // 选手特性和状态命令
+    get_player_traits, get_player_condition, get_player_full_detail,
     // 应用状态
     AppState,
 };
@@ -74,11 +87,14 @@ pub fn run() {
             get_current_save_id,
             // 队伍命令
             get_teams_by_region,
+            get_all_teams,
             get_team,
             get_team_roster,
             get_team_starters,
             get_player,
             set_starter,
+            update_player_market_value,
+            update_all_market_values,
             // 游戏命令
             get_game_state,
             advance_phase,
@@ -86,6 +102,11 @@ pub fn run() {
             get_standings,
             simulate_next_match,
             simulate_all_matches,
+            // 游戏流程命令
+            initialize_current_phase,
+            complete_current_phase,
+            run_season_settlement,
+            start_new_season,
             // 荣誉命令
             get_honor_hall,
             get_team_honors,
@@ -115,6 +136,12 @@ pub fn run() {
             buy_listed_player,
             sign_free_agent,
             get_transfer_history,
+            // AI 转会窗口命令
+            start_transfer_window,
+            execute_transfer_round,
+            fast_forward_transfers,
+            get_transfer_window_status,
+            get_transfer_events,
             // 财务命令
             get_team_finance_summary,
             get_all_teams_finance,
@@ -140,10 +167,13 @@ pub fn run() {
             create_worlds_tournament,
             create_masters_tournament,
             create_super_tournament,
+            create_icp_tournament,
             get_tournament_bracket,
             advance_bracket,
             get_swiss_round_status,
             generate_next_swiss_round,
+            get_group_standings,
+            generate_knockout_bracket,
             // 比赛模拟命令
             simulate_match_detailed,
             get_player_season_stats,
@@ -157,6 +187,19 @@ pub fn run() {
             update_players_age,
             get_retiring_candidates,
             get_expiring_contracts,
+            // 数据中心命令
+            record_player_performance,
+            batch_record_player_performance,
+            record_championship,
+            get_season_impact_ranking,
+            get_position_ranking,
+            get_player_stats,
+            get_team_player_stats,
+            clear_season_stats,
+            // 选手特性和状态命令
+            get_player_traits,
+            get_player_condition,
+            get_player_full_detail,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

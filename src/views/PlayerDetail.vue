@@ -154,6 +154,113 @@
       class="talent-alert"
     />
 
+    <!-- 特性与状态区 -->
+    <el-row :gutter="20" class="traits-condition-row">
+      <!-- 选手特性 -->
+      <el-col :span="12">
+        <el-card class="traits-card">
+          <template #header>
+            <div class="card-header">
+              <h2>
+                <span class="header-icon">⚡</span>
+                选手特性
+              </h2>
+              <span class="count-badge">{{ traits.length }} 项特性</span>
+            </div>
+          </template>
+
+          <el-empty v-if="traits.length === 0" description="暂无特性" :image-size="60">
+            <template #image>
+              <div class="empty-icon">🎯</div>
+            </template>
+          </el-empty>
+
+          <div v-else class="traits-grid">
+            <div
+              v-for="trait in traits"
+              :key="trait.trait_type"
+              class="trait-item"
+              :class="[`rarity-${trait.rarity}`, { 'negative': trait.is_negative }]"
+            >
+              <div class="trait-header">
+                <span class="trait-name">{{ trait.name }}</span>
+                <span class="trait-rarity">{{ '★'.repeat(trait.rarity) }}</span>
+              </div>
+              <div class="trait-description">{{ trait.description }}</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+
+      <!-- 选手状态 -->
+      <el-col :span="12">
+        <el-card class="condition-card">
+          <template #header>
+            <div class="card-header">
+              <h2>
+                <span class="header-icon">📊</span>
+                当前状态
+              </h2>
+            </div>
+          </template>
+
+          <div v-if="conditionInfo" class="condition-content">
+            <!-- Condition 值展示 -->
+            <div class="condition-display">
+              <div class="condition-value" :class="getConditionClass(conditionInfo.condition)">
+                {{ conditionInfo.condition > 0 ? '+' : '' }}{{ conditionInfo.condition }}
+              </div>
+              <div class="condition-label">状态值</div>
+              <div class="condition-range">
+                范围: {{ conditionInfo.condition_range[0] }} ~ +{{ conditionInfo.condition_range[1] }}
+              </div>
+            </div>
+
+            <!-- 状态因子详情 -->
+            <div class="condition-factors">
+              <div class="factor-item">
+                <span class="factor-label">动能</span>
+                <span class="factor-value" :class="getMomentumClass(conditionInfo.momentum)">
+                  {{ conditionInfo.momentum > 0 ? '+' : '' }}{{ conditionInfo.momentum }}
+                </span>
+              </div>
+              <div class="factor-item">
+                <span class="factor-label">状态周期</span>
+                <el-progress
+                  :percentage="conditionInfo.form_cycle"
+                  :stroke-width="8"
+                  :show-text="false"
+                  color="#3b82f6"
+                />
+              </div>
+              <div class="factor-item">
+                <span class="factor-label">上场发挥</span>
+                <span class="factor-value">
+                  {{ conditionInfo.last_performance > 0 ? conditionInfo.last_performance.toFixed(1) : '-' }}
+                </span>
+              </div>
+              <div class="factor-item">
+                <span class="factor-label">上场结果</span>
+                <el-tag :type="conditionInfo.last_match_won ? 'success' : 'danger'" size="small">
+                  {{ conditionInfo.last_match_won ? '胜' : '负' }}
+                </el-tag>
+              </div>
+              <div class="factor-item">
+                <span class="factor-label">连续比赛</span>
+                <span class="factor-value">{{ conditionInfo.games_since_rest }} 场</span>
+              </div>
+            </div>
+          </div>
+
+          <el-empty v-else description="暂无状态数据" :image-size="60">
+            <template #image>
+              <div class="empty-icon">📊</div>
+            </template>
+          </el-empty>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <!-- 荣誉记录 -->
     <el-card class="honors-card">
       <template #header>
@@ -247,7 +354,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   ArrowLeft,
@@ -256,94 +363,18 @@ import {
   Trophy,
   Clock,
 } from '@element-plus/icons-vue'
+import { teamApi, playerApi, type TraitInfo, type PlayerConditionInfo } from '@/api/tauri'
+import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
 
 const route = useRoute()
-const playerId = route.params.id
-
-// 所有选手数据
-const allPlayers = [
-  // T1
-  { id: 1, gameId: 'Faker', realName: '李相赫', nationality: '韩国', team: 'T1', region: 'LCK', position: 'MID', age: 28, ability: 95, potential: 96, stability: 85, tag: 'GENIUS', salary: 3500000, marketValue: 16740000, contractEnd: 'S4', joinSeason: 'S1' },
-  { id: 3, gameId: 'Zeus', realName: '崔宇济', nationality: '韩国', team: 'T1', region: 'LCK', position: 'TOP', age: 21, ability: 88, potential: 94, stability: 78, tag: 'GENIUS', salary: 1500000, marketValue: 8500000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 5, gameId: 'Keria', realName: '柳民锡', nationality: '韩国', team: 'T1', region: 'LCK', position: 'SUP', age: 22, ability: 89, potential: 93, stability: 82, tag: 'GENIUS', salary: 1400000, marketValue: 7800000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 11, gameId: 'Gumayusi', realName: '李民赫', nationality: '韩国', team: 'T1', region: 'LCK', position: 'ADC', age: 22, ability: 88, potential: 93, stability: 76, tag: 'GENIUS', salary: 1300000, marketValue: 7200000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 12, gameId: 'Oner', realName: '文贤俊', nationality: '韩国', team: 'T1', region: 'LCK', position: 'JUG', age: 22, ability: 86, potential: 91, stability: 80, tag: 'NORMAL', salary: 1200000, marketValue: 6500000, contractEnd: 'S3', joinSeason: 'S1' },
-  // Gen.G
-  { id: 2, gameId: 'Chovy', realName: '郑智勋', nationality: '韩国', team: 'Gen.G', region: 'LCK', position: 'MID', age: 24, ability: 93, potential: 95, stability: 88, tag: 'GENIUS', salary: 2500000, marketValue: 12500000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 6, gameId: 'Canyon', realName: '金建富', nationality: '韩国', team: 'Gen.G', region: 'LCK', position: 'JUG', age: 23, ability: 91, potential: 92, stability: 85, tag: 'GENIUS', salary: 2000000, marketValue: 10000000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 16, gameId: 'Peyz', realName: '金善旻', nationality: '韩国', team: 'Gen.G', region: 'LCK', position: 'ADC', age: 19, ability: 82, potential: 92, stability: 72, tag: 'GENIUS', salary: 800000, marketValue: 5000000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 17, gameId: 'Doran', realName: '崔铉俊', nationality: '韩国', team: 'Gen.G', region: 'LCK', position: 'TOP', age: 24, ability: 84, potential: 86, stability: 83, tag: 'NORMAL', salary: 1000000, marketValue: 5500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 18, gameId: 'Lehends', realName: '孙时宇', nationality: '韩国', team: 'Gen.G', region: 'LCK', position: 'SUP', age: 26, ability: 85, potential: 86, stability: 88, tag: 'NORMAL', salary: 1100000, marketValue: 5800000, contractEnd: 'S2', joinSeason: 'S1' },
-  // JDG
-  { id: 4, gameId: 'Ruler', realName: '朴宰赫', nationality: '韩国', team: 'JDG', region: 'LPL', position: 'ADC', age: 26, ability: 90, potential: 91, stability: 90, tag: 'GENIUS', salary: 2200000, marketValue: 11000000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 14, gameId: 'Kanavi', realName: '徐镇赫', nationality: '韩国', team: 'JDG', region: 'LPL', position: 'JUG', age: 24, ability: 88, potential: 89, stability: 82, tag: 'NORMAL', salary: 1800000, marketValue: 9000000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 9, gameId: '369', realName: '白家浩', nationality: '中国', team: 'JDG', region: 'LPL', position: 'TOP', age: 23, ability: 87, potential: 90, stability: 75, tag: 'GENIUS', salary: 1600000, marketValue: 8500000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 21, gameId: 'Yagao', realName: '曾奇', nationality: '中国', team: 'JDG', region: 'LPL', position: 'MID', age: 25, ability: 84, potential: 85, stability: 80, tag: 'NORMAL', salary: 1400000, marketValue: 7000000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 22, gameId: 'Missing', realName: '刘明浩', nationality: '中国', team: 'JDG', region: 'LPL', position: 'SUP', age: 24, ability: 85, potential: 87, stability: 82, tag: 'NORMAL', salary: 1200000, marketValue: 6000000, contractEnd: 'S2', joinSeason: 'S1' },
-  // BLG
-  { id: 7, gameId: 'Knight', realName: '卓定', nationality: '中国', team: 'BLG', region: 'LPL', position: 'MID', age: 24, ability: 89, potential: 92, stability: 78, tag: 'GENIUS', salary: 2000000, marketValue: 10000000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 13, gameId: 'Elk', realName: '马朝阳', nationality: '中国', team: 'BLG', region: 'LPL', position: 'ADC', age: 22, ability: 86, potential: 90, stability: 76, tag: 'GENIUS', salary: 1300000, marketValue: 7500000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 19, gameId: 'Bin', realName: '陈泽彬', nationality: '中国', team: 'BLG', region: 'LPL', position: 'TOP', age: 22, ability: 87, potential: 91, stability: 70, tag: 'GENIUS', salary: 1400000, marketValue: 8000000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 20, gameId: 'ON', realName: '李载元', nationality: '韩国', team: 'BLG', region: 'LPL', position: 'SUP', age: 21, ability: 82, potential: 88, stability: 75, tag: 'NORMAL', salary: 900000, marketValue: 5000000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 23, gameId: 'XUN', realName: '彭立勋', nationality: '中国', team: 'BLG', region: 'LPL', position: 'JUG', age: 21, ability: 85, potential: 88, stability: 73, tag: 'NORMAL', salary: 1000000, marketValue: 5500000, contractEnd: 'S2', joinSeason: 'S1' },
-  // TES
-  { id: 24, gameId: 'Wayward', realName: '陈闵', nationality: '中国', team: 'TES', region: 'LPL', position: 'TOP', age: 22, ability: 84, potential: 89, stability: 76, tag: 'NORMAL', salary: 1100000, marketValue: 6000000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 25, gameId: 'Tian', realName: '高天亮', nationality: '中国', team: 'TES', region: 'LPL', position: 'JUG', age: 24, ability: 85, potential: 87, stability: 75, tag: 'NORMAL', salary: 1300000, marketValue: 6500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 26, gameId: 'Creme', realName: '季明锴', nationality: '中国', team: 'TES', region: 'LPL', position: 'MID', age: 20, ability: 83, potential: 90, stability: 72, tag: 'GENIUS', salary: 1000000, marketValue: 6000000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 27, gameId: 'JackeyLove', realName: '喻文波', nationality: '中国', team: 'TES', region: 'LPL', position: 'ADC', age: 24, ability: 88, potential: 89, stability: 74, tag: 'GENIUS', salary: 2000000, marketValue: 9500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 28, gameId: 'Mark', realName: '张宝蓝', nationality: '中国', team: 'TES', region: 'LPL', position: 'SUP', age: 23, ability: 83, potential: 86, stability: 78, tag: 'NORMAL', salary: 900000, marketValue: 5000000, contractEnd: 'S2', joinSeason: 'S1' },
-  // WBG
-  { id: 29, gameId: 'TheShy', realName: '姜承录', nationality: '韩国', team: 'WBG', region: 'LPL', position: 'TOP', age: 25, ability: 86, potential: 87, stability: 68, tag: 'GENIUS', salary: 1800000, marketValue: 8000000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 30, gameId: 'Weiwei', realName: '魏伟', nationality: '中国', team: 'WBG', region: 'LPL', position: 'JUG', age: 23, ability: 84, potential: 87, stability: 76, tag: 'NORMAL', salary: 1100000, marketValue: 5500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 31, gameId: 'Xiaohu', realName: '李元浩', nationality: '中国', team: 'WBG', region: 'LPL', position: 'MID', age: 27, ability: 86, potential: 87, stability: 85, tag: 'NORMAL', salary: 1600000, marketValue: 7500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 32, gameId: 'Light', realName: '王光宇', nationality: '中国', team: 'WBG', region: 'LPL', position: 'ADC', age: 22, ability: 84, potential: 88, stability: 77, tag: 'NORMAL', salary: 1000000, marketValue: 5500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 33, gameId: 'Crisp', realName: '刘浩', nationality: '中国', team: 'WBG', region: 'LPL', position: 'SUP', age: 26, ability: 85, potential: 86, stability: 83, tag: 'NORMAL', salary: 1200000, marketValue: 6000000, contractEnd: 'S2', joinSeason: 'S1' },
-  // HLE
-  { id: 34, gameId: 'Doran2', realName: '金东河', nationality: '韩国', team: 'HLE', region: 'LCK', position: 'TOP', age: 23, ability: 83, potential: 87, stability: 79, tag: 'NORMAL', salary: 900000, marketValue: 5000000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 35, gameId: 'Peanut', realName: '韩王浩', nationality: '韩国', team: 'HLE', region: 'LCK', position: 'JUG', age: 26, ability: 85, potential: 86, stability: 82, tag: 'NORMAL', salary: 1200000, marketValue: 6000000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 36, gameId: 'Zeka', realName: '金建权', nationality: '韩国', team: 'HLE', region: 'LCK', position: 'MID', age: 21, ability: 86, potential: 91, stability: 75, tag: 'GENIUS', salary: 1300000, marketValue: 7500000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 37, gameId: 'Viper', realName: '朴道贤', nationality: '韩国', team: 'HLE', region: 'LCK', position: 'ADC', age: 24, ability: 89, potential: 90, stability: 84, tag: 'GENIUS', salary: 1800000, marketValue: 9000000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 38, gameId: 'Delight', realName: '柳焕中', nationality: '韩国', team: 'HLE', region: 'LCK', position: 'SUP', age: 21, ability: 82, potential: 88, stability: 76, tag: 'NORMAL', salary: 800000, marketValue: 4500000, contractEnd: 'S2', joinSeason: 'S1' },
-  // DK
-  { id: 39, gameId: 'Kingen', realName: '黄成勋', nationality: '韩国', team: 'DK', region: 'LCK', position: 'TOP', age: 24, ability: 84, potential: 86, stability: 80, tag: 'NORMAL', salary: 1000000, marketValue: 5500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 40, gameId: 'Lucid', realName: '申东旭', nationality: '韩国', team: 'DK', region: 'LCK', position: 'JUG', age: 20, ability: 83, potential: 90, stability: 74, tag: 'GENIUS', salary: 900000, marketValue: 5500000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 41, gameId: 'ShowMaker', realName: '许秀', nationality: '韩国', team: 'DK', region: 'LCK', position: 'MID', age: 24, ability: 90, potential: 92, stability: 82, tag: 'GENIUS', salary: 2000000, marketValue: 10000000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 42, gameId: 'Aiming', realName: '金河霖', nationality: '韩国', team: 'DK', region: 'LCK', position: 'ADC', age: 24, ability: 86, potential: 88, stability: 81, tag: 'NORMAL', salary: 1200000, marketValue: 6500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 43, gameId: 'Kellin', realName: '金炯奎', nationality: '韩国', team: 'DK', region: 'LCK', position: 'SUP', age: 24, ability: 82, potential: 85, stability: 80, tag: 'NORMAL', salary: 800000, marketValue: 4500000, contractEnd: 'S2', joinSeason: 'S1' },
-  // G2
-  { id: 44, gameId: 'BrokenBlade', realName: '塞尔坎·切利克', nationality: '德国', team: 'G2', region: 'LEC', position: 'TOP', age: 24, ability: 84, potential: 87, stability: 78, tag: 'NORMAL', salary: 1000000, marketValue: 5500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 45, gameId: 'Yike', realName: '马丁·桑德伯格', nationality: '瑞典', team: 'G2', region: 'LEC', position: 'JUG', age: 22, ability: 82, potential: 88, stability: 75, tag: 'NORMAL', salary: 800000, marketValue: 4500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 46, gameId: 'Caps', realName: '拉斯穆斯·温特', nationality: '丹麦', team: 'G2', region: 'LEC', position: 'MID', age: 25, ability: 88, potential: 90, stability: 80, tag: 'GENIUS', salary: 1800000, marketValue: 9000000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 47, gameId: 'Hans Sama', realName: '史蒂文·利文', nationality: '法国', team: 'G2', region: 'LEC', position: 'ADC', age: 24, ability: 85, potential: 87, stability: 79, tag: 'NORMAL', salary: 1100000, marketValue: 6000000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 48, gameId: 'Mikyx', realName: '米哈埃尔·梅赫雷', nationality: '斯洛文尼亚', team: 'G2', region: 'LEC', position: 'SUP', age: 26, ability: 84, potential: 85, stability: 82, tag: 'NORMAL', salary: 1000000, marketValue: 5500000, contractEnd: 'S2', joinSeason: 'S1' },
-  // FNC
-  { id: 49, gameId: 'Oscarinin', realName: '奥斯卡·穆尼奥斯', nationality: '西班牙', team: 'FNC', region: 'LEC', position: 'TOP', age: 22, ability: 82, potential: 88, stability: 76, tag: 'NORMAL', salary: 800000, marketValue: 4500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 50, gameId: 'Razork', realName: '伊凡·迪亚兹', nationality: '西班牙', team: 'FNC', region: 'LEC', position: 'JUG', age: 24, ability: 83, potential: 86, stability: 78, tag: 'NORMAL', salary: 900000, marketValue: 5000000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 51, gameId: 'Humanoid', realName: '马雷克·布拉泽克', nationality: '捷克', team: 'FNC', region: 'LEC', position: 'MID', age: 25, ability: 86, potential: 88, stability: 80, tag: 'NORMAL', salary: 1300000, marketValue: 7000000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 52, gameId: 'Noah', realName: '尼科拉·奥斯曼', nationality: '挪威', team: 'FNC', region: 'LEC', position: 'ADC', age: 21, ability: 82, potential: 89, stability: 74, tag: 'GENIUS', salary: 800000, marketValue: 5000000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 53, gameId: 'Jun', realName: '李俊燮', nationality: '韩国', team: 'FNC', region: 'LEC', position: 'SUP', age: 22, ability: 81, potential: 86, stability: 77, tag: 'NORMAL', salary: 700000, marketValue: 4000000, contractEnd: 'S2', joinSeason: 'S1' },
-  // C9
-  { id: 54, gameId: 'Thanatos', realName: '崔俊锡', nationality: '韩国', team: 'C9', region: 'LCS', position: 'TOP', age: 21, ability: 82, potential: 88, stability: 75, tag: 'NORMAL', salary: 800000, marketValue: 4500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 55, gameId: 'Blaber', realName: '罗伯特·黄', nationality: '美国', team: 'C9', region: 'LCS', position: 'JUG', age: 24, ability: 84, potential: 86, stability: 76, tag: 'NORMAL', salary: 1100000, marketValue: 6000000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 56, gameId: 'Jojopyun', realName: '约瑟夫·黄', nationality: '加拿大', team: 'C9', region: 'LCS', position: 'MID', age: 20, ability: 83, potential: 90, stability: 73, tag: 'GENIUS', salary: 1000000, marketValue: 6000000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 57, gameId: 'Berserker', realName: '金炯宇', nationality: '韩国', team: 'C9', region: 'LCS', position: 'ADC', age: 21, ability: 86, potential: 91, stability: 78, tag: 'GENIUS', salary: 1400000, marketValue: 8000000, contractEnd: 'S3', joinSeason: 'S1' },
-  { id: 58, gameId: 'Vulcan', realName: '菲利普·拉贾诺维奇', nationality: '加拿大', team: 'C9', region: 'LCS', position: 'SUP', age: 25, ability: 83, potential: 85, stability: 82, tag: 'NORMAL', salary: 900000, marketValue: 5000000, contractEnd: 'S2', joinSeason: 'S1' },
-  // TL
-  { id: 59, gameId: 'Impact', realName: '郑然泳', nationality: '韩国', team: 'TL', region: 'LCS', position: 'TOP', age: 29, ability: 83, potential: 84, stability: 88, tag: 'NORMAL', salary: 1200000, marketValue: 5500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 60, gameId: 'UmTi', realName: '文艺俊', nationality: '韩国', team: 'TL', region: 'LCS', position: 'JUG', age: 24, ability: 82, potential: 86, stability: 79, tag: 'NORMAL', salary: 900000, marketValue: 4800000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 61, gameId: 'APA', realName: '凯恩·福尔曼', nationality: '美国', team: 'TL', region: 'LCS', position: 'MID', age: 21, ability: 82, potential: 88, stability: 74, tag: 'NORMAL', salary: 800000, marketValue: 4500000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 62, gameId: 'Yeon', realName: '李显俊', nationality: '韩国', team: 'TL', region: 'LCS', position: 'ADC', age: 22, ability: 83, potential: 88, stability: 76, tag: 'NORMAL', salary: 900000, marketValue: 5000000, contractEnd: 'S2', joinSeason: 'S1' },
-  { id: 63, gameId: 'CoreJJ', realName: '赵勇仁', nationality: '韩国', team: 'TL', region: 'LCS', position: 'SUP', age: 29, ability: 85, potential: 86, stability: 90, tag: 'NORMAL', salary: 1500000, marketValue: 6500000, contractEnd: 'S2', joinSeason: 'S1' },
-]
-
-// 根据ID找到对应选手
-const foundPlayer = allPlayers.find(p => p.id === Number(playerId))
+const playerId = route.params.id as string
+const teamStore = useTeamStoreTauri()
 
 // 选手数据
-const player = ref(foundPlayer || {
-  id: Number(playerId),
-  gameId: '未知选手',
-  realName: '未知',
+const player = ref({
+  id: playerId,
+  gameId: '加载中...',
+  realName: '加载中...',
   nationality: '未知',
   team: '未知',
   region: 'LPL',
@@ -359,29 +390,124 @@ const player = ref(foundPlayer || {
   joinSeason: 'S1',
 })
 
-// 荣誉记录 - 根据选手能力值生成
-const generateHonors = () => {
-  if (!foundPlayer) return []
-  const honors = []
-  if (foundPlayer.ability >= 90) {
-    honors.push({ season: 'S1', tournament: `${foundPlayer.region} 春季赛`, position: '冠军' })
-    honors.push({ season: 'S1', tournament: 'MSI 季中赛', position: '冠军' })
-    honors.push({ season: 'S1', tournament: `${foundPlayer.region} 夏季赛`, position: '亚军' })
-  } else if (foundPlayer.ability >= 85) {
-    honors.push({ season: 'S1', tournament: `${foundPlayer.region} 春季赛`, position: '亚军' })
-    honors.push({ season: 'S1', tournament: `${foundPlayer.region} 夏季赛`, position: '季军' })
-  } else if (foundPlayer.ability >= 80) {
-    honors.push({ season: 'S1', tournament: `${foundPlayer.region} 夏季赛`, position: '季军' })
-  }
-  return honors
-}
+// 荣誉记录
+const honors = ref<Array<{season: string, tournament: string, position: string}>>([])
 
-const honors = ref(generateHonors())
+// 选手特性
+const traits = ref<TraitInfo[]>([])
+
+// 选手状态因子
+const conditionInfo = ref<PlayerConditionInfo | null>(null)
 
 // 赛季历史
-const seasonHistory = ref([
-  { season: 'S1', team: player.value.team, ability: player.value.ability, potential: player.value.potential },
-])
+const seasonHistory = ref<Array<{season: string, team: string, ability: number, potential: number}>>([])
+
+// 位置简称映射
+const positionShortMap: Record<string, string> = {
+  'Top': 'TOP', 'Jungle': 'JUG', 'Mid': 'MID', 'Adc': 'ADC', 'Support': 'SUP'
+}
+
+// 加载选手数据
+onMounted(async () => {
+  try {
+    // 尝试将 playerId 转换为数字（后端返回的是数字ID）
+    const numericId = parseInt(playerId)
+
+    if (!isNaN(numericId)) {
+      // 使用数字ID直接从API获取选手
+      const foundPlayer = await playerApi.getPlayer(numericId)
+
+      if (foundPlayer) {
+        // 加载赛区信息获取赛区代码
+        await teamStore.loadRegions()
+
+        // 获取队伍信息
+        let teamName = '未知'
+        let regionCode = 'LPL'
+
+        if (foundPlayer.team_id) {
+          try {
+            const team = await teamApi.getTeam(foundPlayer.team_id)
+            teamName = team.name
+            const region = teamStore.regions.find(r => r.id === team.region_id)
+            regionCode = region?.code || 'LPL'
+          } catch (e) {
+            console.error('Failed to get team info:', e)
+          }
+        }
+
+        // 计算天赋标签
+        const tag = foundPlayer.potential >= 90 || foundPlayer.ability >= 85 ? 'GENIUS'
+          : foundPlayer.potential >= 75 || foundPlayer.ability >= 70 ? 'NORMAL'
+          : 'ORDINARY'
+
+        // 计算身价和工资
+        const marketValue = foundPlayer.ability * 100000 + foundPlayer.potential * 50000
+        const salary = Math.round(marketValue * 0.15)
+
+        // 位置转换
+        const position = positionShortMap[foundPlayer.position || ''] || foundPlayer.position || 'MID'
+
+        player.value = {
+          id: playerId,
+          gameId: foundPlayer.game_id,
+          realName: foundPlayer.real_name || foundPlayer.game_id,
+          nationality: getRegionNationality(regionCode),
+          team: teamName,
+          region: regionCode,
+          position: position,
+          age: foundPlayer.age,
+          ability: foundPlayer.ability,
+          potential: foundPlayer.potential,
+          stability: foundPlayer.stability || Math.round(70 + (30 - foundPlayer.age) * 0.5 + Math.random() * 10),
+          tag: tag,
+          salary: foundPlayer.salary || salary,
+          marketValue: foundPlayer.market_value || marketValue,
+          contractEnd: foundPlayer.contract_end_season ? `S${foundPlayer.contract_end_season}` : 'S3',
+          joinSeason: 'S1',
+        }
+
+        // 荣誉记录初始为空（实际数据由后端获取）
+        honors.value = []
+
+        // 加载选手特性和状态
+        try {
+          const [traitsData, conditionData] = await Promise.all([
+            playerApi.getPlayerTraits(numericId),
+            playerApi.getPlayerCondition(numericId)
+          ])
+          traits.value = traitsData || []
+          conditionInfo.value = conditionData
+        } catch (e) {
+          console.error('Failed to load traits/condition:', e)
+          traits.value = []
+          conditionInfo.value = null
+        }
+
+        // 生成赛季历史
+        seasonHistory.value = [{
+          season: 'S1',
+          team: teamName,
+          ability: foundPlayer.ability,
+          potential: foundPlayer.potential
+        }]
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load player:', error)
+  }
+})
+
+// 根据赛区获取国籍
+const getRegionNationality = (regionCode: string) => {
+  const nationalities: Record<string, string> = {
+    'LPL': '中国',
+    'LCK': '韩国',
+    'LEC': '欧洲',
+    'LCS': '北美',
+  }
+  return nationalities[regionCode] || '未知'
+}
 
 // 计算属性
 const careerYears = computed(() => {
@@ -515,6 +641,24 @@ const getHonorTagType = (position: string) => {
     '季军': 'danger',
   }
   return types[position] || 'primary'
+}
+
+// 状态值样式
+const getConditionClass = (condition: number) => {
+  if (condition >= 5) return 'excellent'
+  if (condition >= 2) return 'good'
+  if (condition >= 0) return 'normal'
+  if (condition >= -3) return 'poor'
+  return 'terrible'
+}
+
+// 动能值样式
+const getMomentumClass = (momentum: number) => {
+  if (momentum >= 3) return 'hot'
+  if (momentum >= 1) return 'warming'
+  if (momentum <= -3) return 'cold'
+  if (momentum <= -1) return 'cooling'
+  return 'neutral'
 }
 </script>
 
@@ -874,5 +1018,191 @@ const getHonorTagType = (position: string) => {
   font-weight: 600;
   font-size: 14px;
   color: var(--primary-color);
+}
+
+/* 特性与状态区 */
+.traits-condition-row {
+  margin-bottom: 20px;
+}
+
+.traits-card,
+.condition-card {
+  border-radius: 12px;
+  height: 100%;
+}
+
+.header-icon {
+  font-size: 18px;
+  margin-right: 4px;
+}
+
+/* 特性网格 */
+.traits-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.trait-item {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  transition: all 0.3s ease;
+}
+
+.trait-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* 特性稀有度样式 */
+.trait-item.rarity-1 {
+  border-left: 3px solid #9ca3af;
+}
+
+.trait-item.rarity-2 {
+  border-left: 3px solid #22c55e;
+}
+
+.trait-item.rarity-3 {
+  border-left: 3px solid #3b82f6;
+}
+
+.trait-item.rarity-4 {
+  border-left: 3px solid #8b5cf6;
+}
+
+.trait-item.rarity-5 {
+  border-left: 3px solid #f59e0b;
+  background: linear-gradient(135deg, #fffbeb 0%, var(--bg-secondary) 100%);
+}
+
+.trait-item.negative {
+  border-left-color: #ef4444;
+  background: linear-gradient(135deg, #fef2f2 0%, var(--bg-secondary) 100%);
+}
+
+.trait-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.trait-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.trait-rarity {
+  font-size: 12px;
+  color: #f59e0b;
+}
+
+.trait-description {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+/* 状态面板 */
+.condition-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.condition-display {
+  text-align: center;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+}
+
+.condition-value {
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.condition-value.excellent {
+  color: #22c55e;
+}
+
+.condition-value.good {
+  color: #3b82f6;
+}
+
+.condition-value.normal {
+  color: var(--text-primary);
+}
+
+.condition-value.poor {
+  color: #f59e0b;
+}
+
+.condition-value.terrible {
+  color: #ef4444;
+}
+
+.condition-label {
+  font-size: 14px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+.condition-range {
+  font-size: 12px;
+  color: var(--text-placeholder);
+  margin-top: 8px;
+}
+
+/* 状态因子 */
+.condition-factors {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.factor-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.factor-label {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.factor-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.factor-value.hot {
+  color: #ef4444;
+}
+
+.factor-value.warming {
+  color: #f59e0b;
+}
+
+.factor-value.neutral {
+  color: var(--text-secondary);
+}
+
+.factor-value.cooling {
+  color: #3b82f6;
+}
+
+.factor-value.cold {
+  color: #6366f1;
 }
 </style>

@@ -1,24 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-/// 赛区代码
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RegionCode {
-    LPL,  // 中国赛区
-    LCK,  // 韩国赛区
-    LEC,  // 欧洲赛区
-    LCS,  // 北美赛区
-}
-
-impl RegionCode {
-    pub fn name(&self) -> &'static str {
-        match self {
-            RegionCode::LPL => "中国赛区",
-            RegionCode::LCK => "韩国赛区",
-            RegionCode::LEC => "欧洲赛区",
-            RegionCode::LCS => "北美赛区",
-        }
-    }
-}
+// RegionCode 已在 player.rs 中定义，此处直接引用
+pub use super::player::RegionCode;
 
 /// 赛区
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,5 +64,13 @@ impl FinancialStatus {
             b if b >= 0 => FinancialStatus::Deficit,
             _ => FinancialStatus::Bankrupt,
         }
+    }
+
+    pub fn can_buy(&self) -> bool {
+        matches!(self, FinancialStatus::Wealthy | FinancialStatus::Healthy | FinancialStatus::Tight)
+    }
+
+    pub fn must_sell(&self) -> bool {
+        matches!(self, FinancialStatus::Deficit | FinancialStatus::Bankrupt)
     }
 }

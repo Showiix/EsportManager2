@@ -297,7 +297,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -314,14 +314,21 @@ import {
   MagicStick,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { draftApi, teamApi, queryApi } from '@/api/tauri'
+import { useGameStore } from '@/stores/useGameStore'
+import { storeToRefs } from 'pinia'
 
 const route = useRoute()
 const router = useRouter()
+const gameStore = useGameStore()
+const { currentSeason: gameSeason } = storeToRefs(gameStore)
 
 // 状态
 const selectedRegion = ref((route.params.region as string)?.toLowerCase() || 'lpl')
-const currentSeason = ref('S2')
+const currentSeason = computed(() => `S${gameSeason.value}`)
 const currentStep = ref(0)
+const isLoading = ref(false)
+const currentRegionId = ref<number>(1)
 
 // 步骤定义
 const steps = [
@@ -349,62 +356,99 @@ const regionNames: Record<string, string> = {
 
 const regionName = computed(() => regionNames[selectedRegion.value] || '')
 
-// 选秀池数据 - 14名新秀
-const draftPool = ref([
-  { rank: 1, title: '状元', gameId: 'Rookie1', ability: 75, potential: 95, tag: 'GENIUS' },
-  { rank: 2, title: '榜眼', gameId: 'Rookie2', ability: 72, potential: 92, tag: 'GENIUS' },
-  { rank: 3, title: '探花', gameId: 'Rookie3', ability: 70, potential: 90, tag: 'GENIUS' },
-  { rank: 4, title: '第4顺位', gameId: 'Rookie4', ability: 68, potential: 85, tag: 'NORMAL' },
-  { rank: 5, title: '第5顺位', gameId: 'Rookie5', ability: 65, potential: 82, tag: 'NORMAL' },
-  { rank: 6, title: '第6顺位', gameId: 'Rookie6', ability: 63, potential: 80, tag: 'NORMAL' },
-  { rank: 7, title: '第7顺位', gameId: 'Rookie7', ability: 60, potential: 78, tag: 'NORMAL' },
-  { rank: 8, title: '第8顺位', gameId: 'Rookie8', ability: 58, potential: 76, tag: 'NORMAL' },
-  { rank: 9, title: '第9顺位', gameId: 'Rookie9', ability: 55, potential: 74, tag: 'NORMAL' },
-  { rank: 10, title: '第10顺位', gameId: 'Rookie10', ability: 52, potential: 72, tag: 'NORMAL' },
-  { rank: 11, title: '第11顺位', gameId: 'Rookie11', ability: 50, potential: 70, tag: 'NORMAL' },
-  { rank: 12, title: '第12顺位', gameId: 'Rookie12', ability: 48, potential: 68, tag: 'NORMAL' },
-  { rank: 13, title: '第13顺位', gameId: 'Rookie13', ability: 46, potential: 66, tag: 'NORMAL' },
-  { rank: 14, title: '第14顺位', gameId: 'Rookie14', ability: 44, potential: 64, tag: 'NORMAL' },
-])
+// 选秀池数据
+const draftPool = ref<any[]>([])
 
-// 抽签结果 - 14支队伍
-const lotteryResults = ref([
-  { teamId: 1, teamName: 'Team A', pickOrder: null as number | null, assigned: false },
-  { teamId: 2, teamName: 'Team B', pickOrder: null as number | null, assigned: false },
-  { teamId: 3, teamName: 'Team C', pickOrder: null as number | null, assigned: false },
-  { teamId: 4, teamName: 'Team D', pickOrder: null as number | null, assigned: false },
-  { teamId: 5, teamName: 'Team E', pickOrder: null as number | null, assigned: false },
-  { teamId: 6, teamName: 'Team F', pickOrder: null as number | null, assigned: false },
-  { teamId: 7, teamName: 'Team G', pickOrder: null as number | null, assigned: false },
-  { teamId: 8, teamName: 'Team H', pickOrder: null as number | null, assigned: false },
-  { teamId: 9, teamName: 'Team I', pickOrder: null as number | null, assigned: false },
-  { teamId: 10, teamName: 'Team J', pickOrder: null as number | null, assigned: false },
-  { teamId: 11, teamName: 'Team K', pickOrder: null as number | null, assigned: false },
-  { teamId: 12, teamName: 'Team L', pickOrder: null as number | null, assigned: false },
-  { teamId: 13, teamName: 'Team M', pickOrder: null as number | null, assigned: false },
-  { teamId: 14, teamName: 'Team N', pickOrder: null as number | null, assigned: false },
-])
+// 抽签结果
+const lotteryResults = ref<any[]>([])
+
+// 获取赛区ID
+const getRegionId = async (regionCode: string): Promise<number> => {
+  try {
+    const regions = await queryApi.getAllRegions()
+    const region = regions.find(r => r.code.toLowerCase() === regionCode.toLowerCase())
+    return region?.id ?? 1
+  } catch (e) {
+    console.error('Failed to get region id:', e)
+    return 1
+  }
+}
+
+// 加载选秀池数据
+const loadDraftPool = async () => {
+  isLoading.value = true
+  try {
+    const regionId = await getRegionId(selectedRegion.value)
+    currentRegionId.value = regionId
+
+    // 生成选秀池
+    const players = await draftApi.generateDraftPool(regionId, 14)
+
+    // 按能力值排序并转换格式
+    const sorted = players.sort((a, b) => b.ability - a.ability)
+    draftPool.value = sorted.map((p, index) => ({
+      id: p.id,
+      rank: index + 1,
+      title: index === 0 ? '状元' : index === 1 ? '榜眼' : index === 2 ? '探花' : `第${index + 1}顺位`,
+      gameId: p.name,
+      ability: p.ability,
+      potential: p.potential,
+      tag: p.tag,
+      position: p.position,
+    }))
+  } catch (e) {
+    console.error('Failed to load draft pool:', e)
+    ElMessage.error('加载选秀池失败')
+  } finally {
+    isLoading.value = false
+  }
+}
+
+// 加载队伍数据
+const loadTeams = async () => {
+  isLoading.value = true
+  try {
+    const regionId = await getRegionId(selectedRegion.value)
+    const teams = await teamApi.getTeamsByRegion(regionId)
+
+    lotteryResults.value = teams.map(team => ({
+      teamId: team.id,
+      teamName: team.name,
+      pickOrder: null as number | null,
+      assigned: false,
+    }))
+  } catch (e) {
+    console.error('Failed to load teams:', e)
+    ElMessage.error('加载队伍失败')
+  } finally {
+    isLoading.value = false
+  }
+}
+
+// 初始化
+onMounted(async () => {
+  await loadDraftPool()
+  await loadTeams()
+})
 
 // 监听路由参数变化
 watch(
   () => route.params.region,
-  (newRegion) => {
+  async (newRegion) => {
     if (newRegion && typeof newRegion === 'string') {
       selectedRegion.value = newRegion.toLowerCase()
-      // 重置选秀状态
-      resetDraftState()
+      // 重置选秀状态并重新加载数据
+      await resetDraftState()
     }
   }
 )
 
 // 重置选秀状态
-const resetDraftState = () => {
+const resetDraftState = async () => {
   currentStep.value = 0
-  // 重置抽签结果
-  lotteryResults.value.forEach(team => {
-    team.pickOrder = null
-    team.assigned = false
-  })
+  // 重新加载数据
+  await loadDraftPool()
+  await loadTeams()
 }
 
 // 计算属性
@@ -470,48 +514,75 @@ const startLottery = () => {
   currentStep.value = 1
 }
 
-const drawSinglePick = () => {
-  const undrawnTeam = lotteryResults.value.find(r => r.pickOrder === null)
-  if (!undrawnTeam) return
+// 执行后端抽签
+const runBackendLottery = async () => {
+  isLoading.value = true
+  try {
+    const draftOrder = await draftApi.runDraftLottery(currentRegionId.value)
 
-  const usedPicks = lotteryResults.value
-    .filter(r => r.pickOrder !== null)
-    .map(r => r.pickOrder)
+    // 将后端返回的抽签结果映射到前端数据结构
+    draftOrder.forEach((order) => {
+      const team = lotteryResults.value.find(t => t.teamId === order.team_id)
+      if (team) {
+        team.pickOrder = order.pick_number
+      }
+    })
 
-  const availablePicks = Array.from({ length: 14 }, (_, i) => i + 1)
-    .filter(p => !usedPicks.includes(p))
-
-  const randomIndex = Math.floor(Math.random() * availablePicks.length)
-  undrawnTeam.pickOrder = availablePicks[randomIndex]
-
-  ElMessage.success(`${undrawnTeam.teamName} 抽中第 ${undrawnTeam.pickOrder} 顺位`)
+    ElMessage.success('抽签完成!')
+  } catch (e) {
+    console.error('Failed to run draft lottery:', e)
+    ElMessage.error('抽签失败')
+  } finally {
+    isLoading.value = false
+  }
 }
 
-const drawAllPicks = () => {
-  const availablePicks = Array.from({ length: 14 }, (_, i) => i + 1)
-  const shuffled = availablePicks.sort(() => Math.random() - 0.5)
+const drawSinglePick = async () => {
+  // 如果还没有开始抽签，先执行后端抽签
+  const hasAnyDrawn = lotteryResults.value.some(r => r.pickOrder !== null)
+  if (!hasAnyDrawn) {
+    await runBackendLottery()
+    return
+  }
 
-  let pickIndex = 0
-  lotteryResults.value.forEach(team => {
-    if (team.pickOrder === null) {
-      team.pickOrder = shuffled[pickIndex]
-      pickIndex++
-    }
-  })
+  // 如果已经有部分抽签结果，显示提示
+  ElMessage.info('请使用一键抽签完成剩余抽签')
+}
 
-  ElMessage.success('一键抽签完成!')
+const drawAllPicks = async () => {
+  await runBackendLottery()
 }
 
 const proceedToAssignment = () => {
   currentStep.value = 2
 }
 
-const assignPlayers = () => {
-  lotteryResults.value.forEach(team => {
-    team.assigned = true
-  })
-  currentStep.value = 3
-  ElMessage.success('选手分配完成!')
+// 分配选手到队伍 - 调用后端API
+const assignPlayers = async () => {
+  isLoading.value = true
+  try {
+    // 使用后端AI自动选秀完成分配
+    const draftPicks = await draftApi.aiAutoDraft(currentRegionId.value)
+
+    // 更新前端状态
+    draftPicks.forEach((pick) => {
+      const team = lotteryResults.value.find(t => t.teamId === pick.team_id)
+      if (team) {
+        team.assigned = true
+      }
+    })
+
+    // 如果有手动选秀的需求，也可以遍历每个队伍单独调用 makeDraftPick
+    // 这里使用 aiAutoDraft 简化流程
+
+    currentStep.value = 3
+    ElMessage.success('选手分配完成!')
+  } catch (e) {
+    console.error('Failed to assign players:', e)
+    ElMessage.error('分配选手失败')
+  } finally {
+    isLoading.value = false
+  }
 }
 
 const completeDraft = () => {

@@ -1,5 +1,7 @@
 use crate::db::DatabaseError;
 use crate::models::*;
+// 显式导入以解决歧义
+use crate::models::tournament_result::PlayerTournamentStats;
 use sqlx::{Pool, Row, Sqlite};
 
 /// 存档仓库
@@ -759,6 +761,8 @@ fn parse_player_status(s: &str) -> PlayerStatus {
 }
 
 fn parse_position(s: &str) -> Position {
+    // 处理 Some(Position) 格式和纯 Position 格式
+    let s = s.trim_start_matches("Some(").trim_end_matches(")");
     match s {
         "Top" => Position::Top,
         "Jug" => Position::Jug,
@@ -1388,5 +1392,668 @@ impl TeamRepository {
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         Ok(rows.iter().map(row_to_team).collect())
+    }
+}
+
+/// 选手赛季统计仓库
+pub struct PlayerStatsRepository;
+
+impl PlayerStatsRepository {
+    /// 获取或创建选手赛季统计
+    pub async fn get_or_create(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        player_id: i64,
+        player_name: &str,
+        season_id: i64,
+        team_id: Option<i64>,
+        region_id: Option<&str>,
+        position: &str,
+    ) -> Result<PlayerSeasonStatistics, DatabaseError> {
+        // 尝试获取现有记录
+        let existing = sqlx::query(
+            r#"
+            SELECT * FROM player_season_stats
+            WHERE save_id = ? AND player_id = ? AND season_id = ?
+            "#
+        )
+        .bind(save_id)
+        .bind(player_id)
+        .bind(season_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        if let Some(row) = existing {
+            return Ok(row_to_player_stats(&row));
+        }
+
+        // 创建新记录
+        let result = sqlx::query(
+            r#"
+            INSERT INTO player_season_stats
+            (save_id, player_id, player_name, season_id, team_id, region_id, position,
+             matches_played, games_played, total_impact, avg_impact, avg_performance,
+             best_performance, worst_performance, consistency_score,
+             international_titles, regional_titles, champion_bonus, yearly_top_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, 0.0, 0.0, 0.0, 100.0, 100.0, 0, 0, 0.0, 0.0)
+            "#
+        )
+        .bind(save_id)
+        .bind(player_id)
+        .bind(player_name)
+        .bind(season_id)
+        .bind(team_id)
+        .bind(region_id)
+        .bind(position)
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(PlayerSeasonStatistics {
+            id: Some(result.last_insert_rowid()),
+            save_id: save_id.to_string(),
+            player_id,
+            player_name: player_name.to_string(),
+            season_id,
+            team_id,
+            region_id: region_id.map(|s| s.to_string()),
+            position: position.to_string(),
+            matches_played: 0,
+            games_played: 0,
+            total_impact: 0.0,
+            avg_impact: 0.0,
+            avg_performance: 0.0,
+            best_performance: 0.0,
+            worst_performance: 100.0,
+            consistency_score: 100.0,
+            international_titles: 0,
+            regional_titles: 0,
+            champion_bonus: 0.0,
+            yearly_top_score: 0.0,
+        })
+    }
+
+    /// 更新选手赛季统计
+    pub async fn update(
+        pool: &Pool<Sqlite>,
+        stats: &PlayerSeasonStatistics,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query(
+            r#"
+            UPDATE player_season_stats SET
+                team_id = ?,
+                region_id = ?,
+                matches_played = ?,
+                games_played = ?,
+                total_impact = ?,
+                avg_impact = ?,
+                avg_performance = ?,
+                best_performance = ?,
+                worst_performance = ?,
+                consistency_score = ?,
+                international_titles = ?,
+                regional_titles = ?,
+                champion_bonus = ?,
+                yearly_top_score = ?,
+                updated_at = datetime('now')
+            WHERE save_id = ? AND player_id = ? AND season_id = ?
+            "#
+        )
+        .bind(stats.team_id)
+        .bind(&stats.region_id)
+        .bind(stats.matches_played)
+        .bind(stats.games_played)
+        .bind(stats.total_impact)
+        .bind(stats.avg_impact)
+        .bind(stats.avg_performance)
+        .bind(stats.best_performance)
+        .bind(stats.worst_performance)
+        .bind(stats.consistency_score)
+        .bind(stats.international_titles)
+        .bind(stats.regional_titles)
+        .bind(stats.champion_bonus)
+        .bind(stats.yearly_top_score)
+        .bind(&stats.save_id)
+        .bind(stats.player_id)
+        .bind(stats.season_id)
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// 获取赛季排行榜（按年度Top得分排序）
+    pub async fn get_season_ranking(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: i64,
+        limit: i32,
+    ) -> Result<Vec<PlayerSeasonStatistics>, DatabaseError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT * FROM player_season_stats
+            WHERE save_id = ? AND season_id = ? AND games_played > 0
+            ORDER BY yearly_top_score DESC
+            LIMIT ?
+            "#
+        )
+        .bind(save_id)
+        .bind(season_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_player_stats).collect())
+    }
+
+    /// 获取分位置排行榜
+    pub async fn get_position_ranking(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: i64,
+        position: &str,
+        limit: i32,
+    ) -> Result<Vec<PlayerSeasonStatistics>, DatabaseError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT * FROM player_season_stats
+            WHERE save_id = ? AND season_id = ? AND position = ? AND games_played > 0
+            ORDER BY yearly_top_score DESC
+            LIMIT ?
+            "#
+        )
+        .bind(save_id)
+        .bind(season_id)
+        .bind(position)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_player_stats).collect())
+    }
+
+    /// 获取队伍所有选手统计
+    pub async fn get_by_team(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: i64,
+        team_id: i64,
+    ) -> Result<Vec<PlayerSeasonStatistics>, DatabaseError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT * FROM player_season_stats
+            WHERE save_id = ? AND season_id = ? AND team_id = ?
+            ORDER BY yearly_top_score DESC
+            "#
+        )
+        .bind(save_id)
+        .bind(season_id)
+        .bind(team_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_player_stats).collect())
+    }
+
+    /// 获取选手的赛季统计
+    pub async fn get_by_player(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        player_id: i64,
+        season_id: Option<i64>,
+    ) -> Result<Vec<PlayerSeasonStatistics>, DatabaseError> {
+        let rows = if let Some(sid) = season_id {
+            sqlx::query(
+                r#"
+                SELECT * FROM player_season_stats
+                WHERE save_id = ? AND player_id = ? AND season_id = ?
+                "#
+            )
+            .bind(save_id)
+            .bind(player_id)
+            .bind(sid)
+            .fetch_all(pool)
+            .await
+        } else {
+            sqlx::query(
+                r#"
+                SELECT * FROM player_season_stats
+                WHERE save_id = ? AND player_id = ?
+                ORDER BY season_id DESC
+                "#
+            )
+            .bind(save_id)
+            .bind(player_id)
+            .fetch_all(pool)
+            .await
+        }
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_player_stats).collect())
+    }
+
+    /// 清除赛季统计数据
+    pub async fn clear_season(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: i64,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query(
+            "DELETE FROM player_season_stats WHERE save_id = ? AND season_id = ?"
+        )
+        .bind(save_id)
+        .bind(season_id)
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
+    }
+}
+
+/// 将数据库行转换为 PlayerSeasonStatistics
+fn row_to_player_stats(row: &sqlx::sqlite::SqliteRow) -> PlayerSeasonStatistics {
+    PlayerSeasonStatistics {
+        id: Some(row.get::<i64, _>("id")),
+        save_id: row.get("save_id"),
+        player_id: row.get("player_id"),
+        player_name: row.get("player_name"),
+        season_id: row.get("season_id"),
+        team_id: row.get("team_id"),
+        region_id: row.get("region_id"),
+        position: row.get("position"),
+        matches_played: row.get("matches_played"),
+        games_played: row.get("games_played"),
+        total_impact: row.get("total_impact"),
+        avg_impact: row.get("avg_impact"),
+        avg_performance: row.get("avg_performance"),
+        best_performance: row.get("best_performance"),
+        worst_performance: row.get("worst_performance"),
+        consistency_score: row.get("consistency_score"),
+        international_titles: row.get("international_titles"),
+        regional_titles: row.get("regional_titles"),
+        champion_bonus: row.get("champion_bonus"),
+        yearly_top_score: row.get("yearly_top_score"),
+    }
+}
+
+// ==================== 赛事结果仓库 ====================
+
+/// 赛事结果仓库
+pub struct TournamentResultRepository;
+
+impl TournamentResultRepository {
+    /// 创建赛事结果
+    pub async fn create(
+        pool: &Pool<Sqlite>,
+        result: &TournamentResult,
+    ) -> Result<u64, DatabaseError> {
+        let row = sqlx::query(
+            r#"
+            INSERT INTO tournament_results (
+                save_id, season_id, tournament_id, tournament_type, tournament_name,
+                champion_team_id, champion_team_name, runner_up_team_id, runner_up_team_name,
+                third_team_id, third_team_name, fourth_team_id, fourth_team_name,
+                final_match_id, final_score, total_matches, total_games
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&result.save_id)
+        .bind(result.season_id as i64)
+        .bind(result.tournament_id as i64)
+        .bind(&result.tournament_type)
+        .bind(&result.tournament_name)
+        .bind(result.champion_team_id as i64)
+        .bind(&result.champion_team_name)
+        .bind(result.runner_up_team_id as i64)
+        .bind(&result.runner_up_team_name)
+        .bind(result.third_team_id.map(|v| v as i64))
+        .bind(&result.third_team_name)
+        .bind(result.fourth_team_id.map(|v| v as i64))
+        .bind(&result.fourth_team_name)
+        .bind(result.final_match_id.map(|v| v as i64))
+        .bind(&result.final_score)
+        .bind(result.total_matches.map(|v| v as i64))
+        .bind(result.total_games.map(|v| v as i64))
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(row.last_insert_rowid() as u64)
+    }
+
+    /// 获取赛事结果
+    pub async fn get_by_tournament(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        tournament_id: u64,
+    ) -> Result<Option<TournamentResult>, DatabaseError> {
+        let row = sqlx::query(
+            "SELECT * FROM tournament_results WHERE save_id = ? AND tournament_id = ?"
+        )
+        .bind(save_id)
+        .bind(tournament_id as i64)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(row.map(|r| row_to_tournament_result(&r)))
+    }
+
+    /// 获取赛季所有赛事结果
+    pub async fn get_by_season(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+    ) -> Result<Vec<TournamentResult>, DatabaseError> {
+        let rows = sqlx::query(
+            "SELECT * FROM tournament_results WHERE save_id = ? AND season_id = ? ORDER BY created_at"
+        )
+        .bind(save_id)
+        .bind(season_id as i64)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_tournament_result).collect())
+    }
+
+    /// 获取队伍的冠军记录
+    pub async fn get_team_championships(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        team_id: u64,
+    ) -> Result<Vec<TournamentResult>, DatabaseError> {
+        let rows = sqlx::query(
+            "SELECT * FROM tournament_results WHERE save_id = ? AND champion_team_id = ? ORDER BY created_at DESC"
+        )
+        .bind(save_id)
+        .bind(team_id as i64)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_tournament_result).collect())
+    }
+
+    /// 按赛事类型获取结果
+    pub async fn get_by_tournament_type(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        tournament_type: &str,
+    ) -> Result<Vec<TournamentResult>, DatabaseError> {
+        let rows = sqlx::query(
+            "SELECT * FROM tournament_results WHERE save_id = ? AND tournament_type = ? ORDER BY season_id DESC"
+        )
+        .bind(save_id)
+        .bind(tournament_type)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_tournament_result).collect())
+    }
+
+    /// 获取所有赛事结果
+    pub async fn get_all(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+    ) -> Result<Vec<TournamentResult>, DatabaseError> {
+        let rows = sqlx::query(
+            "SELECT * FROM tournament_results WHERE save_id = ? ORDER BY created_at DESC"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_tournament_result).collect())
+    }
+}
+
+/// 将数据库行转换为 TournamentResult
+fn row_to_tournament_result(row: &sqlx::sqlite::SqliteRow) -> TournamentResult {
+    TournamentResult {
+        id: row.get::<i64, _>("id") as u64,
+        save_id: row.get("save_id"),
+        season_id: row.get::<i64, _>("season_id") as u64,
+        tournament_id: row.get::<i64, _>("tournament_id") as u64,
+        tournament_type: row.get("tournament_type"),
+        tournament_name: row.get("tournament_name"),
+        champion_team_id: row.get::<i64, _>("champion_team_id") as u64,
+        champion_team_name: row.get("champion_team_name"),
+        runner_up_team_id: row.get::<i64, _>("runner_up_team_id") as u64,
+        runner_up_team_name: row.get("runner_up_team_name"),
+        third_team_id: row.get::<Option<i64>, _>("third_team_id").map(|v| v as u64),
+        third_team_name: row.get("third_team_name"),
+        fourth_team_id: row.get::<Option<i64>, _>("fourth_team_id").map(|v| v as u64),
+        fourth_team_name: row.get("fourth_team_name"),
+        final_match_id: row.get::<Option<i64>, _>("final_match_id").map(|v| v as u64),
+        final_score: row.get("final_score"),
+        total_matches: row.get::<Option<i64>, _>("total_matches").map(|v| v as u32),
+        total_games: row.get::<Option<i64>, _>("total_games").map(|v| v as u32),
+        created_at: row.get("created_at"),
+    }
+}
+
+// ==================== 选手赛事统计仓库 ====================
+
+/// 选手赛事统计仓库
+pub struct PlayerTournamentStatsRepository;
+
+impl PlayerTournamentStatsRepository {
+    /// 创建或更新选手赛事统计
+    pub async fn upsert(
+        pool: &Pool<Sqlite>,
+        stats: &PlayerTournamentStats,
+    ) -> Result<u64, DatabaseError> {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO player_tournament_stats (
+                save_id, season_id, tournament_id, tournament_type, player_id, player_name,
+                team_id, team_name, position, games_played, games_won, total_impact,
+                avg_impact, max_impact, avg_performance, best_performance, game_mvp_count
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(save_id, tournament_id, player_id) DO UPDATE SET
+                games_played = excluded.games_played,
+                games_won = excluded.games_won,
+                total_impact = excluded.total_impact,
+                avg_impact = excluded.avg_impact,
+                max_impact = excluded.max_impact,
+                avg_performance = excluded.avg_performance,
+                best_performance = excluded.best_performance,
+                game_mvp_count = excluded.game_mvp_count,
+                updated_at = datetime('now')
+            "#,
+        )
+        .bind(&stats.save_id)
+        .bind(stats.season_id as i64)
+        .bind(stats.tournament_id as i64)
+        .bind(&stats.tournament_type)
+        .bind(stats.player_id as i64)
+        .bind(&stats.player_name)
+        .bind(stats.team_id as i64)
+        .bind(&stats.team_name)
+        .bind(&stats.position)
+        .bind(stats.games_played as i64)
+        .bind(stats.games_won as i64)
+        .bind(stats.total_impact)
+        .bind(stats.avg_impact)
+        .bind(stats.max_impact)
+        .bind(stats.avg_performance)
+        .bind(stats.best_performance)
+        .bind(stats.game_mvp_count as i64)
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(result.last_insert_rowid() as u64)
+    }
+
+    /// 批量创建/更新
+    pub async fn upsert_batch(
+        pool: &Pool<Sqlite>,
+        stats_list: &[PlayerTournamentStats],
+    ) -> Result<(), DatabaseError> {
+        for stats in stats_list {
+            Self::upsert(pool, stats).await?;
+        }
+        Ok(())
+    }
+
+    /// 获取选手在赛事中的统计
+    pub async fn get_by_player_tournament(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        tournament_id: u64,
+        player_id: u64,
+    ) -> Result<Option<PlayerTournamentStats>, DatabaseError> {
+        let row = sqlx::query(
+            "SELECT * FROM player_tournament_stats WHERE save_id = ? AND tournament_id = ? AND player_id = ?"
+        )
+        .bind(save_id)
+        .bind(tournament_id as i64)
+        .bind(player_id as i64)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(row.map(|r| row_to_player_tournament_stats(&r)))
+    }
+
+    /// 获取赛事的所有选手统计（用于MVP计算）
+    pub async fn get_by_tournament(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        tournament_id: u64,
+    ) -> Result<Vec<PlayerTournamentStats>, DatabaseError> {
+        let rows = sqlx::query(
+            "SELECT * FROM player_tournament_stats WHERE save_id = ? AND tournament_id = ? ORDER BY avg_impact DESC"
+        )
+        .bind(save_id)
+        .bind(tournament_id as i64)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_player_tournament_stats).collect())
+    }
+
+    /// 获取赛事MVP候选（按MVP得分排序）
+    pub async fn get_mvp_candidates(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        tournament_id: u64,
+        limit: i32,
+    ) -> Result<Vec<PlayerTournamentStats>, DatabaseError> {
+        // MVP 计算: total_impact * 0.5 + avg_impact * 0.3 + win_rate * 20
+        let rows = sqlx::query(
+            r#"
+            SELECT *,
+                   (total_impact * 0.5 + avg_impact * 0.3 +
+                    CASE WHEN games_played > 0 THEN (games_won * 1.0 / games_played) * 20 ELSE 0 END) as mvp_score
+            FROM player_tournament_stats
+            WHERE save_id = ? AND tournament_id = ? AND games_played >= 5
+            ORDER BY mvp_score DESC
+            LIMIT ?
+            "#
+        )
+        .bind(save_id)
+        .bind(tournament_id as i64)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_player_tournament_stats).collect())
+    }
+
+    /// 获取选手在所有赛事中的统计
+    pub async fn get_by_player(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        player_id: u64,
+    ) -> Result<Vec<PlayerTournamentStats>, DatabaseError> {
+        let rows = sqlx::query(
+            "SELECT * FROM player_tournament_stats WHERE save_id = ? AND player_id = ? ORDER BY season_id DESC, tournament_id DESC"
+        )
+        .bind(save_id)
+        .bind(player_id as i64)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_player_tournament_stats).collect())
+    }
+
+    /// 获取队伍在赛事中的所有选手统计
+    pub async fn get_by_team_tournament(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        tournament_id: u64,
+        team_id: u64,
+    ) -> Result<Vec<PlayerTournamentStats>, DatabaseError> {
+        let rows = sqlx::query(
+            "SELECT * FROM player_tournament_stats WHERE save_id = ? AND tournament_id = ? AND team_id = ? ORDER BY avg_impact DESC"
+        )
+        .bind(save_id)
+        .bind(tournament_id as i64)
+        .bind(team_id as i64)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_player_tournament_stats).collect())
+    }
+
+    /// 删除赛事的所有选手统计
+    pub async fn delete_by_tournament(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        tournament_id: u64,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query(
+            "DELETE FROM player_tournament_stats WHERE save_id = ? AND tournament_id = ?"
+        )
+        .bind(save_id)
+        .bind(tournament_id as i64)
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(())
+    }
+}
+
+/// 将数据库行转换为 PlayerTournamentStats
+fn row_to_player_tournament_stats(row: &sqlx::sqlite::SqliteRow) -> PlayerTournamentStats {
+    PlayerTournamentStats {
+        id: row.get::<i64, _>("id") as u64,
+        save_id: row.get("save_id"),
+        season_id: row.get::<i64, _>("season_id") as u64,
+        tournament_id: row.get::<i64, _>("tournament_id") as u64,
+        tournament_type: row.get("tournament_type"),
+        player_id: row.get::<i64, _>("player_id") as u64,
+        player_name: row.get("player_name"),
+        team_id: row.get::<i64, _>("team_id") as u64,
+        team_name: row.get("team_name"),
+        position: row.get("position"),
+        games_played: row.get::<i64, _>("games_played") as u32,
+        games_won: row.get::<i64, _>("games_won") as u32,
+        total_impact: row.get("total_impact"),
+        avg_impact: row.get("avg_impact"),
+        max_impact: row.get("max_impact"),
+        avg_performance: row.get("avg_performance"),
+        best_performance: row.get("best_performance"),
+        game_mvp_count: row.get::<i64, _>("game_mvp_count") as u32,
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
     }
 }

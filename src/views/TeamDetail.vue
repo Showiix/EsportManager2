@@ -146,9 +146,63 @@
             {{ player.position }}
           </div>
           <div class="player-avatar" :class="team.region.toLowerCase()">
-            {{ player.gameId.substring(0, 1) }}
+            {{ player.game_id.substring(0, 1) }}
           </div>
-          <div class="player-name">{{ player.gameId }}</div>
+          <div class="player-name">{{ player.game_id }}</div>
+          <div class="player-stats">
+            <span class="ability-number" :style="{ color: getAbilityColor(player.ability) }">
+              {{ player.ability }}
+            </span>
+          </div>
+          <div class="player-details">
+            <span class="detail-item">
+              <span class="detail-label">潜力</span>
+              <span class="detail-value purple">{{ player.potential }}</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-label">年龄</span>
+              <span class="detail-value">{{ player.age }}岁</span>
+            </span>
+          </div>
+          <div class="player-salary">
+            {{ formatMoney(player.salary) }}/年
+          </div>
+        </div>
+      </div>
+    </el-card>
+
+    <!-- 替补阵容 -->
+    <el-card class="roster-card substitute-card">
+      <template #header>
+        <div class="card-header">
+          <h2>
+            <el-icon><UserFilled /></el-icon>
+            替补阵容
+          </h2>
+          <span class="count-badge">共 {{ substitutePlayers.length }} 名选手</span>
+        </div>
+      </template>
+
+      <el-empty v-if="substitutePlayers.length === 0" description="暂无替补选手">
+        <template #image>
+          <div class="empty-icon">👥</div>
+        </template>
+      </el-empty>
+
+      <div v-else class="roster-grid substitute-grid">
+        <div
+          v-for="player in substitutePlayers"
+          :key="player.id"
+          class="player-card substitute"
+          @click="goToPlayer(player.id)"
+        >
+          <div class="position-badge" :class="getPositionClass(player.position)">
+            {{ player.position }}
+          </div>
+          <div class="player-avatar" :class="team.region.toLowerCase()">
+            {{ player.game_id.substring(0, 1) }}
+          </div>
+          <div class="player-name">{{ player.game_id }}</div>
           <div class="player-stats">
             <span class="ability-number" :style="{ color: getAbilityColor(player.ability) }">
               {{ player.ability }}
@@ -192,21 +246,21 @@
       <el-timeline v-else>
         <el-timeline-item
           v-for="honor in honors"
-          :key="`${honor.season}-${honor.tournament}`"
-          :timestamp="honor.season"
+          :key="`${honor.season_id}-${honor.tournament_id}`"
+          :timestamp="`S${honor.season_id}`"
           placement="top"
-          :color="getHonorColor(honor.position)"
+          :color="getHonorColor(honor.honor_type)"
           size="large"
         >
-          <el-card class="honor-card" :class="getHonorClass(honor.position)" shadow="hover">
+          <el-card class="honor-card" :class="getHonorClass(honor.honor_type)" shadow="hover">
             <div class="honor-content">
               <div class="honor-icon">
-                {{ getHonorEmoji(honor.position) }}
+                {{ getHonorEmoji(honor.honor_type) }}
               </div>
               <div class="honor-info">
-                <div class="honor-title">{{ honor.tournament }}</div>
-                <el-tag :type="getHonorTagType(honor.position)" size="default" effect="dark">
-                  {{ honor.position }}
+                <div class="honor-title">{{ honor.tournament_name }}</div>
+                <el-tag :type="getHonorTagType(honor.honor_type)" size="default" effect="dark">
+                  {{ honor.honor_type }}
                 </el-tag>
               </div>
             </div>
@@ -226,7 +280,13 @@
         </div>
       </template>
 
-      <el-table :data="seasonHistory" stripe class="history-table">
+      <el-empty v-if="seasonHistory.length === 0" description="暂无赛季历史记录">
+        <template #image>
+          <div class="empty-icon">📊</div>
+        </template>
+      </el-empty>
+
+      <el-table v-else :data="seasonHistory" stripe class="history-table">
         <el-table-column prop="season" label="赛季" width="120" align="center" />
         <el-table-column prop="wins" label="胜场" width="100" align="center">
           <template #default="{ row }">
@@ -394,8 +454,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import {
   ArrowLeft,
   Edit,
@@ -404,6 +465,7 @@ import {
   Star,
   Wallet,
   User,
+  UserFilled,
   Trophy,
   Clock,
   Document,
@@ -413,99 +475,117 @@ import {
   ChatDotSquare,
   Sunrise,
 } from '@element-plus/icons-vue'
+import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
+import { honorApi, type HonorRecord } from '@/api/tauri'
 
 const route = useRoute()
 const router = useRouter()
-const teamId = route.params.id
+const teamStore = useTeamStoreTauri()
+const teamId = Number(route.params.id)
 
-// 所有战队数据
-const allTeams = [
-  // LPL
-  { id: 1, name: 'JD Gaming', shortName: 'JDG', region: 'LPL', power: 88, balance: 15000000, wins: 32, losses: 10, points: 850 },
-  { id: 2, name: 'Bilibili Gaming', shortName: 'BLG', region: 'LPL', power: 86, balance: 14000000, wins: 30, losses: 12, points: 780 },
-  { id: 3, name: 'Top Esports', shortName: 'TES', region: 'LPL', power: 85, balance: 13000000, wins: 28, losses: 14, points: 720 },
-  { id: 4, name: 'Weibo Gaming', shortName: 'WBG', region: 'LPL', power: 84, balance: 12000000, wins: 27, losses: 15, points: 680 },
-  // LCK
-  { id: 5, name: 'T1', shortName: 'T1', region: 'LCK', power: 90, balance: 18000000, wins: 34, losses: 4, points: 920 },
-  { id: 6, name: 'Gen.G', shortName: 'GEN', region: 'LCK', power: 89, balance: 16000000, wins: 33, losses: 5, points: 900 },
-  { id: 7, name: 'Hanwha Life', shortName: 'HLE', region: 'LCK', power: 85, balance: 12000000, wins: 28, losses: 10, points: 750 },
-  { id: 8, name: 'Dplus KIA', shortName: 'DK', region: 'LCK', power: 83, balance: 11000000, wins: 25, losses: 13, points: 680 },
-  // LEC
-  { id: 9, name: 'G2 Esports', shortName: 'G2', region: 'LEC', power: 82, balance: 10000000, wins: 26, losses: 10, points: 650 },
-  { id: 10, name: 'Fnatic', shortName: 'FNC', region: 'LEC', power: 80, balance: 9000000, wins: 24, losses: 12, points: 600 },
-  { id: 11, name: 'MAD Lions', shortName: 'MAD', region: 'LEC', power: 78, balance: 8000000, wins: 22, losses: 14, points: 550 },
-  // LCS
-  { id: 12, name: 'Cloud9', shortName: 'C9', region: 'LCS', power: 76, balance: 9000000, wins: 22, losses: 10, points: 520 },
-  { id: 13, name: 'Team Liquid', shortName: 'TL', region: 'LCS', power: 75, balance: 10000000, wins: 20, losses: 12, points: 480 },
-  { id: 14, name: 'FlyQuest', shortName: 'FLY', region: 'LCS', power: 74, balance: 7000000, wins: 19, losses: 13, points: 450 },
-]
-
-// 所有选手数据
-const allPlayers = [
-  // T1
-  { id: 1, gameId: 'Faker', team: 'T1', teamId: 5, position: 'MID', ability: 95, potential: 96, age: 28, salary: 3500000 },
-  { id: 3, gameId: 'Zeus', team: 'T1', teamId: 5, position: 'TOP', ability: 88, potential: 94, age: 21, salary: 1500000 },
-  { id: 5, gameId: 'Keria', team: 'T1', teamId: 5, position: 'SUP', ability: 89, potential: 93, age: 22, salary: 1400000 },
-  { id: 11, gameId: 'Gumayusi', team: 'T1', teamId: 5, position: 'ADC', ability: 88, potential: 93, age: 22, salary: 1300000 },
-  { id: 12, gameId: 'Oner', team: 'T1', teamId: 5, position: 'JUG', ability: 86, potential: 91, age: 22, salary: 1200000 },
-  // Gen.G
-  { id: 2, gameId: 'Chovy', team: 'Gen.G', teamId: 6, position: 'MID', ability: 93, potential: 95, age: 24, salary: 2500000 },
-  { id: 6, gameId: 'Canyon', team: 'Gen.G', teamId: 6, position: 'JUG', ability: 91, potential: 92, age: 23, salary: 2000000 },
-  { id: 16, gameId: 'Peyz', team: 'Gen.G', teamId: 6, position: 'ADC', ability: 82, potential: 92, age: 19, salary: 800000 },
-  { id: 17, gameId: 'Doran', team: 'Gen.G', teamId: 6, position: 'TOP', ability: 84, potential: 86, age: 24, salary: 1000000 },
-  { id: 18, gameId: 'Lehends', team: 'Gen.G', teamId: 6, position: 'SUP', ability: 85, potential: 86, age: 26, salary: 1100000 },
-  // JDG
-  { id: 4, gameId: 'Ruler', team: 'JDG', teamId: 1, position: 'ADC', ability: 90, potential: 91, age: 26, salary: 2200000 },
-  { id: 14, gameId: 'Kanavi', team: 'JDG', teamId: 1, position: 'JUG', ability: 88, potential: 89, age: 24, salary: 1800000 },
-  { id: 9, gameId: '369', team: 'JDG', teamId: 1, position: 'TOP', ability: 87, potential: 90, age: 23, salary: 1600000 },
-  { id: 21, gameId: 'Yagao', team: 'JDG', teamId: 1, position: 'MID', ability: 84, potential: 85, age: 25, salary: 1400000 },
-  { id: 22, gameId: 'Missing', team: 'JDG', teamId: 1, position: 'SUP', ability: 85, potential: 87, age: 24, salary: 1200000 },
-  // BLG
-  { id: 7, gameId: 'Knight', team: 'BLG', teamId: 2, position: 'MID', ability: 89, potential: 92, age: 24, salary: 2000000 },
-  { id: 13, gameId: 'Elk', team: 'BLG', teamId: 2, position: 'ADC', ability: 86, potential: 90, age: 22, salary: 1300000 },
-  { id: 19, gameId: 'Bin', team: 'BLG', teamId: 2, position: 'TOP', ability: 87, potential: 91, age: 22, salary: 1400000 },
-  { id: 20, gameId: 'ON', team: 'BLG', teamId: 2, position: 'SUP', ability: 82, potential: 88, age: 21, salary: 900000 },
-  { id: 23, gameId: 'XUN', team: 'BLG', teamId: 2, position: 'JUG', ability: 85, potential: 88, age: 21, salary: 1000000 },
-  // 其他队伍默认选手
-]
-
-// 根据ID找到对应战队
-const foundTeam = allTeams.find(t => t.id === Number(teamId))
-
-// 战队数据
-const team = ref(foundTeam || {
-  id: Number(teamId),
-  name: '未知战队',
-  shortName: '???',
-  region: 'LPL',
-  power: 70,
-  balance: 5000000,
-  wins: 0,
-  losses: 0,
-  points: 0,
-})
-
-// 选手数据 - 根据战队ID获取
-const teamPlayers = allPlayers.filter(p => p.teamId === Number(teamId))
-const players = ref(teamPlayers.length > 0 ? teamPlayers : [
-  { id: 100, gameId: 'Player1', position: 'TOP', ability: 75, potential: 85, age: 22, salary: 500000 },
-  { id: 101, gameId: 'Player2', position: 'JUG', ability: 73, potential: 83, age: 21, salary: 450000 },
-  { id: 102, gameId: 'Player3', position: 'MID', ability: 76, potential: 86, age: 23, salary: 550000 },
-  { id: 103, gameId: 'Player4', position: 'ADC', ability: 74, potential: 84, age: 22, salary: 480000 },
-  { id: 104, gameId: 'Player5', position: 'SUP', ability: 72, potential: 82, age: 24, salary: 420000 },
-])
+// 从 store 获取响应式数据
+const { selectedTeam, starters, substitutes, regions } = storeToRefs(teamStore)
 
 // 荣誉记录
-const honors = ref([
-  { season: 'S1', tournament: 'LCK 春季赛', position: '冠军' },
-  { season: 'S1', tournament: 'MSI 季中赛', position: '冠军' },
-  { season: 'S1', tournament: 'LCK 夏季赛', position: '亚军' },
-])
+const honors = ref<HonorRecord[]>([])
 
-// 赛季历史
-const seasonHistory = ref([
-  { season: 'S1', wins: 15, losses: 3, winRate: 83.3, points: 180, rank: 1, achievement: '春季赛冠军' },
-])
+// 加载数据
+onMounted(async () => {
+  await teamStore.loadRegions()
+  await teamStore.selectTeam(teamId)
+
+  // 加载荣誉
+  try {
+    honors.value = await honorApi.getTeamHonors(teamId)
+  } catch (e) {
+    console.error('Failed to load team honors:', e)
+  }
+})
+
+// 监听路由参数变化
+watch(() => route.params.id, async (newId) => {
+  if (newId) {
+    await teamStore.selectTeam(Number(newId))
+    try {
+      honors.value = await honorApi.getTeamHonors(Number(newId))
+    } catch (e) {
+      console.error('Failed to load team honors:', e)
+    }
+  }
+})
+
+// 计算战队数据
+const team = computed(() => {
+  if (!selectedTeam.value) {
+    return {
+      id: teamId,
+      name: '加载中...',
+      shortName: '...',
+      region: 'LPL',
+      region_id: 1,
+      power: 0,
+      balance: 0,
+      wins: 0,
+      losses: 0,
+      points: 0,
+    }
+  }
+  return {
+    id: selectedTeam.value.id,
+    name: selectedTeam.value.name,
+    shortName: selectedTeam.value.short_name || selectedTeam.value.name.substring(0, 3),
+    region: getRegionCode(selectedTeam.value.region_id),
+    region_id: selectedTeam.value.region_id,
+    power: selectedTeam.value.power_rating,
+    balance: selectedTeam.value.balance,
+    wins: selectedTeam.value.wins,
+    losses: selectedTeam.value.total_matches - selectedTeam.value.wins,
+    points: selectedTeam.value.annual_points,
+  }
+})
+
+// 选手列表
+const players = computed(() => {
+  return starters.value.map(p => ({
+    id: p.id,
+    game_id: p.game_id,
+    position: getPositionShort(p.position || ''),
+    ability: p.ability,
+    potential: p.potential,
+    age: p.age,
+    salary: p.salary,
+  }))
+})
+
+// 替补选手列表
+const substitutePlayers = computed(() => {
+  return substitutes.value.map(p => ({
+    id: p.id,
+    game_id: p.game_id,
+    position: getPositionShort(p.position || ''),
+    ability: p.ability,
+    potential: p.potential,
+    age: p.age,
+    salary: p.salary,
+  }))
+})
+
+// 获取赛区代码
+const getRegionCode = (regionId: number) => {
+  const region = regions.value.find(r => r.id === regionId)
+  return region?.code ?? 'LPL'
+}
+
+// 位置简称转换
+const getPositionShort = (position: string) => {
+  const shorts: Record<string, string> = {
+    Top: 'TOP', Jungle: 'JUG', Mid: 'MID', Adc: 'ADC', Support: 'SUP'
+  }
+  return shorts[position] || position
+}
+
+// 赛季历史（实际数据由后端获取，初始为空）
+const seasonHistory = ref<any[]>([])
 
 // 所有战队的历史故事
 const allTeamStories: Record<number, any> = {
@@ -1030,6 +1110,11 @@ const getPositionClass = (position: string) => {
     MID: 'mid',
     ADC: 'adc',
     SUP: 'sup',
+    Top: 'top',
+    Jug: 'jug',
+    Mid: 'mid',
+    Adc: 'adc',
+    Sup: 'sup',
   }
   return classes[position] || ''
 }
@@ -1327,6 +1412,27 @@ const getAchievementType = (achievement: string) => {
   margin-bottom: 20px;
 }
 
+.substitute-card {
+  background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
+}
+
+.substitute-card .card-header h2 {
+  color: #6b7280;
+}
+
+.substitute-grid {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.player-card.substitute {
+  background: var(--bg-secondary);
+  opacity: 0.9;
+}
+
+.player-card.substitute:hover {
+  opacity: 1;
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -1378,11 +1484,11 @@ const getAchievementType = (achievement: string) => {
   margin-bottom: 12px;
 }
 
-.position-badge.top { background: linear-gradient(135deg, #ef4444, #dc2626); }
-.position-badge.jug { background: linear-gradient(135deg, #22c55e, #16a34a); }
-.position-badge.mid { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.position-badge.adc { background: linear-gradient(135deg, #f59e0b, #d97706); }
-.position-badge.sup { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+.position-badge.top { background: linear-gradient(135deg, #ff6b6b, #ee5a5a); }
+.position-badge.jug { background: linear-gradient(135deg, #51cf66, #40c057); }
+.position-badge.mid { background: linear-gradient(135deg, #5c9fff, #4c8fef); }
+.position-badge.adc { background: linear-gradient(135deg, #ffd43b, #fcc419); }
+.position-badge.sup { background: linear-gradient(135deg, #cc5de8, #be4bdb); }
 
 .player-avatar {
   width: 64px;

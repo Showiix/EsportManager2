@@ -1,10 +1,9 @@
 use crate::commands::save_commands::{AppState, CommandResult};
 use crate::engines::DraftEngine;
+use crate::services::draft_pool_data::{get_draft_pool, get_region_nationality};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::State;
-use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
 
 /// 选秀球员信息
 #[derive(Debug, Serialize, Deserialize)]
@@ -76,34 +75,30 @@ pub async fn generate_draft_pool(
         .map_err(|e| e.to_string())?;
     let current_season: i64 = save_row.get("current_season");
 
-    // 生成选秀球员
-    let mut rng = StdRng::from_entropy();
-    let positions = vec!["Top", "Jungle", "Mid", "Bot", "Support"];
-    let tags = vec!["Normal", "Genius", "Ordinary"];
+    // 获取预定义的选秀选手数据
+    let predefined_players = get_draft_pool(region_id);
+    let nationality = get_region_nationality(region_id);
 
-    let mut draft_players = Vec::new();
-    for i in 0..20 {
-        let position = positions[i % 5];
-        let tag = tags[rng.gen_range(0..3)];
-        let ability = 55 + rng.gen_range(0..25);
-        let potential = ability + rng.gen_range(5..20);
+    let mut draft_players: Vec<DraftPlayerInfo> = predefined_players
+        .iter()
+        .map(|p| {
+            DraftPlayerInfo {
+                id: 0,
+                game_id: p.game_id.to_string(),
+                real_name: Some(p.real_name.to_string()),
+                nationality: Some(nationality.to_string()),
+                age: p.age,
+                ability: p.ability,
+                potential: p.potential,
+                position: p.position.to_string(),
+                tag: p.tag.to_string(),
+                draft_rank: 0, // 后面会根据评分排序
+                is_picked: false,
+            }
+        })
+        .collect();
 
-        draft_players.push(DraftPlayerInfo {
-            id: 0,
-            game_id: format!("Rookie_{}_{}_{}", region_id, current_season, i + 1),
-            real_name: None,
-            nationality: Some("CN".to_string()),
-            age: 17 + rng.gen_range(0..3),
-            ability,
-            potential: potential.min(99),
-            position: position.to_string(),
-            tag: tag.to_string(),
-            draft_rank: (i + 1) as u32,
-            is_picked: false,
-        });
-    }
-
-    // 按潜力排序
+    // 按潜力和能力综合评分排序
     draft_players.sort_by(|a, b| {
         let score_a = a.ability as f64 * 0.4 + a.potential as f64 * 0.6;
         let score_b = b.ability as f64 * 0.4 + b.potential as f64 * 0.6;

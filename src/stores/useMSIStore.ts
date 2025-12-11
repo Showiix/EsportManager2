@@ -2,9 +2,7 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type {
   MSIBracket,
-  MSIQualification,
   MSIMatch,
-  MSIRound,
   GenerateMSIRequest,
   SimulateMSIMatchRequest
 } from '@/types'

@@ -516,8 +516,10 @@ import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
 import { PowerEngine } from '@/engines/PowerEngine'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
+import { useGameStore } from '@/stores/useGameStore'
+import { queryApi, teamApi, tournamentApi, matchApi, type Team } from '@/api/tauri'
 import type { Player, PlayerPosition } from '@/types/player'
-import type { MatchDetail } from '@/types/matchDetail'
+import type { MatchDetail, GameDetail } from '@/types/matchDetail'
 
 const route = useRoute()
 const router = useRouter()
@@ -525,6 +527,7 @@ const router = useRouter()
 // Stores
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
+const gameStore = useGameStore()
 
 // 比赛详情弹窗状态
 const showMatchDetailDialog = ref(false)
@@ -532,13 +535,17 @@ const currentMatchDetail = ref<MatchDetail | null>(null)
 
 // 状态
 const currentPhase = ref<'regular' | 'playoffs'>('regular')
-const selectedRegion = ref('LPL')
+const selectedRegion = ref(1) // 默认 LPL region_id = 1
 const matchFilter = ref('all')
 const simulating = ref(false)
 const batchSimulating = ref(false)
 const playoffsSimulating = ref(false)
+const loading = ref(false)
 
-// 模拟数据 - 赛事信息
+// 当前赛事ID
+const currentTournamentId = ref<number | null>(null)
+
+// 赛事信息 (从后端加载)
 const tournament = ref({
   id: route.params.id,
   name: '春季赛',
@@ -547,146 +554,123 @@ const tournament = ref({
   description: '四大赛区春季常规赛与季后赛',
 })
 
-// 赛区数据
-const regions = ref([
-  { id: 'LPL', name: 'LPL' },
-  { id: 'LCK', name: 'LCK' },
-  { id: 'LEC', name: 'LEC' },
-  { id: 'LCS', name: 'LCS' },
-])
+// 赛区数据 (从后端加载)
+const regions = ref<{ id: number; name: string }[]>([])
 
-// 各赛区队伍数据 (春季赛数据)
-const regionTeamsData: Record<string, any[]> = {
-  LPL: [
-    { id: 1, name: 'Bilibili Gaming', short: 'BLG', region: 'LPL', wins: 15, losses: 1, points: 45 },
-    { id: 2, name: 'JD Gaming', short: 'JDG', region: 'LPL', wins: 13, losses: 3, points: 39 },
-    { id: 3, name: 'Top Esports', short: 'TES', region: 'LPL', wins: 12, losses: 4, points: 36 },
-    { id: 4, name: 'LNG Esports', short: 'LNG', region: 'LPL', wins: 11, losses: 5, points: 33 },
-    { id: 5, name: 'Weibo Gaming', short: 'WBG', region: 'LPL', wins: 10, losses: 6, points: 30 },
-    { id: 6, name: 'EDward Gaming', short: 'EDG', region: 'LPL', wins: 9, losses: 7, points: 27 },
-    { id: 7, name: 'Royal Never Give Up', short: 'RNG', region: 'LPL', wins: 8, losses: 8, points: 24 },
-    { id: 8, name: 'FunPlus Phoenix', short: 'FPX', region: 'LPL', wins: 7, losses: 9, points: 21 },
-    { id: 9, name: 'Oh My God', short: 'OMG', region: 'LPL', wins: 6, losses: 10, points: 18 },
-    { id: 10, name: 'Invictus Gaming', short: 'IG', region: 'LPL', wins: 5, losses: 11, points: 15 },
-    { id: 11, name: 'Team WE', short: 'WE', region: 'LPL', wins: 4, losses: 12, points: 12 },
-    { id: 12, name: 'Rare Atom', short: 'RA', region: 'LPL', wins: 3, losses: 13, points: 9 },
-    { id: 13, name: 'ThunderTalk Gaming', short: 'TT', region: 'LPL', wins: 2, losses: 14, points: 6 },
-    { id: 14, name: 'Anyone Legend', short: 'AL', region: 'LPL', wins: 1, losses: 15, points: 3 },
-  ],
-  LCK: [
-    { id: 101, name: 'Gen.G', short: 'GEN', region: 'LCK', wins: 15, losses: 1, points: 45 },
-    { id: 102, name: 'T1', short: 'T1', region: 'LCK', wins: 14, losses: 2, points: 42 },
-    { id: 103, name: 'Hanwha Life', short: 'HLE', region: 'LCK', wins: 13, losses: 3, points: 39 },
-    { id: 104, name: 'Dplus KIA', short: 'DK', region: 'LCK', wins: 12, losses: 4, points: 36 },
-    { id: 105, name: 'KT Rolster', short: 'KT', region: 'LCK', wins: 11, losses: 5, points: 33 },
-    { id: 106, name: 'DRX', short: 'DRX', region: 'LCK', wins: 10, losses: 6, points: 30 },
-    { id: 107, name: 'Kwangdong Freecs', short: 'KDF', region: 'LCK', wins: 9, losses: 7, points: 27 },
-    { id: 108, name: 'Nongshim RedForce', short: 'NS', region: 'LCK', wins: 8, losses: 8, points: 24 },
-    { id: 109, name: 'Liiv SANDBOX', short: 'LSB', region: 'LCK', wins: 7, losses: 9, points: 21 },
-    { id: 110, name: 'BNK FearX', short: 'FOX', region: 'LCK', wins: 6, losses: 10, points: 18 },
-    { id: 111, name: 'OKSavingsBank BRION', short: 'BRO', region: 'LCK', wins: 5, losses: 11, points: 15 },
-    { id: 112, name: 'Fredit BRION', short: 'FB', region: 'LCK', wins: 4, losses: 12, points: 12 },
-    { id: 113, name: 'DN Freecs', short: 'DNF', region: 'LCK', wins: 3, losses: 13, points: 9 },
-    { id: 114, name: 'Daejon Stars', short: 'DJS', region: 'LCK', wins: 1, losses: 15, points: 3 },
-  ],
-  LEC: [
-    { id: 201, name: 'Fnatic', short: 'FNC', region: 'LEC', wins: 14, losses: 2, points: 42 },
-    { id: 202, name: 'G2 Esports', short: 'G2', region: 'LEC', wins: 13, losses: 3, points: 39 },
-    { id: 203, name: 'Team Vitality', short: 'VIT', region: 'LEC', wins: 12, losses: 4, points: 36 },
-    { id: 204, name: 'MAD Lions', short: 'MAD', region: 'LEC', wins: 11, losses: 5, points: 33 },
-    { id: 205, name: 'Rogue', short: 'RGE', region: 'LEC', wins: 10, losses: 6, points: 30 },
-    { id: 206, name: 'Excel Esports', short: 'XL', region: 'LEC', wins: 9, losses: 7, points: 27 },
-    { id: 207, name: 'Team BDS', short: 'BDS', region: 'LEC', wins: 8, losses: 8, points: 24 },
-    { id: 208, name: 'SK Gaming', short: 'SK', region: 'LEC', wins: 7, losses: 9, points: 21 },
-    { id: 209, name: 'Astralis', short: 'AST', region: 'LEC', wins: 6, losses: 10, points: 18 },
-    { id: 210, name: 'Team Heretics', short: 'TH', region: 'LEC', wins: 5, losses: 11, points: 15 },
-    { id: 211, name: 'Karmine Corp', short: 'KC', region: 'LEC', wins: 4, losses: 12, points: 12 },
-    { id: 212, name: 'Giants Gaming', short: 'GIA', region: 'LEC', wins: 3, losses: 13, points: 9 },
-    { id: 213, name: 'GIANTX', short: 'GX', region: 'LEC', wins: 2, losses: 14, points: 6 },
-    { id: 214, name: 'Movistar Riders', short: 'MRS', region: 'LEC', wins: 1, losses: 15, points: 3 },
-  ],
-  LCS: [
-    { id: 301, name: 'Team Liquid', short: 'TL', region: 'LCS', wins: 14, losses: 2, points: 42 },
-    { id: 302, name: 'Cloud9', short: 'C9', region: 'LCS', wins: 13, losses: 3, points: 39 },
-    { id: 303, name: 'FlyQuest', short: 'FLY', region: 'LCS', wins: 12, losses: 4, points: 36 },
-    { id: 304, name: '100 Thieves', short: '100T', region: 'LCS', wins: 11, losses: 5, points: 33 },
-    { id: 305, name: 'NRG', short: 'NRG', region: 'LCS', wins: 10, losses: 6, points: 30 },
-    { id: 306, name: 'Evil Geniuses', short: 'EG', region: 'LCS', wins: 9, losses: 7, points: 27 },
-    { id: 307, name: 'Dignitas', short: 'DIG', region: 'LCS', wins: 8, losses: 8, points: 24 },
-    { id: 308, name: 'Immortals', short: 'IMT', region: 'LCS', wins: 7, losses: 9, points: 21 },
-    { id: 309, name: 'TSM', short: 'TSM', region: 'LCS', wins: 6, losses: 10, points: 18 },
-    { id: 310, name: 'Golden Guardians', short: 'GG', region: 'LCS', wins: 5, losses: 11, points: 15 },
-    { id: 311, name: 'Counter Logic Gaming', short: 'CLG', region: 'LCS', wins: 4, losses: 12, points: 12 },
-    { id: 312, name: 'Shopify Rebellion', short: 'SR', region: 'LCS', wins: 3, losses: 13, points: 9 },
-    { id: 313, name: 'Disguised', short: 'DSG', region: 'LCS', wins: 2, losses: 14, points: 6 },
-    { id: 314, name: 'Lyon Gaming', short: 'LYN', region: 'LCS', wins: 1, losses: 15, points: 3 },
-  ],
+// 队伍ID到名称的映射 (从后端加载)
+const teamMap = ref<Map<number, Team>>(new Map())
+
+// 当前显示的积分榜数据 (从后端加载)
+const standings = ref<any[]>([])
+
+// 当前显示的比赛数据 (从后端加载)
+const matches = ref<any[]>([])
+
+// 加载赛区列表
+const loadRegions = async () => {
+  try {
+    const regionList = await queryApi.getAllRegions()
+    regions.value = regionList.map(r => ({ id: r.id, name: r.name }))
+    if (regionList.length > 0) {
+      selectedRegion.value = regionList[0].id
+    }
+  } catch (error) {
+    console.error('Failed to load regions:', error)
+    ElMessage.error('加载赛区数据失败')
+  }
 }
 
-// 生成赛区比赛数据
-const generateRegionMatches = (region: string) => {
-  const teams = regionTeamsData[region]
-  if (!teams) return []
+// 加载队伍数据
+const loadTeams = async (regionId: number) => {
+  try {
+    const teams = await teamApi.getTeamsByRegion(regionId)
+    teamMap.value.clear()
+    teams.forEach(team => teamMap.value.set(team.id, team))
+  } catch (error) {
+    console.error('Failed to load teams:', error)
+  }
+}
 
-  const matchList: any[] = []
-  let matchId = 1
-
-  // 生成8周的比赛（每周每队打1-2场）
-  for (let week = 1; week <= 8; week++) {
-    const weekMatches: any[] = []
-    const usedTeams = new Set<number>()
-
-    // 每周随机配对
-    const shuffledTeams = [...teams].sort(() => Math.random() - 0.5)
-
-    for (let i = 0; i < shuffledTeams.length - 1; i += 2) {
-      if (i + 1 < shuffledTeams.length) {
-        const homeTeam = shuffledTeams[i]
-        const awayTeam = shuffledTeams[i + 1]
-
-        // 夏季赛：所有比赛都是未开始状态
-        let status = 'upcoming'
-        let homeScore = 0
-        let awayScore = 0
-        let winnerId = null
-
-        weekMatches.push({
-          id: matchId++,
-          week,
-          homeTeamId: homeTeam.id,
-          homeTeam: homeTeam.short,
-          awayTeamId: awayTeam.id,
-          awayTeam: awayTeam.short,
-          homeScore,
-          awayScore,
-          winnerId,
-          status
-        })
+// 加载当前赛区的春季赛赛事
+const loadTournament = async (regionId: number) => {
+  try {
+    const seasonId = gameStore.gameState?.current_season || 1
+    const tournaments = await queryApi.getRegionTournaments(regionId, seasonId)
+    // 查找春季常规赛 (后端存储格式为 PascalCase: SpringRegular)
+    const springRegular = tournaments.find(t => t.tournament_type === 'SpringRegular')
+    if (springRegular) {
+      currentTournamentId.value = springRegular.id
+      tournament.value = {
+        id: springRegular.id.toString(),
+        name: springRegular.name,
+        type: 'league',
+        status: springRegular.status === 'InProgress' ? 'active' : springRegular.status.toLowerCase(),
+        description: '春季常规赛与季后赛',
       }
     }
-
-    matchList.push(...weekMatches)
+  } catch (error) {
+    console.error('Failed to load tournament:', error)
   }
-
-  return matchList
 }
 
-// 各赛区比赛数据缓存
-const regionMatchesCache: Record<string, any[]> = {}
-
-// 获取赛区比赛数据
-const getRegionMatches = (region: string) => {
-  if (!regionMatchesCache[region]) {
-    regionMatchesCache[region] = generateRegionMatches(region)
+// 加载比赛列表
+const loadMatches = async () => {
+  if (!currentTournamentId.value) return
+  try {
+    const matchList = await tournamentApi.getTournamentMatches(currentTournamentId.value)
+    matches.value = matchList.map(m => ({
+      id: m.id,
+      week: m.round || 1,
+      homeTeamId: m.home_team_id,
+      homeTeam: m.home_team_name || teamMap.value.get(m.home_team_id || 0)?.short_name || '未知',
+      awayTeamId: m.away_team_id,
+      awayTeam: m.away_team_name || teamMap.value.get(m.away_team_id || 0)?.short_name || '未知',
+      homeScore: m.home_score,
+      awayScore: m.away_score,
+      winnerId: m.winner_id,
+      // 后端状态格式为 PascalCase: Completed, InProgress, Scheduled
+      status: m.status === 'Completed' ? 'completed' : m.status === 'InProgress' ? 'active' : 'upcoming',
+      simulating: false,
+    }))
+  } catch (error) {
+    console.error('Failed to load matches:', error)
   }
-  return regionMatchesCache[region]
 }
 
-// 当前显示的积分榜数据
-const standings = ref([...regionTeamsData.LPL])
+// 加载积分榜
+const loadStandings = async () => {
+  if (!currentTournamentId.value) return
+  try {
+    const standingList = await tournamentApi.getStandings(currentTournamentId.value)
+    standings.value = standingList.map(s => {
+      const team = teamMap.value.get(s.team_id)
+      return {
+        id: s.team_id,
+        name: team?.name || s.team_name,
+        short: team?.short_name || s.team_name,
+        region: regions.value.find(r => r.id === selectedRegion.value)?.name || 'LPL',
+        wins: s.wins,
+        losses: s.losses,
+        points: s.points,
+      }
+    })
+  } catch (error) {
+    console.error('Failed to load standings:', error)
+  }
+}
 
-// 当前显示的比赛数据
-const matches = ref(getRegionMatches('LPL'))
+// 加载赛区所有数据
+const loadRegionData = async (regionId: number) => {
+  loading.value = true
+  try {
+    await loadTeams(regionId)
+    await loadTournament(regionId)
+    await loadMatches()
+    await loadStandings()
+  } finally {
+    loading.value = false
+  }
+}
 
 // 季后赛数据
 const playoffsStarted = ref(false)
@@ -820,33 +804,29 @@ const handleCloseMatchDetail = () => {
   currentMatchDetail.value = null
 }
 
-const handleRegionChange = (region: string) => {
-  // 切换赛区数据
-  const teams = regionTeamsData[region]
-  if (teams) {
-    standings.value = [...teams]
-    matches.value = getRegionMatches(region)
+const handleRegionChange = async (regionId: number) => {
+  // 重置季后赛状态
+  playoffsStarted.value = false
+  playoffsCompleted.value = false
+  champion.value = null
+  currentPhase.value = 'regular'
 
-    // 重置季后赛状态
-    playoffsStarted.value = false
-    playoffsCompleted.value = false
-    champion.value = null
-    currentPhase.value = 'regular'
+  // 加载新赛区数据
+  await loadRegionData(regionId)
 
-    // 根据赛区更新季后赛数据
-    updatePlayoffsData(region)
+  // 根据赛区更新季后赛数据
+  updatePlayoffsData()
 
-    ElMessage.success(`已切换到 ${region} 赛区`)
-  }
+  const regionName = regions.value.find(r => r.id === regionId)?.name || '未知'
+  ElMessage.success(`已切换到 ${regionName} 赛区`)
 }
 
 // 更新季后赛对阵数据
-const updatePlayoffsData = (region: string) => {
-  const teams = regionTeamsData[region]
-  if (!teams || teams.length < 8) return
+const updatePlayoffsData = () => {
+  if (standings.value.length < 8) return
 
   // 按积分排序
-  const sortedTeams = [...teams].sort((a, b) => b.points - a.points)
+  const sortedTeams = [...standings.value].sort((a, b) => b.points - a.points)
 
   // 更新胜者组第一轮 (1 vs 4, 2 vs 3)
   winnersRounds.value[0].matches = [
@@ -949,8 +929,8 @@ const handlePhaseChange = (phase: string) => {
   }
 }
 
-const getRegionName = (regionId: string) => {
-  return regions.value.find(r => r.id === regionId)?.name || regionId
+const getRegionName = (regionId: number) => {
+  return regions.value.find(r => r.id === regionId)?.name || 'LPL'
 }
 
 const getWinRate = (team: any) => {
@@ -977,24 +957,6 @@ const getStatusText = (status: string) => {
   }
 }
 
-const getMatchStatusType = (status: string) => {
-  switch (status) {
-    case 'completed': return 'success'
-    case 'active': return 'warning'
-    case 'upcoming': return 'info'
-    default: return 'info'
-  }
-}
-
-const getMatchStatusText = (status: string) => {
-  switch (status) {
-    case 'completed': return '已结束'
-    case 'active': return '进行中'
-    case 'upcoming': return '待开始'
-    default: return '未知'
-  }
-}
-
 const getRankClass = (rank: number) => {
   if (rank === 1) return 'gold'
   if (rank === 2) return 'silver'
@@ -1009,59 +971,178 @@ const getRankClass = (rank: number) => {
 const simulateSingleMatch = async (match: any) => {
   match.simulating = true
 
-  await new Promise(resolve => setTimeout(resolve, 300))
+  try {
+    // 使用后端 API 模拟比赛
+    const result = await matchApi.simulateMatchDetailed(match.id)
 
-  // 使用PowerEngine模拟比赛
-  const homeTeamPlayers = generateTeamPlayers(match.homeTeamId, match.homeTeam, selectedRegion.value)
-  const awayTeamPlayers = generateTeamPlayers(match.awayTeamId, match.awayTeam, selectedRegion.value)
+    // 更新本地比赛数据
+    match.homeScore = result.home_score
+    match.awayScore = result.away_score
+    match.winnerId = result.winner_id
+    match.status = 'completed'
 
-  const matchDetail = PowerEngine.simulateMatch(
-    String(match.homeTeamId),
-    match.homeTeam,
-    homeTeamPlayers,
-    String(match.awayTeamId),
-    match.awayTeam,
-    awayTeamPlayers,
-    3 // BO3
-  )
+    // 转换后端结果为 MatchDetail 格式并保存到 store
+    const matchDetail = convertToMatchDetail(result, match)
+    matchDetailStore.saveMatchDetail(`spring-${match.id}`, matchDetail)
 
-  // 更新比赛结果
-  match.homeScore = matchDetail.finalScoreA
-  match.awayScore = matchDetail.finalScoreB
-  match.winnerId = matchDetail.winnerId === String(match.homeTeamId) ? match.homeTeamId : match.awayTeamId
-  match.status = 'completed'
-  match.simulating = false
-
-  // 保存比赛详情
-  matchDetail.matchId = `spring-${match.id}`
-  matchDetail.tournamentType = 'spring'
-  matchDetail.seasonId = '2024'
-  matchDetailStore.saveMatchDetail(matchDetail.matchId, matchDetail)
-
-  // 记录选手表现
-  matchDetail.games.forEach(game => {
-    game.teamAPlayers.forEach(perf => {
-      playerStore.recordPerformance(perf.playerId, '2024', perf.impactScore)
+    // 记录选手表现到统计
+    const regionName = getRegionName(selectedRegion.value)
+    matchDetail.games.forEach(game => {
+      game.teamAPlayers.forEach(perf => {
+        playerStore.recordPerformance(
+          perf.playerId,
+          perf.playerName,
+          perf.teamId,
+          perf.position,
+          perf.impactScore,
+          perf.actualAbility,
+          '2024',
+          regionName
+        )
+      })
+      game.teamBPlayers.forEach(perf => {
+        playerStore.recordPerformance(
+          perf.playerId,
+          perf.playerName,
+          perf.teamId,
+          perf.position,
+          perf.impactScore,
+          perf.actualAbility,
+          '2024',
+          regionName
+        )
+      })
     })
-    game.teamBPlayers.forEach(perf => {
-      playerStore.recordPerformance(perf.playerId, '2024', perf.impactScore)
-    })
+    playerStore.saveToStorage()
+
+    // 重新加载比赛列表和积分榜
+    await loadMatches()
+    await updateStandings()
+
+    // 检查常规赛是否全部完成
+    const allCompleted = matches.value.every(m => m.status === 'completed')
+    if (allCompleted) {
+      playoffsStarted.value = true
+      ElMessage.success('常规赛全部完成！季后赛已开启')
+    } else {
+      ElMessage.success(`比赛结束: ${match.homeTeam} ${result.home_score} - ${result.away_score} ${match.awayTeam}`)
+    }
+  } catch (error) {
+    console.error('Failed to simulate match:', error)
+    ElMessage.error('模拟比赛失败')
+  } finally {
+    match.simulating = false
+  }
+}
+
+/**
+ * 将后端 DetailedMatchResult 转换为前端 MatchDetail 格式
+ */
+const convertToMatchDetail = (result: any, match: any): MatchDetail => {
+  // 处理位置格式（后端可能返回 "Some(Adc)" 格式）
+  const parsePosition = (pos: string | null | undefined): string => {
+    if (!pos) return 'MID'
+    // 处理 "Some(Adc)" 格式
+    const someMatch = pos.match(/Some\((\w+)\)/)
+    if (someMatch) {
+      return someMatch[1]
+    }
+    return pos
+  }
+
+  // 将位置转换为标准格式
+  const normalizePosition = (pos: string): string => {
+    const posMap: Record<string, string> = {
+      'Top': 'TOP', 'Jungle': 'JUG', 'Mid': 'MID', 'Adc': 'ADC', 'Support': 'SUP',
+      'top': 'TOP', 'jungle': 'JUG', 'mid': 'MID', 'adc': 'ADC', 'support': 'SUP',
+    }
+    return posMap[pos] || pos
+  }
+
+  const games: GameDetail[] = result.games.map((g: any) => {
+    // 计算队伍平均发挥值（用于显示）
+    const calcTeamAvgPerformance = (players: any[]) => {
+      if (!players || players.length === 0) return 0
+      const sum = players.reduce((acc: number, p: any) => acc + (p.actual_ability || 0), 0)
+      return sum / players.length
+    }
+
+    const homeAvgPerf = calcTeamAvgPerformance(g.home_players)
+    const awayAvgPerf = calcTeamAvgPerformance(g.away_players)
+
+    return {
+      gameNumber: g.game_number,
+      teamAId: String(result.home_team_id),
+      teamAName: result.home_team_name || match.homeTeam,
+      teamAPower: homeAvgPerf,
+      teamAPerformance: homeAvgPerf,
+      teamAPlayers: (g.home_players || []).map((p: any) => {
+        // 直接使用后端返回的真实数据
+        return {
+          playerId: String(p.player_id),
+          playerName: p.player_name,
+          teamId: String(result.home_team_id),
+          position: normalizePosition(parsePosition(p.position)),
+          baseAbility: p.base_ability || 70,
+          actualAbility: p.actual_ability || 70,
+          conditionBonus: p.condition_bonus || 0,
+          stabilityNoise: p.stability_noise || 0,
+          impactScore: p.impact_score || 0,
+        }
+      }),
+      teamBId: String(result.away_team_id),
+      teamBName: result.away_team_name || match.awayTeam,
+      teamBPower: awayAvgPerf,
+      teamBPerformance: awayAvgPerf,
+      teamBPlayers: (g.away_players || []).map((p: any) => {
+        // 直接使用后端返回的真实数据
+        return {
+          playerId: String(p.player_id),
+          playerName: p.player_name,
+          teamId: String(result.away_team_id),
+          position: normalizePosition(parsePosition(p.position)),
+          baseAbility: p.base_ability || 70,
+          actualAbility: p.actual_ability || 70,
+          conditionBonus: p.condition_bonus || 0,
+          stabilityNoise: p.stability_noise || 0,
+          impactScore: p.impact_score || 0,
+        }
+      }),
+      winnerId: String(g.winner_id),
+      winnerName: g.winner_id === result.home_team_id ? (result.home_team_name || match.homeTeam) : (result.away_team_name || match.awayTeam),
+      powerDifference: homeAvgPerf - awayAvgPerf,
+      performanceDifference: homeAvgPerf - awayAvgPerf,
+      isUpset: false,
+    }
   })
 
-  // 更新积分榜
-  updateStandings()
-
-  // 检查常规赛是否全部完成
-  const allCompleted = matches.value.every(m => m.status === 'completed')
-  if (allCompleted) {
-    playoffsStarted.value = true
-    ElMessage.success('常规赛全部完成！季后赛已开启')
-  } else {
-    ElMessage.success(`比赛结束: ${match.homeTeam} ${matchDetail.finalScoreA} - ${matchDetail.finalScoreB} ${match.awayTeam}`)
+  return {
+    matchId: `spring-${match.id}`,
+    seasonId: String(gameStore.gameState?.current_season || 1),
+    tournamentType: 'spring',
+    teamAId: String(result.home_team_id),
+    teamAName: result.home_team_name || match.homeTeam,
+    teamBId: String(result.away_team_id),
+    teamBName: result.away_team_name || match.awayTeam,
+    bestOf: 3,
+    games,
+    finalScoreA: result.home_score,
+    finalScoreB: result.away_score,
+    winnerId: String(result.winner_id),
+    winnerName: result.winner_id === result.home_team_id ? (result.home_team_name || match.homeTeam) : (result.away_team_name || match.awayTeam),
+    mvpPlayerId: result.mvp?.player_id ? String(result.mvp.player_id) : undefined,
+    mvpPlayerName: result.mvp?.player_name,
+    mvpTeamId: result.mvp?.team_id ? String(result.mvp.team_id) : undefined,
+    createdAt: new Date().toISOString(),
   }
 }
 
 const simulateNextMatch = async () => {
+  if (!currentTournamentId.value) {
+    ElMessage.error('赛事未加载')
+    return
+  }
+
   const nextMatch = matches.value.find(m => m.status === 'active' || m.status === 'upcoming')
   if (!nextMatch) {
     ElMessage.info('没有待模拟的比赛')
@@ -1069,58 +1150,34 @@ const simulateNextMatch = async () => {
   }
 
   simulating.value = true
-  await new Promise(resolve => setTimeout(resolve, 500))
 
-  // 使用PowerEngine模拟比赛
-  const homeTeamPlayers = generateTeamPlayers(nextMatch.homeTeamId, nextMatch.homeTeam, selectedRegion.value)
-  const awayTeamPlayers = generateTeamPlayers(nextMatch.awayTeamId, nextMatch.awayTeam, selectedRegion.value)
+  try {
+    // 使用后端 API 模拟下一场比赛
+    const result = await tournamentApi.simulateNextMatch(currentTournamentId.value)
 
-  const matchDetail = PowerEngine.simulateMatch(
-    String(nextMatch.homeTeamId),
-    nextMatch.homeTeam,
-    homeTeamPlayers,
-    String(nextMatch.awayTeamId),
-    nextMatch.awayTeam,
-    awayTeamPlayers,
-    3 // BO3
-  )
+    if (result) {
+      // 重新加载比赛列表和积分榜
+      await loadMatches()
+      await updateStandings()
 
-  // 更新比赛结果
-  nextMatch.homeScore = matchDetail.finalScoreA
-  nextMatch.awayScore = matchDetail.finalScoreB
-  nextMatch.winnerId = matchDetail.winnerId === String(nextMatch.homeTeamId) ? nextMatch.homeTeamId : nextMatch.awayTeamId
-  nextMatch.status = 'completed'
-
-  // 保存比赛详情
-  matchDetail.matchId = `spring-${nextMatch.id}`
-  matchDetail.tournamentType = 'spring'
-  matchDetail.seasonId = '2024'
-  matchDetailStore.saveMatchDetail(matchDetail.matchId, matchDetail)
-
-  // 记录选手表现
-  matchDetail.games.forEach(game => {
-    game.teamAPlayers.forEach(perf => {
-      playerStore.recordPerformance(perf.playerId, '2024', perf.impactScore)
-    })
-    game.teamBPlayers.forEach(perf => {
-      playerStore.recordPerformance(perf.playerId, '2024', perf.impactScore)
-    })
-  })
-
-  // 更新下一场比赛状态
-  const nextUpcoming = matches.value.find(m => m.status === 'upcoming')
-  if (nextUpcoming) {
-    nextUpcoming.status = 'active'
+      ElMessage.success(`比赛结束: ${result.home_team_name} ${result.home_score} - ${result.away_score} ${result.away_team_name}`)
+    } else {
+      ElMessage.info('没有待模拟的比赛')
+    }
+  } catch (error) {
+    console.error('Failed to simulate next match:', error)
+    ElMessage.error('模拟比赛失败')
+  } finally {
+    simulating.value = false
   }
-
-  // 更新积分榜
-  updateStandings()
-
-  simulating.value = false
-  ElMessage.success(`比赛结束: ${nextMatch.homeTeam} ${matchDetail.finalScoreA} - ${matchDetail.finalScoreB} ${nextMatch.awayTeam}`)
 }
 
 const simulateAll = async () => {
+  if (!currentTournamentId.value) {
+    ElMessage.error('赛事未加载')
+    return
+  }
+
   await ElMessageBox.confirm('将自动模拟所有剩余比赛，是否继续？', '一键模拟', {
     confirmButtonText: '开始',
     cancelButtonText: '取消',
@@ -1129,52 +1186,23 @@ const simulateAll = async () => {
 
   batchSimulating.value = true
 
-  const pendingMatches = matches.value.filter(m => m.status !== 'completed')
-  for (const match of pendingMatches) {
-    await new Promise(resolve => setTimeout(resolve, 100))
+  try {
+    // 使用后端 API 模拟所有比赛
+    await tournamentApi.simulateAllMatches(currentTournamentId.value)
 
-    // 使用PowerEngine模拟比赛
-    const homeTeamPlayers = generateTeamPlayers(match.homeTeamId, match.homeTeam, selectedRegion.value)
-    const awayTeamPlayers = generateTeamPlayers(match.awayTeamId, match.awayTeam, selectedRegion.value)
+    // 重新加载比赛列表和积分榜
+    await loadMatches()
+    await updateStandings()
 
-    const matchDetail = PowerEngine.simulateMatch(
-      String(match.homeTeamId),
-      match.homeTeam,
-      homeTeamPlayers,
-      String(match.awayTeamId),
-      match.awayTeam,
-      awayTeamPlayers,
-      3 // BO3
-    )
-
-    match.homeScore = matchDetail.finalScoreA
-    match.awayScore = matchDetail.finalScoreB
-    match.winnerId = matchDetail.winnerId === String(match.homeTeamId) ? match.homeTeamId : match.awayTeamId
-    match.status = 'completed'
-
-    // 保存比赛详情
-    matchDetail.matchId = `spring-${match.id}`
-    matchDetail.tournamentType = 'spring'
-    matchDetail.seasonId = '2024'
-    matchDetailStore.saveMatchDetail(matchDetail.matchId, matchDetail)
-
-    // 记录选手表现
-    matchDetail.games.forEach(game => {
-      game.teamAPlayers.forEach(perf => {
-        playerStore.recordPerformance(perf.playerId, '2024', perf.impactScore)
-      })
-      game.teamBPlayers.forEach(perf => {
-        playerStore.recordPerformance(perf.playerId, '2024', perf.impactScore)
-      })
-    })
+    // 开启季后赛
+    playoffsStarted.value = true
+    ElMessage.success('常规赛模拟完成！季后赛已开启')
+  } catch (error) {
+    console.error('Failed to simulate all matches:', error)
+    ElMessage.error('模拟比赛失败')
+  } finally {
+    batchSimulating.value = false
   }
-
-  updateStandings()
-  batchSimulating.value = false
-
-  // 开启季后赛
-  playoffsStarted.value = true
-  ElMessage.success('常规赛模拟完成！季后赛已开启')
 }
 
 const simulatePlayoffs = async () => {
@@ -1187,9 +1215,10 @@ const simulatePlayoffs = async () => {
   playoffsSimulating.value = true
 
   // 辅助函数：使用PowerEngine模拟单场比赛
+  const regionName = getRegionName(selectedRegion.value)
   const simulateMatch = (match: any, matchIdPrefix: string) => {
-    const teamAPlayers = generateTeamPlayers(match.teamAId, match.teamA, selectedRegion.value)
-    const teamBPlayers = generateTeamPlayers(match.teamBId, match.teamB, selectedRegion.value)
+    const teamAPlayers = generateTeamPlayers(match.teamAId, match.teamA, regionName)
+    const teamBPlayers = generateTeamPlayers(match.teamBId, match.teamB, regionName)
 
     const matchDetail = PowerEngine.simulateMatch(
       String(match.teamAId),
@@ -1215,10 +1244,28 @@ const simulatePlayoffs = async () => {
     // 记录选手表现
     matchDetail.games.forEach(game => {
       game.teamAPlayers.forEach(perf => {
-        playerStore.recordPerformance(perf.playerId, '2024', perf.impactScore)
+        playerStore.recordPerformance(
+        perf.playerId,
+        perf.playerName,
+        perf.teamId,
+        perf.position,
+        perf.impactScore,
+        perf.actualAbility,
+        '2024',
+        regionName
+      )
       })
       game.teamBPlayers.forEach(perf => {
-        playerStore.recordPerformance(perf.playerId, '2024', perf.impactScore)
+        playerStore.recordPerformance(
+        perf.playerId,
+        perf.playerName,
+        perf.teamId,
+        perf.position,
+        perf.impactScore,
+        perf.actualAbility,
+        '2024',
+        regionName
+      )
       })
     })
 
@@ -1313,25 +1360,19 @@ const simulatePlayoffs = async () => {
   ElMessage.success(`🏆 恭喜 ${champion.value.name} 获得冠军！`)
 }
 
-const updateStandings = () => {
-  // 重新计算积分榜
-  standings.value.forEach(team => {
-    team.wins = matches.value.filter(m => m.winnerId === team.id).length
-    team.losses = matches.value.filter(m =>
-      m.status === 'completed' &&
-      (m.homeTeamId === team.id || m.awayTeamId === team.id) &&
-      m.winnerId !== team.id
-    ).length
-    team.points = team.wins * 3
-  })
-  // 按积分排序
-  standings.value.sort((a, b) => b.points - a.points)
+const updateStandings = async () => {
+  // 从后端重新加载积分榜
+  await loadStandings()
 }
 
-onMounted(() => {
-  // 根据路由参数加载赛事数据
-  const tournamentId = route.params.id
-  console.log('Loading tournament:', tournamentId)
+onMounted(async () => {
+  // 加载赛区列表
+  await loadRegions()
+  // 加载默认赛区数据
+  if (selectedRegion.value) {
+    await loadRegionData(selectedRegion.value)
+    updatePlayoffsData()
+  }
 })
 </script>
 

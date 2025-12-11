@@ -44,6 +44,11 @@ impl TournamentType {
                 | TournamentType::SummerPlayoffs
         )
     }
+
+    /// 是否是国际赛事
+    pub fn is_international(&self) -> bool {
+        !self.is_regional()
+    }
 }
 
 /// 赛事状态

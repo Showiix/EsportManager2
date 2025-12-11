@@ -3,6 +3,7 @@
  * Replaces axios HTTP calls with Tauri invoke commands
  */
 import { invoke } from '@tauri-apps/api/core'
+import { appDataDir, join } from '@tauri-apps/api/path'
 
 // Generic API response from Rust backend
 export interface CommandResult<T> {
@@ -18,8 +19,9 @@ export async function invokeCommand<T>(
 ): Promise<T> {
   try {
     const result = await invoke<CommandResult<T>>(command, args)
-    if (result.success && result.data !== null) {
-      return result.data
+    console.log(`Command ${command} result:`, JSON.stringify(result))
+    if (result.success) {
+      return result.data as T
     }
     throw new Error(result.error || 'Unknown error')
   } catch (error) {
@@ -80,10 +82,14 @@ export interface GameState {
 }
 
 export const saveApi = {
-  initDatabase: () => invokeCommand<void>('init_database'),
+  initDatabase: async () => {
+    const dataDir = await appDataDir()
+    const dbPath = await join(dataDir, 'esport_manager.db')
+    return invokeCommand<void>('init_database', { dbPath })
+  },
 
   createSave: (name: string) =>
-    invokeCommand<string>('create_save', { name }),
+    invokeCommand<SaveInfo>('create_save', { name }),
 
   getSaves: () =>
     invokeCommand<SaveInfo[]>('get_saves'),
@@ -132,6 +138,9 @@ export const teamApi = {
   getTeamsByRegion: (regionId: number) =>
     invokeCommand<Team[]>('get_teams_by_region', { regionId }),
 
+  getAllTeams: () =>
+    invokeCommand<Team[]>('get_all_teams'),
+
   getTeam: (teamId: number) =>
     invokeCommand<Team>('get_team', { teamId }),
 
@@ -151,23 +160,66 @@ export const teamApi = {
 
 export interface Player {
   id: number
+  game_id: string
+  real_name: string | null
   team_id: number | null
-  name: string
-  position: string
-  nationality: string
+  position: string | null
+  nationality: string | null
   age: number
   ability: number
   potential: number
-  form: number
+  stability: number
   salary: number
-  contract_end_season: number
+  market_value: number
+  contract_end_season: number | null
   status: string
   tag: string
+  is_starter: boolean
+}
+
+// 特性信息
+export interface TraitInfo {
+  trait_type: string
+  name: string
+  description: string
+  rarity: number  // 1-5
+  is_negative: boolean
+}
+
+// 状态因子信息（包含计算后的 condition）
+export interface PlayerConditionInfo {
+  player_id: number
+  form_cycle: number
+  momentum: number          // -5 ~ +5
+  last_performance: number
+  last_match_won: boolean
+  games_since_rest: number
+  condition: number         // -10 ~ +10
+  condition_range: [number, number]  // 年龄对应的范围
+}
+
+// 选手完整详情
+export interface PlayerFullDetail {
+  player: Player
+  traits: TraitInfo[]
+  condition_info: PlayerConditionInfo
 }
 
 export const playerApi = {
   getPlayer: (playerId: number) =>
     invokeCommand<Player>('get_player', { playerId }),
+
+  // 获取选手特性列表
+  getPlayerTraits: (playerId: number) =>
+    invokeCommand<TraitInfo[]>('get_player_traits', { playerId }),
+
+  // 获取选手状态因子和 condition
+  getPlayerCondition: (playerId: number) =>
+    invokeCommand<PlayerConditionInfo>('get_player_condition', { playerId }),
+
+  // 获取选手完整详情（包含特性和状态）
+  getPlayerFullDetail: (playerId: number) =>
+    invokeCommand<PlayerFullDetail>('get_player_full_detail', { playerId }),
 }
 
 // ========================================
@@ -429,6 +481,83 @@ export const transferApi = {
 
   getTransferHistory: (teamId?: number) =>
     invokeCommand<TransferRecord[]>('get_transfer_history', { teamId }),
+
+  // ========== AI 转会窗口 API ==========
+
+  // 开始转会窗口
+  startTransferWindow: () =>
+    invokeCommand<TransferWindowInfo>('start_transfer_window'),
+
+  // 执行下一轮转会
+  executeTransferRound: () =>
+    invokeCommand<TransferRoundInfo>('execute_transfer_round'),
+
+  // 快进完成所有转会
+  fastForwardTransfers: () =>
+    invokeCommand<TransferWindowInfo>('fast_forward_transfers'),
+
+  // 获取转会窗口状态
+  getTransferWindowStatus: () =>
+    invokeCommand<TransferWindowInfo>('get_transfer_window_status'),
+
+  // 获取转会事件列表
+  getTransferEvents: (round?: number) =>
+    invokeCommand<TransferEventInfo[]>('get_transfer_events', { round }),
+}
+
+// AI 转会窗口类型定义
+export interface TransferWindowInfo {
+  id: number
+  season_id: number
+  status: string  // 'PREPARING' | 'IN_PROGRESS' | 'COMPLETED'
+  current_round: number
+  total_rounds: number
+  total_transfers: number
+  total_fees: number
+  free_agents_signed: number
+  retirements: number
+  contract_expires: number
+  started_at: string | null
+  completed_at: string | null
+}
+
+export interface TransferEventInfo {
+  id: number
+  round: number
+  event_type: string  // 'FREE_AGENT' | 'PURCHASE' | 'RETIREMENT' | 'CONTRACT_EXPIRE'
+  status: string
+  player_id: number
+  player_name: string
+  position: string | null
+  age: number
+  ability: number
+  potential: number
+  market_value: number
+  from_team_id: number | null
+  from_team_name: string | null
+  to_team_id: number | null
+  to_team_name: string | null
+  transfer_fee: number
+  new_salary: number | null
+  contract_years: number | null
+  contract_type: string
+  price_ratio: number | null
+  headline: string
+  description: string
+  importance: string  // 'BREAKING' | 'MAJOR' | 'NORMAL' | 'MINOR'
+  competing_teams: number[]
+  was_bidding_war: boolean
+  created_at: string | null
+}
+
+export interface TransferRoundInfo {
+  round: number
+  round_name: string
+  events_count: number
+  transfers_count: number
+  total_fees: number
+  summary: string
+  events: TransferEventInfo[]
 }
 
 // ========================================
@@ -648,6 +777,21 @@ export interface SwissTeamStatus {
   is_eliminated: boolean
 }
 
+export interface GroupStandingInfo {
+  group_name: string
+  teams: TeamGroupStats[]
+}
+
+export interface TeamGroupStats {
+  team_id: number
+  team_name: string
+  wins: number
+  losses: number
+  games_won: number
+  games_lost: number
+  points: number
+}
+
 export const internationalApi = {
   createMsiTournament: (
     legendaryTeamIds: number[],
@@ -696,6 +840,18 @@ export const internationalApi = {
 
   generateNextSwissRound: (tournamentId: number) =>
     invokeCommand<number[]>('generate_next_swiss_round', { tournamentId }),
+
+  // ICP洲际对抗赛
+  createIcpTournament: (regionTeams: number[][]) =>
+    invokeCommand<number>('create_icp_tournament', { regionTeams }),
+
+  // 小组赛积分榜
+  getGroupStandings: (tournamentId: number) =>
+    invokeCommand<GroupStandingInfo[]>('get_group_standings', { tournamentId }),
+
+  // 生成淘汰赛对阵
+  generateKnockoutBracket: (tournamentId: number) =>
+    invokeCommand<number[]>('generate_knockout_bracket', { tournamentId }),
 }
 
 // ========================================
@@ -707,14 +863,13 @@ export interface DetailedMatchResult {
   tournament_id: number
   home_team_id: number
   away_team_id: number
-  home_team_name: string
-  away_team_name: string
   home_score: number
   away_score: number
   winner_id: number
-  mvp: MvpInfo
-  games: GameDetailInfo[]
-  player_stats: PlayerMatchStats[]
+  games: DetailedGameResult[]
+  match_mvp: MvpInfo | null
+  home_team_stats: TeamMatchStats
+  away_team_stats: TeamMatchStats
 }
 
 export interface MvpInfo {
@@ -725,44 +880,52 @@ export interface MvpInfo {
   mvp_score: number
 }
 
-export interface GameDetailInfo {
+export interface DetailedGameResult {
   game_number: number
   winner_id: number
   duration_minutes: number
   home_performance: number
   away_performance: number
-  home_player_performances: PlayerGamePerformance[]
-  away_player_performances: PlayerGamePerformance[]
+  game_mvp: MvpInfo
+  home_players: PlayerGameStats[]
+  away_players: PlayerGameStats[]
+  key_events: GameEvent[]
 }
 
-export interface PlayerGamePerformance {
+export interface PlayerGameStats {
   player_id: number
   player_name: string
   position: string
+  base_ability: number
+  condition_bonus: number
+  stability_noise: number
+  actual_ability: number
   kills: number
   deaths: number
   assists: number
   cs: number
-  damage: number
   gold: number
+  damage_dealt: number
+  damage_taken: number
   vision_score: number
-  performance_rating: number
+  mvp_score: number
+  impact_score: number
 }
 
-export interface PlayerMatchStats {
-  player_id: number
-  player_name: string
+export interface GameEvent {
+  time_minutes: number
+  event_type: string
+  description: string
   team_id: number
-  position: string
-  games_played: number
+}
+
+export interface TeamMatchStats {
+  team_id: number
   total_kills: number
   total_deaths: number
   total_assists: number
-  avg_cs: number
-  avg_damage: number
-  avg_gold: number
-  kda: number
-  mvp_score: number
+  total_gold: number
+  total_damage: number
 }
 
 export interface PlayerSeasonStats {
@@ -824,18 +987,21 @@ export interface SeasonSettlementPreview {
 export interface RetiringPlayer {
   player_id: number
   player_name: string
-  team_id: number
-  team_name: string
+  team_id: number | null
   age: number
-  career_years: number
+  ability: number
+  reason: string
+  reason_description: string
 }
 
 export interface ExpiringContract {
   player_id: number
   player_name: string
-  team_id: number
-  team_name: string
-  current_salary: number
+  team_id: number | null
+  age: number
+  ability: number
+  contract_end_season: number | null
+  salary: number
 }
 
 export interface AgeUpdate {
@@ -879,8 +1045,94 @@ export const eventApi = {
   getRetiringCandidates: () =>
     invokeCommand<RetiringPlayer[]>('get_retiring_candidates'),
 
-  getExpiringContracts: () =>
-    invokeCommand<ExpiringContract[]>('get_expiring_contracts'),
+  getExpiringContracts: (currentSeason: number) =>
+    invokeCommand<ExpiringContract[]>('get_expiring_contracts', { currentSeason }),
+}
+
+// ========================================
+// Player Stats (Data Center)
+// ========================================
+
+export interface PlayerSeasonStatistics {
+  id: number | null
+  save_id: string
+  player_id: number
+  player_name: string
+  season_id: number
+  team_id: number | null
+  region_id: string | null
+  position: string
+  matches_played: number
+  games_played: number
+  total_impact: number
+  avg_impact: number
+  avg_performance: number
+  best_performance: number
+  worst_performance: number
+  consistency_score: number
+  international_titles: number
+  regional_titles: number
+  champion_bonus: number
+  yearly_top_score: number
+}
+
+export interface PlayerRankingItem {
+  player_id: number
+  player_name: string
+  team_id: number | null
+  position: string
+  region_id: string | null
+  games_played: number
+  avg_impact: number
+  avg_performance: number
+  consistency_score: number
+  champion_bonus: number
+  yearly_top_score: number
+}
+
+export interface RecordPerformanceParams {
+  player_id: number
+  player_name: string
+  team_id: number
+  position: string
+  impact_score: number
+  actual_ability: number
+  season_id: number
+  region_id?: string
+}
+
+export const statsApi = {
+  // Record a single player performance
+  recordPerformance: (params: RecordPerformanceParams) =>
+    invokeCommand<PlayerSeasonStatistics>('record_player_performance', { params }),
+
+  // Batch record player performances
+  batchRecordPerformance: (performances: RecordPerformanceParams[]) =>
+    invokeCommand<number>('batch_record_player_performance', { performances }),
+
+  // Record championship (for all players in a team)
+  recordChampionship: (teamId: number, isInternational: boolean, seasonId: number) =>
+    invokeCommand<number>('record_championship', { teamId, isInternational, seasonId }),
+
+  // Get season impact ranking
+  getSeasonImpactRanking: (seasonId: number, limit?: number) =>
+    invokeCommand<PlayerRankingItem[]>('get_season_impact_ranking', { seasonId, limit }),
+
+  // Get position ranking
+  getPositionRanking: (seasonId: number, position: string, limit?: number) =>
+    invokeCommand<PlayerRankingItem[]>('get_position_ranking', { seasonId, position, limit }),
+
+  // Get player stats
+  getPlayerStats: (playerId: number, seasonId?: number) =>
+    invokeCommand<PlayerSeasonStatistics[]>('get_player_stats', { playerId, seasonId }),
+
+  // Get team player stats
+  getTeamPlayerStats: (teamId: number, seasonId: number) =>
+    invokeCommand<PlayerSeasonStatistics[]>('get_team_player_stats', { teamId, seasonId }),
+
+  // Clear season stats
+  clearSeasonStats: (seasonId: number) =>
+    invokeCommand<boolean>('clear_season_stats', { seasonId }),
 }
 
 // ========================================
@@ -927,6 +1179,7 @@ export const tauriApi = {
   international: internationalApi,
   match: matchApi,
   event: eventApi,
+  stats: statsApi,
   test: testApi,
 }
 

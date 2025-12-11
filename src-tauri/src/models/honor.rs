@@ -174,49 +174,6 @@ impl Honor {
     }
 }
 
-/// 选手赛事统计（用于计算MVP）
-#[derive(Debug, Clone, Default)]
-pub struct PlayerTournamentStats {
-    pub player_id: u64,
-    pub player_name: String,
-    pub team_id: u64,
-    pub team_name: String,
-    pub position: String,
-    pub total_impact: f64,
-    pub games_played: u32,
-    pub wins: u32,
-    pub mvp_count: u32,
-}
-
-impl PlayerTournamentStats {
-    /// 转换为HonorStats
-    pub fn to_honor_stats(&self) -> HonorStats {
-        HonorStats {
-            total_impact: self.total_impact,
-            mvp_count: self.mvp_count,
-            games_played: self.games_played,
-            wins: self.wins,
-            avg_performance: if self.games_played > 0 {
-                self.total_impact / self.games_played as f64
-            } else {
-                0.0
-            },
-        }
-    }
-}
-
-/// 赛事荣誉汇总
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct TournamentHonors {
-    pub team_champion: Option<Honor>,
-    pub team_runner_up: Option<Honor>,
-    pub team_third: Option<Honor>,
-    pub team_fourth: Option<Honor>,
-    pub player_champions: Vec<Honor>,
-    pub tournament_mvp: Option<Honor>,
-    pub finals_mvp: Option<Honor>,
-}
-
 /// 荣誉殿堂数据
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HonorHallData {

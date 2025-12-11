@@ -256,7 +256,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Trophy,
@@ -271,12 +271,23 @@ import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
 import { PowerEngine } from '@/engines/PowerEngine'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
+import { useGameStore } from '@/stores/useGameStore'
+import { internationalApi, matchApi, queryApi, type BracketInfo, type MatchBracketInfo } from '@/api/tauri'
 import type { Player, PlayerPosition } from '@/types/player'
 import type { MatchDetail } from '@/types/matchDetail'
 
 // Stores
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
+const gameStore = useGameStore()
+
+// 加载状态
+const loading = ref(false)
+const currentTournamentId = ref<number | null>(null)
+const bracketData = ref<BracketInfo | null>(null)
+
+// 队伍ID到名称的映射
+const teamMap = ref<Map<number, { name: string; regionCode: string }>>(new Map())
 
 // 比赛详情弹窗状态
 const showMatchDetailDialog = ref(false)
@@ -287,7 +298,7 @@ const mockMSIBracket = reactive({
   id: '1',
   seasonId: '1',
   seasonYear: 2024,
-  status: 'in_progress' as string,
+  status: 'in_progress' as 'in_progress' | 'completed' | 'not_started',
   qualifiedTeams: [
     { teamId: '1', teamName: 'JDG', regionName: 'LPL', seed: 1 },
     { teamId: '2', teamName: 'T1', regionName: 'LCK', seed: 1 },
@@ -392,7 +403,9 @@ const mockMSIBracket = reactive({
   thirdPlace: null as any,
   fourthPlace: null as any,
   loserRound2: [] as any[],  // 败者组第二轮败者 (2队)
-  loserRound1: [] as any[]   // 败者组第一轮败者 (2队)
+  loserRound1: [] as any[],   // 败者组第一轮败者 (2队)
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString()
 })
 
 // 响应式状态
@@ -403,7 +416,7 @@ const selectedMatch = ref<any>(null)
 const simulating = ref(false)
 
 // 计算属性 - 使用 mock 数据
-const currentMSIBracket = computed(() => mockMSIBracket)
+const currentMSIBracket = computed(() => mockMSIBracket as any)
 
 /**
  * 生成队伍选手数据
@@ -431,15 +444,257 @@ const generateTeamPlayers = (teamId: string, teamName: string, regionName: strin
 /**
  * 刷新数据
  */
-const refreshData = () => {
+const refreshData = async () => {
+  await loadMSIData()
   ElMessage.success('数据已刷新')
+}
+
+/**
+ * 加载MSI赛事数据
+ */
+const loadMSIData = async () => {
+  loading.value = true
+  try {
+    const seasonId = gameStore.gameState?.current_season || 1
+    // 获取国际赛事列表
+    const tournaments = await queryApi.getInternationalTournaments(seasonId)
+    // 查找 MSI 赛事
+    const msiTournament = tournaments.find(t => t.tournament_type === 'Msi')
+
+    if (msiTournament) {
+      currentTournamentId.value = msiTournament.id
+      // 加载对阵数据
+      await loadBracketData()
+    } else {
+      // 如果没有 MSI 赛事，保持 mock 数据显示
+      console.log('No MSI tournament found for season', seasonId)
+    }
+  } catch (error) {
+    console.error('Failed to load MSI data:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+/**
+ * 加载对阵图数据
+ */
+const loadBracketData = async () => {
+  if (!currentTournamentId.value) return
+
+  try {
+    const bracket = await internationalApi.getTournamentBracket(currentTournamentId.value)
+    bracketData.value = bracket
+
+    // 构建队伍映射
+    teamMap.value.clear()
+    bracket.matches.forEach(match => {
+      if (match.home_team) {
+        teamMap.value.set(match.home_team.id, {
+          name: match.home_team.short_name || match.home_team.name,
+          regionCode: match.home_team.region_code
+        })
+      }
+      if (match.away_team) {
+        teamMap.value.set(match.away_team.id, {
+          name: match.away_team.short_name || match.away_team.name,
+          regionCode: match.away_team.region_code
+        })
+      }
+    })
+
+    // 更新 mockMSIBracket 的状态
+    updateMSIBracketFromBackend(bracket)
+  } catch (error) {
+    console.error('Failed to load bracket data:', error)
+  }
+}
+
+/**
+ * 从后端数据更新 MSI 对阵
+ */
+const updateMSIBracketFromBackend = (bracket: BracketInfo) => {
+  // 更新赛事状态
+  const allCompleted = bracket.matches.every(m => m.status === 'Completed')
+  const anyStarted = bracket.matches.some(m => m.status === 'Completed')
+  mockMSIBracket.status = allCompleted ? 'completed' : anyStarted ? 'in_progress' : 'not_started'
+
+  // 构建队伍分组
+  const legendaryTeams: any[] = []
+  const challengerTeams: any[] = []
+  const qualifierTeams: any[] = []
+  const allTeams: any[] = []
+
+  bracket.matches.forEach(match => {
+    if (match.home_team) {
+      const team = {
+        teamId: String(match.home_team.id),
+        teamName: match.home_team.short_name || match.home_team.name,
+        regionName: match.home_team.region_code,
+        seed: 1
+      }
+      if (!allTeams.find(t => t.teamId === team.teamId)) {
+        allTeams.push(team)
+      }
+    }
+    if (match.away_team) {
+      const team = {
+        teamId: String(match.away_team.id),
+        teamName: match.away_team.short_name || match.away_team.name,
+        regionName: match.away_team.region_code,
+        seed: 1
+      }
+      if (!allTeams.find(t => t.teamId === team.teamId)) {
+        allTeams.push(team)
+      }
+    }
+  })
+
+  // 根据阶段分类队伍 (假设第一轮比赛能区分队伍类型)
+  bracket.matches.forEach(match => {
+    if (match.stage === 'WinnerR1' || match.stage === 'WinnersFinal') {
+      // 胜者组 = 传奇组
+      if (match.home_team) {
+        const team = { teamId: String(match.home_team.id), teamName: match.home_team.short_name || match.home_team.name, regionName: match.home_team.region_code }
+        if (!legendaryTeams.find(t => t.teamId === team.teamId)) legendaryTeams.push(team)
+      }
+      if (match.away_team) {
+        const team = { teamId: String(match.away_team.id), teamName: match.away_team.short_name || match.away_team.name, regionName: match.away_team.region_code }
+        if (!legendaryTeams.find(t => t.teamId === team.teamId)) legendaryTeams.push(team)
+      }
+    } else if (match.stage === 'Challenger') {
+      // 挑战者组
+      if (match.home_team) {
+        const team = { teamId: String(match.home_team.id), teamName: match.home_team.short_name || match.home_team.name, regionName: match.home_team.region_code }
+        if (!challengerTeams.find(t => t.teamId === team.teamId)) challengerTeams.push(team)
+      }
+      if (match.away_team) {
+        const team = { teamId: String(match.away_team.id), teamName: match.away_team.short_name || match.away_team.name, regionName: match.away_team.region_code }
+        if (!challengerTeams.find(t => t.teamId === team.teamId)) challengerTeams.push(team)
+      }
+    } else if (match.stage === 'Qualifier') {
+      // 资格赛组
+      if (match.home_team) {
+        const team = { teamId: String(match.home_team.id), teamName: match.home_team.short_name || match.home_team.name, regionName: match.home_team.region_code }
+        if (!qualifierTeams.find(t => t.teamId === team.teamId)) qualifierTeams.push(team)
+      }
+      if (match.away_team) {
+        const team = { teamId: String(match.away_team.id), teamName: match.away_team.short_name || match.away_team.name, regionName: match.away_team.region_code }
+        if (!qualifierTeams.find(t => t.teamId === team.teamId)) qualifierTeams.push(team)
+      }
+    }
+  })
+
+  mockMSIBracket.qualifiedTeams = allTeams
+  mockMSIBracket.legendaryGroup = legendaryTeams.length > 0 ? legendaryTeams : mockMSIBracket.legendaryGroup
+  mockMSIBracket.challengerGroup = challengerTeams.length > 0 ? challengerTeams : mockMSIBracket.challengerGroup
+  mockMSIBracket.qualifierGroup = qualifierTeams.length > 0 ? qualifierTeams : mockMSIBracket.qualifierGroup
+
+  // 更新比赛数据
+  updateMatchesFromBackend(bracket.matches)
+}
+
+/**
+ * 将后端比赛数据映射到前端格式
+ */
+const updateMatchesFromBackend = (matches: MatchBracketInfo[]) => {
+  // 阶段映射：后端阶段名 -> 前端 matchType
+  const stageToMatchType: Record<string, string> = {
+    'Qualifier': 'qualifier',
+    'Challenger': 'challenger',
+    'WinnerR1': 'winner_r1',
+    'WinnersFinal': 'winner_final',
+    'LoserR1': 'loser_r1',
+    'LoserR2': 'loser_r2',
+    'LoserR3': 'loser_r3',
+    'LoserR4': 'loser_r4',
+    'LosersFinal': 'loser_final',
+    'GrandFinal': 'grand_final'
+  }
+
+  matches.forEach(backendMatch => {
+    const matchType = stageToMatchType[backendMatch.stage] || backendMatch.stage.toLowerCase()
+
+    // 在 rounds 中查找对应的比赛
+    for (const round of mockMSIBracket.rounds) {
+      const frontendMatch = round.matches.find((m: any) =>
+        m.matchType === matchType && m.match_order === backendMatch.match_order
+      ) || round.matches.find((m: any) => m.matchType === matchType)
+
+      if (frontendMatch) {
+        // 更新比赛数据
+        frontendMatch.backendMatchId = backendMatch.match_id
+        if (backendMatch.home_team) {
+          frontendMatch.teamAId = String(backendMatch.home_team.id)
+        }
+        if (backendMatch.away_team) {
+          frontendMatch.teamBId = String(backendMatch.away_team.id)
+        }
+        frontendMatch.scoreA = backendMatch.home_score
+        frontendMatch.scoreB = backendMatch.away_score
+        frontendMatch.winnerId = backendMatch.winner_id ? String(backendMatch.winner_id) : null
+        frontendMatch.status = backendMatch.status === 'Completed' ? 'completed' :
+                              backendMatch.status === 'InProgress' ? 'active' : 'scheduled'
+        break
+      }
+    }
+  })
+}
+
+/**
+ * 根据后端 match_id 获取前端比赛对象
+ */
+const findFrontendMatchByBackendId = (backendMatchId: number): any | null => {
+  for (const round of mockMSIBracket.rounds) {
+    const match = round.matches.find((m: any) => m.backendMatchId === backendMatchId)
+    if (match) return match
+  }
+  return null
 }
 
 /**
  * 模拟单场比赛
  */
-const simulateMSIMatch = (match: any) => {
-  // 获取队伍信息
+const simulateMSIMatch = async (match: any) => {
+  // 如果有后端 match ID，使用后端 API 模拟
+  if (match.backendMatchId && currentTournamentId.value) {
+    try {
+      // 使用后端 API 模拟比赛
+      const result = await matchApi.simulateMatchDetailed(match.backendMatchId)
+
+      // 更新比赛结果
+      match.scoreA = result.home_score
+      match.scoreB = result.away_score
+      match.winnerId = String(result.winner_id)
+      match.status = 'completed'
+      match.playedAt = new Date().toISOString()
+
+      // 转换后端结果为 MatchDetail 格式并保存
+      const matchDetail = convertBackendToMatchDetail(result, match)
+      matchDetailStore.saveMatchDetail(match.id, matchDetail)
+
+      // 调用后端推进对阵
+      await internationalApi.advanceBracket(
+        currentTournamentId.value,
+        match.backendMatchId,
+        result.winner_id
+      )
+
+      // 重新加载对阵数据
+      await loadBracketData()
+
+      ElMessage.success(`比赛完成: ${result.home_team_name} ${result.home_score} - ${result.away_score} ${result.away_team_name}`)
+
+      // 检查是否全部完成
+      checkMSICompletion()
+      return
+    } catch (error) {
+      console.error('Backend simulation failed, falling back to local:', error)
+      // 后端失败时使用本地 PowerEngine
+    }
+  }
+
+  // 本地 PowerEngine 模拟 (作为后备方案)
   const teamA = mockMSIBracket.qualifiedTeams.find(t => t.teamId === match.teamAId)
   const teamB = mockMSIBracket.qualifiedTeams.find(t => t.teamId === match.teamBId)
 
@@ -846,6 +1101,188 @@ const formatDate = (dateString: string | undefined): string => {
   if (!dateString) return '未知时间'
   return new Date(dateString).toLocaleString('zh-CN')
 }
+
+/**
+ * 将后端 DetailedMatchResult 转换为前端 MatchDetail 格式
+ */
+const convertBackendToMatchDetail = (result: any, match: any): MatchDetail => {
+  const teamA = mockMSIBracket.qualifiedTeams.find(t => t.teamId === match.teamAId)
+  const teamB = mockMSIBracket.qualifiedTeams.find(t => t.teamId === match.teamBId)
+
+  return {
+    matchId: match.id,
+    tournamentType: 'msi',
+    seasonId: String(mockMSIBracket.seasonYear),
+    teamAId: match.teamAId,
+    teamAName: teamA?.teamName || '队伍A',
+    teamBId: match.teamBId,
+    teamBName: teamB?.teamName || '队伍B',
+    bestOf: match.bestOf || 5,
+    finalScoreA: result.home_score,
+    finalScoreB: result.away_score,
+    winnerId: String(result.winner_id),
+    winnerName: result.winner_id === result.home_team_id ? (teamA?.teamName || '') : (teamB?.teamName || ''),
+    games: result.games.map((game: any, index: number) => ({
+      gameNumber: game.game_number || index + 1,
+      winnerId: String(game.winner_id),
+      winnerName: game.winner_id === result.home_team_id ? (teamA?.teamName || '') : (teamB?.teamName || ''),
+      durationMinutes: game.duration_minutes || 30,
+      teamAPerformance: game.home_performance,
+      teamBPerformance: game.away_performance,
+      mvp: game.game_mvp ? {
+        playerId: String(game.game_mvp.player_id),
+        playerName: game.game_mvp.player_name,
+        teamId: String(game.game_mvp.team_id),
+        position: game.game_mvp.position,
+        mvpScore: game.game_mvp.mvp_score
+      } : null,
+      teamAPlayers: (game.home_players || []).map((p: any) => ({
+        playerId: String(p.player_id),
+        playerName: p.player_name,
+        position: p.position,
+        baseAbility: p.base_ability,
+        conditionBonus: p.condition_bonus,
+        stabilityNoise: p.stability_noise,
+        actualAbility: p.actual_ability,
+        kills: p.kills,
+        deaths: p.deaths,
+        assists: p.assists,
+        cs: p.cs,
+        gold: p.gold,
+        damageDealt: p.damage_dealt,
+        damageTaken: p.damage_taken,
+        visionScore: p.vision_score,
+        mvpScore: p.mvp_score,
+        impactScore: p.impact_score
+      })),
+      teamBPlayers: (game.away_players || []).map((p: any) => ({
+        playerId: String(p.player_id),
+        playerName: p.player_name,
+        position: p.position,
+        baseAbility: p.base_ability,
+        conditionBonus: p.condition_bonus,
+        stabilityNoise: p.stability_noise,
+        actualAbility: p.actual_ability,
+        kills: p.kills,
+        deaths: p.deaths,
+        assists: p.assists,
+        cs: p.cs,
+        gold: p.gold,
+        damageDealt: p.damage_dealt,
+        damageTaken: p.damage_taken,
+        visionScore: p.vision_score,
+        mvpScore: p.mvp_score,
+        impactScore: p.impact_score
+      })),
+      keyEvents: (game.key_events || []).map((e: any) => ({
+        timeMinutes: e.time_minutes,
+        eventType: e.event_type,
+        description: e.description,
+        teamId: String(e.team_id)
+      }))
+    })),
+    matchMvp: result.match_mvp ? {
+      playerId: String(result.match_mvp.player_id),
+      playerName: result.match_mvp.player_name,
+      teamId: String(result.match_mvp.team_id),
+      position: result.match_mvp.position,
+      mvpScore: result.match_mvp.mvp_score
+    } : null,
+    teamAStats: result.home_team_stats ? {
+      totalKills: result.home_team_stats.total_kills,
+      totalDeaths: result.home_team_stats.total_deaths,
+      totalAssists: result.home_team_stats.total_assists,
+      totalGold: result.home_team_stats.total_gold,
+      averageGameDuration: result.home_team_stats.average_game_duration,
+      firstBloodRate: result.home_team_stats.first_blood_rate,
+      firstTowerRate: result.home_team_stats.first_tower_rate,
+      baronRate: result.home_team_stats.baron_rate,
+      dragonRate: result.home_team_stats.dragon_rate
+    } : null,
+    teamBStats: result.away_team_stats ? {
+      totalKills: result.away_team_stats.total_kills,
+      totalDeaths: result.away_team_stats.total_deaths,
+      totalAssists: result.away_team_stats.total_assists,
+      totalGold: result.away_team_stats.total_gold,
+      averageGameDuration: result.away_team_stats.average_game_duration,
+      firstBloodRate: result.away_team_stats.first_blood_rate,
+      firstTowerRate: result.away_team_stats.first_tower_rate,
+      baronRate: result.away_team_stats.baron_rate,
+      dragonRate: result.away_team_stats.dragon_rate
+    } : null,
+    playedAt: new Date().toISOString()
+  }
+}
+
+/**
+ * 检查 MSI 赛事是否完成
+ */
+const checkMSICompletion = () => {
+  const finalRound = mockMSIBracket.rounds[3]
+  const grandFinal = finalRound?.matches.find((m: any) => m.id === 'gf')
+
+  if (grandFinal?.winnerId) {
+    mockMSIBracket.status = 'completed'
+
+    // 获取胜负方
+    const getLoser = (match: any) => {
+      if (!match?.winnerId) return null
+      return match.winnerId === match.teamAId ? match.teamBId : match.teamAId
+    }
+
+    // 获取败者组决赛
+    const loserBracket = mockMSIBracket.rounds[1].matches
+    const lf = loserBracket.find((m: any) => m.id === 'lf')
+    const lr4 = loserBracket.find((m: any) => m.id === 'lr4')
+    const lr3_1 = loserBracket.find((m: any) => m.id === 'lr3_1')
+    const lr3_2 = loserBracket.find((m: any) => m.id === 'lr3_2')
+    const lr2_1 = loserBracket.find((m: any) => m.id === 'lr2_1')
+    const lr2_2 = loserBracket.find((m: any) => m.id === 'lr2_2')
+
+    // 设置最终排名
+    const champion = mockMSIBracket.qualifiedTeams.find(t => t.teamId === grandFinal.winnerId)
+    const runnerUp = mockMSIBracket.qualifiedTeams.find(t => t.teamId === getLoser(grandFinal))
+    const thirdPlace = mockMSIBracket.qualifiedTeams.find(t => t.teamId === getLoser(lf))
+    const fourthPlace = mockMSIBracket.qualifiedTeams.find(t => t.teamId === getLoser(lr4))
+
+    // 败者组排名
+    const loserR2Teams: any[] = []
+    if (lr3_1?.winnerId) {
+      const loser = mockMSIBracket.qualifiedTeams.find(t => t.teamId === getLoser(lr3_1))
+      if (loser) loserR2Teams.push(loser)
+    }
+    if (lr3_2?.winnerId) {
+      const loser = mockMSIBracket.qualifiedTeams.find(t => t.teamId === getLoser(lr3_2))
+      if (loser) loserR2Teams.push(loser)
+    }
+
+    const loserR1Teams: any[] = []
+    if (lr2_1?.winnerId) {
+      const loser = mockMSIBracket.qualifiedTeams.find(t => t.teamId === getLoser(lr2_1))
+      if (loser) loserR1Teams.push(loser)
+    }
+    if (lr2_2?.winnerId) {
+      const loser = mockMSIBracket.qualifiedTeams.find(t => t.teamId === getLoser(lr2_2))
+      if (loser) loserR1Teams.push(loser)
+    }
+
+    mockMSIBracket.champion = champion || null
+    mockMSIBracket.runnerUp = runnerUp || null
+    mockMSIBracket.thirdPlace = thirdPlace || null
+    mockMSIBracket.fourthPlace = fourthPlace || null
+    mockMSIBracket.loserRound2 = loserR2Teams
+    mockMSIBracket.loserRound1 = loserR1Teams
+
+    if (champion) {
+      showChampionCelebration(champion.teamName)
+    }
+  }
+}
+
+// 页面加载时初始化数据
+onMounted(() => {
+  loadMSIData()
+})
 </script>
 
 <style scoped lang="scss">

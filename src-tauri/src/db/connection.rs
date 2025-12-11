@@ -369,19 +369,134 @@ CREATE TABLE IF NOT EXISTS team_season_finances (
     UNIQUE(save_id, season_id, team_id)
 );
 
--- 荣誉记录表
+-- 荣誉记录表 (完整版)
 CREATE TABLE IF NOT EXISTS honors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     save_id TEXT NOT NULL,
-    season_id INTEGER NOT NULL,
-    team_id INTEGER NOT NULL,
-    player_id INTEGER,
-    tournament_id INTEGER NOT NULL,
     honor_type TEXT NOT NULL,
+    season_id INTEGER NOT NULL,
+    tournament_id INTEGER,
+    tournament_type TEXT,
+    tournament_name TEXT,
+    team_id INTEGER,
+    team_name TEXT,
+    player_id INTEGER,
+    player_name TEXT,
+    position TEXT,
+    stats_json TEXT,
     description TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
     FOREIGN KEY (team_id) REFERENCES teams(id),
+    FOREIGN KEY (player_id) REFERENCES players(id),
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
+);
+
+-- 赛事结果表 (记录冠亚季殿军)
+CREATE TABLE IF NOT EXISTS tournament_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_id TEXT NOT NULL,
+    season_id INTEGER NOT NULL,
+    tournament_id INTEGER NOT NULL,
+    tournament_type TEXT NOT NULL,
+    tournament_name TEXT NOT NULL,
+    champion_team_id INTEGER NOT NULL,
+    champion_team_name TEXT NOT NULL,
+    runner_up_team_id INTEGER NOT NULL,
+    runner_up_team_name TEXT NOT NULL,
+    third_team_id INTEGER,
+    third_team_name TEXT,
+    fourth_team_id INTEGER,
+    fourth_team_name TEXT,
+    final_match_id INTEGER,
+    final_score TEXT,
+    total_matches INTEGER,
+    total_games INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+    UNIQUE(save_id, tournament_id)
+);
+
+-- 选手赛事统计表 (用于MVP计算)
+CREATE TABLE IF NOT EXISTS player_tournament_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_id TEXT NOT NULL,
+    season_id INTEGER NOT NULL,
+    tournament_id INTEGER NOT NULL,
+    tournament_type TEXT NOT NULL,
+    player_id INTEGER NOT NULL,
+    player_name TEXT NOT NULL,
+    team_id INTEGER NOT NULL,
+    team_name TEXT NOT NULL,
+    position TEXT NOT NULL,
+    games_played INTEGER NOT NULL DEFAULT 0,
+    games_won INTEGER NOT NULL DEFAULT 0,
+    total_impact REAL NOT NULL DEFAULT 0.0,
+    avg_impact REAL NOT NULL DEFAULT 0.0,
+    max_impact REAL NOT NULL DEFAULT 0.0,
+    avg_performance REAL NOT NULL DEFAULT 0.0,
+    best_performance REAL NOT NULL DEFAULT 0.0,
+    game_mvp_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+    FOREIGN KEY (player_id) REFERENCES players(id),
+    UNIQUE(save_id, tournament_id, player_id)
+);
+
+-- 选手状态因子表 (用于动态计算 condition)
+CREATE TABLE IF NOT EXISTS player_form_factors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL UNIQUE,
+    form_cycle REAL NOT NULL DEFAULT 50.0,
+    momentum INTEGER NOT NULL DEFAULT 0,
+    last_performance REAL NOT NULL DEFAULT 0.0,
+    last_match_won INTEGER NOT NULL DEFAULT 0,
+    games_since_rest INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+);
+
+-- 选手特性表
+CREATE TABLE IF NOT EXISTS player_traits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL,
+    trait_type TEXT NOT NULL,
+    acquired_season INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+    UNIQUE(player_id, trait_type)
+);
+
+-- 选手赛季统计表 (数据中心)
+CREATE TABLE IF NOT EXISTS player_season_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_id TEXT NOT NULL,
+    player_id INTEGER NOT NULL,
+    player_name TEXT NOT NULL,
+    season_id INTEGER NOT NULL,
+    team_id INTEGER,
+    region_id TEXT,
+    position TEXT NOT NULL,
+    matches_played INTEGER NOT NULL DEFAULT 0,
+    games_played INTEGER NOT NULL DEFAULT 0,
+    total_impact REAL NOT NULL DEFAULT 0.0,
+    avg_impact REAL NOT NULL DEFAULT 0.0,
+    avg_performance REAL NOT NULL DEFAULT 0.0,
+    best_performance REAL NOT NULL DEFAULT 0.0,
+    worst_performance REAL NOT NULL DEFAULT 100.0,
+    consistency_score REAL NOT NULL DEFAULT 100.0,
+    international_titles INTEGER NOT NULL DEFAULT 0,
+    regional_titles INTEGER NOT NULL DEFAULT 0,
+    champion_bonus REAL NOT NULL DEFAULT 0.0,
+    yearly_top_score REAL NOT NULL DEFAULT 0.0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+    UNIQUE(save_id, player_id, season_id)
 );
 
 -- 创建索引
@@ -396,4 +511,18 @@ CREATE INDEX IF NOT EXISTS idx_global_rankings_season ON global_rankings(season_
 CREATE INDEX IF NOT EXISTS idx_draft_players_season ON draft_players(season_id);
 CREATE INDEX IF NOT EXISTS idx_transfer_records_season ON transfer_records(season_id);
 CREATE INDEX IF NOT EXISTS idx_honors_team ON honors(team_id);
+CREATE INDEX IF NOT EXISTS idx_honors_player ON honors(player_id);
+CREATE INDEX IF NOT EXISTS idx_honors_season ON honors(season_id);
+CREATE INDEX IF NOT EXISTS idx_honors_type ON honors(honor_type);
+CREATE INDEX IF NOT EXISTS idx_honors_tournament_type ON honors(tournament_type);
+CREATE INDEX IF NOT EXISTS idx_tournament_results_save ON tournament_results(save_id);
+CREATE INDEX IF NOT EXISTS idx_tournament_results_tournament ON tournament_results(tournament_id);
+CREATE INDEX IF NOT EXISTS idx_player_tournament_stats_tournament ON player_tournament_stats(tournament_id);
+CREATE INDEX IF NOT EXISTS idx_player_tournament_stats_player ON player_tournament_stats(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_tournament_stats_impact ON player_tournament_stats(avg_impact DESC);
+CREATE INDEX IF NOT EXISTS idx_player_form_factors ON player_form_factors(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_traits ON player_traits(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_season_stats_save ON player_season_stats(save_id, season_id);
+CREATE INDEX IF NOT EXISTS idx_player_season_stats_player ON player_season_stats(player_id);
+CREATE INDEX IF NOT EXISTS idx_player_season_stats_yearly ON player_season_stats(yearly_top_score DESC);
 "#;

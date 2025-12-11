@@ -76,8 +76,8 @@
           :class="{ 'is-completed': region.completed }"
           @click="goToDraft(region)"
         >
-          <div class="region-badge" :class="region.short_name?.toLowerCase()">
-            {{ region.short_name }}
+          <div class="region-badge" :class="region.code?.toLowerCase()">
+            {{ region.code }}
           </div>
           <div class="region-info">
             <h3 class="region-name">{{ region.name }}</h3>
@@ -185,7 +185,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import {
@@ -206,7 +206,7 @@ const draftStore = useDraftStoreTauri()
 const teamStore = useTeamStoreTauri()
 
 // 从 store 获取响应式数据
-const { pool, draftOrder, currentPick, isLoading } = storeToRefs(draftStore)
+const { isLoading } = storeToRefs(draftStore)
 const { regions } = storeToRefs(teamStore)
 
 // 初始化
@@ -235,7 +235,7 @@ const remainingPicks = computed(() => totalProspects.value - draftedCount.value)
 
 // 方法
 const goToDraft = (region: any) => {
-  router.push(`/draft/${region.short_name?.toLowerCase() ?? region.id}`)
+  router.push(`/draft/${region.code?.toLowerCase() ?? region.id}`)
 }
 
 const goToPool = () => {

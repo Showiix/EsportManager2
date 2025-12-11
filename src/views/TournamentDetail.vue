@@ -634,7 +634,6 @@ const generateRegionMatches = (region: string) => {
   // 生成8周的比赛（每周每队打1-2场）
   for (let week = 1; week <= 8; week++) {
     const weekMatches: any[] = []
-    const usedTeams = new Set<number>()
 
     // 每周随机配对
     const shuffledTeams = [...teams].sort(() => Math.random() - 0.5)
@@ -1059,24 +1058,6 @@ const getStatusText = (status: string) => {
     case 'active': return '进行中'
     case 'upcoming': return '未开始'
     case 'completed': return '已完成'
-    default: return '未知'
-  }
-}
-
-const getMatchStatusType = (status: string) => {
-  switch (status) {
-    case 'completed': return 'success'
-    case 'active': return 'warning'
-    case 'upcoming': return 'info'
-    default: return 'info'
-  }
-}
-
-const getMatchStatusText = (status: string) => {
-  switch (status) {
-    case 'completed': return '已结束'
-    case 'active': return '进行中'
-    case 'upcoming': return '待开始'
     default: return '未知'
   }
 }

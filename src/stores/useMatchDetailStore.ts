@@ -5,7 +5,7 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { MatchDetail, GameDetail, SeasonMatchSummary } from '@/types/matchDetail'
+import type { MatchDetail, SeasonMatchSummary } from '@/types/matchDetail'
 
 const STORAGE_KEY = 'esport-match-details'
 

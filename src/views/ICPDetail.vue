@@ -248,8 +248,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, reactive, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Flag,
@@ -262,11 +262,16 @@ import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
 import { PowerEngine } from '@/engines/PowerEngine'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
+import { useGameStore } from '@/stores/useGameStore'
+import { internationalApi, matchApi, queryApi } from '@/api/tauri'
+import type { BracketInfo, MatchBracketInfo, GroupStandingInfo, DetailedMatchResult, DetailedGameResult, PlayerGameStats } from '@/api/tauri'
 import type { Player, PlayerPosition } from '@/types/player'
 import type { MatchDetail } from '@/types/matchDetail'
 import type { ICPTournament, ICPSeedGroup, ICPMatch, ICPRegionStats, ICPRegionMatch, ICPGroupStanding } from '@/types/icp'
 
 const router = useRouter()
+const route = useRoute()
+const gameStore = useGameStore()
 
 // Stores
 const matchDetailStore = useMatchDetailStore()
@@ -275,6 +280,13 @@ const playerStore = usePlayerStore()
 // 比赛详情弹窗状态
 const showMatchDetailDialog = ref(false)
 const currentMatchDetail = ref<MatchDetail | null>(null)
+
+// 后端数据状态
+const tournamentId = ref<number | null>(null)
+const bracketData = ref<BracketInfo | null>(null)
+const groupStandings = ref<GroupStandingInfo[]>([])
+const loading = ref(false)
+const teamMap = ref<Map<number, { name: string; regionCode: string }>>(new Map())
 
 // 响应式状态
 const generatingRegionBattle = ref(false)
@@ -542,20 +554,159 @@ const handleCloseMatchDetail = () => {
 }
 
 /**
+ * 转换后端比赛结果到前端 MatchDetail 格式
+ */
+const convertToMatchDetail = (result: DetailedMatchResult, matchId: string): MatchDetail => {
+  const games = result.games.map((game: DetailedGameResult, idx: number) => ({
+    gameNumber: idx + 1,
+    winnerId: game.winner_id.toString(),
+    duration: game.duration,
+    teamAPlayers: game.team_a_players.map((p: PlayerGameStats) => ({
+      playerId: p.player_id.toString(),
+      playerName: p.player_name,
+      position: p.position as PlayerPosition,
+      baseAbility: p.base_ability,
+      actualAbility: p.actual_ability,
+      impactScore: p.impact_score,
+      condition: p.condition,
+      stability: p.stability,
+      stabilityNoise: p.stability_noise,
+      kills: p.kills,
+      deaths: p.deaths,
+      assists: p.assists,
+      gold: p.gold,
+      damage: p.damage,
+      cs: p.cs,
+      visionScore: p.vision_score
+    })),
+    teamBPlayers: game.team_b_players.map((p: PlayerGameStats) => ({
+      playerId: p.player_id.toString(),
+      playerName: p.player_name,
+      position: p.position as PlayerPosition,
+      baseAbility: p.base_ability,
+      actualAbility: p.actual_ability,
+      impactScore: p.impact_score,
+      condition: p.condition,
+      stability: p.stability,
+      stabilityNoise: p.stability_noise,
+      kills: p.kills,
+      deaths: p.deaths,
+      assists: p.assists,
+      gold: p.gold,
+      damage: p.damage,
+      cs: p.cs,
+      visionScore: p.vision_score
+    })),
+    teamAPerformance: game.team_a_performance,
+    teamBPerformance: game.team_b_performance,
+    performanceDiff: game.performance_diff,
+    gameNoise: game.game_noise,
+    mvpPlayerId: game.mvp_player_id?.toString(),
+    mvpPlayerName: game.mvp_player_name,
+    mvpTeamId: game.mvp_team_id?.toString()
+  }))
+
+  return {
+    matchId,
+    teamAId: result.team_a_id.toString(),
+    teamAName: result.team_a_name,
+    teamBId: result.team_b_id.toString(),
+    teamBName: result.team_b_name,
+    bestOf: result.best_of,
+    finalScoreA: result.final_score_a,
+    finalScoreB: result.final_score_b,
+    winnerId: result.winner_id.toString(),
+    games,
+    tournamentType: 'icp',
+    seasonId: String(icpTournament.seasonYear)
+  }
+}
+
+/**
  * 模拟单场比赛
  */
 const handleSimulateMatch = async (match: ICPMatch) => {
-  // 生成选手数据
-  const teamAPlayers = generateTeamPlayers(match.teamAId, match.teamAName, match.teamARegion)
-  const teamBPlayers = generateTeamPlayers(match.teamBId, match.teamBName, match.teamBRegion)
+  // 尝试使用后端 API
+  if (tournamentId.value && bracketData.value) {
+    try {
+      // 找到后端对应的 matchId
+      const backendMatchId = findBackendMatchId(match)
 
-  // 使用 PowerEngine 模拟比赛
+      if (backendMatchId) {
+        const result = await matchApi.simulateMatchDetailed(backendMatchId)
+
+        if (result) {
+          // 转换为前端格式
+          const matchDetail = convertToMatchDetail(result, match.id)
+
+          // 更新比赛状态
+          match.scoreA = result.final_score_a
+          match.scoreB = result.final_score_b
+          match.winnerId = result.winner_id.toString()
+          match.status = 'completed'
+          match.completedAt = new Date()
+
+          // 保存比赛详情
+          matchDetailStore.saveMatchDetail(match.id, matchDetail)
+
+          // 记录选手表现
+          matchDetail.games.forEach(game => {
+            game.teamAPlayers.forEach(perf => {
+              playerStore.recordPerformance(
+                perf.playerId,
+                perf.playerName,
+                String(match.teamAId),
+                perf.position,
+                perf.impactScore,
+                perf.actualAbility,
+                String(icpTournament.seasonYear),
+                'INTL'
+              )
+            })
+            game.teamBPlayers.forEach(perf => {
+              playerStore.recordPerformance(
+                perf.playerId,
+                perf.playerName,
+                String(match.teamBId),
+                perf.position,
+                perf.impactScore,
+                perf.actualAbility,
+                String(icpTournament.seasonYear),
+                'INTL'
+              )
+            })
+          })
+
+          // 推进对阵
+          await internationalApi.advanceBracket(tournamentId.value, backendMatchId, result.winner_id)
+
+          // 更新积分榜
+          updateGroupStandings(match)
+
+          ElMessage.success(`比赛完成: ${match.teamAName} ${result.final_score_a} - ${result.final_score_b} ${match.teamBName}`)
+
+          // 检查该组是否完成
+          checkGroupCompletion()
+          return
+        }
+      }
+    } catch (error) {
+      console.warn('后端 API 模拟失败，使用本地引擎:', error)
+    }
+  }
+
+  // 后备: 使用 PowerEngine 本地模拟
+  const teamAId = String(match.teamAId || '')
+  const teamBId = String(match.teamBId || '')
+  const teamAPlayers = generateTeamPlayers(teamAId, match.teamAName || '', match.teamARegion || '')
+  const teamBPlayers = generateTeamPlayers(teamBId, match.teamBName || '', match.teamBRegion || '')
+
   const matchDetail = PowerEngine.simulateMatch(
-    match.teamAId,
-    match.teamAName,
+    teamAId,
+    match.teamAName || '',
     teamAPlayers,
-    match.teamBId,
-    match.teamBName,
+    teamBId,
+    match.teamBName || '',
     teamBPlayers,
     match.bestOf || 3
   )
@@ -608,6 +759,29 @@ const handleSimulateMatch = async (match: ICPMatch) => {
 
   // 检查该组是否完成
   checkGroupCompletion()
+}
+
+/**
+ * 查找后端对应的 matchId
+ */
+const findBackendMatchId = (match: ICPMatch): number | null => {
+  if (!bracketData.value) return null
+
+  // 在所有比赛中查找匹配的
+  const allMatches = bracketData.value.matches || []
+
+  for (const m of allMatches) {
+    // 根据队伍名称匹配
+    const teamAName = teamMap.value.get(m.team_a_id || 0)?.name
+    const teamBName = teamMap.value.get(m.team_b_id || 0)?.name
+
+    if ((teamAName === match.teamAName && teamBName === match.teamBName) ||
+        (teamAName === match.teamBName && teamBName === match.teamAName)) {
+      return m.id
+    }
+  }
+
+  return null
 }
 
 /**
@@ -796,17 +970,88 @@ const createRegionBattle = (
  * 模拟赛区对决中的单场比赛
  */
 const handleSimulateRegionMatch = async (battle: ICPRegionMatch, match: ICPMatch) => {
-  // 生成选手数据
-  const teamAPlayers = generateTeamPlayers(match.teamAId, match.teamAName, match.teamARegion)
-  const teamBPlayers = generateTeamPlayers(match.teamBId, match.teamBName, match.teamBRegion)
+  // 尝试使用后端 API
+  if (tournamentId.value && bracketData.value) {
+    try {
+      const backendMatchId = findBackendMatchId(match)
 
-  // 使用 PowerEngine 模拟比赛 (BO5)
+      if (backendMatchId) {
+        const result = await matchApi.simulateMatchDetailed(backendMatchId)
+
+        if (result) {
+          const matchDetail = convertToMatchDetail(result, match.id)
+
+          match.scoreA = result.final_score_a
+          match.scoreB = result.final_score_b
+          match.winnerId = result.winner_id.toString()
+          match.status = 'completed'
+          match.completedAt = new Date()
+
+          matchDetailStore.saveMatchDetail(match.id, matchDetail)
+
+          // 记录选手表现
+          matchDetail.games.forEach(game => {
+            game.teamAPlayers.forEach(perf => {
+              playerStore.recordPerformance(
+                perf.playerId,
+                perf.playerName,
+                String(match.teamAId),
+                perf.position,
+                perf.impactScore,
+                perf.actualAbility,
+                String(icpTournament.seasonYear),
+                'INTL'
+              )
+            })
+            game.teamBPlayers.forEach(perf => {
+              playerStore.recordPerformance(
+                perf.playerId,
+                perf.playerName,
+                String(match.teamBId),
+                perf.position,
+                perf.impactScore,
+                perf.actualAbility,
+                String(icpTournament.seasonYear),
+                'INTL'
+              )
+            })
+          })
+
+          // 推进对阵
+          await internationalApi.advanceBracket(tournamentId.value, backendMatchId, result.winner_id)
+
+          // 更新赛区胜场
+          if (match.teamARegion === battle.regionA) {
+            if (result.final_score_a > result.final_score_b) battle.regionAWins++
+            else battle.regionBWins++
+          } else {
+            if (result.final_score_a > result.final_score_b) battle.regionBWins++
+            else battle.regionAWins++
+          }
+
+          ElMessage.success(`比赛完成: ${match.teamAName} ${result.final_score_a} - ${result.final_score_b} ${match.teamBName}`)
+
+          checkRegionBattleCompletion(battle)
+          return
+        }
+      }
+    } catch (error) {
+      console.warn('后端 API 模拟失败，使用本地引擎:', error)
+    }
+  }
+
+  // 后备: 使用 PowerEngine 本地模拟 (BO5)
+  const teamAId = String(match.teamAId || '')
+  const teamBId = String(match.teamBId || '')
+  const teamAPlayers = generateTeamPlayers(teamAId, match.teamAName || '', match.teamARegion || '')
+  const teamBPlayers = generateTeamPlayers(teamBId, match.teamBName || '', match.teamBRegion || '')
+
   const matchDetail = PowerEngine.simulateMatch(
-    match.teamAId,
-    match.teamAName,
+    teamAId,
+    match.teamAName || '',
     teamAPlayers,
-    match.teamBId,
-    match.teamBName,
+    teamBId,
+    match.teamBName || '',
     teamBPlayers,
     match.bestOf || 5
   )
@@ -817,7 +1062,6 @@ const handleSimulateRegionMatch = async (battle: ICPRegionMatch, match: ICPMatch
   match.status = 'completed'
   match.completedAt = new Date()
 
-  // 保存比赛详情
   matchDetail.matchId = match.id
   matchDetail.tournamentType = 'icp'
   matchDetail.seasonId = String(icpTournament.seasonYear)
@@ -862,7 +1106,6 @@ const handleSimulateRegionMatch = async (battle: ICPRegionMatch, match: ICPMatch
 
   ElMessage.success(`比赛完成: ${match.teamAName} ${matchDetail.finalScoreA} - ${matchDetail.finalScoreB} ${match.teamBName}`)
 
-  // 检查赛区对决是否结束
   checkRegionBattleCompletion(battle)
 }
 
@@ -1020,16 +1263,18 @@ const batchSimulateRegionBattle = async () => {
  */
 const simulateMatchInternal = async (match: ICPMatch) => {
   // 生成选手数据
-  const teamAPlayers = generateTeamPlayers(match.teamAId, match.teamAName, match.teamARegion)
-  const teamBPlayers = generateTeamPlayers(match.teamBId, match.teamBName, match.teamBRegion)
+  const teamAId = String(match.teamAId || '')
+  const teamBId = String(match.teamBId || '')
+  const teamAPlayers = generateTeamPlayers(teamAId, match.teamAName || '', match.teamARegion || '')
+  const teamBPlayers = generateTeamPlayers(teamBId, match.teamBName || '', match.teamBRegion || '')
 
   // 使用 PowerEngine 模拟比赛
   const matchDetail = PowerEngine.simulateMatch(
-    match.teamAId,
-    match.teamAName,
+    teamAId,
+    match.teamAName || '',
     teamAPlayers,
-    match.teamBId,
-    match.teamBName,
+    teamBId,
+    match.teamBName || '',
     teamBPlayers,
     match.bestOf || 3
   )
@@ -1085,16 +1330,18 @@ const simulateRegionBattleInternal = async (battle: ICPRegionMatch) => {
   for (const match of battle.matches) {
     if (match.status !== 'completed') {
       // 生成选手数据
-      const teamAPlayers = generateTeamPlayers(match.teamAId, match.teamAName, match.teamARegion)
-      const teamBPlayers = generateTeamPlayers(match.teamBId, match.teamBName, match.teamBRegion)
+      const teamAId = String(match.teamAId || '')
+      const teamBId = String(match.teamBId || '')
+      const teamAPlayers = generateTeamPlayers(teamAId, match.teamAName || '', match.teamARegion || '')
+      const teamBPlayers = generateTeamPlayers(teamBId, match.teamBName || '', match.teamBRegion || '')
 
       // 使用 PowerEngine 模拟比赛 (BO5)
       const matchDetail = PowerEngine.simulateMatch(
-        match.teamAId,
-        match.teamAName,
+        teamAId,
+        match.teamAName || '',
         teamAPlayers,
-        match.teamBId,
-        match.teamBName,
+        teamBId,
+        match.teamBName || '',
         teamBPlayers,
         match.bestOf || 5
       )
@@ -1180,6 +1427,187 @@ const showChampionCelebration = (championName: string) => {
     }
   )
 }
+
+/**
+ * 加载ICP赛事数据
+ */
+const loadICPData = async () => {
+  loading.value = true
+
+  try {
+    // 获取当前存档和赛季
+    const currentSave = gameStore.currentSave
+    if (!currentSave) {
+      console.warn('未找到当前存档')
+      return
+    }
+
+    const seasonId = currentSave.currentSeason || 1
+
+    // 获取ICP赛事ID (类型为 'Icp')
+    const tournaments = await internationalApi.getTournamentsByType('Icp', seasonId)
+    if (tournaments && tournaments.length > 0) {
+      tournamentId.value = tournaments[0].id
+    }
+
+    if (!tournamentId.value) {
+      console.warn('未找到ICP赛事')
+      return
+    }
+
+    // 加载队伍映射
+    const teams = await queryApi.getTeams()
+    if (teams) {
+      teamMap.value.clear()
+      teams.forEach((team: any) => {
+        teamMap.value.set(team.id, {
+          name: team.name,
+          regionCode: team.region_code || team.regionCode || ''
+        })
+      })
+    }
+
+    // 获取对阵图数据
+    const bracket = await internationalApi.getTournamentBracket(tournamentId.value)
+    if (bracket) {
+      bracketData.value = bracket
+      convertBracketToICPFormat(bracket)
+    }
+
+    // 获取小组积分榜
+    const standings = await internationalApi.getGroupStandings(tournamentId.value)
+    if (standings) {
+      groupStandings.value = standings
+      updateICPStandingsFromBackend(standings)
+    }
+
+  } catch (error) {
+    console.error('加载ICP数据失败:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+/**
+ * 转换后端对阵数据到ICP格式
+ */
+const convertBracketToICPFormat = (bracket: BracketInfo) => {
+  if (!bracket.matches) return
+
+  // 按阶段分类比赛
+  const groupMatches = bracket.matches.filter(m => m.stage === 'group' || m.stage === 'Group')
+  const knockoutMatches = bracket.matches.filter(m => m.stage !== 'group' && m.stage !== 'Group')
+
+  // 更新种子组比赛数据
+  groupMatches.forEach(match => {
+    // 找到对应的前端比赛
+    for (const group of icpTournament.seedGroups) {
+      const frontendMatch = group.matches.find(m => {
+        const teamAName = teamMap.value.get(match.team_a_id || 0)?.name
+        const teamBName = teamMap.value.get(match.team_b_id || 0)?.name
+        return (m.teamAName === teamAName && m.teamBName === teamBName) ||
+               (m.teamAName === teamBName && m.teamBName === teamAName)
+      })
+
+      if (frontendMatch && match.winner_id) {
+        frontendMatch.status = 'completed'
+        frontendMatch.scoreA = match.score_a || 0
+        frontendMatch.scoreB = match.score_b || 0
+        frontendMatch.winnerId = match.winner_id.toString()
+      }
+    }
+  })
+
+  // 处理淘汰赛阶段
+  if (knockoutMatches.length > 0) {
+    // 如果有淘汰赛比赛，说明已进入赛区对决阶段
+    icpTournament.status = 'region_battle'
+  }
+}
+
+/**
+ * 从后端更新积分榜
+ */
+const updateICPStandingsFromBackend = (standings: GroupStandingInfo[]) => {
+  // 按组分类
+  const groupedStandings: Record<string, GroupStandingInfo[]> = {}
+  standings.forEach(s => {
+    const groupName = s.group_name || 'A'
+    if (!groupedStandings[groupName]) {
+      groupedStandings[groupName] = []
+    }
+    groupedStandings[groupName].push(s)
+  })
+
+  // 更新各种子组积分榜
+  Object.entries(groupedStandings).forEach(([groupName, groupStandings]) => {
+    const group = icpTournament.seedGroups.find(g => g.groupName === groupName)
+    if (!group) return
+
+    groupStandings.forEach(backendStanding => {
+      const teamName = teamMap.value.get(backendStanding.team_id)?.name
+      const frontendStanding = group.standings.find(s => s.teamName === teamName)
+
+      if (frontendStanding) {
+        frontendStanding.matchesPlayed = backendStanding.matches_played
+        frontendStanding.wins = backendStanding.wins
+        frontendStanding.losses = backendStanding.losses
+        frontendStanding.points = backendStanding.points
+        frontendStanding.roundsWon = backendStanding.rounds_won || 0
+        frontendStanding.roundsLost = backendStanding.rounds_lost || 0
+        frontendStanding.roundDifferential = backendStanding.round_diff || 0
+        frontendStanding.position = backendStanding.position
+        frontendStanding.hasBadge = backendStanding.position <= 2
+      }
+    })
+
+    // 重新排序
+    group.standings.sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points
+      if (b.roundDifferential !== a.roundDifferential) return b.roundDifferential - a.roundDifferential
+      return b.roundsWon - a.roundsWon
+    })
+
+    // 检查组是否完成
+    group.isComplete = group.matches.every(m => m.status === 'completed')
+  })
+
+  // 更新赛区徽章统计
+  icpTournament.seedGroups.forEach(group => {
+    if (group.isComplete) {
+      group.standings.forEach(standing => {
+        if (standing.hasBadge) {
+          const region = icpTournament.regionStats.find(r => r.region === standing.region)
+          if (region) {
+            const team = region.teams.find(t => t.id === standing.teamId)
+            if (team && team.badges === 0) {
+              team.badges = 1
+              region.totalBadges++
+            }
+          }
+        }
+      })
+    }
+  })
+}
+
+/**
+ * 检查ICP赛事完成状态
+ */
+const checkICPCompletion = () => {
+  // 检查所有种子组是否完成
+  const allGroupsComplete = icpTournament.seedGroups.every(g => g.isComplete)
+
+  if (allGroupsComplete && icpTournament.status === 'group_stage') {
+    // 种子组赛已完成，可以进入赛区对决
+    checkGroupCompletion()
+  }
+}
+
+// 生命周期钩子
+onMounted(() => {
+  loadICPData()
+})
 </script>
 
 <style scoped lang="scss">

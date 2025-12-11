@@ -3,13 +3,6 @@ import { ref } from 'vue';
 
 const currentSeason = ref('S1');
 const currentPhase = ref('春季赛常规赛');
-const isPlaying = ref(false);
-
-const phases = [
-  '春季赛常规赛', '春季赛季后赛', 'MSI季中赛', '马德里大师赛',
-  '夏季赛常规赛', '夏季赛季后赛', 'Claude洲际赛', 'S世界赛',
-  '上海大师赛', 'ICP洲际对抗赛', 'Super洲际邀请赛', '转会期', '选秀', '赛季结束'
-];
 
 const advancePhase = () => {
   // TODO: 实际推进阶段逻辑

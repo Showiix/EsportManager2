@@ -25,7 +25,7 @@
       </div>
 
       <div class="power-bars">
-        <div class="power-value team-a">{{ game.teamAPower }}</div>
+        <div class="power-value team-a">{{ formatPower(game.teamAPower) }}</div>
         <div class="progress-container">
           <div
             class="progress-bar team-a"
@@ -38,7 +38,7 @@
             :class="{ winner: game.winnerId === game.teamBId }"
           ></div>
         </div>
-        <div class="power-value team-b">{{ game.teamBPower }}</div>
+        <div class="power-value team-b">{{ formatPower(game.teamBPower) }}</div>
       </div>
 
       <div class="power-diff" :class="powerDiffClass">
@@ -55,7 +55,7 @@
       </div>
 
       <div class="perf-bars">
-        <div class="perf-value team-a">{{ game.teamAPerformance }}</div>
+        <div class="perf-value team-a">{{ formatPower(game.teamAPerformance) }}</div>
         <div class="progress-container">
           <div
             class="progress-bar team-a"
@@ -68,7 +68,7 @@
             :class="{ winner: game.winnerId === game.teamBId }"
           ></div>
         </div>
-        <div class="perf-value team-b">{{ game.teamBPerformance }}</div>
+        <div class="perf-value team-b">{{ formatPower(game.teamBPerformance) }}</div>
       </div>
 
       <div class="perf-diff" :class="perfDiffClass">
@@ -81,6 +81,7 @@
       <div class="table-header">
         <span class="col-position">位置</span>
         <span class="col-name">选手</span>
+        <span class="col-traits">特性</span>
         <span class="col-base">基础</span>
         <span class="col-condition">状态</span>
         <span class="col-noise">波动</span>
@@ -92,7 +93,7 @@
       <div class="team-section">
         <div class="team-section-header">
           <span>{{ game.teamAName }}</span>
-          <span class="team-power">战力: {{ game.teamAPower }}</span>
+          <span class="team-power">战力: {{ formatPower(game.teamAPower) }}</span>
         </div>
         <div
           v-for="player in game.teamAPlayers"
@@ -102,6 +103,37 @@
         >
           <span class="col-position">{{ getPositionName(player.position) }}</span>
           <span class="col-name">{{ player.playerName }}</span>
+          <span class="col-traits">
+            <template v-if="player.activatedTraits && player.activatedTraits.length > 0">
+              <el-tooltip
+                v-for="trait in player.activatedTraits"
+                :key="trait.type"
+                :content="`${trait.name}: ${trait.effect}`"
+                placement="top"
+              >
+                <el-tag
+                  :type="trait.isPositive ? 'success' : 'danger'"
+                  size="small"
+                  class="trait-tag"
+                >
+                  {{ trait.name }}
+                </el-tag>
+              </el-tooltip>
+            </template>
+            <template v-else-if="player.traits && player.traits.length > 0">
+              <el-tooltip
+                v-for="trait in player.traits"
+                :key="trait"
+                :content="getTraitDescription(trait)"
+                placement="top"
+              >
+                <span class="trait-icon" :style="{ color: getTraitRarityColor(trait) }">
+                  {{ getTraitIcon(trait) }}
+                </span>
+              </el-tooltip>
+            </template>
+            <span v-else class="no-trait">-</span>
+          </span>
           <span class="col-base">{{ player.baseAbility }}</span>
           <span class="col-condition" :class="getConditionClass(player.conditionBonus)">
             {{ formatBonus(player.conditionBonus) }}
@@ -120,7 +152,7 @@
       <div class="team-section">
         <div class="team-section-header">
           <span>{{ game.teamBName }}</span>
-          <span class="team-power">战力: {{ game.teamBPower }}</span>
+          <span class="team-power">战力: {{ formatPower(game.teamBPower) }}</span>
         </div>
         <div
           v-for="player in game.teamBPlayers"
@@ -130,6 +162,37 @@
         >
           <span class="col-position">{{ getPositionName(player.position) }}</span>
           <span class="col-name">{{ player.playerName }}</span>
+          <span class="col-traits">
+            <template v-if="player.activatedTraits && player.activatedTraits.length > 0">
+              <el-tooltip
+                v-for="trait in player.activatedTraits"
+                :key="trait.type"
+                :content="`${trait.name}: ${trait.effect}`"
+                placement="top"
+              >
+                <el-tag
+                  :type="trait.isPositive ? 'success' : 'danger'"
+                  size="small"
+                  class="trait-tag"
+                >
+                  {{ trait.name }}
+                </el-tag>
+              </el-tooltip>
+            </template>
+            <template v-else-if="player.traits && player.traits.length > 0">
+              <el-tooltip
+                v-for="trait in player.traits"
+                :key="trait"
+                :content="getTraitDescription(trait)"
+                placement="top"
+              >
+                <span class="trait-icon" :style="{ color: getTraitRarityColor(trait) }">
+                  {{ getTraitIcon(trait) }}
+                </span>
+              </el-tooltip>
+            </template>
+            <span v-else class="no-trait">-</span>
+          </span>
           <span class="col-base">{{ player.baseAbility }}</span>
           <span class="col-condition" :class="getConditionClass(player.conditionBonus)">
             {{ formatBonus(player.conditionBonus) }}
@@ -159,6 +222,10 @@
         <span class="legend-color high-impact"></span>
         <span>关键发挥 (|影响| > 3)</span>
       </div>
+      <div class="legend-item">
+        <el-tag type="success" size="small">特性</el-tag>
+        <span>激活特性</span>
+      </div>
     </div>
   </div>
 </template>
@@ -166,8 +233,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { GameDetail } from '@/types/matchDetail'
-import type { PlayerPosition } from '@/types/player'
-import { POSITION_NAMES } from '@/types/player'
+import type { PlayerPosition, TraitType } from '@/types/player'
+import { POSITION_NAMES, getTraitDescription, getTraitRarityColor } from '@/types/player'
 
 interface Props {
   game: GameDetail
@@ -214,14 +281,19 @@ const getPositionName = (position: PlayerPosition): string => {
 
 // 格式化加成数值
 const formatBonus = (value: number): string => {
-  if (value > 0) return `+${value}`
-  return String(value)
+  if (value > 0) return `+${value.toFixed(1)}`
+  return value.toFixed(1)
+}
+
+// 格式化战力/发挥值 (保留两位小数)
+const formatPower = (value: number): string => {
+  return value.toFixed(2)
 }
 
 // 格式化差值
 const formatDiff = (value: number): string => {
-  if (value > 0) return `+${value} (A队优势)`
-  if (value < 0) return `${value} (B队优势)`
+  if (value > 0) return `+${value.toFixed(2)} (A队优势)`
+  if (value < 0) return `${value.toFixed(2)} (B队优势)`
   return '0 (势均力敌)'
 }
 
@@ -248,6 +320,27 @@ const getImpactClass = (value: number): string => {
   if (value < -5) return 'very-negative'
   if (value < 0) return 'negative'
   return ''
+}
+
+// 获取特性图标
+const getTraitIcon = (traitType: TraitType): string => {
+  const icons: Record<TraitType, string> = {
+    clutch: '🎯',
+    slow_starter: '🐢',
+    fast_starter: '⚡',
+    explosive: '💥',
+    consistent: '📊',
+    comeback_king: '👑',
+    tilter: '😤',
+    mental_fortress: '🧠',
+    fragile: '💔',
+    ironman: '🦾',
+    volatile: '🎲',
+    rising_star: '⭐',
+    veteran: '🎖️',
+    team_leader: '🏅'
+  }
+  return icons[traitType] || '✨'
 }
 </script>
 
@@ -388,7 +481,7 @@ const getImpactClass = (value: number): string => {
 
 .table-header {
   display: grid;
-  grid-template-columns: 60px 1fr 60px 60px 60px 60px 60px;
+  grid-template-columns: 60px 1fr 80px 60px 60px 60px 60px 60px;
   gap: 8px;
   padding: 12px 16px;
   background: #303133;
@@ -424,7 +517,7 @@ const getImpactClass = (value: number): string => {
 
 .player-row {
   display: grid;
-  grid-template-columns: 60px 1fr 60px 60px 60px 60px 60px;
+  grid-template-columns: 60px 1fr 80px 60px 60px 60px 60px 60px;
   gap: 8px;
   padding: 10px 16px;
   font-size: 13px;
@@ -519,5 +612,35 @@ const getImpactClass = (value: number): string => {
 
 .legend-color.high-impact {
   background: linear-gradient(to right, rgba(103, 194, 58, 0.3), rgba(245, 108, 108, 0.3));
+}
+
+/* 特性列样式 */
+.col-traits {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.trait-tag {
+  font-size: 11px;
+  padding: 2px 6px;
+  height: auto;
+  line-height: 1.2;
+}
+
+.trait-icon {
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.trait-icon:hover {
+  transform: scale(1.2);
+}
+
+.no-trait {
+  color: #c0c4cc;
+  font-size: 12px;
 }
 </style>

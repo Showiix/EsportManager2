@@ -15,12 +15,7 @@ const router = createRouter({
       component: () => import('@/views/Tournaments.vue'),
       meta: { title: '赛事管理' }
     },
-    {
-      path: '/tournaments/:id',
-      name: 'TournamentDetail',
-      component: () => import('@/views/TournamentDetail.vue'),
-      meta: { title: '赛事详情' }
-    },
+    // 具体的赛事路由必须放在通用路由 /tournaments/:id 之前
     {
       path: '/tournaments/summer/:id',
       name: 'SummerDetail',
@@ -74,6 +69,13 @@ const router = createRouter({
       name: 'SuperDetail',
       component: () => import('@/views/SuperDetail.vue'),
       meta: { title: 'Super 洲际年度邀请赛' }
+    },
+    // 通用赛事详情路由放在最后（作为兜底）
+    {
+      path: '/tournaments/:id',
+      name: 'TournamentDetail',
+      component: () => import('@/views/TournamentDetail.vue'),
+      meta: { title: '赛事详情' }
     },
     {
       path: '/teams',
@@ -130,6 +132,12 @@ const router = createRouter({
       meta: { title: '转会市场' }
     },
     {
+      path: '/transfer/broadcast',
+      name: 'TransferBroadcast',
+      component: () => import('@/views/TransferBroadcast.vue'),
+      meta: { title: '转会播报' }
+    },
+    {
       path: '/rankings',
       name: 'Rankings',
       component: () => import('@/views/Rankings.vue'),
@@ -140,6 +148,24 @@ const router = createRouter({
       name: 'PlayerStatistics',
       component: () => import('@/views/PlayerStatistics.vue'),
       meta: { title: '选手统计' }
+    },
+    {
+      path: '/data-center',
+      name: 'DataCenter',
+      component: () => import('@/views/DataCenter.vue'),
+      meta: { title: '数据中心' }
+    },
+    {
+      path: '/data-center/player/:playerId',
+      name: 'DataCenterPlayerDetail',
+      component: () => import('@/views/DataCenterPlayerDetail.vue'),
+      meta: { title: '选手详情' }
+    },
+    {
+      path: '/annual-top',
+      name: 'AnnualTop',
+      component: () => import('@/views/AnnualTop.vue'),
+      meta: { title: 'IM年度评选' }
     },
     {
       path: '/honors',

@@ -1,0 +1,491 @@
+<template>
+  <div class="data-center">
+    <!-- 页面头部 -->
+    <div class="page-header">
+      <div class="header-content">
+        <h1 class="page-title">
+          <el-icon><DataLine /></el-icon>
+          数据中心
+        </h1>
+        <p class="page-description">
+          查看选手比赛数据统计与发挥表现
+        </p>
+      </div>
+      <div class="header-actions">
+        <el-select v-model="selectedSeason" placeholder="选择赛季" style="width: 120px">
+          <el-option v-for="s in seasons" :key="s.value" :label="s.label" :value="s.value" />
+        </el-select>
+        <el-button type="primary" @click="refreshData" :loading="loading">
+          <el-icon><Refresh /></el-icon>
+          刷新数据
+        </el-button>
+      </div>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="filter-bar">
+      <div class="position-filters">
+        <el-button
+          v-for="pos in positionFilters"
+          :key="pos.value"
+          :type="selectedPosition === pos.value ? 'primary' : 'default'"
+          @click="selectedPosition = pos.value"
+          round
+        >
+          {{ pos.label }}
+        </el-button>
+      </div>
+      <div class="search-box">
+        <el-input
+          v-model="searchQuery"
+          placeholder="搜索选手..."
+          prefix-icon="Search"
+          clearable
+          style="width: 200px"
+        />
+      </div>
+    </div>
+
+    <!-- 排行榜表格 -->
+    <el-card class="rankings-card">
+      <template #header>
+        <div class="card-header">
+          <span class="card-title">选手数据排行榜</span>
+          <el-tag type="info" size="small">
+            共 {{ filteredRankings.length }} 名选手
+          </el-tag>
+        </div>
+      </template>
+
+      <el-table
+        :data="filteredRankings"
+        stripe
+        style="width: 100%"
+        :row-class-name="getRankRowClass"
+        @row-click="goToPlayerDetail"
+        class="clickable-table"
+      >
+        <el-table-column label="排名" width="80" align="center">
+          <template #default="{ $index }">
+            <div class="rank-badge" :class="getRankClass($index)">
+              {{ $index + 1 }}
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="playerName" label="选手" min-width="150">
+          <template #default="{ row }">
+            <div class="player-cell">
+              <span class="player-name">{{ row.playerName }}</span>
+              <el-icon class="arrow-icon"><ArrowRight /></el-icon>
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="position" label="位置" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag :type="getPositionTagType(row.position)" size="small">
+              {{ getPositionName(row.position) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="teamId" label="战队" width="120">
+          <template #default="{ row }">
+            {{ getTeamName(row.teamId) }}
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="gamesPlayed" label="场次" width="80" align="center" />
+
+        <el-table-column prop="avgImpact" label="影响力" width="100" align="center">
+          <template #default="{ row }">
+            <span :class="getImpactClass(row.avgImpact)">
+              {{ formatImpact(row.avgImpact) }}
+            </span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="consistencyScore" label="稳定性" width="120" align="center">
+          <template #default="{ row }">
+            <div class="consistency-cell">
+              <el-progress
+                :percentage="row.consistencyScore || 0"
+                :stroke-width="8"
+                :show-text="false"
+                :color="getConsistencyColor(row.consistencyScore)"
+              />
+              <span class="consistency-value">{{ (row.consistencyScore || 0).toFixed(0) }}</span>
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="yearlyTopScore" label="得分" width="100" align="center">
+          <template #default="{ row }">
+            <span class="yearly-score" :class="getScoreClass(row.yearlyTopScore || row.avgImpact)">
+              {{ (row.yearlyTopScore || row.avgImpact || 0).toFixed(1) }}
+            </span>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-empty v-if="filteredRankings.length === 0" description="暂无统计数据" />
+    </el-card>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { DataLine, Refresh, ArrowRight } from '@element-plus/icons-vue'
+import { usePlayerStore } from '@/stores/usePlayerStore'
+import { useGameStore } from '@/stores/useGameStore'
+import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
+import { POSITION_NAMES } from '@/types/player'
+
+const router = useRouter()
+const playerStore = usePlayerStore()
+const gameStore = useGameStore()
+
+// 状态
+const selectedSeason = ref('S1')
+const selectedPosition = ref('')
+const searchQuery = ref('')
+const loading = ref(false)
+const rankings = ref<PlayerSeasonStats[]>([])
+
+// 赛季列表
+const seasons = computed(() => {
+  const currentSeason = gameStore.currentSeason || 1
+  const list = []
+  for (let i = 1; i <= currentSeason; i++) {
+    list.push({ label: `S${i}`, value: `S${i}` })
+  }
+  return list
+})
+
+// 位置筛选
+const positionFilters = [
+  { label: '全部', value: '' },
+  { label: 'TOP', value: 'TOP' },
+  { label: 'JUG', value: 'JUG' },
+  { label: 'MID', value: 'MID' },
+  { label: 'ADC', value: 'ADC' },
+  { label: 'SUP', value: 'SUP' },
+]
+
+// 异步获取排行数据
+const fetchRankings = async () => {
+  loading.value = true
+  try {
+    rankings.value = await playerStore.getSeasonImpactRanking(selectedSeason.value, 100)
+  } catch (error) {
+    console.error('获取排行数据失败:', error)
+    rankings.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+// 计算属性 - 过滤后的排行榜
+const filteredRankings = computed(() => {
+  let result = [...rankings.value]
+
+  // 位置筛选
+  if (selectedPosition.value) {
+    result = result.filter(r => r.position === selectedPosition.value)
+  }
+
+  // 搜索筛选
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase()
+    result = result.filter(r =>
+      r.playerName?.toLowerCase().includes(query)
+    )
+  }
+
+  return result
+})
+
+// 方法
+const refreshData = async () => {
+  playerStore.loadFromStorage()
+  await fetchRankings()
+}
+
+const goToPlayerDetail = (row: any) => {
+  router.push(`/data-center/player/${row.playerId}?season=${selectedSeason.value}`)
+}
+
+const getPositionName = (position: PlayerPosition): string => {
+  return POSITION_NAMES[position] || position
+}
+
+const getPositionTagType = (position: string) => {
+  const types: Record<string, string> = {
+    TOP: 'danger',
+    JUG: 'warning',
+    MID: 'primary',
+    ADC: 'success',
+    SUP: 'info'
+  }
+  return types[position] || 'info'
+}
+
+const getTeamName = (teamId: string | number | null): string => {
+  if (!teamId) return '-'
+  const idStr = String(teamId)
+  return idStr.split('-')[0] || idStr
+}
+
+const formatImpact = (value: number | null | undefined): string => {
+  if (value == null) return '0.0'
+  if (value > 0) return `+${value.toFixed(1)}`
+  return value.toFixed(1)
+}
+
+const getImpactClass = (value: number | null | undefined): string => {
+  if (value == null) return ''
+  if (value > 5) return 'impact-high'
+  if (value > 0) return 'impact-positive'
+  if (value < -5) return 'impact-low'
+  if (value < 0) return 'impact-negative'
+  return ''
+}
+
+const getRankClass = (index: number): string => {
+  if (index === 0) return 'rank-gold'
+  if (index === 1) return 'rank-silver'
+  if (index === 2) return 'rank-bronze'
+  return ''
+}
+
+const getRankRowClass = ({ rowIndex }: { rowIndex: number }): string => {
+  if (rowIndex < 3) return 'top-rank-row'
+  return ''
+}
+
+const getConsistencyColor = (score: number | null | undefined): string => {
+  if (score == null) return '#909399'
+  if (score >= 80) return '#67c23a'
+  if (score >= 60) return '#e6a23c'
+  return '#f56c6c'
+}
+
+const getScoreClass = (score: number): string => {
+  if (score > 15) return 'score-excellent'
+  if (score > 10) return 'score-good'
+  if (score > 5) return 'score-average'
+  return 'score-normal'
+}
+
+// 生命周期
+onMounted(() => {
+  refreshData()
+})
+
+// 监听赛季变化
+watch(selectedSeason, () => {
+  fetchRankings()
+})
+</script>
+
+<style scoped lang="scss">
+.data-center {
+  padding: 24px;
+  min-height: 100%;
+
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+
+    .header-content {
+      .page-title {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 28px;
+        font-weight: 700;
+        margin: 0;
+        color: #1f2937;
+
+        .el-icon {
+          color: #409eff;
+        }
+      }
+
+      .page-description {
+        margin: 8px 0 0 0;
+        color: #6b7280;
+        font-size: 14px;
+      }
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+    }
+  }
+
+  .filter-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding: 16px 20px;
+    background: #f8fafc;
+    border-radius: 12px;
+
+    .position-filters {
+      display: flex;
+      gap: 8px;
+    }
+
+    .search-box {
+      display: flex;
+      align-items: center;
+    }
+  }
+
+  .rankings-card {
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+
+      .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1f2937;
+      }
+    }
+  }
+
+  .clickable-table {
+    :deep(.el-table__row) {
+      cursor: pointer;
+      transition: background-color 0.2s;
+
+      &:hover {
+        background-color: #f0f9ff !important;
+      }
+    }
+  }
+
+  .player-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .player-name {
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    .arrow-icon {
+      color: #9ca3af;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+  }
+
+  .el-table__row:hover .arrow-icon {
+    opacity: 1;
+  }
+
+  .rank-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-weight: bold;
+    font-size: 14px;
+    background: #f3f4f6;
+    color: #6b7280;
+
+    &.rank-gold {
+      background: linear-gradient(135deg, #ffd700, #ffb347);
+      color: #1a1a2e;
+      box-shadow: 0 2px 8px rgba(255, 215, 0, 0.4);
+    }
+
+    &.rank-silver {
+      background: linear-gradient(135deg, #c0c0c0, #a8a8a8);
+      color: #1a1a2e;
+      box-shadow: 0 2px 8px rgba(192, 192, 192, 0.4);
+    }
+
+    &.rank-bronze {
+      background: linear-gradient(135deg, #cd7f32, #b87333);
+      color: white;
+      box-shadow: 0 2px 8px rgba(205, 127, 50, 0.4);
+    }
+  }
+
+  .impact-high {
+    color: #059669;
+    font-weight: bold;
+  }
+
+  .impact-positive {
+    color: #10b981;
+    font-weight: 500;
+  }
+
+  .impact-negative {
+    color: #f59e0b;
+    font-weight: 500;
+  }
+
+  .impact-low {
+    color: #ef4444;
+    font-weight: bold;
+  }
+
+  .consistency-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .el-progress {
+      flex: 1;
+    }
+
+    .consistency-value {
+      font-size: 12px;
+      font-weight: 500;
+      color: #6b7280;
+      min-width: 24px;
+    }
+  }
+
+  .yearly-score {
+    font-weight: bold;
+    font-size: 16px;
+
+    &.score-excellent {
+      color: #fbbf24;
+    }
+
+    &.score-good {
+      color: #10b981;
+    }
+
+    &.score-average {
+      color: #3b82f6;
+    }
+
+    &.score-normal {
+      color: #6b7280;
+    }
+  }
+
+  :deep(.top-rank-row) {
+    background-color: #fefce8 !important;
+  }
+}
+</style>

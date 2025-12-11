@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { worldsApi } from '@/api'
 
@@ -535,7 +535,6 @@ export const useWorldsStore = defineStore('worlds', () => {
 
         // 根据轮次推进队伍
         const match = knockoutMatches.value[matchIndex]
-        const winnerName = match.winnerId === match.team1Id ? match.team1Name : match.team2Name
 
         if (match.round === 'QUARTER_FINAL') {
           // 生成半决赛

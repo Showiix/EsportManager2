@@ -2,9 +2,7 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type {
   PlayoffBracket,
-  PlayoffQualification,
   PlayoffMatch,
-  PlayoffRound,
   GeneratePlayoffRequest,
   SimulatePlayoffMatchRequest
 } from '@/types'
@@ -291,8 +289,8 @@ export const usePlayoffStore = defineStore('playoff', () => {
 
         // 模拟这场比赛
         const result = await playoffApi.simulatePlayoffMatch({
-          matchId: nextMatch.id,
-          competitionId: nextMatch.competitionId
+          matchId: String(nextMatch.id),
+          competitionId: String(nextMatch.competitionId)
         })
 
         simulatedCount++

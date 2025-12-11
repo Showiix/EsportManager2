@@ -6,10 +6,17 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import {
   transferApi,
+  eventApi,
   type TransferListing,
   type FreeAgent,
-  type TransferRecord
+  type TransferRecord,
+  type TransferWindowInfo,
+  type TransferEventInfo,
+  type TransferRoundInfo,
+  type ExpiringContract,
+  type RetiringPlayer,
 } from '@/api/tauri'
+import { useGameStore } from './useGameStore'
 
 export const useTransferStoreTauri = defineStore('transferTauri', () => {
   // ========================================
@@ -24,6 +31,21 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
 
   // 转会历史
   const transferHistory = ref<TransferRecord[]>([])
+
+  // AI 转会窗口状态
+  const transferWindow = ref<TransferWindowInfo | null>(null)
+
+  // 当前轮次事件
+  const currentRoundEvents = ref<TransferEventInfo[]>([])
+
+  // 所有转会事件
+  const allTransferEvents = ref<TransferEventInfo[]>([])
+
+  // 合同到期选手
+  const expiringContracts = ref<ExpiringContract[]>([])
+
+  // 潜在退役选手
+  const retiringCandidates = ref<RetiringPlayer[]>([])
 
   // 加载状态
   const isLoading = ref(false)
@@ -41,6 +63,40 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
   // ========================================
   // Computed
   // ========================================
+
+  // 转会窗口是否已开始
+  const isWindowStarted = computed(() => {
+    return transferWindow.value !== null && transferWindow.value.status !== 'PREPARING'
+  })
+
+  // 转会窗口是否已完成
+  const isWindowCompleted = computed(() => {
+    return transferWindow.value?.status === 'COMPLETED'
+  })
+
+  // 当前轮次
+  const currentRound = computed(() => transferWindow.value?.current_round ?? 0)
+
+  // 重点关注选手（能力≥80的到期/挂牌选手）
+  const highlightPlayers = computed(() => {
+    const expiring = expiringContracts.value.filter(p => p.ability >= 80)
+    const listed = listings.value.filter(p => p.ability >= 80)
+    return { expiring, listed }
+  })
+
+  // 市场统计
+  const marketStats = computed(() => ({
+    totalListings: listings.value.length,
+    totalFreeAgents: freeAgents.value.length,
+    totalExpiring: expiringContracts.value.length,
+    totalRetiring: retiringCandidates.value.length,
+    avgListingPrice: listings.value.length > 0
+      ? Math.round(listings.value.reduce((sum, l) => sum + l.asking_price, 0) / listings.value.length)
+      : 0,
+    avgFreeAgentSalary: freeAgents.value.length > 0
+      ? Math.round(freeAgents.value.reduce((sum, a) => sum + a.expected_salary, 0) / freeAgents.value.length)
+      : 0,
+  }))
 
   // 过滤后的挂牌列表
   const filteredListings = computed(() => {
@@ -93,20 +149,142 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
     return grouped
   })
 
-  // 市场统计
-  const marketStats = computed(() => ({
-    totalListings: listings.value.length,
-    totalFreeAgents: freeAgents.value.length,
-    avgListingPrice: listings.value.length > 0
-      ? Math.round(listings.value.reduce((sum, l) => sum + l.asking_price, 0) / listings.value.length)
-      : 0,
-    avgFreeAgentSalary: freeAgents.value.length > 0
-      ? Math.round(freeAgents.value.reduce((sum, a) => sum + a.expected_salary, 0) / freeAgents.value.length)
-      : 0,
-  }))
+  // ========================================
+  // Actions - 预览数据加载
+  // ========================================
+
+  /**
+   * 加载转会预览数据（合同到期、潜在退役、挂牌）
+   */
+  const loadPreviewData = async () => {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const gameStore = useGameStore()
+      const currentSeason = gameStore.currentSeason
+
+      const [expiring, retiring, market] = await Promise.all([
+        eventApi.getExpiringContracts(currentSeason),
+        eventApi.getRetiringCandidates(),
+        transferApi.getTransferMarket(),
+      ])
+
+      expiringContracts.value = expiring
+      retiringCandidates.value = retiring
+      listings.value = market
+
+      console.log(`Loaded preview: ${expiring.length} expiring, ${retiring.length} retiring, ${market.length} listings`)
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to load preview data'
+      console.error('Failed to load preview data:', e)
+      throw e
+    } finally {
+      isLoading.value = false
+    }
+  }
 
   // ========================================
-  // Actions
+  // Actions - AI 转会窗口
+  // ========================================
+
+  /**
+   * 开始转会窗口
+   */
+  const startTransferWindow = async () => {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      transferWindow.value = await transferApi.startTransferWindow()
+      allTransferEvents.value = []
+      currentRoundEvents.value = []
+      console.log('Transfer window started:', transferWindow.value)
+      return transferWindow.value
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to start transfer window'
+      console.error('Failed to start transfer window:', e)
+      throw e
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 执行下一轮转会
+   */
+  const executeNextRound = async (): Promise<TransferRoundInfo> => {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const roundInfo = await transferApi.executeTransferRound()
+      currentRoundEvents.value = roundInfo.events
+      allTransferEvents.value.push(...roundInfo.events)
+
+      // 更新窗口状态
+      transferWindow.value = await transferApi.getTransferWindowStatus()
+
+      console.log(`Round ${roundInfo.round} completed:`, roundInfo.summary)
+      return roundInfo
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to execute round'
+      console.error('Failed to execute round:', e)
+      throw e
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 快进完成所有转会
+   */
+  const fastForwardAll = async () => {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      transferWindow.value = await transferApi.fastForwardTransfers()
+      allTransferEvents.value = await transferApi.getTransferEvents()
+      console.log('Transfer window completed:', transferWindow.value)
+      return transferWindow.value
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to fast forward'
+      console.error('Failed to fast forward:', e)
+      throw e
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 获取转会窗口状态
+   */
+  const getWindowStatus = async () => {
+    try {
+      transferWindow.value = await transferApi.getTransferWindowStatus()
+      return transferWindow.value
+    } catch (e) {
+      // 没有转会窗口时可能返回错误，这是正常的
+      transferWindow.value = null
+      return null
+    }
+  }
+
+  /**
+   * 获取指定轮次的事件
+   */
+  const getRoundEvents = async (round: number) => {
+    try {
+      return await transferApi.getTransferEvents(round)
+    } catch (e) {
+      console.error('Failed to get round events:', e)
+      return []
+    }
+  }
+
+  // ========================================
+  // Actions - 原有功能
   // ========================================
 
   /**
@@ -325,19 +503,38 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
     listings,
     freeAgents,
     transferHistory,
+    transferWindow,
+    currentRoundEvents,
+    allTransferEvents,
+    expiringContracts,
+    retiringCandidates,
     isLoading,
     error,
     filters,
 
     // Computed
+    isWindowStarted,
+    isWindowCompleted,
+    currentRound,
+    highlightPlayers,
+    marketStats,
     filteredListings,
     listingsByAbility,
     listingsByPrice,
     filteredFreeAgents,
     freeAgentsByPosition,
-    marketStats,
 
-    // Actions
+    // Actions - Preview
+    loadPreviewData,
+
+    // Actions - AI Transfer Window
+    startTransferWindow,
+    executeNextRound,
+    fastForwardAll,
+    getWindowStatus,
+    getRoundEvents,
+
+    // Actions - Original
     loadTransferMarket,
     loadFreeAgents,
     loadAll,

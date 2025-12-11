@@ -2,14 +2,10 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type {
   SuperBracket,
-  SuperQualification,
   SuperMatch,
-  SuperRound,
   SuperStage,
-  FighterStanding,
   GenerateSuperRequest,
   SimulateSuperMatchRequest,
-  SimulateSuperMatchResponse
 } from '@/types'
 
 export const useSuperStore = defineStore('super', () => {
@@ -292,7 +288,6 @@ export const useSuperStore = defineStore('super', () => {
       if (response.data) {
         // 刷新当前对阵数据
         if (currentBracket.value) {
-          const key = `${currentBracket.value.season1Code}-${currentBracket.value.season2Code}`
           await fetchSuperBracket(currentBracket.value.season1Code, currentBracket.value.season2Code)
         }
         console.log(`[SuperStore] ✅ 进入下一阶段成功`)

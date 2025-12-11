@@ -79,20 +79,22 @@ interface Team {
   regionName?: string
 }
 
-interface Match {
-  id?: string
-  teamAId?: string | null
-  teamBId?: string | null
+interface MatchBase {
+  id?: string | number
+  teamAId?: string | number | null
+  teamBId?: string | number | null
   scoreA?: number
   scoreB?: number
-  winnerId?: string | null
+  winnerId?: string | number | null
   status?: string
   bestOf?: number
   matchType?: string
+  bracketType?: string
+  competitionId?: string | number
 }
 
 interface Props {
-  match?: Match
+  match?: MatchBase
   teams?: Team[]
   matchLabel?: string
   colorTheme?: 'emerald' | 'blue' | 'green' | 'amber' | 'orange' | 'red'
@@ -108,16 +110,16 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{
-  (e: 'simulate', match: Match): void
-  (e: 'view-detail', match: Match): void
+  (e: 'simulate', match: MatchBase): void
+  (e: 'view-detail', match: MatchBase): void
 }>()
 
-const getTeamAId = (match?: Match): string | null => {
-  return match?.teamAId || null
+const getTeamAId = (match?: MatchBase): string | null => {
+  return match?.teamAId?.toString() || null
 }
 
-const getTeamBId = (match?: Match): string | null => {
-  return match?.teamBId || null
+const getTeamBId = (match?: MatchBase): string | null => {
+  return match?.teamBId?.toString() || null
 }
 
 const getTeamName = (teamId: string | null): string => {

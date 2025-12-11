@@ -428,7 +428,7 @@ TheShy,TOP,72,88,GENIUS</pre>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import {
   ArrowLeft,
   ArrowDown,
@@ -448,6 +448,7 @@ import {
   RefreshLeft,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { draftApi, queryApi } from '@/api/tauri'
 
 // 赛区列表
 const regionList = [
@@ -474,6 +475,7 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const parsedPlayers = ref<Omit<PoolPlayer, 'id' | 'region'>[]>([])
 const isDragover = ref(false)
 const activeFormatTab = ref<'json' | 'csv'>('json')
+const isLoading = ref(false)
 
 // 导入表单
 const importForm = ref({
@@ -494,7 +496,7 @@ const editForm = ref({
   tag: 'NORMAL',
 })
 
-// 选手池数据 - 模拟数据
+// 选手池数据
 interface PoolPlayer {
   id: string
   gameId: string
@@ -505,14 +507,60 @@ interface PoolPlayer {
   region: string
 }
 
-const poolData = ref<PoolPlayer[]>([
-  // LPL 示例数据
-  { id: '1', gameId: 'Knight', position: 'MID', ability: 72, potential: 92, tag: 'GENIUS', region: 'lpl' },
-  { id: '2', gameId: 'Bin', position: 'TOP', ability: 70, potential: 90, tag: 'GENIUS', region: 'lpl' },
-  { id: '3', gameId: 'Elk', position: 'ADC', ability: 68, potential: 88, tag: 'GENIUS', region: 'lpl' },
-  { id: '4', gameId: 'Meiko', position: 'SUP', ability: 65, potential: 82, tag: 'NORMAL', region: 'lpl' },
-  { id: '5', gameId: 'Karsa', position: 'JUG', ability: 62, potential: 78, tag: 'NORMAL', region: 'lpl' },
-])
+// 从后端加载的选手池数据
+const poolData = ref<PoolPlayer[]>([])
+
+// 获取赛区ID
+const getRegionId = async (regionCode: string): Promise<number> => {
+  try {
+    const regions = await queryApi.getAllRegions()
+    const region = regions.find(r => r.code.toLowerCase() === regionCode.toLowerCase())
+    return region?.id ?? 1
+  } catch (e) {
+    console.error('Failed to get region id:', e)
+    return 1
+  }
+}
+
+// 加载选手池数据
+const loadPoolData = async (regionCode: string) => {
+  isLoading.value = true
+  try {
+    const regionId = await getRegionId(regionCode)
+    const players = await draftApi.getAvailableDraftPlayers(regionId)
+
+    // 转换后端数据格式为前端格式
+    const regionPlayers = players.map(p => ({
+      id: String(p.id),
+      gameId: p.name,
+      position: p.position,
+      ability: p.ability,
+      potential: p.potential,
+      tag: p.tag,
+      region: regionCode,
+    }))
+
+    // 更新当前赛区的数据
+    poolData.value = poolData.value.filter(p => p.region !== regionCode)
+    poolData.value.push(...regionPlayers)
+  } catch (e) {
+    console.error('Failed to load pool data:', e)
+    // 如果加载失败，清空该赛区数据
+    poolData.value = poolData.value.filter(p => p.region !== regionCode)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+// 初始化加载
+onMounted(async () => {
+  await loadPoolData(selectedRegion.value)
+})
+
+// 监听赛区切换
+watch(selectedRegion, async (newRegion) => {
+  await loadPoolData(newRegion)
+})
 
 // 计算属性
 const currentRegionName = computed(() => regionNames[selectedRegion.value] || '')
@@ -651,60 +699,43 @@ const clearPool = async () => {
   }
 }
 
-// 随机中文名字生成
-const generateRandomName = () => {
-  const prefixes = ['小', '大', '天', '龙', '虎', '狼', '鹰', '星', '月', '风']
-  const suffixes = ['神', '王', '帝', '圣', '魔', '皇', '尊', '霸', '仙', '侠']
-  return prefixes[Math.floor(Math.random() * prefixes.length)] +
-         suffixes[Math.floor(Math.random() * suffixes.length)]
-}
-
-const generateRandomPool = () => {
+// 随机生成选手池 - 调用后端API
+const generateRandomPool = async () => {
   const currentCount = currentPoolData.value.length
-  const needCount = 14 - currentCount
 
-  if (needCount <= 0) {
+  if (currentCount >= 14) {
     ElMessage.warning('选手池已满')
     return
   }
 
-  const positions = ['TOP', 'JUG', 'MID', 'ADC', 'SUP']
+  isLoading.value = true
+  try {
+    const regionId = await getRegionId(selectedRegion.value)
+    // 调用后端API生成选秀池
+    const players = await draftApi.generateDraftPool(regionId, 14)
 
-  for (let i = 0; i < needCount; i++) {
-    // 根据排名决定天赋
-    const rank = currentCount + i + 1
-    let tag = 'NORMAL'
-    let abilityBase = 50
-    let potentialBase = 70
-
-    if (rank <= 3) {
-      tag = 'GENIUS'
-      abilityBase = 68 + Math.floor(Math.random() * 10)
-      potentialBase = 88 + Math.floor(Math.random() * 10)
-    } else if (rank <= 7) {
-      tag = 'NORMAL'
-      abilityBase = 55 + Math.floor(Math.random() * 12)
-      potentialBase = 75 + Math.floor(Math.random() * 12)
-    } else {
-      tag = 'MEDIOCRE'
-      abilityBase = 40 + Math.floor(Math.random() * 15)
-      potentialBase = 60 + Math.floor(Math.random() * 15)
-    }
-
-    const newPlayer: PoolPlayer = {
-      id: Date.now().toString() + i,
-      gameId: generateRandomName() + (rank < 10 ? '0' : '') + rank,
-      position: positions[Math.floor(Math.random() * positions.length)],
-      ability: abilityBase,
-      potential: potentialBase,
-      tag,
+    // 转换后端数据格式为前端格式
+    const regionPlayers = players.map(p => ({
+      id: String(p.id),
+      gameId: p.name,
+      position: p.position,
+      ability: p.ability,
+      potential: p.potential,
+      tag: p.tag,
       region: selectedRegion.value,
-    }
+    }))
 
-    poolData.value.push(newPlayer)
+    // 更新当前赛区的数据
+    poolData.value = poolData.value.filter(p => p.region !== selectedRegion.value)
+    poolData.value.push(...regionPlayers)
+
+    ElMessage.success(`已生成 ${regionPlayers.length} 名新秀`)
+  } catch (e) {
+    console.error('Failed to generate draft pool:', e)
+    ElMessage.error('生成选手池失败')
+  } finally {
+    isLoading.value = false
   }
-
-  ElMessage.success(`已生成 ${needCount} 名新秀`)
 }
 
 // 处理导入命令
@@ -834,7 +865,7 @@ const parseCSVContent = (content: string) => {
     })
 
     players.push({
-      gameId: player.gameid || player.gameId,
+      gameId: player.gameid || player.game_id,
       position: player.position,
       ability: parseInt(player.ability, 10),
       potential: parseInt(player.potential, 10),

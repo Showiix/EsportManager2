@@ -151,7 +151,7 @@
           <template #default="{ row }">
             <div class="team-cell">
               <div class="team-avatar mini" :class="row.region.toLowerCase()">
-                {{ row.team.substring(0, 2) }}
+                {{ row.teamShort }}
               </div>
               <span>{{ row.team }}</span>
             </div>
@@ -220,8 +220,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import {
   User,
   Check,
@@ -229,8 +230,15 @@ import {
   TrendCharts,
   Search,
 } from '@element-plus/icons-vue'
+import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
+import { teamApi, type Player } from '@/api/tauri'
 
 const router = useRouter()
+const teamStore = useTeamStoreTauri()
+const { regions, teams } = storeToRefs(teamStore)
+
+// 原始选手数据
+const rawPlayers = ref<Player[]>([])
 
 // 筛选状态
 const searchQuery = ref('')
@@ -250,37 +258,88 @@ const sortConfig = ref({
   order: '' as 'ascending' | 'descending' | '',
 })
 
-// 统计数据
-const stats = ref({
-  total: 280,
-  active: 250,
-  retired: 30,
-  avgAbility: 75,
+// 初始化加载
+onMounted(async () => {
+  await teamStore.loadRegions()
+  // 加载所有赛区的队伍以获取选手数据
+  for (const region of regions.value) {
+    await teamStore.selectRegion(region.id)
+    // 加载每个队伍的阵容
+    for (const team of teams.value) {
+      try {
+        const roster = await teamApi.getTeamRoster(team.id)
+        const playersWithTeam = [...roster.starters, ...roster.substitutes].map(p => ({
+          ...p,
+          team_id: team.id,
+          team_name: team.name,
+          team_short: team.short_name || team.name.slice(0, 3),
+          region_code: getRegionCode(team.region_id),
+        }))
+        rawPlayers.value.push(...playersWithTeam as any)
+      } catch (e) {
+        console.error(`Failed to load roster for team ${team.id}:`, e)
+      }
+    }
+  }
 })
 
-// 模拟数据
-const players = ref([
-  { id: 1, gameId: 'Faker', name: '李相赫', team: 'T1', region: 'LCK', position: 'MID', age: 28, ability: 95, potential: 96, tag: 'GENIUS' },
-  { id: 2, gameId: 'Chovy', name: '郑志勋', team: 'Gen.G', region: 'LCK', position: 'MID', age: 24, ability: 93, potential: 95, tag: 'GENIUS' },
-  { id: 3, gameId: 'Zeus', name: '崔宇杰', team: 'T1', region: 'LCK', position: 'TOP', age: 21, ability: 88, potential: 94, tag: 'GENIUS' },
-  { id: 4, gameId: 'Ruler', name: '朴载赫', team: 'JDG', region: 'LPL', position: 'ADC', age: 26, ability: 90, potential: 91, tag: 'NORMAL' },
-  { id: 5, gameId: 'Keria', name: '柳民锡', team: 'T1', region: 'LCK', position: 'SUP', age: 22, ability: 89, potential: 93, tag: 'GENIUS' },
-  { id: 6, gameId: 'Canyon', name: '金建部', team: 'Gen.G', region: 'LCK', position: 'JUG', age: 23, ability: 91, potential: 92, tag: 'GENIUS' },
-  { id: 7, gameId: 'Knight', name: '卓定', team: 'BLG', region: 'LPL', position: 'MID', age: 24, ability: 89, potential: 92, tag: 'GENIUS' },
-  { id: 8, gameId: 'Caps', name: 'Rasmus', team: 'G2', region: 'LEC', position: 'MID', age: 25, ability: 85, potential: 88, tag: 'NORMAL' },
-  { id: 9, gameId: '369', name: '白家浩', team: 'JDG', region: 'LPL', position: 'TOP', age: 23, ability: 87, potential: 90, tag: 'GENIUS' },
-  { id: 10, gameId: 'Meiko', name: '田野', team: 'EDG', region: 'LPL', position: 'SUP', age: 26, ability: 85, potential: 86, tag: 'NORMAL' },
-  { id: 11, gameId: 'Gumayusi', name: '李民赫', team: 'T1', region: 'LCK', position: 'ADC', age: 22, ability: 88, potential: 93, tag: 'GENIUS' },
-  { id: 12, gameId: 'Oner', name: '文炫俊', team: 'T1', region: 'LCK', position: 'JUG', age: 22, ability: 86, potential: 91, tag: 'GENIUS' },
-  { id: 13, gameId: 'Elk', name: '谢家辉', team: 'BLG', region: 'LPL', position: 'ADC', age: 22, ability: 86, potential: 90, tag: 'GENIUS' },
-  { id: 14, gameId: 'Kanavi', name: '徐进赫', team: 'JDG', region: 'LPL', position: 'JUG', age: 24, ability: 88, potential: 89, tag: 'NORMAL' },
-  { id: 15, gameId: 'Viper', name: '朴道玹', team: 'HLE', region: 'LCK', position: 'ADC', age: 24, ability: 89, potential: 90, tag: 'NORMAL' },
-  { id: 16, gameId: 'Peyz', name: '金书垣', team: 'Gen.G', region: 'LCK', position: 'ADC', age: 19, ability: 82, potential: 92, tag: 'GENIUS' },
-  { id: 17, gameId: 'Doran', name: '崔铉晙', team: 'Gen.G', region: 'LCK', position: 'TOP', age: 24, ability: 84, potential: 86, tag: 'NORMAL' },
-  { id: 18, gameId: 'Lehends', name: '孙时佑', team: 'Gen.G', region: 'LCK', position: 'SUP', age: 26, ability: 85, potential: 86, tag: 'NORMAL' },
-  { id: 19, gameId: 'Bin', name: '陈泽彬', team: 'BLG', region: 'LPL', position: 'TOP', age: 22, ability: 87, potential: 91, tag: 'GENIUS' },
-  { id: 20, gameId: 'ON', name: '刘世宇', team: 'BLG', region: 'LPL', position: 'SUP', age: 21, ability: 82, potential: 88, tag: 'NORMAL' },
-])
+// 获取赛区代码
+const getRegionCode = (regionId: number) => {
+  const region = regions.value.find(r => r.id === regionId)
+  return region?.code ?? 'LPL'
+}
+
+// 获取战队名称
+const getTeamName = (teamId: number) => {
+  const team = teams.value.find(t => t.id === teamId)
+  return team?.name ?? '未知'
+}
+
+// 计算天赋标签
+const getTalentTag = (ability: number, potential: number) => {
+  if (potential >= 90 || ability >= 85) return 'GENIUS'
+  if (potential >= 75 || ability >= 70) return 'NORMAL'
+  return 'ORDINARY'
+}
+
+// 位置简称转换
+const getPositionShort = (position: string) => {
+  const shorts: Record<string, string> = {
+    Top: 'TOP', Jungle: 'JUG', Mid: 'MID', Adc: 'ADC', Support: 'SUP'
+  }
+  return shorts[position] || position
+}
+
+// 统计数据
+const stats = computed(() => {
+  const total = rawPlayers.value.length || 280
+  const avgAbility = rawPlayers.value.length > 0
+    ? Math.round(rawPlayers.value.reduce((sum, p) => sum + p.ability, 0) / rawPlayers.value.length)
+    : 75
+  return {
+    total,
+    active: total,
+    retired: 0,
+    avgAbility,
+  }
+})
+
+// 映射为显示格式
+const players = computed(() => {
+  return rawPlayers.value.map(p => ({
+    id: p.id,
+    gameId: p.game_id,
+    name: p.real_name || p.game_id,
+    team: (p as any).team_name || (p.team_id ? getTeamName(p.team_id) : '未知'),
+    teamShort: (p as any).team_short || ((p as any).team_name || '').slice(0, 3),
+    region: (p as any).region_code || 'LPL',
+    position: getPositionShort(p.position || ''),
+    age: p.age,
+    ability: p.ability,
+    potential: p.potential,
+    tag: getTalentTag(p.ability, p.potential),
+  }))
+})
 
 // 计算属性
 const filteredPlayers = computed(() => {

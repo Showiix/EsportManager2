@@ -1,6 +1,10 @@
-use crate::db::{PlayerRepository, TeamRepository};
-use crate::models::{Player, PlayerStatus, PlayerTag, Position, Team};
-use rand::Rng;
+use crate::db::{PlayerRepository, TeamRepository, TournamentRepository, MatchRepository, StandingRepository};
+use crate::models::{Player, PlayerStatus, PlayerTag, Position, Team, Tournament, TournamentType, TournamentStatus, LeagueStanding};
+use crate::services::player_data::{get_team_players, PlayerConfig};
+use crate::services::draft_pool_data::{get_draft_pool, get_region_nationality};
+use crate::services::league_service::LeagueService;
+use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 use sqlx::{Pool, Sqlite};
 
 /// 初始化服务 - 生成游戏初始数据
@@ -23,20 +27,20 @@ impl InitService {
                 name: "LPL",
                 short_name: "CN",
                 team_names: vec![
-                    ("Bilibili Gaming", "BLG"),
                     ("Top Esports", "TES"),
+                    ("Bilibili Gaming", "BLG"),
                     ("JD Gaming", "JDG"),
                     ("Weibo Gaming", "WBG"),
-                    ("LNG Esports", "LNG"),
-                    ("FunPlus Phoenix", "FPX"),
-                    ("EDward Gaming", "EDG"),
                     ("Royal Never Give Up", "RNG"),
-                    ("Invictus Gaming", "IG"),
+                    ("FunPlus Phoenix", "FPX"),
+                    ("LNG Esports", "LNG"),
                     ("ThunderTalk Gaming", "TT"),
-                    ("Ninjas in Pyjamas", "NIP"),
-                    ("Oh My God", "OMG"),
-                    ("Anyone's Legend", "AL"),
+                    ("Invictus Gaming", "IG"),
                     ("Ultra Prime", "UP"),
+                    ("Anyone's Legend", "AL"),
+                    ("Ninjas in Pyjamas", "NIP"),
+                    ("Mercury Rising", "MR"),
+                    ("EDward Gaming", "EDG"),
                 ],
             },
             RegionConfig {
@@ -47,17 +51,17 @@ impl InitService {
                     ("T1", "T1"),
                     ("Gen.G", "GEN"),
                     ("Hanwha Life Esports", "HLE"),
-                    ("Dplus KIA", "DK"),
-                    ("KT Rolster", "KT"),
                     ("DRX", "DRX"),
-                    ("Kwangdong Freecs", "KDF"),
-                    ("Liiv SANDBOX", "LSB"),
-                    ("Nongshim RedForce", "NS"),
+                    ("DWG KIA", "DK"),
+                    ("KT Rolster", "KT"),
+                    ("Kwangdong Freecs", "KF"),
+                    ("Liiv SANDBOX", "SB"),
                     ("OK BRION", "BRO"),
-                    ("Fearx", "FOX"),
+                    ("Nongshim RedForce", "NS"),
                     ("BNK FearX", "BNK"),
-                    ("DN Freecs", "DNF"),
-                    ("Dankook Univ", "DKU"),
+                    ("FearX", "FX"),
+                    ("Longzhu Gaming", "LZ"),
+                    ("Afreeca Freecs", "AF"),
                 ],
             },
             RegionConfig {
@@ -65,20 +69,20 @@ impl InitService {
                 name: "LEC",
                 short_name: "EU",
                 team_names: vec![
-                    ("G2 Esports", "G2"),
                     ("Fnatic", "FNC"),
-                    ("MAD Lions KOI", "MAD"),
-                    ("Team Vitality", "VIT"),
-                    ("SK Gaming", "SK"),
-                    ("Team BDS", "BDS"),
-                    ("Karmine Corp", "KC"),
-                    ("Rogue", "RGE"),
-                    ("Excel Esports", "XL"),
                     ("Team Heretics", "TH"),
-                    ("GIANTX", "GX"),
+                    ("MAD Lions", "MAD"),
+                    ("G2 Esports", "G2"),
+                    ("Falcons", "FAL"),
+                    ("Team Whales", "TW"),
+                    ("AmBear", "AMB"),
+                    ("Misfits Gaming", "MSF"),
+                    ("Team Wolf", "WLF"),
+                    ("Nike Esports", "NKE"),
                     ("Astralis", "AST"),
-                    ("Movistar Riders", "MRS"),
-                    ("LDLC OL", "LDLC"),
+                    ("Team Vitality", "VIT"),
+                    ("Excel Esports", "XL"),
+                    ("SK Gaming", "SK"),
                 ],
             },
             RegionConfig {
@@ -86,20 +90,20 @@ impl InitService {
                 name: "LCS",
                 short_name: "NA",
                 team_names: vec![
+                    ("Frost Quake", "FQ"),
+                    ("100 Thieves", "100T"),
                     ("Cloud9", "C9"),
                     ("Team Liquid", "TL"),
-                    ("FlyQuest", "FLY"),
-                    ("100 Thieves", "100T"),
                     ("NRG Esports", "NRG"),
                     ("Dignitas", "DIG"),
-                    ("Shopify Rebellion", "SR"),
-                    ("Immortals", "IMT"),
                     ("Evil Geniuses", "EG"),
-                    ("Golden Guardians", "GG"),
+                    ("Shopify Rebellion", "SR"),
                     ("TSM", "TSM"),
+                    ("EU-Bear", "EUB"),
+                    ("SA-SY", "SASY"),
+                    ("Immortals", "IMT"),
                     ("Counter Logic Gaming", "CLG"),
-                    ("OpTic Gaming", "OPT"),
-                    ("Misfits Gaming", "MSF"),
+                    ("Logic Gaming", "LG"),
                 ],
             },
         ]
@@ -141,8 +145,93 @@ impl InitService {
         (base + power_bonus) * 10000 // 转换为实际金额
     }
 
-    /// 生成选手
+    /// 生成选手（使用真实数据或随机生成）
     fn generate_players_for_team(
+        team_id: u64,
+        team_short_name: &str,
+        team_power: f64,
+        current_season: u32,
+    ) -> Vec<Player> {
+        let real_players = get_team_players(team_short_name);
+
+        if !real_players.is_empty() {
+            // 使用真实选手数据
+            Self::create_players_from_config(team_id, &real_players, current_season)
+        } else {
+            // 回退到随机生成
+            Self::generate_random_players(team_id, team_power, current_season)
+        }
+    }
+
+    /// 从配置创建选手
+    fn create_players_from_config(
+        team_id: u64,
+        configs: &[PlayerConfig],
+        current_season: u32,
+    ) -> Vec<Player> {
+        let mut rng = rand::thread_rng();
+
+        configs.iter().map(|config| {
+            let tag = Self::determine_player_tag(config.ability, config.potential, config.age);
+            let salary = Self::calculate_initial_salary(config.ability, config.potential, tag);
+
+            Player {
+                id: 0,
+                game_id: config.game_id.to_string(),
+                real_name: config.real_name.map(|s| s.to_string()),
+                nationality: Some(config.nationality.to_string()),
+                age: config.age,
+                ability: config.ability,
+                potential: config.potential,
+                stability: Player::calculate_stability(config.age),
+                tag,
+                status: PlayerStatus::Active,
+                position: Some(config.position),
+                team_id: Some(team_id),
+                salary,
+                market_value: Self::calculate_market_value(config.ability, config.potential, config.age),
+                contract_end_season: Some(current_season + rng.gen_range(1..4)),
+                join_season: current_season,
+                retire_season: None,
+                is_starter: config.is_starter,
+            }
+        }).collect()
+    }
+
+    /// 从配置创建单个选手
+    fn create_player_from_config(
+        team_id: u64,
+        config: &PlayerConfig,
+        current_season: u32,
+    ) -> Player {
+        let mut rng = StdRng::from_entropy();
+        let tag = Self::determine_player_tag(config.ability, config.potential, config.age);
+        let salary = Self::calculate_initial_salary(config.ability, config.potential, tag);
+
+        Player {
+            id: 0,
+            game_id: config.game_id.to_string(),
+            real_name: config.real_name.map(|s| s.to_string()),
+            nationality: Some(config.nationality.to_string()),
+            age: config.age,
+            ability: config.ability,
+            potential: config.potential,
+            stability: Player::calculate_stability(config.age),
+            tag,
+            status: PlayerStatus::Active,
+            position: Some(config.position),
+            team_id: Some(team_id),
+            salary,
+            market_value: Self::calculate_market_value(config.ability, config.potential, config.age),
+            contract_end_season: Some(current_season + rng.gen_range(1..4)),
+            join_season: current_season,
+            retire_season: None,
+            is_starter: config.is_starter,
+        }
+    }
+
+    /// 随机生成选手（备用方案）
+    fn generate_random_players(
         team_id: u64,
         team_power: f64,
         current_season: u32,
@@ -180,7 +269,7 @@ impl InitService {
                 let salary = Self::calculate_initial_salary(ability, potential, tag);
 
                 players.push(Player {
-                    id: 0, // 由数据库生成
+                    id: 0,
                     game_id: format!("Player_{}_{}", team_id, player_counter),
                     real_name: Some(format!("选手{}", player_counter)),
                     nationality: Some("CN".to_string()),
@@ -218,8 +307,9 @@ impl InitService {
         }
     }
 
-    /// 计算初始薪资
+    /// 计算初始薪资（返回实际金额，单位：元）
     fn calculate_initial_salary(ability: u8, _potential: u8, tag: PlayerTag) -> u64 {
+        // base 单位为万元
         let base = match ability {
             90..=100 => 150,
             85..=89 => 100,
@@ -235,11 +325,13 @@ impl InitService {
             PlayerTag::Ordinary => 0.8,
         };
 
-        ((base as f64) * tag_multiplier) as u64
+        // 转换为实际金额（乘以10000）
+        (((base as f64) * tag_multiplier) as u64) * 10000
     }
 
-    /// 计算市场价值
+    /// 计算市场价值（返回实际金额，单位：元）
     fn calculate_market_value(ability: u8, potential: u8, age: u8) -> u64 {
+        // base 单位为万元
         let base = match ability {
             90..=100 => 500,
             85..=89 => 350,
@@ -268,7 +360,8 @@ impl InitService {
             1.0
         };
 
-        ((base as f64) * age_factor * potential_bonus) as u64
+        // 转换为实际金额（乘以10000）
+        (((base as f64) * age_factor * potential_bonus) as u64) * 10000
     }
 
     /// 初始化所有数据
@@ -278,10 +371,11 @@ impl InitService {
         current_season: u32,
     ) -> Result<(), String> {
         let regions = Self::get_regions();
+        let mut region_ids: Vec<u64> = Vec::new();
 
-        for region in regions {
-            // 创建赛区
-            sqlx::query(
+        for region in &regions {
+            // 创建赛区并获取实际的 ID
+            let result = sqlx::query(
                 "INSERT INTO regions (save_id, name, short_name, team_count) VALUES (?, ?, ?, ?)"
             )
             .bind(save_id)
@@ -292,6 +386,10 @@ impl InitService {
             .await
             .map_err(|e| e.to_string())?;
 
+            // 获取实际插入的 region_id
+            let actual_region_id = result.last_insert_rowid() as u64;
+            region_ids.push(actual_region_id);
+
             // 创建队伍
             for (rank, (name, short_name)) in region.team_names.iter().enumerate() {
                 let power = Self::generate_team_power(region.id, rank);
@@ -299,7 +397,7 @@ impl InitService {
 
                 let team = Team {
                     id: 0,
-                    region_id: region.id,
+                    region_id: actual_region_id,  // 使用实际的 region_id
                     name: name.to_string(),
                     short_name: Some(short_name.to_string()),
                     power_rating: power,
@@ -316,12 +414,267 @@ impl InitService {
                     .map_err(|e| e.to_string())?;
 
                 // 创建选手
-                let players = Self::generate_players_for_team(team_id, power, current_season);
-                for player in players {
-                    PlayerRepository::create(pool, save_id, &player)
+                let player_configs = get_team_players(short_name);
+                let mut rng = StdRng::from_entropy();
+
+                if !player_configs.is_empty() {
+                    // 使用配置数据创建选手
+                    for config in &player_configs {
+                        let player = Self::create_player_from_config(team_id, config, current_season);
+                        let player_id = PlayerRepository::create(pool, save_id, &player)
+                            .await
+                            .map_err(|e| e.to_string())?;
+
+                        // 保存配置中的特性
+                        for trait_type in config.traits {
+                            let trait_str = serde_json::to_string(trait_type)
+                                .map(|s| s.trim_matches('"').to_string())
+                                .unwrap_or_else(|_| format!("{:?}", trait_type).to_lowercase());
+
+                            sqlx::query(
+                                "INSERT INTO player_traits (save_id, player_id, trait_type) VALUES (?, ?, ?)"
+                            )
+                            .bind(save_id)
+                            .bind(player_id as i64)
+                            .bind(&trait_str)
+                            .execute(pool)
+                            .await
+                            .map_err(|e| format!("Failed to insert trait for player {}: {}", player_id, e))?;
+                        }
+
+                        // 初始化状态因子
+                        let form_cycle = rng.gen_range(0.0..100.0);
+                        sqlx::query(
+                            r#"
+                            INSERT INTO player_form_factors (
+                                save_id, player_id, form_cycle, momentum,
+                                last_performance, last_match_won, games_since_rest
+                            ) VALUES (?, ?, ?, 0, 0.0, 1, 0)
+                            "#
+                        )
+                        .bind(save_id)
+                        .bind(player_id as i64)
+                        .bind(form_cycle)
+                        .execute(pool)
                         .await
-                        .map_err(|e| e.to_string())?;
+                        .map_err(|e| format!("Failed to init form factors for player {}: {}", player_id, e))?;
+                    }
+                } else {
+                    // 回退到随机生成选手
+                    let players = Self::generate_random_players(team_id, power, current_season);
+                    for player in players {
+                        let player_id = PlayerRepository::create(pool, save_id, &player)
+                            .await
+                            .map_err(|e| e.to_string())?;
+
+                        // 初始化状态因子
+                        let form_cycle = rng.gen_range(0.0..100.0);
+                        sqlx::query(
+                            r#"
+                            INSERT INTO player_form_factors (
+                                save_id, player_id, form_cycle, momentum,
+                                last_performance, last_match_won, games_since_rest
+                            ) VALUES (?, ?, ?, 0, 0.0, 1, 0)
+                            "#
+                        )
+                        .bind(save_id)
+                        .bind(player_id as i64)
+                        .bind(form_cycle)
+                        .execute(pool)
+                        .await
+                        .map_err(|e| format!("Failed to init form factors for player {}: {}", player_id, e))?;
+                    }
                 }
+            }
+        }
+
+        // 创建初始赛事（春季常规赛）
+        Self::create_initial_tournaments(pool, save_id, current_season, &region_ids).await?;
+
+        // 创建初始选秀池（四大赛区各50人）
+        Self::create_initial_draft_pool(pool, save_id, current_season, &region_ids).await?;
+
+        Ok(())
+    }
+
+    /// 创建初始赛事（完整赛季）
+    async fn create_initial_tournaments(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        current_season: u32,
+        region_ids: &[u64],
+    ) -> Result<(), String> {
+        let region_names = ["LPL", "LCK", "LEC", "LCS"];
+        let league_service = LeagueService::new();
+
+        // 1. 创建各赛区的联赛赛事
+        for (idx, &region_id) in region_ids.iter().enumerate() {
+            let region_name = region_names.get(idx).unwrap_or(&"LPL");
+
+            // 春季常规赛 (进行中，需要生成赛程)
+            let spring_regular = Tournament {
+                id: 0,
+                save_id: save_id.to_string(),
+                name: format!("S{} {} 春季赛", current_season, region_name),
+                tournament_type: TournamentType::SpringRegular,
+                season_id: current_season as u64,
+                region_id: Some(region_id),
+                status: TournamentStatus::InProgress,
+                current_stage: Some("regular".to_string()),
+                current_round: Some(1),
+            };
+
+            let spring_regular_id = TournamentRepository::create(pool, save_id, &spring_regular)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            // 获取赛区队伍并生成春季赛赛程
+            let teams = TeamRepository::get_by_region(pool, save_id, region_id)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let spring_matches = league_service.generate_regular_schedule(spring_regular_id, &teams);
+            MatchRepository::create_batch(pool, save_id, &spring_matches)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            // 初始化积分榜 (每个队伍的初始积分为0)
+            let initial_standings: Vec<LeagueStanding> = teams.iter().enumerate().map(|(idx, team)| {
+                LeagueStanding {
+                    id: 0,
+                    tournament_id: spring_regular_id,
+                    team_id: team.id,
+                    rank: Some((idx + 1) as u32),
+                    matches_played: 0,
+                    wins: 0,
+                    losses: 0,
+                    points: 0,
+                    games_won: 0,
+                    games_lost: 0,
+                    game_diff: 0,
+                }
+            }).collect();
+            StandingRepository::upsert_batch(pool, save_id, &initial_standings)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            // 春季季后赛 (待开始)
+            let spring_playoffs = Tournament {
+                id: 0,
+                save_id: save_id.to_string(),
+                name: format!("S{} {} 春季季后赛", current_season, region_name),
+                tournament_type: TournamentType::SpringPlayoffs,
+                season_id: current_season as u64,
+                region_id: Some(region_id),
+                status: TournamentStatus::Upcoming,
+                current_stage: None,
+                current_round: None,
+            };
+            TournamentRepository::create(pool, save_id, &spring_playoffs)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            // 夏季常规赛 (待开始)
+            let summer_regular = Tournament {
+                id: 0,
+                save_id: save_id.to_string(),
+                name: format!("S{} {} 夏季赛", current_season, region_name),
+                tournament_type: TournamentType::SummerRegular,
+                season_id: current_season as u64,
+                region_id: Some(region_id),
+                status: TournamentStatus::Upcoming,
+                current_stage: None,
+                current_round: None,
+            };
+            TournamentRepository::create(pool, save_id, &summer_regular)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            // 夏季季后赛 (待开始)
+            let summer_playoffs = Tournament {
+                id: 0,
+                save_id: save_id.to_string(),
+                name: format!("S{} {} 夏季季后赛", current_season, region_name),
+                tournament_type: TournamentType::SummerPlayoffs,
+                season_id: current_season as u64,
+                region_id: Some(region_id),
+                status: TournamentStatus::Upcoming,
+                current_stage: None,
+                current_round: None,
+            };
+            TournamentRepository::create(pool, save_id, &summer_playoffs)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        // 2. 创建国际赛事 (无赛区，待开始)
+        let international_tournaments = vec![
+            (TournamentType::Msi, format!("S{} MSI季中冠军赛", current_season)),
+            (TournamentType::MadridMasters, format!("S{} 马德里大师赛", current_season)),
+            (TournamentType::ClaudeIntercontinental, format!("S{} Claude洲际赛", current_season)),
+            (TournamentType::WorldChampionship, format!("S{} 全球总决赛", current_season)),
+            (TournamentType::ShanghaiMasters, format!("S{} 上海大师赛", current_season)),
+            (TournamentType::IcpIntercontinental, format!("S{} ICP四赛区洲际对抗赛", current_season)),
+            (TournamentType::SuperIntercontinental, format!("S{} Super洲际年度邀请赛", current_season)),
+        ];
+
+        for (tournament_type, name) in international_tournaments {
+            let tournament = Tournament {
+                id: 0,
+                save_id: save_id.to_string(),
+                name,
+                tournament_type,
+                season_id: current_season as u64,
+                region_id: None, // 国际赛事无赛区
+                status: TournamentStatus::Upcoming,
+                current_stage: None,
+                current_round: None,
+            };
+            TournamentRepository::create(pool, save_id, &tournament)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        Ok(())
+    }
+
+    /// 创建初始选秀池（四大赛区各50人）
+    async fn create_initial_draft_pool(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        current_season: u32,
+        region_ids: &[u64],
+    ) -> Result<(), String> {
+        // 赛区 ID 映射: region_ids[0]=LPL(1), region_ids[1]=LCK(2), region_ids[2]=LEC(3), region_ids[3]=LCS(4)
+        for (idx, &region_id) in region_ids.iter().enumerate() {
+            let config_region_id = (idx + 1) as u64; // 1=LPL, 2=LCK, 3=LEC, 4=LCS
+            let draft_players = get_draft_pool(config_region_id);
+            let nationality = get_region_nationality(config_region_id);
+
+            for (rank, player_config) in draft_players.iter().enumerate() {
+                sqlx::query(
+                    r#"
+                    INSERT INTO draft_players (
+                        save_id, season_id, region_id, game_id, real_name, nationality,
+                        age, ability, potential, position, tag, draft_rank, is_picked
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    "#
+                )
+                .bind(save_id)
+                .bind(current_season as i64)
+                .bind(region_id as i64)
+                .bind(player_config.game_id)
+                .bind(player_config.real_name)
+                .bind(nationality)
+                .bind(player_config.age as i64)
+                .bind(player_config.ability as i64)
+                .bind(player_config.potential as i64)
+                .bind(player_config.position)
+                .bind(player_config.tag)
+                .bind((rank + 1) as i64) // draft_rank 从 1 开始
+                .execute(pool)
+                .await
+                .map_err(|e| format!("Failed to insert draft player {}: {}", player_config.game_id, e))?;
             }
         }
 

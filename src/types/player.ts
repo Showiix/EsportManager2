@@ -36,6 +36,15 @@ export interface Player {
   contractEnd?: string         // 合同到期赛季
 }
 
+// 激活的特性效果
+export interface ActivatedTrait {
+  type: TraitType
+  name: string
+  effect: string              // 效果描述，如 "+3 状态"
+  value: number               // 效果数值
+  isPositive: boolean         // 是否正面效果
+}
+
 // 选手单场发挥数据
 export interface PlayerPerformance {
   playerId: string
@@ -51,6 +60,10 @@ export interface PlayerPerformance {
 
   // 统计分析
   impactScore: number          // 影响力分数 = actualAbility - teamAverage
+
+  // 特性系统
+  traits?: TraitType[]             // 选手拥有的特性
+  activatedTraits?: ActivatedTrait[] // 本局激活的特性效果
 }
 
 // 选手赛季统计
@@ -108,4 +121,180 @@ export const TALENT_GROWTH: Record<PlayerTalent, number> = {
   GENIUS: 3,
   NORMAL: 2,
   ORDINARY: 1
+}
+
+// 选手状态因子（用于动态计算 condition）
+export interface PlayerFormFactors {
+  playerId: string
+  formCycle: number              // 状态周期位置 (0-100)，用于计算正弦波
+  momentum: number               // 动能 (-5 ~ +5)，连胜+1，连败-1
+  lastPerformance: number        // 上场实际发挥值
+  lastMatchWon: boolean          // 上场是否获胜
+  gamesSinceRest: number         // 连续比赛场次（用于疲劳计算）
+}
+
+// 年龄对应的 condition 范围
+export const CONDITION_RANGE_BY_AGE: Record<string, [number, number]> = {
+  'young': [-5, 8],    // ≤24岁：高波动，高上限
+  'prime': [-3, 3],    // 25-29岁：稳定期
+  'veteran': [0, 2]    // ≥30岁：老将，稳定但上限低
+}
+
+// 获取年龄段
+export function getAgeGroup(age: number): 'young' | 'prime' | 'veteran' {
+  if (age <= 24) return 'young'
+  if (age <= 29) return 'prime'
+  return 'veteran'
+}
+
+// ==================== 特性系统 ====================
+
+// 特性类型
+export type TraitType =
+  | 'clutch'           // 大赛型：季后赛/国际赛 condition +3
+  | 'slow_starter'     // 慢热型：第1局 -2，第3+局 +2
+  | 'fast_starter'     // 快枪手：第1局 +2，第3+局 -1
+  | 'explosive'        // 爆发型：stability -15，上限 +5
+  | 'consistent'       // 稳定型：stability +10，上限 -3
+  | 'comeback_king'    // 逆风王：落后时 condition +3
+  | 'tilter'           // 顺风浪：领先 -2，落后 -3
+  | 'mental_fortress'  // 心态大师：momentum 效果减半
+  | 'fragile'          // 玻璃心：输了 momentum -2
+  | 'ironman'          // 铁人：无疲劳惩罚
+  | 'volatile'         // 状态敏感：波动 ×1.5
+  | 'rising_star'      // 新星：首赛季 ability +3
+  | 'veteran'          // 老将风范：30岁后 stability +15
+  | 'team_leader'      // 团队核心：队友 condition +1
+
+// 特性信息
+export interface TraitInfo {
+  type: TraitType
+  name: string
+  description: string
+  rarity: number      // 1-5
+  isNegative: boolean
+}
+
+// 特性配置表
+export const TRAIT_CONFIG: Record<TraitType, TraitInfo> = {
+  clutch: {
+    type: 'clutch',
+    name: '大赛型',
+    description: '在季后赛和国际赛中状态更好',
+    rarity: 4,
+    isNegative: false
+  },
+  slow_starter: {
+    type: 'slow_starter',
+    name: '慢热型',
+    description: '系列赛开局较慢，但后期渐入佳境',
+    rarity: 2,
+    isNegative: false
+  },
+  fast_starter: {
+    type: 'fast_starter',
+    name: '快枪手',
+    description: '系列赛开局强势，但后期可能疲软',
+    rarity: 2,
+    isNegative: false
+  },
+  explosive: {
+    type: 'explosive',
+    name: '爆发型',
+    description: '发挥波动大，但巅峰更高',
+    rarity: 3,
+    isNegative: false
+  },
+  consistent: {
+    type: 'consistent',
+    name: '稳定型',
+    description: '发挥稳定，但上限略低',
+    rarity: 2,
+    isNegative: false
+  },
+  comeback_king: {
+    type: 'comeback_king',
+    name: '逆风王',
+    description: '落后时愈战愈勇',
+    rarity: 4,
+    isNegative: false
+  },
+  tilter: {
+    type: 'tilter',
+    name: '顺风浪',
+    description: '心态容易受比分影响',
+    rarity: 1,
+    isNegative: true
+  },
+  mental_fortress: {
+    type: 'mental_fortress',
+    name: '心态大师',
+    description: '心态稳定，不受连胜连败影响',
+    rarity: 4,
+    isNegative: false
+  },
+  fragile: {
+    type: 'fragile',
+    name: '玻璃心',
+    description: '输了比赛心态下滑更快',
+    rarity: 1,
+    isNegative: true
+  },
+  ironman: {
+    type: 'ironman',
+    name: '铁人',
+    description: '不受连续比赛疲劳影响',
+    rarity: 3,
+    isNegative: false
+  },
+  volatile: {
+    type: 'volatile',
+    name: '状态敏感',
+    description: '状态波动比常人更大',
+    rarity: 2,
+    isNegative: true
+  },
+  rising_star: {
+    type: 'rising_star',
+    name: '新星',
+    description: '新人赛季潜力爆发',
+    rarity: 3,
+    isNegative: false
+  },
+  veteran: {
+    type: 'veteran',
+    name: '老将风范',
+    description: '老将经验丰富，发挥更稳',
+    rarity: 3,
+    isNegative: false
+  },
+  team_leader: {
+    type: 'team_leader',
+    name: '团队核心',
+    description: '带动队友发挥',
+    rarity: 5,
+    isNegative: false
+  }
+}
+
+// 获取特性显示名称
+export function getTraitName(traitType: TraitType): string {
+  return TRAIT_CONFIG[traitType]?.name || traitType
+}
+
+// 获取特性描述
+export function getTraitDescription(traitType: TraitType): string {
+  return TRAIT_CONFIG[traitType]?.description || ''
+}
+
+// 根据稀有度获取颜色
+export function getTraitRarityColor(traitType: TraitType): string {
+  const rarity = TRAIT_CONFIG[traitType]?.rarity || 1
+  switch (rarity) {
+    case 5: return '#ff8c00'  // 传奇橙
+    case 4: return '#a855f7'  // 史诗紫
+    case 3: return '#3b82f6'  // 稀有蓝
+    case 2: return '#22c55e'  // 普通绿
+    default: return '#6b7280' // 灰色
+  }
 }
