@@ -211,69 +211,6 @@ pub async fn start_draft_auction(
         }
     }).collect();
 
-    // 加载所有 GM 配置
-    let gm_rows = sqlx::query("SELECT * FROM team_gm_profiles WHERE save_id = ?")
-        .bind(&save_id)
-        .fetch_all(&pool)
-        .await
-        .unwrap_or_default();
-
-    let mut gm_profiles: HashMap<u64, crate::models::TeamGMProfile> = HashMap::new();
-    for row in gm_rows {
-        let team_id: i64 = row.get("team_id");
-        let personality_str: String = row.get("personality");
-        let personality = match personality_str.to_uppercase().as_str() {
-            "CHAMPIONSHIP" => crate::models::GMPersonality::Championship,
-            "YOUTH_DEVELOPMENT" | "YOUTHDEVELOPMENT" => crate::models::GMPersonality::YouthDevelopment,
-            "BALANCED" => crate::models::GMPersonality::Balanced,
-            "SPECULATOR" => crate::models::GMPersonality::Speculator,
-            "REBUILDING" => crate::models::GMPersonality::Rebuilding,
-            "CUSTOM" => crate::models::GMPersonality::Custom,
-            _ => crate::models::GMPersonality::Balanced,
-        };
-
-        let sell_agg_str: String = row.get("sell_aggressiveness");
-        let sell_aggressiveness = match sell_agg_str.to_uppercase().as_str() {
-            "CONSERVATIVE" => crate::models::SellAggressiveness::Conservative,
-            "AGGRESSIVE" => crate::models::SellAggressiveness::Aggressive,
-            _ => crate::models::SellAggressiveness::Normal,
-        };
-
-        let position_priorities_json: String = row.get("position_priorities");
-        let position_priorities: HashMap<String, u8> = serde_json::from_str(&position_priorities_json)
-            .unwrap_or_else(|_| {
-                let mut map = HashMap::new();
-                map.insert("TOP".to_string(), 50);
-                map.insert("JUG".to_string(), 50);
-                map.insert("MID".to_string(), 50);
-                map.insert("ADC".to_string(), 50);
-                map.insert("SUP".to_string(), 50);
-                map
-            });
-
-        gm_profiles.insert(team_id as u64, crate::models::TeamGMProfile {
-            id: row.get::<i64, _>("id") as u64,
-            team_id: team_id as u64,
-            save_id: save_id.clone(),
-            personality,
-            custom_prompt: row.get("custom_prompt"),
-            risk_tolerance: row.get::<i64, _>("risk_tolerance") as u8,
-            budget_ratio: row.get::<f64, _>("budget_ratio"),
-            sell_aggressiveness,
-            preferred_age_min: row.get::<i64, _>("preferred_age_min") as u8,
-            preferred_age_max: row.get::<i64, _>("preferred_age_max") as u8,
-            min_ability_threshold: row.get::<i64, _>("min_ability_threshold") as u8,
-            price_premium_max: row.get::<f64, _>("price_premium_max"),
-            position_priorities,
-            draft_pick_sell_threshold: row.get::<f64, _>("draft_pick_sell_threshold"),
-            draft_pick_bid_aggressiveness: row.get::<f64, _>("draft_pick_bid_aggressiveness"),
-            draft_preference_ability_weight: row.get::<f64, _>("draft_preference_ability_weight"),
-            draft_young_bias: row.get::<f64, _>("draft_young_bias"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
-        });
-    }
-
     // 创建拍卖引擎
     let mut engine = DraftAuctionEngine::new(save_id.clone(), current_season as u64, region_id);
     engine.initialize(
@@ -281,7 +218,6 @@ pub async fn start_draft_auction(
         &draft_orders,
         &roster_counts,
         &HashMap::new(), // position_needs
-        &gm_profiles,    // 新增：GM 配置
     );
 
     // 创建拍卖记录
@@ -844,69 +780,6 @@ async fn load_auction_engine(
     .await
     .map_err(|e| e.to_string())?;
 
-    // 加载所有 GM 配置
-    let gm_rows = sqlx::query("SELECT * FROM team_gm_profiles WHERE save_id = ?")
-        .bind(save_id)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default();
-
-    let mut gm_profiles_map: HashMap<u64, crate::models::TeamGMProfile> = HashMap::new();
-    for row in gm_rows {
-        let team_id: i64 = row.get("team_id");
-        let personality_str: String = row.get("personality");
-        let personality = match personality_str.to_uppercase().as_str() {
-            "CHAMPIONSHIP" => crate::models::GMPersonality::Championship,
-            "YOUTH_DEVELOPMENT" | "YOUTHDEVELOPMENT" => crate::models::GMPersonality::YouthDevelopment,
-            "BALANCED" => crate::models::GMPersonality::Balanced,
-            "SPECULATOR" => crate::models::GMPersonality::Speculator,
-            "REBUILDING" => crate::models::GMPersonality::Rebuilding,
-            "CUSTOM" => crate::models::GMPersonality::Custom,
-            _ => crate::models::GMPersonality::Balanced,
-        };
-
-        let sell_agg_str: String = row.get("sell_aggressiveness");
-        let sell_aggressiveness = match sell_agg_str.to_uppercase().as_str() {
-            "CONSERVATIVE" => crate::models::SellAggressiveness::Conservative,
-            "AGGRESSIVE" => crate::models::SellAggressiveness::Aggressive,
-            _ => crate::models::SellAggressiveness::Normal,
-        };
-
-        let position_priorities_json: String = row.get("position_priorities");
-        let position_priorities: HashMap<String, u8> = serde_json::from_str(&position_priorities_json)
-            .unwrap_or_else(|_| {
-                let mut map = HashMap::new();
-                map.insert("TOP".to_string(), 50);
-                map.insert("JUG".to_string(), 50);
-                map.insert("MID".to_string(), 50);
-                map.insert("ADC".to_string(), 50);
-                map.insert("SUP".to_string(), 50);
-                map
-            });
-
-        gm_profiles_map.insert(team_id as u64, crate::models::TeamGMProfile {
-            id: row.get::<i64, _>("id") as u64,
-            team_id: team_id as u64,
-            save_id: save_id.to_string(),
-            personality,
-            custom_prompt: row.get("custom_prompt"),
-            risk_tolerance: row.get::<i64, _>("risk_tolerance") as u8,
-            budget_ratio: row.get::<f64, _>("budget_ratio"),
-            sell_aggressiveness,
-            preferred_age_min: row.get::<i64, _>("preferred_age_min") as u8,
-            preferred_age_max: row.get::<i64, _>("preferred_age_max") as u8,
-            min_ability_threshold: row.get::<i64, _>("min_ability_threshold") as u8,
-            price_premium_max: row.get::<f64, _>("price_premium_max"),
-            position_priorities,
-            draft_pick_sell_threshold: row.get::<f64, _>("draft_pick_sell_threshold"),
-            draft_pick_bid_aggressiveness: row.get::<f64, _>("draft_pick_bid_aggressiveness"),
-            draft_preference_ability_weight: row.get::<f64, _>("draft_preference_ability_weight"),
-            draft_young_bias: row.get::<f64, _>("draft_young_bias"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
-        });
-    }
-
     for row in team_rows {
         let team_id: i64 = row.get("id");
         let balance: i64 = row.get("balance");
@@ -919,11 +792,6 @@ async fn load_auction_engine(
         .await
         .unwrap_or(0);
 
-        let gm_profile = gm_profiles_map
-            .get(&(team_id as u64))
-            .cloned()
-            .unwrap_or_else(|| crate::models::TeamGMProfile::new(team_id as u64, save_id.to_string()));
-
         engine.teams.insert(team_id as u64, TeamAuctionInfo {
             team_id: team_id as u64,
             team_name: row.get("name"),
@@ -932,7 +800,6 @@ async fn load_auction_engine(
             roster_count: roster_count as u32,
             position_needs: HashMap::new(),
             avg_ability: row.get("power_rating"),
-            gm_profile, // 注入配置
         });
     }
 

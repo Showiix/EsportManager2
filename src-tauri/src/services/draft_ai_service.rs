@@ -1,18 +1,17 @@
 //! 选秀 AI 决策服务
 //!
-//! 提供传统选秀的智能选人逻辑，根据 GM 人格和球队状态选择最佳新秀
+//! 提供传统选秀的智能选人逻辑，根据球队状态选择最佳新秀
 
-use crate::models::{DraftPlayer, Player, TeamGMProfile, GMPersonality};
+use crate::models::{DraftPlayer, Player};
 use std::collections::HashMap;
 
 /// 选秀 AI 决策服务
 pub struct DraftAIService;
 
 impl DraftAIService {
-    /// 为球队选择最佳选秀球员
+    /// 为球队选择最佳选秀球员（简化版本）
     pub fn select_best_draft_player(
         available_players: &[DraftPlayer],
-        gm_profile: &TeamGMProfile,
         roster: &[Player],
     ) -> Option<DraftPlayer> {
         if available_players.is_empty() {
@@ -24,7 +23,7 @@ impl DraftAIService {
         let mut scored: Vec<(DraftPlayer, f64)> = available_players
             .iter()
             .map(|p| {
-                let score = Self::calculate_player_score(p, gm_profile, &position_needs, roster);
+                let score = Self::calculate_player_score(p, &position_needs, roster);
                 (p.clone(), score)
             })
             .collect();
@@ -35,66 +34,33 @@ impl DraftAIService {
         scored.first().map(|(p, _)| p.clone())
     }
 
-    /// 计算选秀球员的综合评分（公开方法供外部使用）
+    /// 计算选秀球员的综合评分（公开方法供外部使用）- 简化版本
     pub fn calculate_player_score(
         player: &DraftPlayer,
-        gm: &TeamGMProfile,
         position_needs: &HashMap<String, u32>,
         roster: &[Player],
     ) -> f64 {
-        // 1. 基础评分（ability/potential 权重）
-        let ability_weight = gm.draft_preference_ability_weight;
-        let potential_weight = 1.0 - ability_weight;
+        // 1. 基础评分（ability 和 potential 的加权平均）
+        let ability_weight = 0.6;
+        let potential_weight = 0.4;
         let mut score = player.ability as f64 * ability_weight + player.potential as f64 * potential_weight;
 
-        // 2. 年龄偏好调整
-        if player.age >= gm.preferred_age_min && player.age <= gm.preferred_age_max {
-            score *= 1.15; // 符合年龄偏好，加成15%
-        } else {
-            score *= 0.85; // 不符合年龄偏好，惩罚15%
-        }
-
-        // 特殊：青训型和重建型对年轻球员(≤20岁)额外加成
-        if matches!(
-            gm.personality,
-            GMPersonality::YouthDevelopment | GMPersonality::Rebuilding
-        ) {
-            if player.age <= 20 {
-                score *= 1.2;
-            }
+        // 2. 年龄偏好调整（默认偏好18-22岁）
+        if player.age >= 18 && player.age <= 22 {
+            score *= 1.1; // 符合年龄偏好，加成10%
         }
 
         // 3. 位置需求调整
         let position_str = player.position
             .map(|p| format!("{:?}", p).to_uppercase())
-            .unwrap_or_else(|| "UNKNOWN".to_string());
-        let pos_priority = gm.position_priorities.get(&position_str).copied().unwrap_or(50);
+            .unwrap_or_else(|| "Unknown".to_string());
         let pos_need = position_needs.get(&position_str).copied().unwrap_or(50);
 
-        // 综合位置配置(60%)和实际需求(40%)
-        let pos_factor = (pos_priority as f64 * 0.6 + pos_need as f64 * 0.4) / 100.0;
+        // 位置需求因子
+        let pos_factor = pos_need as f64 / 100.0;
         score *= 1.0 + pos_factor; // 最多翻倍
 
-        // 4. 能力阈值过滤（不符合最低要求的大幅降分）
-        if player.ability < gm.min_ability_threshold {
-            // 只有青训型和重建型容忍低能力高潜力的球员
-            if !matches!(
-                gm.personality,
-                GMPersonality::YouthDevelopment | GMPersonality::Rebuilding
-            ) {
-                score *= 0.5; // 大幅降分
-            }
-        }
-
-        // 5. 投机型特殊逻辑：优先选"被低估"的球员（潜力远超能力）
-        if matches!(gm.personality, GMPersonality::Speculator) {
-            let upside = player.potential.saturating_sub(player.ability);
-            if upside >= 15 {
-                score *= 1.4; // 潜力超能力15+，视为低估，大幅加成
-            }
-        }
-
-        // 6. 阵容深度调整（同位置球员过多时降低优先级）
+        // 4. 阵容深度调整（同位置球员过多时降低优先级）
         let same_position_count = roster
             .iter()
             .filter(|p| {
@@ -110,9 +76,9 @@ impl DraftAIService {
             score *= 1.3; // 该位置空缺，急需，大幅加成
         }
 
-        // 7. 年轻球员偏好加成（≤21岁）
+        // 5. 年轻球员偏好加成（≤21岁）
         if player.age <= 21 {
-            score *= 1.0 + gm.draft_young_bias; // draft_young_bias 在 -0.2 到 0.2 之间
+            score *= 1.1;
         }
 
         score

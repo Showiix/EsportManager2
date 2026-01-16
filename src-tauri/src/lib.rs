@@ -35,42 +35,6 @@ use commands::{
     // 选秀权拍卖命令
     get_draft_pick_prices, start_draft_auction, execute_auction_round, fast_forward_auction,
     get_auction_status, get_auction_events, finalize_auction,
-    // 转会命令
-    get_transfer_market, get_free_agents, list_player_for_transfer, cancel_transfer_listing,
-    buy_listed_player, sign_free_agent, get_transfer_history,
-    // AI 转会窗口命令
-    start_transfer_window, execute_transfer_round, fast_forward_transfers,
-    get_transfer_window_status, get_transfer_events,
-    // 市场分析和选手市场命令
-    get_team_transfer_plans, get_player_market_list, get_player_contract_detail,
-    // AI 转会 GM 配置命令
-    get_all_gm_profiles, get_team_gm_profile, update_team_gm_profile, batch_update_gm_profiles,
-    generate_ai_strategies, get_team_ai_strategy, get_gm_personality_types, init_ai_transfer_tables,
-    // LLM AI 命令
-    check_llm_config, configure_llm, generate_llm_strategy, clear_llm_config,
-    // 选手转会策略命令
-    generate_player_transfer_strategy, get_player_transfer_strategy, get_all_player_strategies,
-    init_player_strategy_tables,
-    // LLM 转会市场命令
-    init_llm_transfer_market, get_llm_market_state, get_all_team_market_states,
-    generate_player_intentions, generate_team_strategies_llm, generate_rule_based_team_strategies, process_renewals,
-    execute_llm_market_round, advance_market_phase, get_active_negotiations_llm, get_negotiation_detail_llm,
-    get_player_strategy_llm, get_team_strategy_llm, get_departure_candidates_llm,
-    get_llm_market_events, get_llm_market_events_for_round, reset_llm_transfer_market,
-    get_failed_teams, retry_failed_team_strategies, get_renewal_results,
-    fix_add_departure_to_free_agents,
-    // LLM 任务追踪命令
-    get_llm_task_progress, retry_failed_llm_tasks,
-    // 规则驱动转会市场命令
-    execute_rule_based_market_round,
-    // 简化版转会市场命令
-    simple_init_market, simple_get_market_state, simple_execute_market_analysis,
-    simple_execute_strategy_generation, simple_execute_renewal_window,
-    simple_execute_market_round, simple_fast_forward_market,
-    simple_get_all_players, simple_get_all_team_strategies, simple_get_team_strategy,
-    simple_get_player_transfer_info, simple_get_all_events, simple_get_events_by_round,
-    simple_reset_market, simple_execute_next_step, simple_get_free_agents,
-    simple_get_willing_to_transfer,
     // 财务命令
     get_team_finance_summary, get_all_teams_finance, get_team_transactions,
     record_transaction, get_season_finance_report, pay_team_salaries,
@@ -208,68 +172,6 @@ pub fn run() {
             get_auction_status,
             get_auction_events,
             finalize_auction,
-            // 转会命令
-            get_transfer_market,
-            get_free_agents,
-            list_player_for_transfer,
-            cancel_transfer_listing,
-            buy_listed_player,
-            sign_free_agent,
-            get_transfer_history,
-            // AI 转会窗口命令
-            start_transfer_window,
-            execute_transfer_round,
-            fast_forward_transfers,
-            get_transfer_window_status,
-            get_transfer_events,
-            // 市场分析和选手市场命令
-            get_team_transfer_plans,
-            get_player_market_list,
-            get_player_contract_detail,
-            // AI 转会 GM 配置命令
-            get_all_gm_profiles,
-            get_team_gm_profile,
-            update_team_gm_profile,
-            batch_update_gm_profiles,
-            generate_ai_strategies,
-            get_team_ai_strategy,
-            get_gm_personality_types,
-            init_ai_transfer_tables,
-            // LLM AI 命令
-            check_llm_config,
-            configure_llm,
-            generate_llm_strategy,
-            clear_llm_config,
-            // 选手转会策略命令
-            generate_player_transfer_strategy,
-            get_player_transfer_strategy,
-            get_all_player_strategies,
-            init_player_strategy_tables,
-            // LLM 转会市场命令
-            init_llm_transfer_market,
-            get_llm_market_state,
-            get_all_team_market_states,
-            generate_player_intentions,
-            generate_team_strategies_llm,
-            generate_rule_based_team_strategies,
-            process_renewals,
-            execute_llm_market_round,
-            advance_market_phase,
-            get_active_negotiations_llm,
-            get_negotiation_detail_llm,
-            get_player_strategy_llm,
-            get_team_strategy_llm,
-            get_departure_candidates_llm,
-            get_llm_market_events,
-            get_llm_market_events_for_round,
-            reset_llm_transfer_market,
-            get_failed_teams,
-            retry_failed_team_strategies,
-            get_renewal_results,
-            fix_add_departure_to_free_agents,
-            // LLM 任务追踪命令
-            get_llm_task_progress,
-            retry_failed_llm_tasks,
             // 财务命令
             get_team_finance_summary,
             get_all_teams_finance,
@@ -384,24 +286,6 @@ pub fn run() {
             dev_migrate_loyalty_satisfaction,
             dev_recalculate_market_values,
             dev_fix_starters,
-            // 简化版转会市场命令
-            simple_init_market,
-            simple_get_market_state,
-            simple_execute_market_analysis,
-            simple_execute_strategy_generation,
-            simple_execute_renewal_window,
-            simple_execute_market_round,
-            simple_fast_forward_market,
-            simple_get_all_players,
-            simple_get_all_team_strategies,
-            simple_get_team_strategy,
-            simple_get_player_transfer_info,
-            simple_get_all_events,
-            simple_get_events_by_round,
-            simple_reset_market,
-            simple_execute_next_step,
-            simple_get_free_agents,
-            simple_get_willing_to_transfer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

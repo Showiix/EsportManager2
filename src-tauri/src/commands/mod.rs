@@ -4,7 +4,6 @@ pub mod game_commands;
 pub mod honor_commands;
 pub mod draft_commands;
 pub mod draft_auction_commands;
-pub mod transfer_commands;
 pub mod finance_commands;
 pub mod query_commands;
 pub mod international_commands;
@@ -16,9 +15,6 @@ pub mod points_commands;
 pub mod match_detail_commands;
 pub mod dev_commands;
 pub mod awards_commands;
-pub mod ai_transfer_commands;
-pub mod market_commands;
-pub mod simple_transfer_commands;
 
 pub use save_commands::*;
 pub use team_commands::*;
@@ -26,7 +22,6 @@ pub use game_commands::*;
 pub use honor_commands::*;
 pub use draft_commands::*;
 pub use draft_auction_commands::*;
-pub use transfer_commands::*;
 pub use finance_commands::*;
 pub use query_commands::*;
 pub use international_commands::*;
@@ -38,9 +33,6 @@ pub use points_commands::*;
 pub use match_detail_commands::*;
 pub use dev_commands::*;
 pub use awards_commands::*;
-pub use ai_transfer_commands::*;
-pub use market_commands::*;
-pub use simple_transfer_commands::*;
 
 use serde::{Deserialize, Serialize};
 

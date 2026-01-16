@@ -9,7 +9,7 @@
 use crate::models::{
     AuctionEventType, AuctionStatus, BidStatus, DraftOrder, DraftPickAuction,
     DraftPickAuctionEvent, DraftPickBid, DraftPickListing, DraftListingStatus, EventImportance,
-    FinancialStatus, Team, TeamGMProfile,
+    FinancialStatus, Team,
     calculate_commission, calculate_seller_revenue, get_position_name, get_price_for_position,
     COMMISSION_RATE,
 };
@@ -45,7 +45,6 @@ pub struct TeamAuctionInfo {
     pub roster_count: u32,
     pub position_needs: HashMap<String, u8>, // position -> need_level (0-100)
     pub avg_ability: f64,
-    pub gm_profile: TeamGMProfile, // 新增：GM 人格配置
 }
 
 /// 拍卖引擎配置
@@ -124,16 +123,11 @@ impl DraftAuctionEngine {
         draft_orders: &[DraftOrder],
         roster_counts: &HashMap<u64, u32>,
         position_needs: &HashMap<u64, HashMap<String, u8>>,
-        gm_profiles: &HashMap<u64, TeamGMProfile>, // 新增参数
     ) {
         // 构建球队信息
         for team in teams {
             let roster_count = roster_counts.get(&team.id).copied().unwrap_or(0);
             let needs = position_needs.get(&team.id).cloned().unwrap_or_default();
-            let gm_profile = gm_profiles
-                .get(&team.id)
-                .cloned()
-                .unwrap_or_else(|| TeamGMProfile::new(team.id, self.auction.save_id.clone()));
 
             self.teams.insert(team.id, TeamAuctionInfo {
                 team_id: team.id,
@@ -143,7 +137,6 @@ impl DraftAuctionEngine {
                 roster_count,
                 position_needs: needs,
                 avg_ability: team.power_rating,
-                gm_profile, // 注入配置
             });
         }
 
@@ -257,50 +250,22 @@ impl DraftAuctionEngine {
         new_events
     }
 
-    /// AI 卖签决策
+    /// AI 卖签决策（简化版本）
     fn evaluate_sell_decision(&self, team_info: &TeamAuctionInfo, position: u32, rng: &mut impl Rng) -> bool {
-        let gm = &team_info.gm_profile;
+        let mut base_prob = 0.2; // 基础卖签概率
 
-        // 1. 人格基础概率
-        let mut base_prob = match gm.personality {
-            crate::models::GMPersonality::Championship => 0.05,
-            crate::models::GMPersonality::YouthDevelopment => 0.30,
-            crate::models::GMPersonality::Balanced => 0.20,
-            crate::models::GMPersonality::Speculator => 0.40,
-            crate::models::GMPersonality::Rebuilding => 0.25,
-            crate::models::GMPersonality::Custom => 0.20,
-        };
-
-        // 2. 财务困难大幅提高
+        // 1. 财务困难大幅提高
         if matches!(team_info.financial_status, FinancialStatus::Bankrupt | FinancialStatus::Deficit) {
             base_prob += 0.50;
         }
 
-        // 3. 出售激进度
-        base_prob *= match gm.sell_aggressiveness {
-            crate::models::SellAggressiveness::Conservative => 0.5,
-            crate::models::SellAggressiveness::Normal => 1.0,
-            crate::models::SellAggressiveness::Aggressive => 1.8,
-        };
-
-        // 4. 签位价值（高顺位签更难卖）
-        if position <= 3 && matches!(gm.personality, crate::models::GMPersonality::Championship) {
-            return false; // 争冠型绝不卖前3签
-        }
+        // 2. 签位价值（高顺位签更难卖）
         base_prob *= if position <= 3 { 0.3 } else if position >= 10 { 1.5 } else { 1.0 };
 
-        // 5. 预算充裕降低卖签意愿
-        if gm.budget_ratio > 0.7 && team_info.balance > 5000_0000 {
-            base_prob *= 0.6;
-        }
-
-        // 6. 阵容需求（缺人保留签）
+        // 3. 阵容需求（缺人保留签）
         if team_info.roster_count < 6 {
             base_prob *= 0.4;
         }
-
-        // 7. 自定义阈值
-        base_prob *= gm.draft_pick_sell_threshold;
 
         rng.gen::<f64>() < base_prob.clamp(0.0, 0.95)
     }
@@ -594,7 +559,7 @@ impl DraftAuctionEngine {
         Some(min_bid + random_addition)
     }
 
-    /// AI 竞拍决策
+    /// AI 竞拍决策（简化版本）
     fn evaluate_bid_for_listing(
         &self,
         team_info: &TeamAuctionInfo,
@@ -606,10 +571,8 @@ impl DraftAuctionEngine {
         current_round: u32,
         rng: &mut impl Rng,
     ) -> Option<i64> {
-        let gm = &team_info.gm_profile;
-
-        // 1. 可用预算（基于 GM 配置）
-        let budget_ratio = gm.budget_ratio * gm.draft_pick_bid_aggressiveness;
+        // 1. 可用预算
+        let budget_ratio = 0.6; // 默认 60%
         let available_budget = (team_info.balance as f64 * budget_ratio) as i64;
         let min_bid = current_price + min_increment;
 
@@ -617,8 +580,8 @@ impl DraftAuctionEngine {
             return None;
         }
 
-        // 2. 签位价值评分（基于 GM 人格）
-        let pick_value = Self::calculate_pick_value(draft_position, gm);
+        // 2. 签位价值评分
+        let pick_value = Self::calculate_pick_value(draft_position);
 
         // 3. 竞拍意愿概率
         let mut bid_prob = (pick_value as f64 / 100.0) * 0.6;
@@ -628,24 +591,11 @@ impl DraftAuctionEngine {
             bid_prob += 0.30;
         }
 
-        // 位置需求加成
-        let max_pos_priority = gm.position_priorities.values().max().copied().unwrap_or(50);
-        if max_pos_priority >= 80 {
-            bid_prob += 0.15;
-        }
-
-        // 价格敏感度（不同人格对高价的容忍度不同）
+        // 价格敏感度
         if let Some(pricing) = get_price_for_position(draft_position) {
             let price_ratio = current_price as f64 / pricing.starting_price as f64;
-            let sensitivity = match gm.personality {
-                crate::models::GMPersonality::Championship => 0.3,     // 争冠型不在乎价格
-                crate::models::GMPersonality::Speculator => 1.5,       // 投机型极度价格敏感
-                crate::models::GMPersonality::YouthDevelopment => 1.2, // 青训型较为敏感
-                _ => 1.0,
-            };
-
             if price_ratio > 1.3 {
-                bid_prob *= (0.5_f64).powf((price_ratio - 1.0) * sensitivity);
+                bid_prob *= (0.5_f64).powf((price_ratio - 1.0));
             }
         }
 
@@ -658,74 +608,24 @@ impl DraftAuctionEngine {
             return None;
         }
 
-        // 4. 决定出价金额（基于人格）
-        let strategy = match gm.personality {
-            crate::models::GMPersonality::Championship => BidStrategy::Aggressive,
-            crate::models::GMPersonality::Speculator => BidStrategy::Conservative,
-            crate::models::GMPersonality::YouthDevelopment => BidStrategy::Minimal,
-            _ => BidStrategy::Moderate,
-        };
+        // 4. 决定出价金额（温和策略）
+        let max_bid = (min_bid as f64 * 1.3).min(available_budget as f64) as i64;
+        if max_bid <= min_bid {
+            return None;
+        }
 
-        Self::calculate_bid_amount(min_bid, available_budget, strategy, rng)
+        Some(rng.gen_range(min_bid..=max_bid))
     }
 
-    /// 计算签位价值评分（0-100）
-    fn calculate_pick_value(position: u32, gm: &TeamGMProfile) -> u8 {
-        let base = match position {
+    /// 计算签位价值评分（0-100）- 简化版本
+    fn calculate_pick_value(position: u32) -> u8 {
+        match position {
             1..=3 => 95,
             4..=5 => 80,
             6..=8 => 65,
             9..=10 => 50,
             _ => 35,
-        };
-
-        let modifier = match gm.personality {
-            crate::models::GMPersonality::Championship => {
-                if position <= 5 { 10 } else { -5 } // 争冠型重视高顺位
-            },
-            crate::models::GMPersonality::YouthDevelopment => {
-                if position <= 8 { 5 } else { 10 } // 青训型所有签位价值较平均
-            },
-            crate::models::GMPersonality::Speculator => {
-                if position >= 4 && position <= 8 { 15 } else { 0 } // 投机型看中性价比（中等签位）
-            },
-            crate::models::GMPersonality::Rebuilding => {
-                if position <= 3 { 15 } else { -10 } // 重建型极度重视高顺位
-            },
-            _ => 0,
-        };
-
-        let threshold_modifier = if gm.min_ability_threshold >= 80 {
-            if position <= 5 { 5 } else { -5 } // 能力要求高的 GM 重视高顺位
-        } else {
-            0
-        };
-
-        (base as i32 + modifier + threshold_modifier).clamp(10, 100) as u8
-    }
-
-    /// 计算出价金额
-    fn calculate_bid_amount(min_bid: i64, max_budget: i64, strategy: BidStrategy, rng: &mut impl Rng) -> Option<i64> {
-        let amount = match strategy {
-            BidStrategy::Minimal => min_bid, // 最低加价
-            BidStrategy::Conservative => {
-                let max = (min_bid as f64 * 1.1).min(max_budget as f64) as i64;
-                if max <= min_bid { return None; }
-                rng.gen_range(min_bid..=max)
-            },
-            BidStrategy::Moderate => {
-                let max = (min_bid as f64 * 1.3).min(max_budget as f64) as i64;
-                if max <= min_bid { return None; }
-                rng.gen_range(min_bid..=max)
-            },
-            BidStrategy::Aggressive => {
-                let max = (min_bid as f64 * 1.5).min(max_budget as f64 * 0.8) as i64;
-                if max <= min_bid { return None; }
-                rng.gen_range(min_bid..=max)
-            },
-        };
-
-        Some(amount)
+        }
     }
 
     /// 完成指定索引的挂牌交易

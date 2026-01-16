@@ -7,8 +7,14 @@
 
 use crate::models::{
     DepartureReason, LoyaltyChange, LoyaltyChangeReason, Player,
-    TeamSeasonPerformance, calculate_expected_salary,
+    TeamSeasonPerformance,
 };
+
+/// 计算预期薪水（简化版本）
+fn calculate_expected_salary(market_value: u64) -> u64 {
+    // 简单的薪水计算：市场价值 / 10
+    market_value / 10
+}
 
 /// 满意度计算引擎
 pub struct SatisfactionEngine;
