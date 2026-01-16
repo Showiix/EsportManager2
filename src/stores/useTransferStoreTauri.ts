@@ -189,7 +189,7 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
   // ========================================
 
   /**
-   * 开始转会窗口
+   * 开始转会窗口（如果已存在则继续）
    */
   const startTransferWindow = async () => {
     isLoading.value = true
@@ -202,7 +202,17 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
       console.log('Transfer window started:', transferWindow.value)
       return transferWindow.value
     } catch (e) {
-      error.value = e instanceof Error ? e.message : 'Failed to start transfer window'
+      // 如果转会窗口已存在，尝试获取现有状态
+      const errMsg = e instanceof Error ? e.message : String(e)
+      if (errMsg.includes('already exists')) {
+        console.log('Transfer window already exists, loading status...')
+        transferWindow.value = await transferApi.getTransferWindowStatus()
+        // 加载已有的事件
+        const events = await transferApi.getTransferEvents()
+        allTransferEvents.value = events
+        return transferWindow.value
+      }
+      error.value = errMsg
       console.error('Failed to start transfer window:', e)
       throw e
     } finally {

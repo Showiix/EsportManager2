@@ -56,7 +56,7 @@
           align="center"
         >
           <template #default="{ row }">
-            <el-tag size="small" type="info">{{ row.regionName }}</el-tag>
+            <el-tag size="small" :type="getRegionTagType(row.regionName)">{{ row.regionName }}</el-tag>
           </template>
         </el-table-column>
 
@@ -317,6 +317,19 @@ const getRoundProgressText = (round: { matches: SuperMatch[] }) => {
 const getRowClassName = ({ row }: { row: SuperGroupStanding }) => {
   if (row.position === 1) return 'qualified-row'
   return ''
+}
+
+/**
+ * 获取赛区标签颜色
+ */
+const getRegionTagType = (region?: string): string => {
+  const typeMap: Record<string, string> = {
+    'LPL': 'danger',
+    'LCK': 'primary',
+    'LEC': 'success',
+    'LCS': 'warning'
+  }
+  return typeMap[region || ''] || 'info'
 }
 
 /**

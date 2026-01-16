@@ -2,7 +2,29 @@
  * 比赛详情相关类型定义
  */
 
-import type { PlayerPerformance } from './player'
+import type { PlayerPerformance, PlayerPosition } from './player'
+
+// 队伍统计数据
+export interface TeamStats {
+  totalKills: number
+  totalDeaths: number
+  totalAssists: number
+  totalGold: number
+  averageGameDuration: number
+  firstBloodRate: number
+  firstTowerRate: number
+  baronRate: number
+  dragonRate: number
+}
+
+// 单局MVP信息
+export interface GameMvpInfo {
+  playerId: string
+  playerName: string
+  teamId: string
+  position: PlayerPosition
+  mvpScore: number
+}
 
 // 单局比赛详情（BO系列中的每一局）
 export interface GameDetail {
@@ -30,13 +52,18 @@ export interface GameDetail {
 
   // 是否爆冷（战力低的队伍赢了）
   isUpset: boolean
+
+  // 可选字段
+  duration?: number            // 游戏时长（分钟）
+  mvp?: GameMvpInfo            // 单局MVP
 }
 
 // 完整比赛详情（包含所有局）
 export interface MatchDetail {
   matchId: string | number
   seasonId?: string
-  tournamentType?: string      // 赛事类型（clauch/madrid/worlds等）
+  tournamentId?: string          // 赛事ID
+  tournamentType?: string        // 赛事类型（clauch/madrid/worlds等）
 
   // 队伍信息
   teamAId: string
@@ -54,13 +81,14 @@ export interface MatchDetail {
   finalScoreA: number
   finalScoreB: number
   winnerId: string
-  winnerName: string
+  winnerName?: string
 
   // MVP分析
   mvpPlayerId?: string
   mvpPlayerName?: string
   mvpTeamId?: string
   mvpTotalImpact?: number      // MVP累计影响力
+  matchMvp?: GameMvpInfo       // 全场MVP
 
   // 关键选手（决定胜负的关键人物）
   keyPlayer?: {
@@ -75,6 +103,11 @@ export interface MatchDetail {
   // 时间信息
   playedAt?: Date | string
   createdAt?: Date | string
+  completedAt?: Date | string  // 完成时间
+
+  // 队伍统计数据
+  teamAStats?: TeamStats | null
+  teamBStats?: TeamStats | null
 }
 
 // 赛季统计汇总

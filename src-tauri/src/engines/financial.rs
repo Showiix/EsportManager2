@@ -34,86 +34,99 @@ impl Default for FinancialConfig {
     fn default() -> Self {
         let mut prize_pools = HashMap::new();
 
-        // MSI奖金池
+        // MSI奖金池 (4000万元)
         let mut msi_dist = HashMap::new();
-        msi_dist.insert("CHAMPION".to_string(), 0.30);
-        msi_dist.insert("RUNNER_UP".to_string(), 0.20);
-        msi_dist.insert("THIRD".to_string(), 0.15);
-        msi_dist.insert("FOURTH".to_string(), 0.10);
-        msi_dist.insert("LOSERS_R2".to_string(), 0.08);
-        msi_dist.insert("LOSERS_R1".to_string(), 0.05);
+        msi_dist.insert("CHAMPION".to_string(), 0.50);      // 2000万
+        msi_dist.insert("RUNNER_UP".to_string(), 0.25);     // 1000万
+        msi_dist.insert("THIRD".to_string(), 0.125);        // 500万
+        msi_dist.insert("FOURTH".to_string(), 0.05);        // 200万
+        msi_dist.insert("LOSERS_R2".to_string(), 0.05);     // 200万 (小组赛/淘汰)
+        msi_dist.insert("LOSERS_R1".to_string(), 0.025);    // 100万
         prize_pools.insert(TournamentType::Msi, PrizePool {
-            total: 500,
+            total: 40000000, // 4000万元
             distribution: msi_dist,
         });
 
-        // 世界赛奖金池
+        // 世界赛奖金池 (12000万元)
         let mut worlds_dist = HashMap::new();
-        worlds_dist.insert("CHAMPION".to_string(), 0.35);
-        worlds_dist.insert("RUNNER_UP".to_string(), 0.20);
-        worlds_dist.insert("THIRD".to_string(), 0.12);
-        worlds_dist.insert("FOURTH".to_string(), 0.08);
-        worlds_dist.insert("QUARTER_FINAL".to_string(), 0.04);
-        worlds_dist.insert("GROUP_STAGE".to_string(), 0.02);
+        worlds_dist.insert("CHAMPION".to_string(), 0.4167);     // 5000万
+        worlds_dist.insert("RUNNER_UP".to_string(), 0.2083);    // 2500万
+        worlds_dist.insert("THIRD".to_string(), 0.10);          // 1200万
+        worlds_dist.insert("FOURTH".to_string(), 0.10);         // 1200万
+        worlds_dist.insert("QUARTER_FINAL".to_string(), 0.05);  // 600万
+        worlds_dist.insert("GROUP_STAGE".to_string(), 0.025);   // 300万
+        worlds_dist.insert("PLAY_IN".to_string(), 0.0083);      // 100万
         prize_pools.insert(TournamentType::WorldChampionship, PrizePool {
-            total: 1000,
+            total: 120000000, // 1.2亿元
             distribution: worlds_dist,
         });
 
-        // 马德里大师赛奖金池
+        // 马德里大师赛奖金池 (2000万元)
         let mut madrid_dist = HashMap::new();
-        madrid_dist.insert("CHAMPION".to_string(), 0.30);
-        madrid_dist.insert("RUNNER_UP".to_string(), 0.20);
-        madrid_dist.insert("THIRD".to_string(), 0.15);
-        madrid_dist.insert("FOURTH".to_string(), 0.10);
-        madrid_dist.insert("SEMI_LOSER".to_string(), 0.06);
-        madrid_dist.insert("R1_LOSER".to_string(), 0.02);
+        madrid_dist.insert("CHAMPION".to_string(), 0.40);       // 800万
+        madrid_dist.insert("RUNNER_UP".to_string(), 0.20);      // 400万
+        madrid_dist.insert("THIRD".to_string(), 0.10);          // 200万
+        madrid_dist.insert("FOURTH".to_string(), 0.10);         // 200万
+        madrid_dist.insert("SEMI_LOSER".to_string(), 0.10);     // 200万
+        madrid_dist.insert("R1_LOSER".to_string(), 0.05);       // 100万
         prize_pools.insert(TournamentType::MadridMasters, PrizePool {
-            total: 400,
+            total: 20000000, // 2000万元
             distribution: madrid_dist,
         });
 
-        // Claude洲际赛奖金池
+        // Claude洲际赛奖金池 (2000万元)
         let mut claude_dist = HashMap::new();
-        claude_dist.insert("CHAMPION".to_string(), 0.30);
-        claude_dist.insert("RUNNER_UP".to_string(), 0.20);
-        claude_dist.insert("THIRD".to_string(), 0.15);
-        claude_dist.insert("FOURTH".to_string(), 0.10);
-        claude_dist.insert("SEMI_LOSER".to_string(), 0.06);
-        claude_dist.insert("R1_LOSER".to_string(), 0.02);
+        claude_dist.insert("CHAMPION".to_string(), 0.40);       // 800万
+        claude_dist.insert("RUNNER_UP".to_string(), 0.20);      // 400万
+        claude_dist.insert("THIRD".to_string(), 0.10);          // 200万
+        claude_dist.insert("FOURTH".to_string(), 0.10);         // 200万
+        claude_dist.insert("SEMI_LOSER".to_string(), 0.10);     // 200万
+        claude_dist.insert("R1_LOSER".to_string(), 0.05);       // 100万
         prize_pools.insert(TournamentType::ClaudeIntercontinental, PrizePool {
-            total: 400,
+            total: 20000000, // 2000万元
             distribution: claude_dist,
         });
 
-        // 上海大师赛奖金池
+        // 上海大师赛奖金池 (2500万元)
         let mut shanghai_dist = HashMap::new();
-        shanghai_dist.insert("CHAMPION".to_string(), 0.30);
-        shanghai_dist.insert("RUNNER_UP".to_string(), 0.20);
-        shanghai_dist.insert("THIRD".to_string(), 0.15);
-        shanghai_dist.insert("FOURTH".to_string(), 0.10);
-        shanghai_dist.insert("LOSERS_R2".to_string(), 0.08);
-        shanghai_dist.insert("LOSERS_R1".to_string(), 0.05);
+        shanghai_dist.insert("CHAMPION".to_string(), 0.40);     // 1000万
+        shanghai_dist.insert("RUNNER_UP".to_string(), 0.20);    // 500万
+        shanghai_dist.insert("THIRD".to_string(), 0.10);        // 250万
+        shanghai_dist.insert("FOURTH".to_string(), 0.10);       // 250万
+        shanghai_dist.insert("LOSERS_R2".to_string(), 0.10);    // 250万
+        shanghai_dist.insert("LOSERS_R1".to_string(), 0.048);   // 120万
         prize_pools.insert(TournamentType::ShanghaiMasters, PrizePool {
-            total: 500,
+            total: 25000000, // 2500万元
             distribution: shanghai_dist,
         });
 
-        // Super洲际赛奖金池 (年度最大赛事)
+        // Super洲际赛奖金池 (15000万元 = 1.5亿元 - 年度最高奖金)
         let mut super_dist = HashMap::new();
-        super_dist.insert("CHAMPION".to_string(), 0.25);
-        super_dist.insert("RUNNER_UP".to_string(), 0.18);
-        super_dist.insert("THIRD".to_string(), 0.12);
-        super_dist.insert("FOURTH".to_string(), 0.08);
-        super_dist.insert("PREP_LOSER".to_string(), 0.04);
-        super_dist.insert("PROMOTION_LOSER".to_string(), 0.02);
-        super_dist.insert("FIGHTER_OUT".to_string(), 0.01);
+        super_dist.insert("CHAMPION".to_string(), 0.40);            // 6000万
+        super_dist.insert("RUNNER_UP".to_string(), 0.20);           // 3000万
+        super_dist.insert("THIRD".to_string(), 0.10);               // 1500万
+        super_dist.insert("FOURTH".to_string(), 0.10);              // 1500万
+        super_dist.insert("QUARTER_FINAL".to_string(), 0.05);       // 750万
+        super_dist.insert("ROUND_OF_16".to_string(), 0.025);        // 375万
         prize_pools.insert(TournamentType::SuperIntercontinental, PrizePool {
-            total: 2000,
+            total: 150000000, // 1.5亿元
             distribution: super_dist,
         });
 
-        // 春季季后赛奖金池
+        // ICP洲际对抗赛奖金池 (3000万元)
+        let mut icp_dist = HashMap::new();
+        icp_dist.insert("CHAMPION".to_string(), 0.40);              // 1200万
+        icp_dist.insert("RUNNER_UP".to_string(), 0.20);             // 600万
+        icp_dist.insert("THIRD".to_string(), 0.10);                 // 300万
+        icp_dist.insert("FOURTH".to_string(), 0.10);                // 300万
+        icp_dist.insert("QUARTER_FINAL".to_string(), 0.05);         // 150万
+        icp_dist.insert("GROUP_STAGE".to_string(), 0.025);          // 75万
+        prize_pools.insert(TournamentType::IcpIntercontinental, PrizePool {
+            total: 30000000, // 3000万元
+            distribution: icp_dist,
+        });
+
+        // 春季季后赛奖金池 (200万元)
         let mut spring_dist = HashMap::new();
         spring_dist.insert("CHAMPION".to_string(), 0.35);
         spring_dist.insert("RUNNER_UP".to_string(), 0.25);
@@ -121,11 +134,11 @@ impl Default for FinancialConfig {
         spring_dist.insert("FOURTH".to_string(), 0.10);
         spring_dist.insert("5TH_8TH".to_string(), 0.04);
         prize_pools.insert(TournamentType::SpringPlayoffs, PrizePool {
-            total: 200,
+            total: 2000000, // 200万元
             distribution: spring_dist,
         });
 
-        // 夏季季后赛奖金池
+        // 夏季季后赛奖金池 (200万元)
         let mut summer_dist = HashMap::new();
         summer_dist.insert("CHAMPION".to_string(), 0.35);
         summer_dist.insert("RUNNER_UP".to_string(), 0.25);
@@ -133,14 +146,14 @@ impl Default for FinancialConfig {
         summer_dist.insert("FOURTH".to_string(), 0.10);
         summer_dist.insert("5TH_8TH".to_string(), 0.04);
         prize_pools.insert(TournamentType::SummerPlayoffs, PrizePool {
-            total: 200,
+            total: 2000000, // 200万元
             distribution: summer_dist,
         });
 
         Self {
-            base_operating_cost: 300, // 每赛季300万基础运营成本
+            base_operating_cost: 3000000, // 每赛季300万基础运营成本（单位：元）
             prize_pools,
-            league_revenue_share: 150, // 每赛季150万联赛分成
+            league_revenue_share: 1500000, // 每赛季150万联赛分成（单位：元）
             sponsorship_coefficient: 2.0,
         }
     }
@@ -421,10 +434,13 @@ mod tests {
         let engine = FinancialEngine::new();
 
         let msi_champion = engine.calculate_prize_money(TournamentType::Msi, "CHAMPION");
-        assert_eq!(msi_champion, 150); // 500 * 0.30
+        assert_eq!(msi_champion, 2000); // 4000 * 0.50
 
         let worlds_champion = engine.calculate_prize_money(TournamentType::WorldChampionship, "CHAMPION");
-        assert_eq!(worlds_champion, 350); // 1000 * 0.35
+        assert_eq!(worlds_champion, 5000); // 12000 * 0.4167
+
+        let super_champion = engine.calculate_prize_money(TournamentType::SuperIntercontinental, "CHAMPION");
+        assert_eq!(super_champion, 6000); // 15000 * 0.40 - 最高奖金
     }
 
     #[test]

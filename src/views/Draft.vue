@@ -200,10 +200,12 @@ import {
 } from '@element-plus/icons-vue'
 import { useDraftStoreTauri } from '@/stores/useDraftStoreTauri'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
+import { useGameStore } from '@/stores/useGameStore'
 
 const router = useRouter()
 const draftStore = useDraftStoreTauri()
 const teamStore = useTeamStoreTauri()
+const gameStore = useGameStore()
 
 // 从 store 获取响应式数据
 const { isLoading } = storeToRefs(draftStore)
@@ -211,6 +213,8 @@ const { regions } = storeToRefs(teamStore)
 
 // 初始化
 onMounted(async () => {
+  // 先刷新游戏状态，确保显示最新的阶段信息
+  await gameStore.refreshGameState()
   await teamStore.loadRegions()
 })
 

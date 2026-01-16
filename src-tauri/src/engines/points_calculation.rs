@@ -83,15 +83,9 @@ impl Default for PointsCalculationEngine {
         config.insert((TournamentType::IcpIntercontinental, "FOURTH_PARTICIPANT".into()), 4);
         config.insert((TournamentType::IcpIntercontinental, "FOURTH_NON_PARTICIPANT".into()), 2);
 
-        // Super洲际年度邀请赛积分
-        config.insert((TournamentType::SuperIntercontinental, "CHAMPION".into()), 35);
-        config.insert((TournamentType::SuperIntercontinental, "RUNNER_UP".into()), 30);
-        config.insert((TournamentType::SuperIntercontinental, "THIRD".into()), 25);
-        config.insert((TournamentType::SuperIntercontinental, "FOURTH".into()), 20);
-        config.insert((TournamentType::SuperIntercontinental, "PREP_LOSERS_FINAL_LOSER".into()), 8);
-        config.insert((TournamentType::SuperIntercontinental, "PREP_LOSERS_LOSER".into()), 8);
-        config.insert((TournamentType::SuperIntercontinental, "PROMOTION_LOSER".into()), 5);
-        config.insert((TournamentType::SuperIntercontinental, "FIGHTER_OUT".into()), 2);
+        // Super洲际年度邀请赛 - 不获得年度积分！
+        // Super赛是年度积分的终点，参加Super赛就是年度积分的奖励
+        // 因此Super赛不颁发任何积分
 
         Self { config }
     }
@@ -129,6 +123,8 @@ impl PointsCalculationEngine {
                     season_id,
                     team_id: *team_id,
                     tournament_id,
+                    tournament_name: None, // 由仓库层填充
+                    tournament_type: None, // 由仓库层填充
                     points,
                     final_rank: self.position_to_rank(position),
                 }

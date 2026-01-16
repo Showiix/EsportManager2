@@ -17,7 +17,7 @@
     <el-card class="progress-card">
       <div class="progress-header">
         <span class="progress-title">转会进度</span>
-        <span class="progress-text">第 {{ currentRound }} / 5 轮</span>
+        <span class="progress-text">第 {{ currentRound }} / 7 轮</span>
       </div>
       <el-progress
         :percentage="progressPercentage"
@@ -27,12 +27,12 @@
       />
       <div class="round-labels">
         <span
-          v-for="round in 5"
-          :key="round"
+          v-for="(name, index) in roundNames"
+          :key="index"
           class="round-label"
-          :class="{ active: round <= currentRound, current: round === currentRound }"
+          :class="{ active: index <= currentRound, current: index === currentRound }"
         >
-          {{ roundNames[round - 1] }}
+          {{ name }}
         </span>
       </div>
     </el-card>
@@ -188,6 +188,12 @@
             <el-icon v-if="event.event_type === 'RETIREMENT'"><Warning /></el-icon>
             <el-icon v-else-if="event.event_type === 'CONTRACT_EXPIRE' || event.event_type === 'CONTRACTEXPIRE'"><Document /></el-icon>
             <el-icon v-else-if="event.event_type === 'FREE_AGENT' || event.event_type === 'FREEAGENT'"><User /></el-icon>
+            <el-icon v-else-if="event.event_type === 'TRANSFER_REQUEST' || event.event_type === 'TRANSFERREQUEST'"><Message /></el-icon>
+            <el-icon v-else-if="event.event_type === 'LOYALTY_STAY' || event.event_type === 'LOYALTYSTAY'"><Star /></el-icon>
+            <el-icon v-else-if="event.event_type === 'REBUILD_SALE' || event.event_type === 'REBUILDSALE'"><SoldOut /></el-icon>
+            <el-icon v-else-if="event.event_type === 'CONTRACT_RENEWAL' || event.event_type === 'CONTRACTRENEWAL'"><DocumentChecked /></el-icon>
+            <el-icon v-else-if="event.event_type === 'RENEWAL_FAILED' || event.event_type === 'RENEWALFAILED'"><DocumentRemove /></el-icon>
+            <el-icon v-else-if="event.event_type === 'STAR_POACHED' || event.event_type === 'STARPOACHED'"><Trophy /></el-icon>
             <el-icon v-else><Switch /></el-icon>
           </div>
 
@@ -245,7 +251,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -260,10 +266,16 @@ import {
   Back,
   Bell,
   Document,
+  Message,
+  Star,
+  SoldOut,
+  DocumentChecked,
+  DocumentRemove,
+  Trophy,
 } from '@element-plus/icons-vue'
 import { useTransferStoreTauri } from '@/stores/useTransferStoreTauri'
 import { useGameStore } from '@/stores/useGameStore'
-import type { TransferRoundInfo, TransferEventInfo } from '@/api/tauri'
+import { transferApi, type TransferRoundInfo } from '@/api/tauri'
 
 const router = useRouter()
 const transferStore = useTransferStoreTauri()
@@ -273,7 +285,7 @@ const gameStore = useGameStore()
 const {
   transferWindow,
   allTransferEvents,
-  isLoading,
+  isLoading: _isLoading,
 } = storeToRefs(transferStore)
 const { currentSeason } = storeToRefs(gameStore)
 
@@ -282,13 +294,13 @@ const isProcessing = ref(false)
 const currentRoundSummary = ref<TransferRoundInfo | null>(null)
 const filterImportance = ref('all')
 
-// 轮次名称
-const roundNames = ['合同处理', '自由球员争夺', '财政清洗', '强队补强', '收尾补救']
+// 轮次名称（0-7轮，共8轮）
+const roundNames = ['赛季结算', '合同到期', '意愿处理', '自由球员', '重建清洗', '财政清洗', '强队补强', '收尾']
 
 // 计算属性
 const currentRound = computed(() => transferWindow.value?.current_round ?? 0)
 const isCompleted = computed(() => transferWindow.value?.status === 'COMPLETED')
-const progressPercentage = computed(() => (currentRound.value / 5) * 100)
+const progressPercentage = computed(() => (currentRound.value / 7) * 100)
 
 const statusTagType = computed(() => {
   if (isCompleted.value) return 'success'
@@ -298,7 +310,7 @@ const statusTagType = computed(() => {
 
 const statusText = computed(() => {
   if (isCompleted.value) return '转会完成'
-  if (currentRound.value > 0) return `进行中 - ${roundNames[currentRound.value - 1]}`
+  if (currentRound.value >= 0) return `进行中 - ${roundNames[currentRound.value]}`
   return '准备开始'
 })
 
@@ -318,6 +330,18 @@ onMounted(async () => {
   if (!transferWindow.value) {
     ElMessage.warning('没有活动的转会窗口，请先开始转会')
     router.push('/transfer')
+    return
+  }
+
+  // 加载已有的转会事件
+  try {
+    const events = await transferApi.getTransferEvents()
+    if (events.length > 0) {
+      // 直接更新 store 中的事件列表
+      allTransferEvents.value.splice(0, allTransferEvents.value.length, ...events)
+    }
+  } catch (e) {
+    console.error('Failed to load transfer events:', e)
   }
 })
 
@@ -427,10 +451,13 @@ const getAbilityClass = (ability: number) => {
   return 'normal'
 }
 
+// fee 的单位是元，需要转换为万
 const formatFee = (fee: number) => {
-  if (fee >= 10000) return `${(fee / 10000).toFixed(0)}亿`
-  if (fee >= 100) return `${(fee / 100).toFixed(0)}万`
-  return `${fee}万`
+  const feeInWan = fee / 10000
+  if (feeInWan >= 10000) return `${(feeInWan / 10000).toFixed(2)}亿`
+  if (feeInWan >= 1000) return `${(feeInWan / 1000).toFixed(1)}千万`
+  if (feeInWan >= 1) return `${Math.round(feeInWan)}万`
+  return `${fee}元`
 }
 </script>
 
@@ -727,6 +754,18 @@ const formatFee = (fee: number) => {
 .news-type-icon.free_agent,
 .news-type-icon.freeagent { background: linear-gradient(135deg, #22c55e, #16a34a); }
 .news-type-icon.purchase { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.news-type-icon.transfer_request,
+.news-type-icon.transferrequest { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+.news-type-icon.loyalty_stay,
+.news-type-icon.loyaltystay { background: linear-gradient(135deg, #06b6d4, #0891b2); }
+.news-type-icon.rebuild_sale,
+.news-type-icon.rebuildsale { background: linear-gradient(135deg, #ec4899, #db2777); }
+.news-type-icon.contract_renewal,
+.news-type-icon.contractrenewal { background: linear-gradient(135deg, #10b981, #059669); }
+.news-type-icon.renewal_failed,
+.news-type-icon.renewalfailed { background: linear-gradient(135deg, #f97316, #ea580c); }
+.news-type-icon.star_poached,
+.news-type-icon.starpoached { background: linear-gradient(135deg, #f59e0b, #d97706); }
 
 /* 新闻内容 */
 .news-content {

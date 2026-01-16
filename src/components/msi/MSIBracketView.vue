@@ -1,6 +1,6 @@
 <template>
   <div class="msi-bracket-view">
-    <h3 class="bracket-title">MSI对阵图 - 双败淘汰赛制</h3>
+    <h3 class="bracket-title">{{ tournamentName }}对阵图 - 双败淘汰赛制</h3>
 
     <!-- 整体流程图 -->
     <div class="bracket-flow">
@@ -287,7 +287,7 @@
               v-if="grandFinalMatch"
               :match="grandFinalMatch"
               :teams="bracket.qualifiedTeams"
-              match-label="MSI总决赛"
+              :match-label="`${tournamentName}总决赛`"
               color-theme="red"
               :is-final="true"
               @simulate="handleSimulate"
@@ -296,7 +296,7 @@
           </div>
           <div v-if="grandFinalMatch?.status === 'completed'" class="champion-banner">
             <span class="champion-icon">冠</span>
-            <span class="champion-text">MSI冠军: {{ getWinnerName(grandFinalMatch) }}</span>
+            <span class="champion-text">{{ tournamentName }}冠军: {{ getWinnerName(grandFinalMatch) }}</span>
           </div>
         </div>
       </div>
@@ -335,9 +335,12 @@ import type { MSIBracket, MSIMatch } from '@/types'
 
 interface Props {
   bracket: MSIBracket
+  tournamentName?: string  // 赛事名称，默认为 "MSI"
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  tournamentName: 'MSI'
+})
 
 const emit = defineEmits<{
   (e: 'simulate-match', match: MSIMatch): void

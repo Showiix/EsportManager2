@@ -19,6 +19,9 @@
           <el-icon><Refresh /></el-icon>
           刷新数据
         </el-button>
+        <el-button type="warning" @click="syncData" :loading="loading">
+          同步数据
+        </el-button>
       </div>
     </div>
 
@@ -34,6 +37,23 @@
         >
           {{ pos.label }}
         </el-button>
+      </div>
+      <div class="sort-filters">
+        <el-select v-model="sortField" placeholder="排序字段" style="width: 120px">
+          <el-option label="得分" value="yearlyTopScore" />
+          <el-option label="场次" value="gamesPlayed" />
+          <el-option label="出场分" value="gamesBonus" />
+          <el-option label="影响力" value="avgImpact" />
+          <el-option label="冠军分" value="championBonus" />
+        </el-select>
+        <el-button-group>
+          <el-button :type="sortOrder === 'desc' ? 'primary' : 'default'" @click="sortOrder = 'desc'">
+            降序
+          </el-button>
+          <el-button :type="sortOrder === 'asc' ? 'primary' : 'default'" @click="sortOrder = 'asc'">
+            升序
+          </el-button>
+        </el-button-group>
       </div>
       <div class="search-box">
         <el-input
@@ -58,17 +78,18 @@
       </template>
 
       <el-table
-        :data="filteredRankings"
+        :data="paginatedRankings"
         stripe
         style="width: 100%"
         :row-class-name="getRankRowClass"
         @row-click="goToPlayerDetail"
         class="clickable-table"
+        v-loading="loading"
       >
         <el-table-column label="排名" width="80" align="center">
           <template #default="{ $index }">
-            <div class="rank-badge" :class="getRankClass($index)">
-              {{ $index + 1 }}
+            <div class="rank-badge" :class="getRankClass(getRealRank($index) - 1)">
+              {{ getRealRank($index) }}
             </div>
           </template>
         </el-table-column>
@@ -98,11 +119,23 @@
 
         <el-table-column prop="gamesPlayed" label="场次" width="80" align="center" />
 
+        <el-table-column label="出场分" width="80" align="center">
+          <template #default="{ row }">
+            <span class="games-bonus">{{ ((row.gamesPlayed || 0) / 10).toFixed(1) }}</span>
+          </template>
+        </el-table-column>
+
         <el-table-column prop="avgImpact" label="影响力" width="100" align="center">
           <template #default="{ row }">
             <span :class="getImpactClass(row.avgImpact)">
               {{ formatImpact(row.avgImpact) }}
             </span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="冠军分" width="80" align="center">
+          <template #default="{ row }">
+            <span class="champion-bonus">{{ (row.championBonus || 0).toFixed(1) }}</span>
           </template>
         </el-table-column>
 
@@ -129,6 +162,19 @@
         </el-table-column>
       </el-table>
 
+      <!-- 分页器 -->
+      <div class="pagination-container" v-if="filteredRankings.length > 0">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="filteredRankings.length"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="handlePageChange"
+        />
+      </div>
+
       <el-empty v-if="filteredRankings.length === 0" description="暂无统计数据" />
     </el-card>
   </div>
@@ -140,6 +186,8 @@ import { useRouter } from 'vue-router'
 import { DataLine, Refresh, ArrowRight } from '@element-plus/icons-vue'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
+import { teamApi, devApi } from '@/api/tauri'
+import { ElMessage } from 'element-plus'
 import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
 
@@ -147,12 +195,23 @@ const router = useRouter()
 const playerStore = usePlayerStore()
 const gameStore = useGameStore()
 
+// 本地战队映射表
+const teamsMap = ref<Map<number, string>>(new Map())
+
 // 状态
 const selectedSeason = ref('S1')
 const selectedPosition = ref('')
 const searchQuery = ref('')
 const loading = ref(false)
 const rankings = ref<PlayerSeasonStats[]>([])
+
+// 排序状态
+const sortField = ref('yearlyTopScore')
+const sortOrder = ref<'asc' | 'desc'>('desc')
+
+// 分页状态
+const currentPage = ref(1)
+const pageSize = ref(20)
 
 // 赛季列表
 const seasons = computed(() => {
@@ -174,11 +233,29 @@ const positionFilters = [
   { label: 'SUP', value: 'SUP' },
 ]
 
+// 将 S1 格式转换为数字格式（用于数据库查询）
+const getNumericSeasonId = (seasonValue: string): string => {
+  // 如果是 'S1' 格式，提取数字部分
+  if (seasonValue.startsWith('S')) {
+    return seasonValue.substring(1)
+  }
+  return seasonValue
+}
+
 // 异步获取排行数据
 const fetchRankings = async () => {
   loading.value = true
   try {
-    rankings.value = await playerStore.getSeasonImpactRanking(selectedSeason.value, 100)
+    const numericSeasonId = getNumericSeasonId(selectedSeason.value)
+    console.log('[DataCenter] fetchRankings 开始, numericSeasonId:', numericSeasonId)
+    // 增大 limit 以显示所有有比赛记录的选手
+    const result = await playerStore.getSeasonImpactRanking(numericSeasonId, 500)
+    console.log('[DataCenter] fetchRankings 结果:', result?.length || 0, '条数据')
+    if (result && result.length > 0) {
+      console.log('[DataCenter] 第一条数据:', JSON.stringify(result[0]))
+    }
+    rankings.value = result
+    console.log('[DataCenter] rankings.value 已更新，当前长度:', rankings.value.length)
   } catch (error) {
     console.error('获取排行数据失败:', error)
     rankings.value = []
@@ -204,13 +281,117 @@ const filteredRankings = computed(() => {
     )
   }
 
+  // 排序
+  result.sort((a, b) => {
+    let aValue: number
+    let bValue: number
+
+    switch (sortField.value) {
+      case 'gamesPlayed':
+        aValue = a.gamesPlayed || 0
+        bValue = b.gamesPlayed || 0
+        break
+      case 'gamesBonus':
+        aValue = (a.gamesPlayed || 0) / 10
+        bValue = (b.gamesPlayed || 0) / 10
+        break
+      case 'avgImpact':
+        aValue = a.avgImpact || 0
+        bValue = b.avgImpact || 0
+        break
+      case 'championBonus':
+        aValue = a.championBonus || 0
+        bValue = b.championBonus || 0
+        break
+      case 'yearlyTopScore':
+      default:
+        aValue = a.yearlyTopScore || a.avgImpact || 0
+        bValue = b.yearlyTopScore || b.avgImpact || 0
+        break
+    }
+
+    if (sortOrder.value === 'asc') {
+      return aValue - bValue
+    } else {
+      return bValue - aValue
+    }
+  })
+
   return result
 })
 
+// 计算属性 - 分页后的排行榜
+const paginatedRankings = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  const end = start + pageSize.value
+  return filteredRankings.value.slice(start, end)
+})
+
+// 计算真实排名（考虑分页偏移）
+const getRealRank = (index: number): number => {
+  return (currentPage.value - 1) * pageSize.value + index + 1
+}
+
+// 分页变化处理
+const handlePageChange = (page: number) => {
+  currentPage.value = page
+}
+
+const handleSizeChange = (size: number) => {
+  pageSize.value = size
+  currentPage.value = 1
+}
+
 // 方法
 const refreshData = async () => {
+  // 加载战队数据（用于显示战队名称）
+  try {
+    if (teamsMap.value.size === 0) {
+      const teams = await teamApi.getAllTeams()
+      teams.forEach(t => {
+        teamsMap.value.set(t.id, t.short_name || t.name)
+      })
+      console.log('[DataCenter] 加载战队数据:', teamsMap.value.size, '支队伍')
+    }
+  } catch (e) {
+    console.warn('加载战队数据失败:', e)
+  }
   playerStore.loadFromStorage()
   await fetchRankings()
+}
+
+// 同步数据库数据
+const syncData = async () => {
+  loading.value = true
+  try {
+    const seasonNum = parseInt(selectedSeason.value.replace('S', '')) || 1
+    console.log('[DataCenter] 开始同步数据, seasonNum:', seasonNum)
+    const result = await devApi.syncPlayerGamesPlayed(seasonNum)
+    console.log('[DataCenter] 同步结果:', result)
+
+    // 处理两种可能的返回格式
+    if ('success' in result) {
+      // DevCommandResult 格式
+      if (result.success) {
+        ElMessage.success(`数据同步成功: ${result.data?.updated_count || 0} 条记录已更新`)
+      } else {
+        ElMessage.error(`同步失败: ${result.error || result.message || '未知错误'}`)
+        return
+      }
+    } else if ('updated_count' in result) {
+      // 直接返回 SyncResult 格式
+      ElMessage.success(`数据同步成功: ${result.updated_count} 条记录已更新`)
+    } else {
+      ElMessage.warning('同步完成，但返回格式未知')
+    }
+
+    await fetchRankings()
+  } catch (e: any) {
+    console.error('同步失败:', e)
+    ElMessage.error(`数据同步失败: ${e.message || e}`)
+  } finally {
+    loading.value = false
+  }
 }
 
 const goToPlayerDetail = (row: any) => {
@@ -234,8 +415,8 @@ const getPositionTagType = (position: string) => {
 
 const getTeamName = (teamId: string | number | null): string => {
   if (!teamId) return '-'
-  const idStr = String(teamId)
-  return idStr.split('-')[0] || idStr
+  const numId = Number(teamId)
+  return teamsMap.value.get(numId) || String(teamId)
 }
 
 const formatImpact = (value: number | null | undefined): string => {
@@ -261,7 +442,8 @@ const getRankClass = (index: number): string => {
 }
 
 const getRankRowClass = ({ rowIndex }: { rowIndex: number }): string => {
-  if (rowIndex < 3) return 'top-rank-row'
+  const realRank = getRealRank(rowIndex)
+  if (realRank <= 3) return 'top-rank-row'
   return ''
 }
 
@@ -286,7 +468,13 @@ onMounted(() => {
 
 // 监听赛季变化
 watch(selectedSeason, () => {
+  currentPage.value = 1
   fetchRankings()
+})
+
+// 监听筛选条件变化，重置页码
+watch([selectedPosition, searchQuery], () => {
+  currentPage.value = 1
 })
 </script>
 
@@ -343,6 +531,12 @@ watch(selectedSeason, () => {
       gap: 8px;
     }
 
+    .sort-filters {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
     .search-box {
       display: flex;
       align-items: center;
@@ -360,6 +554,14 @@ watch(selectedSeason, () => {
         font-weight: 600;
         color: #1f2937;
       }
+    }
+
+    .pagination-container {
+      display: flex;
+      justify-content: center;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #ebeef5;
     }
   }
 

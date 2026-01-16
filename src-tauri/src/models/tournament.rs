@@ -49,6 +49,14 @@ impl TournamentType {
     pub fn is_international(&self) -> bool {
         !self.is_regional()
     }
+
+    /// 是否有季军殿军（国际赛事和季后赛都有）
+    pub fn has_third_fourth(&self) -> bool {
+        self.is_international() || matches!(
+            self,
+            TournamentType::SpringPlayoffs | TournamentType::SummerPlayoffs
+        )
+    }
 }
 
 /// 赛事状态

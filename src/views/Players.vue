@@ -194,11 +194,34 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="120" fixed="right" align="center">
+        <el-table-column prop="loyalty" label="忠诚度" width="100" sortable align="center">
           <template #default="{ row }">
-            <el-button type="primary" size="small" link @click="viewPlayer(row)">
-              查看详情
-            </el-button>
+            <span class="loyalty-value" :style="{ color: getLoyaltyColor(row.loyalty) }">
+              {{ row.loyalty }}
+            </span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="satisfaction" label="满意度" width="100" sortable align="center">
+          <template #default="{ row }">
+            <span class="satisfaction-value" :style="{ color: getSatisfactionColor(row.satisfaction) }">
+              {{ row.satisfaction }}
+            </span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="操作" width="180" fixed="right" align="center">
+          <template #default="{ row }">
+            <div class="action-buttons">
+              <el-button class="action-btn view-btn" size="small" @click="viewPlayer(row)">
+                <el-icon><View /></el-icon>
+                详情
+              </el-button>
+              <el-button class="action-btn edit-btn" size="small" @click="editPlayer(row)">
+                <el-icon><Edit /></el-icon>
+                编辑
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -216,6 +239,14 @@
         />
       </div>
     </el-card>
+
+    <!-- 编辑弹窗 -->
+    <PlayerEditDialog
+      v-model="showEditDialog"
+      :player="editingPlayer"
+      @close="showEditDialog = false"
+      @saved="handlePlayerSaved"
+    />
   </div>
 </template>
 
@@ -229,9 +260,12 @@ import {
   Clock,
   TrendCharts,
   Search,
+  View,
+  Edit,
 } from '@element-plus/icons-vue'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
 import { teamApi, type Player } from '@/api/tauri'
+import PlayerEditDialog from '@/components/player/PlayerEditDialog.vue'
 
 const router = useRouter()
 const teamStore = useTeamStoreTauri()
@@ -258,28 +292,50 @@ const sortConfig = ref({
   order: '' as 'ascending' | 'descending' | '',
 })
 
+// 编辑弹窗状态
+const showEditDialog = ref(false)
+const editingPlayer = ref<any>(null)
+
 // 初始化加载
 onMounted(async () => {
-  await teamStore.loadRegions()
-  // 加载所有赛区的队伍以获取选手数据
-  for (const region of regions.value) {
-    await teamStore.selectRegion(region.id)
-    // 加载每个队伍的阵容
-    for (const team of teams.value) {
-      try {
-        const roster = await teamApi.getTeamRoster(team.id)
-        const playersWithTeam = [...roster.starters, ...roster.substitutes].map(p => ({
-          ...p,
-          team_id: team.id,
-          team_name: team.name,
-          team_short: team.short_name || team.name.slice(0, 3),
-          region_code: getRegionCode(team.region_id),
-        }))
-        rawPlayers.value.push(...playersWithTeam as any)
-      } catch (e) {
-        console.error(`Failed to load roster for team ${team.id}:`, e)
-      }
+  console.log('Players.vue onMounted started')
+  try {
+    // 先加载赛区信息（用于获取赛区代码）
+    await teamStore.loadRegions()
+    console.log('Regions loaded')
+
+    // 获取所有队伍（用于获取队伍名称）
+    const allTeams = await teamApi.getAllTeams()
+    console.log(`Got ${allTeams.length} teams`)
+
+    // 创建队伍映射
+    const teamMap = new Map<number, { name: string; short_name: string; region_id: number }>()
+    for (const team of allTeams) {
+      teamMap.set(team.id, {
+        name: team.name,
+        short_name: team.short_name || team.name.slice(0, 3),
+        region_id: team.region_id
+      })
     }
+
+    // 一次性获取所有选手
+    const allPlayers = await teamApi.getAllPlayers()
+    console.log(`Got ${allPlayers.length} players from API`)
+
+    // 添加队伍信息
+    rawPlayers.value = allPlayers.map(p => {
+      const teamInfo = p.team_id ? teamMap.get(p.team_id) : null
+      return {
+        ...p,
+        team_name: teamInfo?.name ?? '自由球员',
+        team_short: teamInfo?.short_name ?? 'FA',
+        region_code: teamInfo ? getRegionCode(teamInfo.region_id) : 'FA',
+      }
+    }) as any
+
+    console.log(`Loaded ${rawPlayers.value.length} players total`)
+  } catch (e) {
+    console.error('Failed to load players:', e)
   }
 })
 
@@ -338,6 +394,8 @@ const players = computed(() => {
     ability: p.ability,
     potential: p.potential,
     tag: getTalentTag(p.ability, p.potential),
+    loyalty: p.loyalty ?? 50,
+    satisfaction: p.satisfaction ?? 50,
   }))
 })
 
@@ -427,6 +485,27 @@ const viewPlayer = (player: any) => {
   router.push(`/players/${player.id}`)
 }
 
+// 编辑选手
+const editPlayer = (player: any) => {
+  editingPlayer.value = player
+  showEditDialog.value = true
+}
+
+// 选手属性保存后更新列表
+const handlePlayerSaved = (updatedPlayer: any) => {
+  // 找到并更新 rawPlayers 中的选手数据
+  const index = rawPlayers.value.findIndex(p => p.id === updatedPlayer.id)
+  if (index !== -1) {
+    rawPlayers.value[index] = {
+      ...rawPlayers.value[index],
+      ability: updatedPlayer.ability,
+      potential: updatedPlayer.potential,
+      stability: updatedPlayer.stability,
+      age: updatedPlayer.age,
+    }
+  }
+}
+
 // 辅助函数
 const getRegionType = (region: string) => {
   const types: Record<string, string> = {
@@ -472,6 +551,20 @@ const getAbilityColor = (ability: number) => {
   if (ability >= 80) return '#f59e0b'
   if (ability >= 70) return '#3b82f6'
   return '#22c55e'
+}
+
+const getLoyaltyColor = (loyalty: number) => {
+  if (loyalty >= 70) return '#22c55e'  // 高忠诚度 - 绿色
+  if (loyalty >= 50) return '#3b82f6'  // 中等 - 蓝色
+  if (loyalty >= 35) return '#f59e0b'  // 较低 - 橙色
+  return '#ef4444'  // 低忠诚度 - 红色
+}
+
+const getSatisfactionColor = (satisfaction: number) => {
+  if (satisfaction >= 65) return '#22c55e'  // 高满意度 - 绿色
+  if (satisfaction >= 50) return '#3b82f6'  // 中等 - 蓝色
+  if (satisfaction >= 40) return '#f59e0b'  // 较低 - 橙色
+  return '#ef4444'  // 低满意度 - 红色
 }
 </script>
 
@@ -668,6 +761,16 @@ const getAbilityColor = (ability: number) => {
   font-weight: 600;
 }
 
+/* 忠诚度 */
+.loyalty-value {
+  font-weight: 600;
+}
+
+/* 满意度 */
+.satisfaction-value {
+  font-weight: 600;
+}
+
 /* 分页 */
 .pagination-wrapper {
   display: flex;
@@ -680,5 +783,46 @@ const getAbilityColor = (ability: number) => {
 /* 表格样式 */
 .players-table {
   border-radius: 8px;
+}
+
+/* 操作按钮 */
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.action-btn {
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.action-btn :deep(.el-icon) {
+  margin-right: 4px;
+}
+
+.view-btn {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border: none;
+  color: white;
+}
+
+.view-btn:hover {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}
+
+.edit-btn {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border: none;
+  color: white;
+}
+
+.edit-btn:hover {
+  background: linear-gradient(135deg, #d97706, #b45309);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
 }
 </style>

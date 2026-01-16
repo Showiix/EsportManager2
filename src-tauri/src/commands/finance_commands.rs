@@ -10,7 +10,12 @@ use tauri::State;
 pub struct TeamFinanceSummary {
     pub team_id: u64,
     pub team_name: String,
+    pub short_name: Option<String>,
+    pub region_id: u64,
+    pub region_code: String,
     pub balance: i64,
+    pub total_income: u64,
+    pub total_expense: u64,
     pub financial_status: String,
     pub is_crisis: bool,
     pub transfer_budget: i64,
@@ -81,9 +86,23 @@ pub async fn get_team_finance_summary(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
     };
 
-    // 获取队伍信息
+    // 获取当前赛季
+    let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+        .bind(&save_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let current_season: i64 = save_row.get("current_season");
+
+    // 获取队伍信息（包含赛区）
     let team_row = sqlx::query(
-        "SELECT id, name, balance, power_rating, win_rate FROM teams WHERE id = ? AND save_id = ?"
+        r#"
+        SELECT t.id, t.name, t.short_name, t.balance, t.power_rating, t.win_rate,
+               t.region_id, r.short_name as region_code
+        FROM teams t
+        LEFT JOIN regions r ON t.region_id = r.id AND r.save_id = t.save_id
+        WHERE t.id = ? AND t.save_id = ?
+        "#
     )
     .bind(team_id as i64)
     .bind(&save_id)
@@ -98,6 +117,9 @@ pub async fn get_team_finance_summary(
 
     let balance: i64 = team_row.get("balance");
     let team_name: String = team_row.get("name");
+    let short_name: Option<String> = team_row.get("short_name");
+    let region_id: i64 = team_row.get("region_id");
+    let region_code: String = team_row.try_get("region_code").unwrap_or_else(|_| "".to_string());
     let power_rating: f64 = team_row.get("power_rating");
     let win_rate: f64 = team_row.get("win_rate");
 
@@ -111,15 +133,37 @@ pub async fn get_team_finance_summary(
     .await
     .map_err(|e| e.to_string())?;
 
+    // 计算本赛季收入
+    let total_income: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(amount), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND amount > 0"
+    )
+    .bind(&save_id)
+    .bind(team_id as i64)
+    .bind(current_season)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
+    // 计算本赛季支出
+    let total_expense: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(ABS(amount)), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND amount < 0"
+    )
+    .bind(&save_id)
+    .bind(team_id as i64)
+    .bind(current_season)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
     // 使用财务引擎计算
     let engine = FinancialEngine::new();
 
     // 构建临时Team对象用于计算
     let team = crate::models::Team {
         id: team_id,
-        region_id: 0,
+        region_id: region_id as u64,
         name: team_name.clone(),
-        short_name: None,
+        short_name: short_name.clone(),
         power_rating,
         total_matches: 0,
         wins: 0,
@@ -147,7 +191,12 @@ pub async fn get_team_finance_summary(
     Ok(CommandResult::ok(TeamFinanceSummary {
         team_id,
         team_name,
+        short_name,
+        region_id: region_id as u64,
+        region_code,
         balance,
+        total_income: total_income as u64,
+        total_expense: total_expense as u64,
         financial_status: financial_status.to_string(),
         is_crisis: status.is_crisis,
         transfer_budget: status.transfer_budget,
@@ -180,10 +229,25 @@ pub async fn get_all_teams_finance(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
     };
 
-    // 获取队伍列表
+    // 获取当前赛季
+    let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+        .bind(&save_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let current_season: i64 = save_row.get("current_season");
+
+    // 获取队伍列表（包含赛区信息）
     let team_rows = if let Some(rid) = region_id {
         sqlx::query(
-            "SELECT id, name, balance, power_rating, win_rate FROM teams WHERE save_id = ? AND region_id = ? ORDER BY balance DESC"
+            r#"
+            SELECT t.id, t.name, t.short_name, t.balance, t.power_rating, t.win_rate,
+                   t.region_id, r.short_name as region_code
+            FROM teams t
+            LEFT JOIN regions r ON t.region_id = r.id AND r.save_id = t.save_id
+            WHERE t.save_id = ? AND t.region_id = ?
+            ORDER BY t.balance DESC
+            "#
         )
         .bind(&save_id)
         .bind(rid as i64)
@@ -192,7 +256,14 @@ pub async fn get_all_teams_finance(
         .map_err(|e| e.to_string())?
     } else {
         sqlx::query(
-            "SELECT id, name, balance, power_rating, win_rate FROM teams WHERE save_id = ? ORDER BY balance DESC"
+            r#"
+            SELECT t.id, t.name, t.short_name, t.balance, t.power_rating, t.win_rate,
+                   t.region_id, r.short_name as region_code
+            FROM teams t
+            LEFT JOIN regions r ON t.region_id = r.id AND r.save_id = t.save_id
+            WHERE t.save_id = ?
+            ORDER BY t.balance DESC
+            "#
         )
         .bind(&save_id)
         .fetch_all(&pool)
@@ -207,6 +278,9 @@ pub async fn get_all_teams_finance(
         let team_id: i64 = row.get("id");
         let balance: i64 = row.get("balance");
         let team_name: String = row.get("name");
+        let short_name: Option<String> = row.get("short_name");
+        let region_id: i64 = row.get("region_id");
+        let region_code: String = row.try_get("region_code").unwrap_or_else(|_| "".to_string());
         let power_rating: f64 = row.get("power_rating");
         let win_rate: f64 = row.get("win_rate");
 
@@ -220,11 +294,33 @@ pub async fn get_all_teams_finance(
         .await
         .unwrap_or(0);
 
+        // 计算本赛季收入
+        let total_income: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(amount), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND amount > 0"
+        )
+        .bind(&save_id)
+        .bind(team_id)
+        .bind(current_season)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0);
+
+        // 计算本赛季支出
+        let total_expense: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(ABS(amount)), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND amount < 0"
+        )
+        .bind(&save_id)
+        .bind(team_id)
+        .bind(current_season)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0);
+
         let team = crate::models::Team {
             id: team_id as u64,
-            region_id: 0,
+            region_id: region_id as u64,
             name: team_name.clone(),
-            short_name: None,
+            short_name: short_name.clone(),
             power_rating,
             total_matches: 0,
             wins: 0,
@@ -251,7 +347,12 @@ pub async fn get_all_teams_finance(
         summaries.push(TeamFinanceSummary {
             team_id: team_id as u64,
             team_name,
+            short_name,
+            region_id: region_id as u64,
+            region_code,
             balance,
+            total_income: total_income as u64,
+            total_expense: total_expense as u64,
             financial_status: financial_status.to_string(),
             is_crisis: status.is_crisis,
             transfer_budget: status.transfer_budget,
@@ -901,4 +1002,171 @@ pub async fn distribute_tournament_prizes(
     }
 
     Ok(CommandResult::ok(prize_results))
+}
+
+/// 赛事奖金详情
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TournamentPrizeDetail {
+    pub tournament_id: u64,
+    pub tournament_name: String,
+    pub tournament_type: String,  // "international" or "regional"
+    pub season_id: u64,
+    pub position: String,
+    pub amount: u64,
+}
+
+/// 获取战队赛事奖金明细
+#[tauri::command]
+pub async fn get_team_prize_details(
+    state: State<'_, AppState>,
+    team_id: u64,
+    season_id: Option<u64>,
+) -> Result<CommandResult<Vec<TournamentPrizeDetail>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 查询奖金交易记录，关联赛事表获取赛事名称
+    let rows = if let Some(sid) = season_id {
+        sqlx::query(
+            r#"
+            SELECT ft.season_id, ft.transaction_type, ft.amount, ft.description,
+                   ft.related_tournament_id,
+                   COALESCE(t.name, ft.description) as tournament_name,
+                   COALESCE(t.tournament_type, '') as t_type
+            FROM financial_transactions ft
+            LEFT JOIN tournaments t ON ft.related_tournament_id = t.id
+            WHERE ft.save_id = ? AND ft.team_id = ? AND ft.season_id = ?
+              AND (ft.transaction_type = 'PlayoffBonus' OR ft.transaction_type = 'InternationalBonus')
+            ORDER BY ft.season_id DESC, ft.id DESC
+            "#,
+        )
+        .bind(&save_id)
+        .bind(team_id as i64)
+        .bind(sid as i64)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query(
+            r#"
+            SELECT ft.season_id, ft.transaction_type, ft.amount, ft.description,
+                   ft.related_tournament_id,
+                   COALESCE(t.name, ft.description) as tournament_name,
+                   COALESCE(t.tournament_type, '') as t_type
+            FROM financial_transactions ft
+            LEFT JOIN tournaments t ON ft.related_tournament_id = t.id
+            WHERE ft.save_id = ? AND ft.team_id = ?
+              AND (ft.transaction_type = 'PlayoffBonus' OR ft.transaction_type = 'InternationalBonus')
+            ORDER BY ft.season_id DESC, ft.id DESC
+            "#,
+        )
+        .bind(&save_id)
+        .bind(team_id as i64)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?
+    };
+
+    let details: Vec<TournamentPrizeDetail> = rows
+        .iter()
+        .map(|row| {
+            let transaction_type: String = row.get("transaction_type");
+            let description: Option<String> = row.get("description");
+            let tournament_name: String = row.get("tournament_name");
+            let t_type: String = row.get("t_type");
+            let tournament_id: Option<i64> = row.get("related_tournament_id");
+
+            // 从 description 解析名次 (格式: "TournamentType - POSITION")
+            let position = description
+                .as_ref()
+                .and_then(|d| d.split(" - ").last())
+                .unwrap_or("UNKNOWN")
+                .to_string();
+
+            // 翻译名次为中文
+            let position_cn = match position.as_str() {
+                "CHAMPION" => "冠军".to_string(),
+                "RUNNER_UP" => "亚军".to_string(),
+                "THIRD" => "季军".to_string(),
+                "FOURTH" => "殿军".to_string(),
+                "QUARTER_FINAL" => "八强".to_string(),
+                "GROUP_STAGE" => "小组赛".to_string(),
+                "5TH_8TH" => "5-8名".to_string(),
+                "SEMI_LOSER" => "四强".to_string(),
+                "R1_LOSER" => "首轮".to_string(),
+                "LOSERS_R2" => "败者组第二轮".to_string(),
+                "LOSERS_R1" => "败者组第一轮".to_string(),
+                "PREP_LOSER" => "预选赛".to_string(),
+                "PROMOTION_LOSER" => "晋级赛".to_string(),
+                "FIGHTER_OUT" => "斗士出局".to_string(),
+                _ => position.clone(),
+            };
+
+            // 翻译赛事名称（如果是英文赛事类型）
+            let tournament_name_cn = translate_tournament_name(&tournament_name);
+
+            // 确定赛事类型
+            let tournament_type = if transaction_type == "InternationalBonus" || !t_type.is_empty() && t_type.contains("International") {
+                "international".to_string()
+            } else {
+                "regional".to_string()
+            };
+
+            TournamentPrizeDetail {
+                tournament_id: tournament_id.unwrap_or(0) as u64,
+                tournament_name: tournament_name_cn,
+                tournament_type,
+                season_id: row.get::<i64, _>("season_id") as u64,
+                position: position_cn,
+                amount: row.get::<i64, _>("amount") as u64,
+            }
+        })
+        .collect();
+
+    Ok(CommandResult::ok(details))
+}
+
+/// 翻译赛事名称
+fn translate_tournament_name(name: &str) -> String {
+    // 如果名称包含英文赛事类型，提取并翻译
+    let tournament_type_map: &[(&str, &str)] = &[
+        ("WorldChampionship", "S世界赛"),
+        ("Msi", "MSI季中赛"),
+        ("MadridMasters", "马德里大师赛"),
+        ("ClaudeIntercontinental", "Claude洲际赛"),
+        ("ShanghaiMasters", "上海大师赛"),
+        ("IcpIntercontinental", "ICP洲际对抗赛"),
+        ("SuperIntercontinental", "Super洲际邀请赛"),
+        ("SpringPlayoffs", "春季季后赛"),
+        ("SummerPlayoffs", "夏季季后赛"),
+        ("SpringRegular", "春季常规赛"),
+        ("SummerRegular", "夏季常规赛"),
+    ];
+
+    for (en, cn) in tournament_type_map {
+        if name.contains(en) {
+            // 如果是 "TournamentType - POSITION" 格式，只返回中文赛事名
+            if name.contains(" - ") {
+                return cn.to_string();
+            }
+            return name.replace(en, cn);
+        }
+    }
+
+    // 没有匹配到，返回原名称
+    name.to_string()
 }

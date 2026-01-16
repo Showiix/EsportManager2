@@ -63,8 +63,11 @@ pub struct PlayerInfo {
     pub team_id: Option<u64>,
     pub salary: u64,
     pub market_value: u64,
+    pub calculated_market_value: u64,
     pub contract_end_season: Option<u32>,
     pub is_starter: bool,
+    pub satisfaction: u8,
+    pub loyalty: u8,
 }
 
 impl From<Player> for PlayerInfo {
@@ -84,8 +87,11 @@ impl From<Player> for PlayerInfo {
             team_id: p.team_id,
             salary: p.salary,
             market_value: p.market_value,
+            calculated_market_value: p.calculated_market_value,
             contract_end_season: p.contract_end_season,
             is_starter: p.is_starter,
+            satisfaction: p.satisfaction,
+            loyalty: p.loyalty,
         }
     }
 }
@@ -150,6 +156,38 @@ pub async fn get_all_teams(
     };
 
     let infos: Vec<TeamInfo> = teams.into_iter().map(|t| t.into()).collect();
+    Ok(CommandResult::ok(infos))
+}
+
+/// 获取所有活跃选手（带队伍信息）
+#[tauri::command]
+pub async fn get_all_players(
+    state: State<'_, AppState>,
+) -> Result<CommandResult<Vec<PlayerInfo>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取所有活跃选手
+    let players = match PlayerRepository::get_all_active(&pool, &save_id).await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get players: {}", e))),
+    };
+
+    let infos: Vec<PlayerInfo> = players.into_iter().map(|p| p.into()).collect();
     Ok(CommandResult::ok(infos))
 }
 
@@ -356,7 +394,7 @@ pub async fn update_player_market_value(
     let region_code = if let Some(team_id) = player.team_id {
         sqlx::query(
             r#"
-            SELECT r.code FROM teams t
+            SELECT r.short_name FROM teams t
             JOIN regions r ON t.region_id = r.id
             WHERE t.id = ?
             "#
@@ -366,7 +404,7 @@ pub async fn update_player_market_value(
         .await
         .ok()
         .flatten()
-        .map(|row| row.get::<String, _>("code"))
+        .map(|row| row.get::<String, _>("short_name"))
         .unwrap_or_else(|| "LPL".to_string())
     } else {
         "LPL".to_string()
@@ -435,7 +473,7 @@ pub async fn update_all_market_values(
     // 预加载所有队伍的赛区信息
     let team_regions: std::collections::HashMap<u64, String> = sqlx::query(
         r#"
-        SELECT t.id, r.code FROM teams t
+        SELECT t.id, r.short_name FROM teams t
         JOIN regions r ON t.region_id = r.id
         WHERE t.save_id = ?
         "#
@@ -445,7 +483,7 @@ pub async fn update_all_market_values(
     .await
     .unwrap_or_default()
     .into_iter()
-    .map(|row| (row.get::<i64, _>("id") as u64, row.get::<String, _>("code")))
+    .map(|row| (row.get::<i64, _>("id") as u64, row.get::<String, _>("short_name")))
     .collect();
 
     let mut results = Vec::new();
@@ -745,6 +783,64 @@ fn parse_trait_type(s: &str) -> Option<TraitType> {
         "teamleader" | "team_leader" => Some(TraitType::TeamLeader),
         _ => None,
     }
+}
+
+/// 选手属性更新请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdatePlayerRequest {
+    pub player_id: u64,
+    pub ability: Option<u8>,
+    pub potential: Option<u8>,
+    pub stability: Option<u8>,
+    pub age: Option<u8>,
+}
+
+/// 更新选手属性（能力值、潜力值、稳定性、年龄）
+#[tauri::command]
+pub async fn update_player(
+    state: State<'_, AppState>,
+    request: UpdatePlayerRequest,
+) -> Result<CommandResult<PlayerInfo>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取选手信息
+    let mut player = match PlayerRepository::get_by_id(&pool, request.player_id).await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get player: {}", e))),
+    };
+
+    // 更新属性（仅更新提供的字段）
+    if let Some(ability) = request.ability {
+        player.ability = ability.clamp(1, 100);
+    }
+    if let Some(potential) = request.potential {
+        player.potential = potential.clamp(1, 100);
+    }
+    if let Some(stability) = request.stability {
+        player.stability = stability.clamp(1, 100);
+    }
+    if let Some(age) = request.age {
+        player.age = age.clamp(16, 45);
+    }
+
+    // 保存到数据库
+    if let Err(e) = PlayerRepository::update(&pool, &player).await {
+        return Ok(CommandResult::err(format!("Failed to update player: {}", e)));
+    }
+
+    println!("✅ 选手 {} 属性已更新: ability={}, potential={}, stability={}, age={}",
+        player.game_id, player.ability, player.potential, player.stability, player.age);
+
+    Ok(CommandResult::ok(player.into()))
 }
 
 /// 获取或创建选手状态因子

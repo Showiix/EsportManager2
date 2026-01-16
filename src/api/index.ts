@@ -557,74 +557,112 @@ export const pointsApi = {
   },
 }
 
-// Super洲际赛相关API
+// Super洲际赛相关API - 使用 Tauri 命令
 export const superApi = {
   // 生成Super对阵(两年世界赛全部结束后调用)
-  generateSuper: (data: GenerateSuperRequest): Promise<ApiResponse<SuperBracket>> => {
-    return apiClient.post('/api/super/generate', data)
+  generateSuper: async (data: GenerateSuperRequest): Promise<ApiResponse<SuperBracket>> => {
+    try {
+      const { internationalApi } = await import('./tauri')
+      // 从 data 中提取队伍分组
+      const tournamentId = await internationalApi.createSuperTournament(
+        data.legendaryTeamIds || [],
+        data.challengerTeamIds || [],
+        data.fighterTeamIds || []
+      )
+      // 获取创建后的对阵信息
+      const bracket = await internationalApi.getTournamentBracket(tournamentId)
+      return { success: true, data: bracket as any }
+    } catch (err: any) {
+      return { success: false, error: err.message || '生成Super对阵失败' }
+    }
   },
 
   // 获取Super对阵信息
-  getSuperBracket: (season1Code: string, season2Code: string): Promise<ApiResponse<SuperBracket>> => {
-    return apiClient.get(`/api/super/bracket`, {
-      params: { season1Code, season2Code }
-    })
+  getSuperBracket: async (tournamentId: number): Promise<ApiResponse<SuperBracket>> => {
+    try {
+      const { internationalApi } = await import('./tauri')
+      const bracket = await internationalApi.getTournamentBracket(tournamentId)
+      return { success: true, data: bracket as any }
+    } catch (err: any) {
+      return { success: false, error: err.message || '获取Super对阵失败' }
+    }
   },
 
   // 模拟Super单场比赛
-  simulateSuperMatch: (
+  simulateSuperMatch: async (
     data: SimulateSuperMatchRequest
   ): Promise<ApiResponse<SimulateSuperMatchResponse>> => {
-    return apiClient.post('/api/super/simulate-match', data)
+    try {
+      const { matchApi, internationalApi } = await import('./tauri')
+      // 使用通用的比赛模拟命令
+      const result = await matchApi.simulateMatchDetailed(data.matchId)
+      // 如果需要推进对阵
+      if (data.tournamentId && result.winner_id) {
+        await internationalApi.advanceBracket(data.tournamentId, data.matchId, result.winner_id)
+      }
+      return {
+        success: true,
+        data: {
+          match: result as any,
+          isSuperComplete: false,
+          isStageComplete: false
+        }
+      }
+    } catch (err: any) {
+      return { success: false, error: err.message || '模拟比赛失败' }
+    }
   },
 
   // 获取Super资格队伍(基于两年积分总和前16名)
-  getQualifiedTeams: (season1Code: string, season2Code: string): Promise<ApiResponse<SuperQualification[]>> => {
-    return apiClient.get(`/api/super/qualified-teams`, {
-      params: { season1Code, season2Code }
-    })
+  getQualifiedTeams: async (): Promise<ApiResponse<SuperQualification[]>> => {
+    try {
+      const { pointsApi } = await import('./tauri')
+      const teams = await pointsApi.getSuperQualifiedTeams()
+      return { success: true, data: teams as any }
+    } catch (err: any) {
+      return { success: false, error: err.message || '获取资格队伍失败' }
+    }
   },
 
   // 检查是否可以生成Super(两年世界赛是否都结束)
-  checkSuperEligibility: (season1Code: string, season2Code: string): Promise<ApiResponse<SuperEligibilityResponse>> => {
-    return apiClient.get(`/api/super/check-eligibility`, {
-      params: { season1Code, season2Code }
-    })
-  },
-
-  // 开始下一阶段
-  startNextStage: (superId: string): Promise<ApiResponse<SuperBracket>> => {
-    return apiClient.post(`/api/super/${superId}/next-stage`)
-  },
-
-  // 获取历史Super数据
-  getHistoricalSuper: (): Promise<ApiResponse<SuperBracket[]>> => {
-    return apiClient.get(`/api/super/historical`)
+  checkSuperEligibility: async (): Promise<ApiResponse<SuperEligibilityResponse>> => {
+    try {
+      const { pointsApi } = await import('./tauri')
+      const teams = await pointsApi.getSuperQualifiedTeams()
+      // 如果有16支队伍，说明可以生成Super
+      const canGenerate = teams && teams.length >= 16
+      return {
+        success: true,
+        data: {
+          canGenerate,
+          qualifiedTeamsCount: teams?.length || 0
+        } as any
+      }
+    } catch (err: any) {
+      return { success: false, error: err.message || '检查资格失败' }
+    }
   },
 
   // 获取Fighter组积分榜
-  getFighterStandings: (superId: string): Promise<ApiResponse<any>> => {
-    return apiClient.get(`/api/super/${superId}/fighter-standings`)
+  getFighterStandings: async (tournamentId: number): Promise<ApiResponse<any>> => {
+    try {
+      const { internationalApi } = await import('./tauri')
+      const standings = await internationalApi.getGroupStandings(tournamentId)
+      return { success: true, data: standings }
+    } catch (err: any) {
+      return { success: false, error: err.message || '获取积分榜失败' }
+    }
   },
 
-  // 生成Fighter组对阵
-  generateFighterMatches: (superId: string): Promise<ApiResponse<any>> => {
-    return apiClient.post(`/api/super/${superId}/generate-fighter-matches`)
-  },
-
-  // 生成挑战者组对阵
-  generateChallengerMatches: (superId: string): Promise<ApiResponse<any>> => {
-    return apiClient.post(`/api/super/${superId}/generate-challenger-matches`)
-  },
-
-  // 生成预备战对阵
-  generatePreparationMatches: (superId: string): Promise<ApiResponse<any>> => {
-    return apiClient.post(`/api/super/${superId}/generate-preparation-matches`)
-  },
-
-  // 生成冠军赛对阵
-  generateChampionshipMatches: (superId: string): Promise<ApiResponse<any>> => {
-    return apiClient.post(`/api/super/${superId}/generate-championship-matches`)
+  // 完成赛事（发放奖金和荣誉）
+  completeTournament: async (tournamentId: number): Promise<ApiResponse<any>> => {
+    try {
+      const { internationalApi } = await import('./tauri')
+      const result = await internationalApi.completeTournament(tournamentId)
+      return { success: true, data: result }
+    } catch (err: any) {
+      return { success: false, error: err.message || '完成赛事失败' }
+    }
   },
 }
 

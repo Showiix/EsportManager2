@@ -124,9 +124,10 @@ export type SeasonStatus = 'planned' | 'active' | 'completed'
 // API 相关类型
 export interface ApiResponse<T> {
   success: boolean
-  data: T
+  data?: T          // 可选，错误时可能为空
   message?: string
-  errors?: string[]
+  error?: string    // 单个错误信息
+  errors?: string[] // 多个错误信息
 }
 
 export interface PaginatedResponse<T> {
@@ -909,21 +910,24 @@ export interface SuperBracket {
 
 // Super洲际赛生成请求
 export interface GenerateSuperRequest {
-  season1Code: string // "S1"
-  season2Code: string // "S2"
+  season1Code?: string // "S1" (可选，用于UI显示)
+  season2Code?: string // "S2" (可选，用于UI显示)
+  legendaryTeamIds?: number[] // 传奇组队伍ID（前4名）
+  challengerTeamIds?: number[] // 挑战者组队伍ID（5-8名）
+  fighterTeamIds?: number[] // Fighter组队伍ID（9-16名）
 }
 
 // Super洲际赛模拟请求
 export interface SimulateSuperMatchRequest {
-  matchId: string
-  superId: string
+  matchId: number
+  tournamentId?: number // 用于推进对阵
 }
 
 // Super洲际赛模拟响应
 export interface SimulateSuperMatchResponse {
   match: SuperMatch
-  winner: SuperQualification
-  loser: SuperQualification
+  winner?: SuperQualification
+  loser?: SuperQualification
   nextMatch?: SuperMatch // 胜者下一场
   loserNextMatch?: SuperMatch // 败者下一场
   isSuperComplete: boolean

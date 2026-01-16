@@ -124,12 +124,12 @@
               <el-tooltip
                 v-for="trait in player.traits"
                 :key="trait"
-                :content="getTraitDescription(trait)"
+                :content="`${getTraitName(trait)}: 未激活 - ${getTraitDescription(trait)}`"
                 placement="top"
               >
-                <span class="trait-icon" :style="{ color: getTraitRarityColor(trait) }">
-                  {{ getTraitIcon(trait) }}
-                </span>
+                <el-tag type="info" size="small" class="trait-tag inactive">
+                  {{ getTraitName(trait) }}
+                </el-tag>
               </el-tooltip>
             </template>
             <span v-else class="no-trait">-</span>
@@ -143,7 +143,7 @@
           </span>
           <span class="col-actual">{{ player.actualAbility }}</span>
           <span class="col-impact" :class="getImpactClass(player.impactScore)">
-            {{ formatBonus(player.impactScore) }}
+            {{ formatImpact(player.impactScore) }}
           </span>
         </div>
       </div>
@@ -183,12 +183,12 @@
               <el-tooltip
                 v-for="trait in player.traits"
                 :key="trait"
-                :content="getTraitDescription(trait)"
+                :content="`${getTraitName(trait)}: 未激活 - ${getTraitDescription(trait)}`"
                 placement="top"
               >
-                <span class="trait-icon" :style="{ color: getTraitRarityColor(trait) }">
-                  {{ getTraitIcon(trait) }}
-                </span>
+                <el-tag type="info" size="small" class="trait-tag inactive">
+                  {{ getTraitName(trait) }}
+                </el-tag>
               </el-tooltip>
             </template>
             <span v-else class="no-trait">-</span>
@@ -202,7 +202,7 @@
           </span>
           <span class="col-actual">{{ player.actualAbility }}</span>
           <span class="col-impact" :class="getImpactClass(player.impactScore)">
-            {{ formatBonus(player.impactScore) }}
+            {{ formatImpact(player.impactScore) }}
           </span>
         </div>
       </div>
@@ -226,6 +226,10 @@
         <el-tag type="success" size="small">特性</el-tag>
         <span>激活特性</span>
       </div>
+      <div class="legend-item">
+        <el-tag type="info" size="small" class="inactive">特性</el-tag>
+        <span>未激活特性</span>
+      </div>
     </div>
   </div>
 </template>
@@ -233,8 +237,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { GameDetail } from '@/types/matchDetail'
-import type { PlayerPosition, TraitType } from '@/types/player'
-import { POSITION_NAMES, getTraitDescription, getTraitRarityColor } from '@/types/player'
+import type { PlayerPosition } from '@/types/player'
+import { POSITION_NAMES, getTraitDescription, getTraitName } from '@/types/player'
 
 interface Props {
   game: GameDetail
@@ -280,18 +284,28 @@ const getPositionName = (position: PlayerPosition): string => {
 }
 
 // 格式化加成数值
-const formatBonus = (value: number): string => {
+const formatBonus = (value: number | undefined): string => {
+  if (value === undefined || value === null) return '-'
   if (value > 0) return `+${value.toFixed(1)}`
   return value.toFixed(1)
 }
 
+// 格式化影响力分数 (保留两位小数)
+const formatImpact = (value: number | undefined): string => {
+  if (value === undefined || value === null) return '-'
+  if (value > 0) return `+${value.toFixed(2)}`
+  return value.toFixed(2)
+}
+
 // 格式化战力/发挥值 (保留两位小数)
-const formatPower = (value: number): string => {
+const formatPower = (value: number | undefined): string => {
+  if (value === undefined || value === null) return '-'
   return value.toFixed(2)
 }
 
 // 格式化差值
-const formatDiff = (value: number): string => {
+const formatDiff = (value: number | undefined): string => {
+  if (value === undefined || value === null) return '-'
   if (value > 0) return `+${value.toFixed(2)} (A队优势)`
   if (value < 0) return `${value.toFixed(2)} (B队优势)`
   return '0 (势均力敌)'
@@ -322,26 +336,6 @@ const getImpactClass = (value: number): string => {
   return ''
 }
 
-// 获取特性图标
-const getTraitIcon = (traitType: TraitType): string => {
-  const icons: Record<TraitType, string> = {
-    clutch: '🎯',
-    slow_starter: '🐢',
-    fast_starter: '⚡',
-    explosive: '💥',
-    consistent: '📊',
-    comeback_king: '👑',
-    tilter: '😤',
-    mental_fortress: '🧠',
-    fragile: '💔',
-    ironman: '🦾',
-    volatile: '🎲',
-    rising_star: '⭐',
-    veteran: '🎖️',
-    team_leader: '🏅'
-  }
-  return icons[traitType] || '✨'
-}
 </script>
 
 <style scoped>
@@ -627,6 +621,11 @@ const getTraitIcon = (traitType: TraitType): string => {
   padding: 2px 6px;
   height: auto;
   line-height: 1.2;
+}
+
+.trait-tag.inactive {
+  opacity: 0.6;
+  border-style: dashed;
 }
 
 .trait-icon {

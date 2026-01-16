@@ -9,7 +9,7 @@ import { ref, computed } from 'vue'
 import type { Player, PlayerPosition, PlayerTalent, PlayerSeasonStats } from '@/types/player'
 import { PlayerEngine } from '@/engines/PlayerEngine'
 import { getTeamPlayersConfig, type PlayerConfig } from '@/data/playerData'
-import { statsApi, type RecordPerformanceParams, type PlayerRankingItem } from '@/api/tauri'
+import { statsApi, type RecordPerformanceParams } from '@/api/tauri'
 
 // 位置列表
 const POSITIONS: PlayerPosition[] = ['TOP', 'JUG', 'MID', 'ADC', 'SUP']
@@ -19,7 +19,7 @@ export const usePlayerStore = defineStore('player', () => {
   const players = ref<Player[]>([])
   const playerSeasonStats = ref<Map<string, PlayerSeasonStats>>(new Map())
   const loading = ref(false)
-  const currentSeasonId = ref('2024')
+  const currentSeasonId = ref('1') // 与游戏系统保持一致，使用数字格式
   const updateTrigger = ref(0) // 用于触发响应式更新
 
   // 待保存的表现数据队列（用于批量保存）
@@ -71,10 +71,11 @@ export const usePlayerStore = defineStore('player', () => {
     return playerSeasonStats.value.get(key) || null
   }
 
-  // 计算年度Top得分（加权计算：平均影响力70% + 冠军加成30%）
-  const calculateYearlyTopScore = (avgImpact: number, internationalTitles: number, regionalTitles: number): number => {
+  // 计算年度Top得分（综合三要素：影响力40% + 出场30% + 冠军30%）
+  const calculateYearlyTopScore = (avgImpact: number, gamesPlayed: number, internationalTitles: number, regionalTitles: number): number => {
     const championBonus = internationalTitles * 3 + regionalTitles * 1
-    const weightedScore = avgImpact * 0.7 + championBonus * 0.3
+    const gamesBonus = gamesPlayed / 10
+    const weightedScore = avgImpact * 0.4 + gamesBonus * 0.3 + championBonus * 0.3
     return Math.round(weightedScore * 10) / 10
   }
 
@@ -108,6 +109,7 @@ export const usePlayerStore = defineStore('player', () => {
       // 更新年度Top得分
       existing.yearlyTopScore = calculateYearlyTopScore(
         existing.avgImpact,
+        existing.gamesPlayed,
         existing.internationalTitles || 0,
         existing.regionalTitles || 0
       )
@@ -138,14 +140,17 @@ export const usePlayerStore = defineStore('player', () => {
     updateTrigger.value++
 
     // 2. 添加到待保存队列（异步批量保存到数据库）
+    const parsedPlayerId = Number(playerId.replace('player-', '').split('-')[0]) || 0
+    console.log(`[PlayerStore] recordPerformance: playerId=${playerId}, parsed=${parsedPlayerId}, playerName=${playerName}, teamId=${teamId}`)
+
     pendingPerformances.value.push({
-      player_id: Number(playerId.replace('player-', '').split('-')[0]) || 0,
+      player_id: parsedPlayerId,
       player_name: playerName,
       team_id: Number(teamId) || 0,
       position: position,
       impact_score: impactScore,
       actual_ability: performance,
-      season_id: Number(sid) || 2024,
+      season_id: Number(sid) || 1,
       region_id: regionId
     })
 
@@ -162,11 +167,12 @@ export const usePlayerStore = defineStore('player', () => {
       if (pendingPerformances.value.length > 0) {
         const toSave = [...pendingPerformances.value]
         pendingPerformances.value = []
+        console.log(`[PlayerStore] 准备批量保存 ${toSave.length} 条记录:`, JSON.stringify(toSave.slice(0, 2)))
         try {
-          await statsApi.batchRecordPerformance(toSave)
-          console.log(`批量保存了 ${toSave.length} 条选手表现记录到数据库`)
+          const result = await statsApi.batchRecordPerformance(toSave)
+          console.log(`[PlayerStore] 批量保存成功，返回: ${result}`)
         } catch (error) {
-          console.error('批量保存选手表现失败:', error)
+          console.error('[PlayerStore] 批量保存选手表现失败:', error)
           // 保存失败时，重新加入队列
           pendingPerformances.value.push(...toSave)
         }
@@ -215,6 +221,7 @@ export const usePlayerStore = defineStore('player', () => {
         stats.championBonus = (stats.internationalTitles || 0) * 3 + (stats.regionalTitles || 0) * 1
         stats.yearlyTopScore = calculateYearlyTopScore(
           stats.avgImpact,
+          stats.gamesPlayed,
           stats.internationalTitles || 0,
           stats.regionalTitles || 0
         )
@@ -224,7 +231,7 @@ export const usePlayerStore = defineStore('player', () => {
 
     // 2. 保存到数据库
     try {
-      await statsApi.recordChampionship(Number(teamId) || 0, isInternational, Number(sid) || 2024)
+      await statsApi.recordChampionship(Number(teamId) || 0, isInternational, Number(sid) || 1)
     } catch (error) {
       console.error('保存冠军荣誉到数据库失败:', error)
     }
@@ -270,15 +277,24 @@ export const usePlayerStore = defineStore('player', () => {
   // 获取年度Top排行（优先从数据库获取，本地缓存作为后备）
   const getSeasonImpactRanking = async (seasonId?: string, limit = 20): Promise<PlayerSeasonStats[]> => {
     const sid = seasonId || currentSeasonId.value
+    // 统一转换为数字格式用于本地缓存查询（本地缓存 key 格式是 playerId-1）
+    const numericSid = sid.startsWith('S') ? sid.substring(1) : sid
 
     try {
       // 尝试从数据库获取
-      const ranking = await statsApi.getSeasonImpactRanking(Number(sid) || 2024, limit)
+      const ranking = await statsApi.getSeasonImpactRanking(Number(numericSid) || 1, limit)
+
+      // 如果数据库返回空，尝试本地缓存
+      if (ranking.length === 0) {
+        console.log('[PlayerStore] 数据库返回空，尝试本地缓存, sid:', numericSid)
+        return getSeasonImpactRankingLocal(numericSid, limit)
+      }
+
       // 转换为前端格式
       return ranking.map(r => ({
         playerId: String(r.player_id),
         playerName: r.player_name,
-        seasonId: sid,
+        seasonId: numericSid,
         teamId: String(r.team_id || ''),
         regionId: r.region_id || undefined,
         position: r.position as PlayerPosition,
@@ -298,7 +314,7 @@ export const usePlayerStore = defineStore('player', () => {
     } catch (error) {
       console.warn('从数据库获取排行失败，使用本地缓存:', error)
       // 使用本地缓存作为后备
-      return getSeasonImpactRankingLocal(sid, limit)
+      return getSeasonImpactRankingLocal(numericSid, limit)
     }
   }
 
@@ -325,15 +341,23 @@ export const usePlayerStore = defineStore('player', () => {
     limit = 10
   ): Promise<PlayerSeasonStats[]> => {
     const sid = seasonId || currentSeasonId.value
+    // 统一转换为数字格式用于本地缓存查询
+    const numericSid = sid.startsWith('S') ? sid.substring(1) : sid
 
     try {
       // 尝试从数据库获取
-      const ranking = await statsApi.getPositionRanking(Number(sid) || 2024, position, limit)
+      const ranking = await statsApi.getPositionRanking(Number(numericSid) || 1, position, limit)
+
+      // 如果数据库返回空，尝试本地缓存
+      if (ranking.length === 0) {
+        return getPositionRankingLocal(position, numericSid, limit)
+      }
+
       // 转换为前端格式
       return ranking.map(r => ({
         playerId: String(r.player_id),
         playerName: r.player_name,
-        seasonId: sid,
+        seasonId: numericSid,
         teamId: String(r.team_id || ''),
         regionId: r.region_id || undefined,
         position: r.position as PlayerPosition,
@@ -353,7 +377,7 @@ export const usePlayerStore = defineStore('player', () => {
     } catch (error) {
       console.warn('从数据库获取位置排行失败，使用本地缓存:', error)
       // 使用本地缓存作为后备
-      return getPositionRankingLocal(position, sid, limit)
+      return getPositionRankingLocal(position, numericSid, limit)
     }
   }
 
@@ -548,7 +572,7 @@ export const usePlayerStore = defineStore('player', () => {
 
       // 清除数据库
       try {
-        await statsApi.clearSeasonStats(Number(seasonId) || 2024)
+        await statsApi.clearSeasonStats(Number(seasonId) || 1)
       } catch (error) {
         console.error('清除数据库赛季数据失败:', error)
       }
@@ -583,17 +607,26 @@ export const usePlayerStore = defineStore('player', () => {
   // 保存到 localStorage（同时触发异步保存到数据库）
   const saveToStorage = () => {
     try {
-      // 保存到 localStorage（快速本地备份）
-      const data = {
-        playerSeasonStats: Object.fromEntries(playerSeasonStats.value),
-        lastUpdated: new Date().toISOString()
-      }
-      localStorage.setItem('esport-player-stats', JSON.stringify(data))
-
-      // 同时触发批量保存到数据库
+      // 同时触发批量保存到数据库（主要存储方式）
       flushPendingPerformances()
+
+      // 尝试保存到 localStorage（快速本地备份，但可能因配额不足失败）
+      try {
+        const data = {
+          playerSeasonStats: Object.fromEntries(playerSeasonStats.value),
+          lastUpdated: new Date().toISOString()
+        }
+        localStorage.setItem('esport-player-stats', JSON.stringify(data))
+      } catch (storageError: any) {
+        // localStorage 配额不足时，清理旧数据
+        if (storageError.name === 'QuotaExceededError') {
+          console.warn('localStorage quota exceeded, clearing old data...')
+          localStorage.removeItem('esport-player-stats')
+          localStorage.removeItem('esport-match-details')
+        }
+      }
     } catch (error) {
-      console.error('Failed to save player stats to storage:', error)
+      console.error('Failed to save player stats:', error)
     }
   }
 
@@ -618,7 +651,9 @@ export const usePlayerStore = defineStore('player', () => {
     recordTeamPerformances,
     incrementMatchCount,
     getSeasonImpactRanking,
+    getSeasonImpactRankingLocal,
     getPositionRanking,
+    getPositionRankingLocal,
     generateMockPlayer,
     generateTeamRoster,
     generateAllPlayers,

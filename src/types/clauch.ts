@@ -3,6 +3,7 @@
 // 比赛类型
 export interface ClauchMatch {
   id: string | number
+  backendMatchId?: number // 后端数据库中的比赛ID
   teamAId?: string | number
   teamBId?: string | number
   teamAName?: string

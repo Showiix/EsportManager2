@@ -642,15 +642,15 @@ export const useRankingStore = defineStore('ranking', () => {
 
       if (response.data) {
         const standings: RegionalStandings = {
-          regionId: response.data.regionId,
-          regionName: response.data.regionName,
-          seasonId: response.data.seasonId,
-          competitionType: response.data.competitionType,
-          standings: response.data.standings.map(item => ({
+          regionId: response.data!.regionId,
+          regionName: response.data!.regionName,
+          seasonId: response.data!.seasonId,
+          competitionType: response.data!.competitionType,
+          standings: response.data!.standings.map(item => ({
             teamId: item.teamId,
             teamName: item.teamName,
-            regionId: response.data.regionId,
-            regionName: response.data.regionName,
+            regionId: response.data!.regionId,
+            regionName: response.data!.regionName,
             matchesPlayed: item.matchesPlayed,
             wins: item.wins,
             losses: item.losses,
@@ -658,9 +658,9 @@ export const useRankingStore = defineStore('ranking', () => {
             regularSeasonPoints: item.regularSeasonPoints,
             roundDifferential: item.roundDifferential,
             position: item.position,
-            lastUpdated: response.data.lastUpdated
+            lastUpdated: response.data!.lastUpdated
           })),
-          lastUpdated: response.data.lastUpdated
+          lastUpdated: response.data!.lastUpdated
         }
 
         const key = `${regionId}-${competitionType}`

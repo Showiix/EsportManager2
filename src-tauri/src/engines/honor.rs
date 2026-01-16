@@ -125,7 +125,97 @@ impl HonorEngine {
             save_id,
             HonorType::PlayerChampion,
             season_id,
-            tournament_id,
+            Some(tournament_id),
+            tournament_name,
+            tournament_type,
+            team_id,
+            team_name,
+            player_id,
+            player_name,
+            position,
+            None,
+        )
+    }
+
+    /// 记录选手亚军荣誉（亚军队成员）
+    pub fn create_player_runner_up(
+        &self,
+        save_id: &str,
+        season_id: u64,
+        tournament_id: u64,
+        tournament_name: &str,
+        tournament_type: &str,
+        team_id: u64,
+        team_name: &str,
+        player_id: u64,
+        player_name: &str,
+        position: &str,
+    ) -> Honor {
+        Honor::new_player_honor(
+            save_id,
+            HonorType::PlayerRunnerUp,
+            season_id,
+            Some(tournament_id),
+            tournament_name,
+            tournament_type,
+            team_id,
+            team_name,
+            player_id,
+            player_name,
+            position,
+            None,
+        )
+    }
+
+    /// 记录选手季军荣誉（季军队成员）
+    pub fn create_player_third(
+        &self,
+        save_id: &str,
+        season_id: u64,
+        tournament_id: u64,
+        tournament_name: &str,
+        tournament_type: &str,
+        team_id: u64,
+        team_name: &str,
+        player_id: u64,
+        player_name: &str,
+        position: &str,
+    ) -> Honor {
+        Honor::new_player_honor(
+            save_id,
+            HonorType::PlayerThird,
+            season_id,
+            Some(tournament_id),
+            tournament_name,
+            tournament_type,
+            team_id,
+            team_name,
+            player_id,
+            player_name,
+            position,
+            None,
+        )
+    }
+
+    /// 记录选手殿军荣誉（殿军队成员）
+    pub fn create_player_fourth(
+        &self,
+        save_id: &str,
+        season_id: u64,
+        tournament_id: u64,
+        tournament_name: &str,
+        tournament_type: &str,
+        team_id: u64,
+        team_name: &str,
+        player_id: u64,
+        player_name: &str,
+        position: &str,
+    ) -> Honor {
+        Honor::new_player_honor(
+            save_id,
+            HonorType::PlayerFourth,
+            season_id,
+            Some(tournament_id),
             tournament_name,
             tournament_type,
             team_id,
@@ -151,7 +241,7 @@ impl HonorEngine {
             save_id,
             HonorType::TournamentMvp,
             season_id,
-            tournament_id,
+            Some(tournament_id),
             tournament_name,
             tournament_type,
             player_stats.team_id,
@@ -182,7 +272,7 @@ impl HonorEngine {
             save_id,
             HonorType::FinalsMvp,
             season_id,
-            tournament_id,
+            Some(tournament_id),
             tournament_name,
             tournament_type,
             team_id,
@@ -208,7 +298,7 @@ impl HonorEngine {
             save_id,
             HonorType::RegularSeasonMvp,
             season_id,
-            tournament_id,
+            Some(tournament_id),
             tournament_name,
             tournament_type,
             player_stats.team_id,
@@ -220,8 +310,8 @@ impl HonorEngine {
         )
     }
 
-    /// 记录季后赛MVP
-    pub fn create_playoffs_mvp(
+    /// 记录季后赛FMVP
+    pub fn create_playoffs_fmvp(
         &self,
         save_id: &str,
         season_id: u64,
@@ -232,9 +322,9 @@ impl HonorEngine {
     ) -> Honor {
         Honor::new_player_honor(
             save_id,
-            HonorType::PlayoffsMvp,
+            HonorType::PlayoffsFmvp,
             season_id,
-            tournament_id,
+            Some(tournament_id),
             tournament_name,
             tournament_type,
             player_stats.team_id,
@@ -296,7 +386,14 @@ impl HonorEngine {
             })
     }
 
-    /// 计算决赛MVP（决赛中影响力最高的选手）
+    /// 计算决赛MVP（决赛中胜方影响力最高的选手）
+    ///
+    /// # Arguments
+    /// * `finals_performances` - 决赛中选手的表现数据
+    ///   格式: Vec<(player_id, player_name, team_id, team_name, position, impact_score, is_winner)>
+    ///
+    /// # Returns
+    /// * 只返回胜方队伍中影响力最高的选手
     pub fn calculate_finals_mvp(
         &self,
         finals_performances: &[(u64, String, u64, String, String, f64, bool)],
@@ -304,9 +401,15 @@ impl HonorEngine {
         let mut stats_map: HashMap<u64, (String, u64, String, String, f64, u32, u32)> =
             HashMap::new();
 
+        // 只统计胜方选手的表现
         for (player_id, player_name, team_id, team_name, position, impact, is_winner) in
             finals_performances
         {
+            // 只有胜方选手才计入FMVP候选
+            if !is_winner {
+                continue;
+            }
+
             let entry = stats_map.entry(*player_id).or_insert_with(|| {
                 (
                     player_name.clone(),
@@ -321,12 +424,10 @@ impl HonorEngine {
 
             entry.4 += impact; // total_impact
             entry.5 += 1; // games_played
-            if *is_winner {
-                entry.6 += 1; // wins
-            }
+            entry.6 += 1; // wins (胜方选手参与的局都是胜场)
         }
 
-        // 找出累计影响力最高的选手
+        // 找出累计影响力最高的胜方选手
         stats_map
             .into_iter()
             .max_by(|a, b| {
@@ -577,7 +678,7 @@ impl HonorEngine {
     pub fn get_tournament_honors(&self, honors: &[Honor], tournament_id: u64) -> Vec<Honor> {
         honors
             .iter()
-            .filter(|h| h.tournament_id == tournament_id)
+            .filter(|h| h.tournament_id == Some(tournament_id))
             .cloned()
             .collect()
     }
@@ -690,8 +791,8 @@ mod tests {
             Honor::new_team_honor("save1", HonorType::TeamChampion, 1, 1, "MSI", "msi", 1, "T1"),
             Honor::new_team_honor("save1", HonorType::TeamChampion, 1, 2, "Worlds", "worlds", 1, "T1"),
             Honor::new_team_honor("save1", HonorType::TeamChampion, 1, 3, "Spring", "spring", 2, "GEN"),
-            Honor::new_player_honor("save1", HonorType::TournamentMvp, 1, 1, "MSI", "msi", 1, "T1", 1, "Faker", "MID", None),
-            Honor::new_player_honor("save1", HonorType::FinalsMvp, 1, 2, "Worlds", "worlds", 1, "T1", 1, "Faker", "MID", None),
+            Honor::new_player_honor("save1", HonorType::TournamentMvp, 1, Some(1), "MSI", "msi", 1, "T1", 1, "Faker", "MID", None),
+            Honor::new_player_honor("save1", HonorType::FinalsMvp, 1, Some(2), "Worlds", "worlds", 1, "T1", 1, "Faker", "MID", None),
         ];
 
         assert_eq!(engine.count_team_champions(&honors, 1), 2);

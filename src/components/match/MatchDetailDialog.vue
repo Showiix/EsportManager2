@@ -165,12 +165,15 @@ const getTabLabel = (game: GameDetail): string => {
 // 格式化数字
 const formatNumber = (value: number | undefined): string => {
   if (value === undefined) return '-'
-  return value > 0 ? `+${value}` : String(value)
+  const rounded = Number(value.toFixed(2))
+  return rounded > 0 ? `+${rounded}` : String(rounded)
 }
 
 // 格式化加成
-const formatBonus = (value: number): string => {
-  return value > 0 ? `+${value}` : String(value)
+const formatBonus = (value: number | undefined): string => {
+  if (value === undefined || value === null) return '-'
+  const rounded = Number(value.toFixed(2))
+  return rounded > 0 ? `+${rounded}` : String(rounded)
 }
 
 // 格式化日期

@@ -12,6 +12,7 @@ export interface ICPTeam {
 // 比赛类型
 export interface ICPMatch {
   id: string | number
+  backendMatchId?: number // 后端数据库中的比赛ID，用于加载比赛详情
   teamAId?: string | number
   teamBId?: string | number
   teamAName?: string
@@ -51,6 +52,7 @@ export interface ICPGroupStanding {
 export interface ICPSeedGroup {
   groupName: 'A' | 'B' | 'C' | 'D' // A=一号种子组，B=二号种子组...
   seedNumber: number // 1/2/3/4
+  teams?: { id: string, name: string, region: string }[] // 参赛队伍列表
   standings: ICPGroupStanding[]
   matches: ICPMatch[]
   isComplete: boolean
@@ -73,18 +75,20 @@ export interface ICPRegionMatch {
   regionAName: string
   regionBName: string
   matches: ICPMatch[] // 四场BO5对决（一号种子vs一号种子，以此类推）
+  tiebreakerMatch?: ICPMatch // 加赛（2:2平局时使用）
   regionAWins: number
   regionBWins: number
   winnerId?: string | null
-  status: 'scheduled' | 'in_progress' | 'completed'
+  status: 'scheduled' | 'in_progress' | 'completed' | 'tiebreaker' // 添加 tiebreaker 状态
   stage: 'semifinal' | 'final'
+  _needsFillTeams?: boolean // 标记是否需要填充队伍信息
 }
 
 // ICP赛事整体数据
 export interface ICPTournament {
   id: string | number
   seasonYear: number
-  status: 'not_started' | 'group_stage' | 'region_battle' | 'completed'
+  status: 'not_started' | 'group_stage' | 'region_battle' | 'tiebreaker' | 'completed'
   seedGroups: ICPSeedGroup[] // A/B/C/D四个种子组
   regionStats: ICPRegionStats[] // 四个赛区统计
   semifinal?: ICPRegionMatch // 半决赛（如果需要）

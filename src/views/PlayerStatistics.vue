@@ -23,9 +23,12 @@
           <el-option label="LEC" value="LEC" />
           <el-option label="LCS" value="LCS" />
         </el-select>
-        <el-button type="primary" @click="refreshData">
+        <el-button type="primary" @click="refreshData" :loading="isLoading">
           <el-icon><Refresh /></el-icon>
           刷新数据
+        </el-button>
+        <el-button type="warning" @click="syncData" :loading="isLoading">
+          同步数据
         </el-button>
         <el-button type="danger" @click="clearAllData">
           <el-icon><Delete /></el-icon>
@@ -88,77 +91,63 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="playerName" label="选手" min-width="150">
+        <el-table-column prop="player_name" label="选手" min-width="150">
           <template #default="{ row }">
             <div class="player-cell">
-              <span class="player-name">{{ row.playerName }}</span>
+              <span class="player-name">{{ row.player_name }}</span>
               <el-tag size="small" type="info">{{ getPositionName(row.position) }}</el-tag>
             </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="teamId" label="所属队伍" width="120">
+        <el-table-column prop="team_id" label="所属队伍" width="120">
           <template #default="{ row }">
-            {{ row.teamId?.split('-')[0] || '-' }}
+            {{ row.team_id || '-' }}
           </template>
         </el-table-column>
 
-        <el-table-column prop="regionId" label="赛区" width="80" align="center">
+        <el-table-column prop="region_id" label="赛区" width="80" align="center">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.regionId === 'LCK' ? 'danger' : 'primary'">
-              {{ row.regionId || '-' }}
+            <el-tag size="small" :type="row.region_id === 'LCK' ? 'danger' : 'primary'">
+              {{ row.region_id || '-' }}
             </el-tag>
           </template>
         </el-table-column>
 
-        <el-table-column prop="gamesPlayed" label="参与局数" width="100" align="center" />
+        <el-table-column prop="games_played" label="参与局数" width="100" align="center" />
 
-        <el-table-column prop="avgImpact" label="平均影响力" width="120" align="center">
+        <el-table-column prop="avg_impact" label="平均影响力" width="120" align="center">
           <template #default="{ row }">
-            <span :class="getImpactClass(row.avgImpact ?? 0)">
-              {{ formatImpact(row.avgImpact ?? 0) }}
+            <span :class="getImpactClass(row.avg_impact ?? 0)">
+              {{ formatImpact(row.avg_impact ?? 0) }}
             </span>
           </template>
         </el-table-column>
 
-        <el-table-column label="冠军次数" width="130" align="center">
+        <el-table-column prop="champion_bonus" label="冠军加成" width="100" align="center">
           <template #default="{ row }">
-            <div class="champion-count">
-              <span v-if="row.internationalTitles" class="intl-title">
-                <el-icon><Trophy /></el-icon>{{ row.internationalTitles }}
-              </span>
-              <span v-if="row.regionalTitles" class="regional-title">
-                <el-icon><Medal /></el-icon>{{ row.regionalTitles }}
-              </span>
-              <span v-if="!row.internationalTitles && !row.regionalTitles" class="no-title">-</span>
-            </div>
-          </template>
-        </el-table-column>
-
-        <el-table-column prop="championBonus" label="冠军加成" width="100" align="center">
-          <template #default="{ row }">
-            <span v-if="row.championBonus" class="champion-bonus">+{{ row.championBonus }}</span>
+            <span v-if="row.champion_bonus" class="champion-bonus">+{{ row.champion_bonus }}</span>
             <span v-else class="no-bonus">0</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="yearlyTopScore" label="年度Top得分" width="130" align="center">
+        <el-table-column prop="yearly_top_score" label="年度Top得分" width="130" align="center">
           <template #default="{ row }">
-            <span class="yearly-top-score" :class="getYearlyScoreClass(row.yearlyTopScore ?? row.avgImpact ?? 0)">
-              {{ formatScore(row.yearlyTopScore ?? row.avgImpact ?? 0) }}
+            <span class="yearly-top-score" :class="getYearlyScoreClass(row.yearly_top_score ?? row.avg_impact ?? 0)">
+              {{ formatScore(row.yearly_top_score ?? row.avg_impact ?? 0) }}
             </span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="consistencyScore" label="稳定性" width="100" align="center">
+        <el-table-column prop="consistency_score" label="稳定性" width="100" align="center">
           <template #default="{ row }">
             <el-progress
-              :percentage="row.consistencyScore ?? 0"
+              :percentage="row.consistency_score ?? 0"
               :stroke-width="10"
               :show-text="false"
-              :color="getConsistencyColor(row.consistencyScore ?? 0)"
+              :color="getConsistencyColor(row.consistency_score ?? 0)"
             />
-            <span class="consistency-value">{{ (row.consistencyScore ?? 0).toFixed(1) }}</span>
+            <span class="consistency-value">{{ (row.consistency_score ?? 0).toFixed(1) }}</span>
           </template>
         </el-table-column>
       </el-table>
@@ -181,10 +170,10 @@
         </template>
         <div class="top-player" v-if="pos.topPlayer">
           <div class="top-label">MVP</div>
-          <div class="top-name">{{ pos.topPlayer.playerName }}</div>
+          <div class="top-name">{{ pos.topPlayer.player_name }}</div>
           <div class="top-impact">
-            <span :class="getYearlyScoreClass(pos.topPlayer.yearlyTopScore ?? pos.topPlayer.avgImpact ?? 0)">
-              {{ formatScore(pos.topPlayer.yearlyTopScore ?? pos.topPlayer.avgImpact ?? 0) }}
+            <span :class="getYearlyScoreClass(pos.topPlayer.yearly_top_score ?? pos.topPlayer.avg_impact ?? 0)">
+              {{ formatScore(pos.topPlayer.yearly_top_score ?? pos.topPlayer.avg_impact ?? 0) }}
             </span>
             <span class="impact-label">年度Top得分</span>
           </div>
@@ -256,13 +245,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { DataLine, Refresh, Trophy, Medal, Delete } from '@element-plus/icons-vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { DataLine, Refresh, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import type { PlayerPosition } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
+import { statsApi, devApi, type PlayerRankingItem } from '@/api/tauri'
 
 const playerStore = usePlayerStore()
 const matchDetailStore = useMatchDetailStore()
@@ -270,61 +260,121 @@ const matchDetailStore = useMatchDetailStore()
 // 状态
 const selectedSeason = ref('S1')
 const selectedRegion = ref('')
+const isLoading = ref(false)
+
+// 数据库数据 - 使用 ref 存储从数据库获取的数据
+const rankingsData = ref<PlayerRankingItem[]>([])
+const positionRankings = ref<Record<PlayerPosition, PlayerRankingItem[]>>({
+  TOP: [],
+  JUG: [],
+  MID: [],
+  ADC: [],
+  SUP: []
+})
+
+// 从数据库加载排行榜数据
+const loadRankingsFromDB = async () => {
+  isLoading.value = true
+  try {
+    // 将 S1 转换为数字 1
+    const seasonNum = parseInt(selectedSeason.value.replace('S', '')) || 1
+
+    // 并行加载所有数据
+    const [rankings, topRankings, jugRankings, midRankings, adcRankings, supRankings] = await Promise.all([
+      statsApi.getSeasonImpactRanking(seasonNum, 100),
+      statsApi.getPositionRanking(seasonNum, 'TOP', 100),
+      statsApi.getPositionRanking(seasonNum, 'JUG', 100),
+      statsApi.getPositionRanking(seasonNum, 'MID', 100),
+      statsApi.getPositionRanking(seasonNum, 'ADC', 100),
+      statsApi.getPositionRanking(seasonNum, 'SUP', 100)
+    ])
+
+    rankingsData.value = rankings
+    positionRankings.value = {
+      TOP: topRankings,
+      JUG: jugRankings,
+      MID: midRankings,
+      ADC: adcRankings,
+      SUP: supRankings
+    }
+
+    console.log('从数据库加载排行榜数据:', rankings.length, '条')
+  } catch (e) {
+    console.error('加载排行榜数据失败:', e)
+    ElMessage.error('加载数据失败')
+  } finally {
+    isLoading.value = false
+  }
+}
 
 // 计算属性 - 统计概览
 const overviewStats = computed(() => {
-  // 依赖 updateTrigger 确保响应式更新
-  void playerStore.updateTrigger
-  const matchCount = matchDetailStore.totalMatches
-
   const upsetInfo = matchDetailStore.getUpsetRate(selectedSeason.value)
-  const rankings = playerStore.getSeasonImpactRanking(selectedSeason.value, 100)
 
   return {
-    totalMatches: matchCount,
+    totalMatches: matchDetailStore.totalMatches,
     totalGames: upsetInfo.total,
     upsetRate: upsetInfo.rate,
-    playersTracked: rankings.length
+    playersTracked: rankingsData.value.length
   }
 })
 
 // 计算属性 - 过滤后的排行榜
 const filteredRankings = computed(() => {
-  // 依赖 updateTrigger 确保响应式更新
-  void playerStore.updateTrigger
-
-  const allRankings = playerStore.getSeasonImpactRanking(selectedSeason.value, 100)
-  console.log('排行榜数据:', allRankings.length, '条')
+  console.log('排行榜数据:', rankingsData.value.length, '条')
 
   if (selectedRegion.value) {
-    return allRankings.filter(r => r.regionId === selectedRegion.value)
+    return rankingsData.value.filter(r => r.region_id === selectedRegion.value)
   }
 
-  return allRankings
+  return rankingsData.value
 })
 
 // 计算属性 - 位置统计
 const positionStats = computed(() => {
-  // 依赖 updateTrigger 确保响应式更新
-  void playerStore.updateTrigger
-
   const positions: PlayerPosition[] = ['TOP', 'JUG', 'MID', 'ADC', 'SUP']
   const tagTypes = ['danger', 'warning', 'primary', 'success', 'info'] as const
 
   return positions.map((pos, idx) => {
-    const rankings = playerStore.getPositionRanking(pos, selectedSeason.value, 1)
+    const rankings = positionRankings.value[pos]
     return {
       position: pos,
       positionName: POSITION_NAMES[pos],
-      count: playerStore.getPositionRanking(pos, selectedSeason.value, 100).length,
+      count: rankings.length,
       topPlayer: rankings[0] || null,
       tagType: tagTypes[idx]
     }
   })
 })
 
+// 监听赛季变化，重新加载数据
+watch(selectedSeason, () => {
+  loadRankingsFromDB()
+})
+
+// 同步数据库数据
+const syncData = async () => {
+  isLoading.value = true
+  try {
+    const seasonNum = parseInt(selectedSeason.value.replace('S', '')) || 1
+    const result = await devApi.syncPlayerGamesPlayed(seasonNum)
+    if (result.success) {
+      ElMessage.success(`数据同步成功: ${result.data?.updated_count || 0} 条记录已更新`)
+      await loadRankingsFromDB()
+    } else {
+      ElMessage.error(`同步失败: ${result.error}`)
+    }
+  } catch (e) {
+    console.error('同步失败:', e)
+    ElMessage.error('数据同步失败')
+  } finally {
+    isLoading.value = false
+  }
+}
+
 // 方法
-const refreshData = () => {
+const refreshData = async () => {
+  await loadRankingsFromDB()
   playerStore.loadFromStorage()
   matchDetailStore.loadFromStorage()
 }

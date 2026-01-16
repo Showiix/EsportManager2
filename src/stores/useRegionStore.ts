@@ -96,7 +96,7 @@ export const useRegionStore = defineStore('region', () => {
 
       // 调用真实API
       const response = await regionApi.getRegion(id)
-      selectedRegion.value = response.data
+      selectedRegion.value = response.data ?? null
       return selectedRegion.value
     } catch (error) {
       console.error('Failed to fetch region:', error)
@@ -128,11 +128,11 @@ export const useRegionStore = defineStore('region', () => {
       const updatedRegion = response.data
 
       const index = regions.value.findIndex(region => region.id === id)
-      if (index !== -1) {
+      if (index !== -1 && updatedRegion) {
         regions.value[index] = updatedRegion
       }
       if (selectedRegion.value?.id === id) {
-        selectedRegion.value = updatedRegion
+        selectedRegion.value = updatedRegion ?? null
       }
       return updatedRegion
     } catch (error) {

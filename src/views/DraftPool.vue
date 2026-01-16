@@ -47,7 +47,7 @@
       >
         <span class="tab-badge" :class="r.code">{{ r.code.toUpperCase() }}</span>
         <span class="tab-name">{{ r.name }}</span>
-        <span class="tab-count">{{ getRegionPoolCount(r.code) }}/14</span>
+        <span class="tab-count">{{ getRegionPoolCount(r.code) }} 人</span>
       </button>
     </div>
 
@@ -85,8 +85,8 @@
           <el-icon><Collection /></el-icon>
         </div>
         <div class="stat-info">
-          <span class="stat-value">{{ currentPoolData.length }}/14</span>
-          <span class="stat-label">选手池容量</span>
+          <span class="stat-value">{{ currentPoolData.length }}</span>
+          <span class="stat-label">选手池总数</span>
         </div>
       </div>
     </div>
@@ -96,11 +96,10 @@
       <div class="section-header">
         <div class="header-title">
           <h2>{{ currentRegionName }} 选手池</h2>
-          <el-tag v-if="currentPoolData.length === 14" type="success">已满员</el-tag>
-          <el-tag v-else type="warning">待补充</el-tag>
+          <el-tag type="info">{{ currentPoolData.length }} 名待选新秀</el-tag>
         </div>
         <div class="header-actions">
-          <el-button @click="generateRandomPool" :disabled="currentPoolData.length >= 14">
+          <el-button @click="generateRandomPool">
             <el-icon><MagicStick /></el-icon>
             随机生成
           </el-button>
@@ -370,14 +369,12 @@ TheShy,TOP,72,88,GENIUS</pre>
 
           <div class="preview-tips">
             <p><span class="label">当前赛区：</span>{{ currentRegionName }}</p>
-            <p><span class="label">剩余容量：</span>{{ 14 - currentPoolData.length }} 个名额</p>
-            <p v-if="parsedPlayers.length > 14 - currentPoolData.length" class="warning">
-              导入数量超过剩余容量，将只导入前 {{ 14 - currentPoolData.length }} 名选手
-            </p>
+            <p><span class="label">当前已有：</span>{{ currentPoolData.length }} 名新秀</p>
+            <p><span class="label">即将导入：</span>{{ parsedPlayers.length }} 名新秀</p>
           </div>
 
           <el-table
-            :data="parsedPlayers.slice(0, 14 - currentPoolData.length)"
+            :data="parsedPlayers"
             max-height="300"
             border
             size="small"
@@ -420,7 +417,7 @@ TheShy,TOP,72,88,GENIUS</pre>
           @click="confirmBatchImport"
           :disabled="parsedPlayers.length === 0"
         >
-          确认导入 {{ parsedPlayers.length > 0 ? `(${Math.min(parsedPlayers.length, 14 - currentPoolData.length)}名)` : '' }}
+          确认导入 {{ parsedPlayers.length > 0 ? `(${parsedPlayers.length}名)` : '' }}
         </el-button>
       </template>
     </el-dialog>
@@ -532,7 +529,7 @@ const loadPoolData = async (regionCode: string) => {
     // 转换后端数据格式为前端格式
     const regionPlayers = players.map(p => ({
       id: String(p.id),
-      gameId: p.name,
+      gameId: p.game_id,
       position: p.position,
       ability: p.ability,
       potential: p.potential,
@@ -622,11 +619,6 @@ const importPlayer = () => {
     return
   }
 
-  if (currentPoolData.value.length >= 14) {
-    ElMessage.warning('选手池已满，无法继续添加')
-    return
-  }
-
   const newPlayer: PoolPlayer = {
     id: Date.now().toString(),
     gameId: importForm.value.gameId,
@@ -701,23 +693,16 @@ const clearPool = async () => {
 
 // 随机生成选手池 - 调用后端API
 const generateRandomPool = async () => {
-  const currentCount = currentPoolData.value.length
-
-  if (currentCount >= 14) {
-    ElMessage.warning('选手池已满')
-    return
-  }
-
   isLoading.value = true
   try {
     const regionId = await getRegionId(selectedRegion.value)
-    // 调用后端API生成选秀池
-    const players = await draftApi.generateDraftPool(regionId, 14)
+    // 调用后端API生成选秀池（默认生成30人）
+    const players = await draftApi.generateDraftPool(regionId, 30)
 
     // 转换后端数据格式为前端格式
     const regionPlayers = players.map(p => ({
       id: String(p.id),
-      gameId: p.name,
+      gameId: p.game_id,
       position: p.position,
       ability: p.ability,
       potential: p.potential,
@@ -902,8 +887,7 @@ const validateAndNormalizePlayers = (players: any[]): Omit<PoolPlayer, 'id' | 'r
 
 // 确认批量导入
 const confirmBatchImport = () => {
-  const remainingSlots = 14 - currentPoolData.value.length
-  const playersToImport = parsedPlayers.value.slice(0, remainingSlots)
+  const playersToImport = parsedPlayers.value
 
   playersToImport.forEach((player, index) => {
     const newPlayer: PoolPlayer = {

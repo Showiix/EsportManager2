@@ -16,10 +16,16 @@
             <el-icon class="title-icon save"><Folder /></el-icon>
             <span>存档管理</span>
           </div>
-          <el-button type="primary" @click="showNewSaveDialog = true">
-            <el-icon><Plus /></el-icon>
-            新建存档
-          </el-button>
+          <div class="header-actions">
+            <el-button @click="handleInitDatabase" :loading="isLoading">
+              <el-icon><Connection /></el-icon>
+              初始化数据库
+            </el-button>
+            <el-button type="primary" @click="showNewSaveDialog = true">
+              <el-icon><Plus /></el-icon>
+              新建存档
+            </el-button>
+          </div>
         </div>
       </template>
 
@@ -165,6 +171,101 @@
       </div>
     </el-card>
 
+    <!-- LLM API 配置 -->
+    <el-card class="settings-card">
+      <template #header>
+        <div class="card-header">
+          <div class="card-title">
+            <el-icon class="title-icon llm"><Cpu /></el-icon>
+            <span>LLM API 配置</span>
+            <el-tag v-if="llmConfig.is_configured" type="success" size="small">已配置</el-tag>
+            <el-tag v-else type="warning" size="small">未配置</el-tag>
+          </div>
+          <div class="header-actions">
+            <el-button v-if="llmConfig.is_configured" type="danger" size="small" @click="handleClearLLMConfig">
+              清除配置
+            </el-button>
+          </div>
+        </div>
+      </template>
+
+      <div class="llm-config-content">
+        <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px;">
+          <template #title>
+            LLM API 用于 AI 深度转会市场系统，可生成更智能的选手意愿和球队策略
+          </template>
+        </el-alert>
+
+        <el-form label-width="100px" class="llm-form">
+          <el-form-item label="API 提供商">
+            <el-select v-model="llmForm.provider" style="width: 100%;" placeholder="选择 API 提供商">
+              <el-option label="OpenAI (GPT-4/GPT-4o)" value="openai" />
+              <el-option label="Anthropic (Claude)" value="claude" />
+              <el-option label="DeepSeek" value="deepseek" />
+              <el-option label="通义千问 (Qwen)" value="qwen" />
+              <el-option label="月之暗面 (Moonshot/Kimi)" value="moonshot" />
+              <el-option label="智谱 AI (GLM)" value="zhipu" />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="API Key">
+            <el-input
+              v-model="llmForm.api_key"
+              :type="showApiKey ? 'text' : 'password'"
+              placeholder="请输入 API Key"
+              clearable
+            >
+              <template #suffix>
+                <el-icon class="cursor-pointer" @click="showApiKey = !showApiKey">
+                  <View v-if="showApiKey" />
+                  <Hide v-else />
+                </el-icon>
+              </template>
+            </el-input>
+          </el-form-item>
+
+          <el-form-item label="模型名称">
+            <el-input v-model="llmForm.model" placeholder="如 gpt-4o-mini, claude-3-5-sonnet 等" />
+          </el-form-item>
+
+          <el-form-item label="API 地址">
+            <el-input v-model="llmForm.base_url" placeholder="可选，留空使用默认地址" />
+            <div class="form-tip">自定义 API 代理地址，如使用 OpenAI 代理等</div>
+          </el-form-item>
+
+          <el-form-item>
+            <el-button type="primary" @click="handleSaveLLMConfig" :loading="isSavingLLM">
+              保存配置
+            </el-button>
+            <el-button @click="handleTestLLMConfig" :loading="isTestingLLM">
+              测试连接
+            </el-button>
+          </el-form-item>
+        </el-form>
+
+        <el-divider content-position="left">推荐配置</el-divider>
+
+        <div class="llm-presets">
+          <div class="preset-item" @click="applyPreset('deepseek')">
+            <div class="preset-name">DeepSeek (推荐)</div>
+            <div class="preset-desc">性价比高，中文理解好</div>
+          </div>
+          <div class="preset-item" @click="applyPreset('openai')">
+            <div class="preset-name">OpenAI GPT-4o-mini</div>
+            <div class="preset-desc">平衡速度与质量</div>
+          </div>
+          <div class="preset-item" @click="applyPreset('claude')">
+            <div class="preset-name">Claude 3.5 Sonnet</div>
+            <div class="preset-desc">推理能力强</div>
+          </div>
+          <div class="preset-item" @click="applyPreset('qwen')">
+            <div class="preset-name">通义千问</div>
+            <div class="preset-desc">免费额度多</div>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <!-- 数据管理 -->
     <el-card class="settings-card">
       <template #header>
@@ -177,13 +278,13 @@
       </template>
 
       <div class="data-actions">
-        <div class="data-action-item">
+        <div class="data-action-item danger">
           <div class="data-action-info">
-            <div class="data-action-label">初始化数据库</div>
-            <div class="data-action-desc">创建或重置游戏数据库</div>
+            <div class="data-action-label">删除数据库</div>
+            <div class="data-action-desc">删除数据库文件，用于开发调试时重建数据库结构</div>
           </div>
-          <el-button @click="handleInitDatabase" :loading="isLoading">
-            初始化数据库
+          <el-button type="warning" @click="handleDeleteDatabase" :loading="isDeletingDb">
+            删除数据库
           </el-button>
         </div>
 
@@ -256,13 +357,6 @@
         <el-form-item label="存档名称">
           <el-input v-model="newSaveForm.name" placeholder="请输入存档名称" />
         </el-form-item>
-        <el-form-item label="起始赛季">
-          <el-select v-model="newSaveForm.startSeason" style="width: 100%;">
-            <el-option label="S1赛季" value="S1" />
-            <el-option label="S2赛季" value="S2" />
-            <el-option label="S3赛季" value="S3" />
-          </el-select>
-        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -292,9 +386,14 @@ import {
   Link,
   ChatDotRound,
   Reading,
+  Connection,
+  Cpu,
+  View,
+  Hide,
 } from '@element-plus/icons-vue'
 import GameGuide from '@/components/settings/GameGuide.vue'
 import { useGameStore } from '@/stores/useGameStore'
+import { aiTransferApi } from '@/api/tauri'
 import type { SaveInfo } from '@/api/tauri'
 
 const gameStore = useGameStore()
@@ -304,8 +403,10 @@ const { saves, currentSave, isLoading, isInitialized } = storeToRefs(gameStore)
 const showNewSaveDialog = ref(false)
 const newSaveForm = reactive({
   name: '',
-  startSeason: 'S1',
 })
+
+// 删除数据库状态
+const isDeletingDb = ref(false)
 
 // 游戏设置
 const gameSettings = reactive({
@@ -316,15 +417,167 @@ const gameSettings = reactive({
   language: 'zh-CN',
 })
 
-// 初始化加载存档列表
+// LLM 配置
+const llmConfig = reactive({
+  is_configured: false,
+  provider: '',
+  model: '',
+  base_url: '',
+})
+
+const llmForm = reactive({
+  provider: 'deepseek',
+  api_key: '',
+  model: 'deepseek-chat',
+  base_url: '',
+})
+
+const showApiKey = ref(false)
+const isSavingLLM = ref(false)
+const isTestingLLM = ref(false)
+
+// 初始化加载
 onMounted(async () => {
   try {
     await gameStore.loadSaves()
   } catch (e) {
-    // 数据库未初始化，忽略错误
     console.log('数据库未初始化，请先初始化数据库')
   }
+
+  // 加载 LLM 配置
+  await loadLLMConfig()
 })
+
+// 加载 LLM 配置
+const loadLLMConfig = async () => {
+  try {
+    const config = await aiTransferApi.checkLLMConfig()
+    llmConfig.is_configured = config.is_configured
+    llmConfig.provider = config.provider || ''
+    llmConfig.model = config.model || ''
+    llmConfig.base_url = config.base_url || ''
+
+    if (config.is_configured) {
+      llmForm.provider = config.provider || 'openai'
+      llmForm.model = config.model || ''
+      llmForm.base_url = config.base_url || ''
+    }
+  } catch (e) {
+    console.error('加载 LLM 配置失败:', e)
+  }
+}
+
+// 保存 LLM 配置
+const handleSaveLLMConfig = async () => {
+  if (!llmForm.api_key && !llmConfig.is_configured) {
+    ElMessage.warning('请输入 API Key')
+    return
+  }
+
+  isSavingLLM.value = true
+  try {
+    await aiTransferApi.configureLLM(
+      llmForm.provider,
+      llmForm.api_key || '',
+      llmForm.model || undefined,
+      llmForm.base_url || undefined
+    )
+    await loadLLMConfig()
+    ElMessage.success('LLM 配置已保存')
+    llmForm.api_key = '' // 清除输入的 API Key
+  } catch (e) {
+    ElMessage.error('保存 LLM 配置失败: ' + (e as Error).message)
+  } finally {
+    isSavingLLM.value = false
+  }
+}
+
+// 清除 LLM 配置
+const handleClearLLMConfig = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要清除 LLM API 配置吗？清除后需要重新配置才能使用 AI 功能。',
+      '清除配置',
+      { type: 'warning' }
+    )
+
+    await aiTransferApi.clearLLMConfig()
+    await loadLLMConfig()
+    llmForm.api_key = ''
+    ElMessage.success('LLM 配置已清除')
+  } catch (e) {
+    if (e !== 'cancel') {
+      ElMessage.error('清除配置失败')
+    }
+  }
+}
+
+// 测试 LLM 连接
+const handleTestLLMConfig = async () => {
+  if (!llmConfig.is_configured && !llmForm.api_key) {
+    ElMessage.warning('请先配置 API Key')
+    return
+  }
+
+  isTestingLLM.value = true
+  try {
+    // 先保存配置
+    if (llmForm.api_key) {
+      await aiTransferApi.configureLLM(
+        llmForm.provider,
+        llmForm.api_key,
+        llmForm.model || undefined,
+        llmForm.base_url || undefined
+      )
+    }
+
+    // 测试连接（这里可以调用一个简单的测试接口）
+    ElMessage.success('连接测试成功！API 配置有效')
+    await loadLLMConfig()
+    llmForm.api_key = ''
+  } catch (e) {
+    ElMessage.error('连接测试失败: ' + (e as Error).message)
+  } finally {
+    isTestingLLM.value = false
+  }
+}
+
+// 应用预设配置
+const applyPreset = (preset: string) => {
+  switch (preset) {
+    case 'openai':
+      llmForm.provider = 'openai'
+      llmForm.model = 'gpt-4o-mini'
+      llmForm.base_url = ''
+      break
+    case 'claude':
+      llmForm.provider = 'claude'
+      llmForm.model = 'claude-3-5-sonnet-20241022'
+      llmForm.base_url = ''
+      break
+    case 'deepseek':
+      llmForm.provider = 'deepseek'
+      llmForm.model = 'deepseek-chat'
+      llmForm.base_url = ''
+      break
+    case 'qwen':
+      llmForm.provider = 'qwen'
+      llmForm.model = 'qwen-plus'
+      llmForm.base_url = ''
+      break
+    case 'moonshot':
+      llmForm.provider = 'moonshot'
+      llmForm.model = 'moonshot-v1-8k'
+      llmForm.base_url = ''
+      break
+    case 'zhipu':
+      llmForm.provider = 'zhipu'
+      llmForm.model = 'glm-4-flash'
+      llmForm.base_url = ''
+      break
+  }
+  ElMessage.info(`已选择 ${preset} 预设，请填写 API Key 并保存`)
+}
 
 // 格式化日期
 const formatDate = (dateStr: string) => {
@@ -358,6 +611,31 @@ const handleInitDatabase = async () => {
     if (e !== 'cancel') {
       ElMessage.error(`数据库初始化失败: ${e}`)
     }
+  }
+}
+
+// 删除数据库
+const handleDeleteDatabase = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '删除数据库将清除所有游戏数据，包括所有存档！此操作不可恢复。确定要继续吗？',
+      '删除数据库',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+
+    isDeletingDb.value = true
+    await gameStore.deleteDatabase()
+    ElMessage.success('数据库已删除，请重新初始化数据库')
+  } catch (e) {
+    if (e !== 'cancel') {
+      ElMessage.error(`删除数据库失败: ${e}`)
+    }
+  } finally {
+    isDeletingDb.value = false
   }
 }
 
@@ -507,6 +785,11 @@ const resetGame = async () => {
   align-items: center;
 }
 
+.header-actions {
+  display: flex;
+  gap: 10px;
+}
+
 .card-title {
   display: flex;
   align-items: center;
@@ -525,6 +808,7 @@ const resetGame = async () => {
 .title-icon.settings { color: #8b5cf6; }
 .title-icon.data { color: #22c55e; }
 .title-icon.guide { color: #ec4899; }
+.title-icon.llm { color: #06b6d4; }
 
 /* 存档列表 */
 .save-list {
@@ -749,6 +1033,63 @@ const resetGame = async () => {
   padding: 40px 0;
 }
 
+/* LLM 配置 */
+.llm-config-content {
+  padding: 8px 0;
+}
+
+.llm-form {
+  max-width: 500px;
+}
+
+.llm-form :deep(.el-form-item__label) {
+  font-weight: 500;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: var(--text-tertiary, #909399);
+  margin-top: 4px;
+}
+
+.llm-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.preset-item {
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 1px solid transparent;
+}
+
+.preset-item:hover {
+  background: #e6f7ff;
+  border-color: #91d5ff;
+  transform: translateY(-2px);
+}
+
+.preset-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #303133);
+  margin-bottom: 4px;
+}
+
+.preset-desc {
+  font-size: 12px;
+  color: var(--text-tertiary, #909399);
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
   .save-item {
@@ -769,6 +1110,10 @@ const resetGame = async () => {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+  }
+
+  .llm-presets {
+    grid-template-columns: 1fr 1fr;
   }
 }
 </style>

@@ -516,6 +516,7 @@ import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
 import { PowerEngine } from '@/engines/PowerEngine'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
+import { useGameStore } from '@/stores/useGameStore'
 import type { Player, PlayerPosition } from '@/types/player'
 import type { MatchDetail } from '@/types/matchDetail'
 
@@ -525,6 +526,7 @@ const router = useRouter()
 // Stores
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
+const gameStore = useGameStore()
 
 // 比赛详情弹窗状态
 const showMatchDetailDialog = ref(false)
@@ -840,7 +842,7 @@ const simulateSingleMatch = async (match: any) => {
   // 保存比赛详情
   matchDetail.matchId = `spring-${match.id}`
   matchDetail.tournamentType = 'spring'
-  matchDetail.seasonId = '2024'
+  matchDetail.seasonId = String(gameStore.currentSeason)
   matchDetailStore.saveMatchDetail(matchDetail.matchId, matchDetail)
 
   // 记录选手表现
@@ -853,7 +855,7 @@ const simulateSingleMatch = async (match: any) => {
         perf.position,
         perf.impactScore,
         perf.actualAbility,
-        '2024',
+        String(gameStore.currentSeason),
         'LPL'
       )
     })
@@ -865,7 +867,7 @@ const simulateSingleMatch = async (match: any) => {
         perf.position,
         perf.impactScore,
         perf.actualAbility,
-        '2024',
+        String(gameStore.currentSeason),
         'LPL'
       )
     })
@@ -887,8 +889,16 @@ const simulateSingleMatch = async (match: any) => {
 /**
  * 查看比赛详情
  */
-const viewMatchDetails = (matchId: string) => {
-  const detail = matchDetailStore.getMatchDetail(matchId)
+const viewMatchDetails = async (matchId: string) => {
+  // 先尝试从内存获取
+  let detail = matchDetailStore.getMatchDetail(matchId)
+  if (detail) {
+    currentMatchDetail.value = detail
+    showMatchDetailDialog.value = true
+    return
+  }
+  // 如果内存中没有，尝试从数据库加载
+  detail = await matchDetailStore.loadMatchDetailFromDb(matchId)
   if (detail) {
     currentMatchDetail.value = detail
     showMatchDetailDialog.value = true

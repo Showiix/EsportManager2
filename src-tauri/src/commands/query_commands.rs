@@ -301,7 +301,7 @@ pub async fn get_season_tournaments(
         r#"
         SELECT t.id, t.name, t.tournament_type, t.season_id, t.region_id, t.status,
                (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id) as match_count,
-               (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id AND m.status = 'Completed') as completed_matches
+               (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id AND (m.status = 'Completed' OR m.status = 'COMPLETED')) as completed_matches
         FROM tournaments t
         WHERE t.save_id = ? AND t.season_id = ?
         ORDER BY t.id ASC
@@ -369,7 +369,7 @@ pub async fn get_region_tournaments(
         r#"
         SELECT t.id, t.name, t.tournament_type, t.season_id, t.region_id, t.status,
                (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id) as match_count,
-               (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id AND m.status = 'Completed') as completed_matches
+               (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id AND (m.status = 'Completed' OR m.status = 'COMPLETED')) as completed_matches
         FROM tournaments t
         WHERE t.save_id = ? AND t.season_id = ? AND t.region_id = ?
         ORDER BY t.id ASC
@@ -395,6 +395,11 @@ pub async fn get_region_tournaments(
             completed_matches: row.get::<i64, _>("completed_matches") as u32,
         })
         .collect();
+
+    println!("[get_region_tournaments] region_id={}, season_id={:?}, found {} tournaments", region_id, season_id, tournaments.len());
+    for t in &tournaments {
+        println!("[get_region_tournaments]   - {} (type={}, matches={}/{})", t.name, t.tournament_type, t.completed_matches, t.match_count);
+    }
 
     Ok(CommandResult::ok(tournaments))
 }
@@ -460,7 +465,7 @@ pub async fn get_tournament_detail(
         r#"
         SELECT stage,
                COUNT(*) as total_matches,
-               SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) as completed_matches
+               SUM(CASE WHEN status = 'Completed' OR status = 'COMPLETED' THEN 1 ELSE 0 END) as completed_matches
         FROM matches
         WHERE tournament_id = ?
         GROUP BY stage
@@ -539,7 +544,7 @@ pub async fn get_international_tournaments(
         r#"
         SELECT t.id, t.name, t.tournament_type, t.season_id, t.region_id, t.status,
                (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id) as match_count,
-               (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id AND m.status = 'Completed') as completed_matches
+               (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id AND (m.status = 'Completed' OR m.status = 'COMPLETED')) as completed_matches
         FROM tournaments t
         WHERE t.save_id = ? AND t.season_id = ? AND t.tournament_type IN ({})
         ORDER BY t.id ASC
@@ -559,6 +564,76 @@ pub async fn get_international_tournaments(
         .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())?;
+
+    let tournaments: Vec<TournamentInfo> = rows
+        .iter()
+        .map(|row| TournamentInfo {
+            id: row.get::<i64, _>("id") as u64,
+            name: row.get("name"),
+            tournament_type: row.get("tournament_type"),
+            season_id: row.get::<i64, _>("season_id") as u64,
+            region_id: row.get::<Option<i64>, _>("region_id").map(|v| v as u64),
+            status: row.get("status"),
+            match_count: row.get::<i64, _>("match_count") as u32,
+            completed_matches: row.get::<i64, _>("completed_matches") as u32,
+        })
+        .collect();
+
+    Ok(CommandResult::ok(tournaments))
+}
+
+/// 根据类型获取赛事列表
+#[tauri::command]
+pub async fn get_tournaments_by_type(
+    state: State<'_, AppState>,
+    tournament_type: String,
+    season_id: i64,
+) -> Result<CommandResult<Vec<TournamentInfo>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 支持简写类型名映射到完整类型名
+    let full_type = match tournament_type.as_str() {
+        "Clauch" | "Claude" => "ClaudeIntercontinental",
+        "Madrid" => "MadridMasters",
+        "Shanghai" => "ShanghaiMasters",
+        "Icp" | "ICP" => "IcpIntercontinental",
+        "Super" | "SuperCup" => "SuperIntercontinental",
+        "Worlds" => "WorldChampionship",
+        "MSI" | "Msi" => "Msi",
+        other => other,
+    };
+
+    let rows = sqlx::query(
+        r#"
+        SELECT t.id, t.name, t.tournament_type, t.season_id, t.region_id, t.status,
+               (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id) as match_count,
+               (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id AND (m.status = 'Completed' OR m.status = 'COMPLETED')) as completed_matches
+        FROM tournaments t
+        WHERE t.save_id = ? AND t.season_id = ? AND t.tournament_type = ?
+        ORDER BY t.id ASC
+        "#
+    )
+    .bind(&save_id)
+    .bind(season_id)
+    .bind(full_type)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
     let tournaments: Vec<TournamentInfo> = rows
         .iter()

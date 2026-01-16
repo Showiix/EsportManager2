@@ -10,6 +10,12 @@ const router = createRouter({
       meta: { title: '仪表盘' }
     },
     {
+      path: '/time',
+      name: 'GameTimePanel',
+      component: () => import('@/views/GameTimePanel.vue'),
+      meta: { title: '时间控制' }
+    },
+    {
       path: '/tournaments',
       name: 'Tournaments',
       component: () => import('@/views/Tournaments.vue'),
@@ -27,6 +33,18 @@ const router = createRouter({
       name: 'SpringDetail',
       component: () => import('@/views/SpringDetail.vue'),
       meta: { title: '春季赛' }
+    },
+    {
+      path: '/tournaments/spring-playoffs/:id',
+      name: 'SpringPlayoffsDetail',
+      component: () => import('@/views/SpringPlayoffsDetail.vue'),
+      meta: { title: '春季季后赛' }
+    },
+    {
+      path: '/tournaments/summer-playoffs/:id',
+      name: 'SummerPlayoffsDetail',
+      component: () => import('@/views/SummerPlayoffsDetail.vue'),
+      meta: { title: '夏季季后赛' }
     },
     {
       path: '/tournaments/msi',
@@ -126,22 +144,46 @@ const router = createRouter({
       meta: { title: '赛区选秀' }
     },
     {
+      path: '/draft/:region/auction',
+      name: 'DraftAuction',
+      component: () => import('@/views/DraftAuction.vue'),
+      meta: { title: '选秀权拍卖' }
+    },
+    {
       path: '/transfer',
       name: 'Transfer',
       component: () => import('@/views/Transfer.vue'),
-      meta: { title: '转会市场' }
+      meta: { title: '市场分析' }
     },
     {
-      path: '/transfer/broadcast',
-      name: 'TransferBroadcast',
-      component: () => import('@/views/TransferBroadcast.vue'),
-      meta: { title: '转会播报' }
+      path: '/transfer/gm-config',
+      name: 'TeamGMConfig',
+      component: () => import('@/views/TeamGMConfig.vue'),
+      meta: { title: 'AI GM配置' }
+    },
+    {
+      path: '/transfer/player-market',
+      name: 'PlayerMarket',
+      component: () => import('@/views/PlayerMarket.vue'),
+      meta: { title: '选手市场' }
+    },
+    {
+      path: '/transfer/llm-market',
+      name: 'LLMTransferMarket',
+      component: () => import('@/views/LLMTransferMarket.vue'),
+      meta: { title: 'LLM 转会市场' }
     },
     {
       path: '/rankings',
       name: 'Rankings',
       component: () => import('@/views/Rankings.vue'),
       meta: { title: '积分排名' }
+    },
+    {
+      path: '/finance',
+      name: 'Finance',
+      component: () => import('@/views/Finance.vue'),
+      meta: { title: '财政中心' }
     },
     {
       path: '/player-statistics',
@@ -168,16 +210,46 @@ const router = createRouter({
       meta: { title: 'IM年度评选' }
     },
     {
+      path: '/annual-awards',
+      name: 'AnnualAwards',
+      component: () => import('@/views/AnnualAwards.vue'),
+      meta: { title: '年度颁奖典礼' }
+    },
+    {
       path: '/honors',
       name: 'Honors',
       component: () => import('@/views/Honors.vue'),
       meta: { title: '荣誉殿堂' }
     },
     {
+      path: '/international-hall',
+      name: 'InternationalHall',
+      component: () => import('@/views/InternationalHall.vue'),
+      meta: { title: '国际荣誉殿堂' }
+    },
+    {
+      path: '/player-honor-rankings',
+      name: 'PlayerHonorRankings',
+      component: () => import('@/views/PlayerHonorRankings.vue'),
+      meta: { title: '选手荣誉榜' }
+    },
+    {
+      path: '/team-honor-rankings',
+      name: 'TeamHonorRankings',
+      component: () => import('@/views/TeamHonorRankings.vue'),
+      meta: { title: '战队荣誉榜' }
+    },
+    {
       path: '/settings',
       name: 'Settings',
       component: () => import('@/views/Settings.vue'),
       meta: { title: '系统设置' }
+    },
+    {
+      path: '/dev-tools',
+      name: 'DevTools',
+      component: () => import('@/views/DevTools.vue'),
+      meta: { title: '开发工具' }
     },
   ]
 });

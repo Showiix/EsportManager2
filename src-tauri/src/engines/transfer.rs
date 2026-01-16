@@ -2,7 +2,10 @@
 //!
 //! 实现完整的 AI 自动转会系统，包括：
 //! - 赛季结算（财务、合同、退役、成长）
+//! - 满意度和忠诚度计算
+//! - 选手意愿处理（申请转会、续约谈判）
 //! - 自由球员签约
+//! - 重建球队清洗
 //! - 球队买卖交易
 //! - 新闻生成
 
@@ -14,7 +17,10 @@ use crate::models::{
     TransferWindow, TransferWindowStatus,
     calculate_contract_years, calculate_expected_salary, check_retirement,
     get_round_name, ROSTER_MAX, ROSTER_MIN,
+    // 新增：满意度和忠诚度相关
+    DepartureReason, PlayerSeasonStatus, TeamSeasonPerformance,
 };
+use crate::engines::SatisfactionEngine;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -33,6 +39,12 @@ pub struct TransferWindowEngine {
     pub events: Vec<TransferEvent>,
     /// 配置
     pub config: TransferEngineConfig,
+    /// 选手赛季状态（新增）
+    pub player_statuses: HashMap<u64, PlayerSeasonStatus>,
+    /// 球队赛季表现（新增）
+    pub team_performances: HashMap<u64, TeamSeasonPerformance>,
+    /// 想离队的选手列表（新增）
+    pub departure_candidates: Vec<u64>,
 }
 
 /// 自由球员信息（包含选手详情）
@@ -74,7 +86,7 @@ pub struct TransferEngineConfig {
 impl Default for TransferEngineConfig {
     fn default() -> Self {
         Self {
-            budget_ratio: 0.3,
+            budget_ratio: 0.6,  // 提高预算比例，允许更多转会
             salary_budget_ratio: 0.6,
             fa_salary_weight: 0.4,
             fa_strength_weight: 0.3,
@@ -93,6 +105,9 @@ impl Default for TransferWindowEngine {
             listed_players: Vec::new(),
             events: Vec::new(),
             config: TransferEngineConfig::default(),
+            player_statuses: HashMap::new(),
+            team_performances: HashMap::new(),
+            departure_candidates: Vec::new(),
         }
     }
 }
@@ -260,6 +275,101 @@ impl TransferWindowEngine {
         }
     }
 
+    /// 执行第0轮：赛季结算（满意度/忠诚度计算）
+    ///
+    /// 计算所有选手的满意度变化和忠诚度变化，
+    /// 识别想要离队的选手
+    pub fn execute_round_0_season_settlement(
+        &mut self,
+        players: &mut [Player],
+        teams: &[Team],
+        players_by_team: &HashMap<u64, Vec<Player>>,
+    ) -> Vec<TransferEvent> {
+        let mut events = Vec::new();
+        let round = 0;
+
+        for player in players.iter_mut() {
+            if player.status != PlayerStatus::Active {
+                continue;
+            }
+
+            let team_id = match player.team_id {
+                Some(id) => id,
+                None => continue,
+            };
+
+            let team = match teams.iter().find(|t| t.id == team_id) {
+                Some(t) => t,
+                None => continue,
+            };
+
+            // 获取球队赛季表现
+            let team_perf = self.team_performances
+                .get(&team_id)
+                .cloned()
+                .unwrap_or_else(|| TeamSeasonPerformance::new(
+                    self.window.save_id.clone(),
+                    self.window.season_id,
+                    team_id,
+                ));
+
+            // 获取或创建选手赛季状态
+            let status = self.player_statuses
+                .entry(player.id)
+                .or_insert_with(|| {
+                    let mut s = PlayerSeasonStatus::new(
+                        self.window.save_id.clone(),
+                        self.window.season_id,
+                        player.id,
+                    );
+                    s.satisfaction = SatisfactionEngine::initial_satisfaction(player, false);
+                    s
+                });
+
+            // 计算满意度变化
+            let market_value = player.calculate_market_value();
+            let satisfaction_change = SatisfactionEngine::calculate_season_changes(
+                player,
+                &team_perf,
+                status.games_as_starter,
+                status.total_games,
+                market_value,
+            );
+            status.update_satisfaction(satisfaction_change);
+
+            // 判断是否想离队
+            let (wants_to_leave, reasons) = SatisfactionEngine::check_departure_intent(
+                status.satisfaction,
+                player.loyalty,
+                player,
+                &team_perf,
+            );
+            status.wants_to_leave = wants_to_leave;
+            status.departure_reasons = reasons.clone();
+
+            if wants_to_leave {
+                self.departure_candidates.push(player.id);
+            }
+        }
+
+        // 更新球队策略（基于球队表现）
+        for (team_id, perf) in &self.team_performances {
+            if let Some(plan) = self.team_plans.get_mut(team_id) {
+                // 连续2赛季没进季后赛，触发重建
+                if perf.consecutive_no_playoffs >= 2 {
+                    plan.strategy = TransferStrategy::FullRebuild;
+                }
+                // 战绩优秀的球队可能追逐巨星
+                else if perf.made_playoffs && plan.financial_status == FinancialStatus::Wealthy {
+                    plan.strategy = TransferStrategy::StarHunting;
+                }
+            }
+        }
+
+        self.events.extend(events.clone());
+        events
+    }
+
     /// 执行第1轮：合同到期与退役
     pub fn execute_round_1_contracts_and_retirements(
         &mut self,
@@ -326,14 +436,194 @@ impl TransferWindowEngine {
         events
     }
 
-    /// 执行第2轮：自由球员争夺战
-    pub fn execute_round_2_free_agents(
+    /// 执行第2轮：选手意愿处理
+    ///
+    /// 处理选手的转会申请、续约谈判和离队意愿
+    pub fn execute_round_2_player_intentions(
+        &mut self,
+        players: &mut [Player],
+        teams: &[Team],
+    ) -> Vec<TransferEvent> {
+        let mut events = Vec::new();
+        let round = 2;
+        let mut rng = rand::thread_rng();
+
+        // 如果 departure_candidates 为空，基于选手属性初始化离队意愿
+        if self.departure_candidates.is_empty() {
+            for player in players.iter() {
+                if player.status != PlayerStatus::Active || player.team_id.is_none() {
+                    continue;
+                }
+                // 低满意度或低忠诚度的选手想离队
+                // 满意度 < 40 或 忠诚度 < 35 的选手有离队倾向
+                let wants_to_leave = player.satisfaction < 40 || player.loyalty < 35;
+                if wants_to_leave {
+                    self.departure_candidates.push(player.id);
+                    // 根据选手情况生成离队原因
+                    let mut reasons = Vec::new();
+                    if player.satisfaction < 30 {
+                        reasons.push(DepartureReason::LackOfPlaytime);
+                    }
+                    if player.ability >= 85 {
+                        reasons.push(DepartureReason::SeekingChampionship);
+                    }
+                    if reasons.is_empty() {
+                        reasons.push(DepartureReason::SeekingOpportunity);
+                    }
+                    // 创建临时状态
+                    let status = PlayerSeasonStatus {
+                        id: 0,
+                        save_id: self.window.save_id.clone(),
+                        season_id: self.window.season_id,
+                        player_id: player.id,
+                        satisfaction: player.satisfaction,
+                        wants_to_leave: true,
+                        departure_reasons: reasons,
+                        games_as_starter: 0,
+                        total_games: 0,
+                        created_at: None,
+                        updated_at: None,
+                    };
+                    self.player_statuses.insert(player.id, status);
+                }
+            }
+        }
+
+        // 处理想离队的选手
+        let departure_ids = self.departure_candidates.clone();
+        for player_id in departure_ids {
+            let player = match players.iter_mut().find(|p| p.id == player_id) {
+                Some(p) => p,
+                None => continue,
+            };
+
+            let status = match self.player_statuses.get(&player_id) {
+                Some(s) => s.clone(),
+                None => continue,
+            };
+
+            let current_team_id = match player.team_id {
+                Some(id) => id,
+                None => continue,
+            };
+
+            let current_team = match teams.iter().find(|t| t.id == current_team_id) {
+                Some(t) => t,
+                None => continue,
+            };
+
+            // 高忠诚度选手有机会改变主意
+            if player.loyalty >= 80 {
+                let stay_chance = player.reject_poaching_chance();
+                if rng.gen::<f64>() < stay_chance {
+                    // 选手决定留下
+                    let event = self.create_loyalty_stay_event(round, player, current_team);
+                    events.push(event);
+
+                    // 从离队候选人中移除
+                    self.departure_candidates.retain(|&id| id != player_id);
+                    if let Some(s) = self.player_statuses.get_mut(&player_id) {
+                        s.wants_to_leave = false;
+                    }
+                    continue;
+                }
+            }
+
+            // 根据离队原因寻找合适的球队
+            let primary_reason = status.departure_reasons.first().cloned();
+
+            match primary_reason {
+                Some(DepartureReason::SeekingChampionship) => {
+                    // 追求冠军：寻找强队
+                    if let Some((buyer_team, price)) = self.find_contender_for_star(player, teams) {
+                        let position_key = player.position
+                            .map(|p| format!("{:?}", p).to_uppercase())
+                            .unwrap_or_default();
+
+                        // 检查忠诚度溢价
+                        let final_price = (price as f64 * player.loyalty_price_factor()) as u64;
+                        let event = self.create_transfer_request_event(
+                            round,
+                            player,
+                            current_team,
+                            &buyer_team,
+                            final_price,
+                        );
+                        events.push(event);
+
+                        // 更新计划
+                        if let Some(sp) = self.team_plans.get_mut(&current_team_id) {
+                            sp.roster_count -= 1;
+                            sp.balance += final_price as i64;
+                            // 卖出后增加该位置需求
+                            *sp.position_needs.entry(position_key.clone()).or_insert(0) += 30;
+                        }
+                        if let Some(bp) = self.team_plans.get_mut(&buyer_team.id) {
+                            bp.roster_count += 1;
+                            bp.balance -= final_price as i64;
+                            bp.transfer_budget -= final_price as i64;
+                            // 买入后大幅降低该位置需求
+                            if let Some(need) = bp.position_needs.get_mut(&position_key) {
+                                *need = (*need).saturating_sub(50);
+                            }
+                        }
+
+                        self.window.total_transfers += 1;
+                        self.window.total_fees += final_price;
+                    }
+                }
+                Some(DepartureReason::SeekingOpportunity) | Some(DepartureReason::LackOfPlaytime) => {
+                    // 寻找上场机会：寻找需要该位置的球队
+                    if let Some((buyer_team, price)) = self.find_team_needing_position(player, teams) {
+                        let position_key = player.position
+                            .map(|p| format!("{:?}", p).to_uppercase())
+                            .unwrap_or_default();
+
+                        let event = self.create_transfer_request_event(
+                            round,
+                            player,
+                            current_team,
+                            &buyer_team,
+                            price,
+                        );
+                        events.push(event);
+
+                        if let Some(sp) = self.team_plans.get_mut(&current_team_id) {
+                            sp.roster_count -= 1;
+                            sp.balance += price as i64;
+                            // 卖出后增加该位置需求
+                            *sp.position_needs.entry(position_key.clone()).or_insert(0) += 30;
+                        }
+                        if let Some(bp) = self.team_plans.get_mut(&buyer_team.id) {
+                            bp.roster_count += 1;
+                            bp.balance -= price as i64;
+                            bp.transfer_budget -= price as i64;
+                            // 买入后大幅降低该位置需求
+                            if let Some(need) = bp.position_needs.get_mut(&position_key) {
+                                *need = (*need).saturating_sub(50);
+                            }
+                        }
+
+                        self.window.total_transfers += 1;
+                        self.window.total_fees += price;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        self.events.extend(events.clone());
+        events
+    }
+
+    /// 执行第3轮：自由球员争夺战
+    pub fn execute_round_3_free_agents(
         &mut self,
         teams: &[Team],
         players_by_team: &HashMap<u64, Vec<Player>>,
     ) -> Vec<TransferEvent> {
         let mut events = Vec::new();
-        let round = 2;
+        let round = 3;
 
         // 按能力值降序排序自由球员
         self.free_agent_pool.sort_by(|a, b| b.player.ability.cmp(&a.player.ability));
@@ -448,14 +738,94 @@ impl TransferWindowEngine {
         events
     }
 
-    /// 执行第3轮：财政清洗
-    pub fn execute_round_3_financial_clearance(
+    /// 执行第4轮：重建球队清洗
+    ///
+    /// 战绩差的球队清洗高薪老将，开始重建
+    pub fn execute_round_4_rebuild(
         &mut self,
         teams: &[Team],
         players_by_team: &HashMap<u64, Vec<Player>>,
     ) -> Vec<TransferEvent> {
         let mut events = Vec::new();
-        let round = 3;
+        let round = 4;
+
+        // 找出需要重建的球队
+        let rebuilding_teams: Vec<_> = self.team_plans
+            .iter()
+            .filter(|(_, plan)| plan.strategy == TransferStrategy::FullRebuild)
+            .map(|(id, _)| *id)
+            .collect();
+
+        for team_id in rebuilding_teams {
+            let team = match teams.iter().find(|t| t.id == team_id) {
+                Some(t) => t,
+                None => continue,
+            };
+
+            let roster = match players_by_team.get(&team_id) {
+                Some(r) => r,
+                None => continue,
+            };
+
+            // 找出高薪老将（28岁以上，薪资100万以上）
+            let mut veterans_to_sell: Vec<_> = roster
+                .iter()
+                .filter(|p| {
+                    p.status == PlayerStatus::Active
+                        && p.age >= 28
+                        && p.salary >= 100
+                })
+                .collect();
+
+            // 按薪资降序排序
+            veterans_to_sell.sort_by(|a, b| b.salary.cmp(&a.salary));
+
+            // 最多卖2个高薪老将
+            for veteran in veterans_to_sell.into_iter().take(2) {
+                let market_value = veteran.calculate_market_value();
+                // 重建清洗打折出售
+                let discount_price = (market_value as f64 * 0.75) as u64;
+
+                // 寻找买家（争冠球队）
+                if let Some(buyer_team) = self.find_contender_buyer(veteran, teams, discount_price) {
+                    let event = self.create_rebuild_sale_event(
+                        round,
+                        veteran,
+                        team,
+                        &buyer_team,
+                        discount_price,
+                    );
+                    events.push(event);
+
+                    self.window.total_transfers += 1;
+                    self.window.total_fees += discount_price;
+
+                    // 更新计划
+                    if let Some(sp) = self.team_plans.get_mut(&team_id) {
+                        sp.roster_count -= 1;
+                        sp.balance += discount_price as i64;
+                        sp.current_total_salary -= veteran.salary as i64;
+                    }
+                    if let Some(bp) = self.team_plans.get_mut(&buyer_team.id) {
+                        bp.roster_count += 1;
+                        bp.balance -= discount_price as i64;
+                    }
+                }
+            }
+        }
+
+        self.events.extend(events.clone());
+        events
+    }
+
+    /// 执行第5轮：财政清洗
+    pub fn execute_round_5_financial_clearance(
+        &mut self,
+        teams: &[Team],
+        players_by_team: &HashMap<u64, Vec<Player>>,
+    ) -> Vec<TransferEvent> {
+        let mut events = Vec::new();
+        let round = 5;
 
         // 找出需要卖人的球队
         let teams_need_sell: Vec<_> = self.team_plans
@@ -535,14 +905,14 @@ impl TransferWindowEngine {
         events
     }
 
-    /// 执行第4轮：强队补强
-    pub fn execute_round_4_reinforcement(
+    /// 执行第6轮：强队补强
+    pub fn execute_round_6_reinforcement(
         &mut self,
         teams: &[Team],
         players_by_team: &HashMap<u64, Vec<Player>>,
     ) -> Vec<TransferEvent> {
         let mut events = Vec::new();
-        let round = 4;
+        let round = 6;
 
         // 找出想买人的球队
         let teams_want_buy: Vec<_> = self.team_plans
@@ -627,13 +997,13 @@ impl TransferWindowEngine {
         events
     }
 
-    /// 执行第5轮：收尾补救
-    pub fn execute_round_5_finalize(
+    /// 执行第7轮：收尾补救
+    pub fn execute_round_7_finalize(
         &mut self,
         teams: &[Team],
     ) -> Vec<TransferEvent> {
         let mut events = Vec::new();
-        let round = 5;
+        let round = 7;
 
         // 检查阵容不足5人的球队
         let teams_need_fill: Vec<_> = self.team_plans
@@ -871,6 +1241,146 @@ impl TransferWindowEngine {
         false
     }
 
+    /// 为追求冠军的明星选手寻找强队
+    fn find_contender_for_star(&self, player: &Player, teams: &[Team]) -> Option<(Team, u64)> {
+        let market_value = player.calculate_market_value();
+        let position_key = player.position
+            .map(|p| format!("{:?}", p).to_uppercase())
+            .unwrap_or_default();
+
+        // 寻找争冠球队（强队补强或追逐巨星策略）
+        let mut candidates: Vec<(Team, u64)> = Vec::new();
+
+        for team in teams {
+            // 不能卖给自己的队
+            if team.id == player.team_id.unwrap_or(0) {
+                continue;
+            }
+
+            let plan = match self.team_plans.get(&team.id) {
+                Some(p) => p,
+                None => continue,
+            };
+
+            // 寻找有钱的强队
+            if !plan.financial_status.can_buy() {
+                continue;
+            }
+
+            // 需要是争冠球队或追逐巨星的球队
+            if plan.ambition != AmbitionLevel::Championship
+                && plan.strategy != TransferStrategy::StarHunting
+            {
+                continue;
+            }
+
+            // 检查位置需求
+            let position_need = plan.position_needs.get(&position_key).copied().unwrap_or(0);
+            if position_need < 30 {
+                continue;
+            }
+
+            // 检查预算
+            let offer = (market_value as f64 * 1.2) as u64; // 溢价20%
+            if plan.transfer_budget < offer as i64 {
+                continue;
+            }
+
+            candidates.push((team.clone(), offer));
+        }
+
+        // 返回出价最高的球队
+        candidates.into_iter().max_by_key(|(_, offer)| *offer)
+    }
+
+    /// 为寻找上场机会的选手找球队
+    fn find_team_needing_position(&self, player: &Player, teams: &[Team]) -> Option<(Team, u64)> {
+        use rand::seq::SliceRandom;
+
+        let market_value = player.calculate_market_value();
+        let position_key = player.position
+            .map(|p| format!("{:?}", p).to_uppercase())
+            .unwrap_or_default();
+
+        let mut candidates: Vec<(Team, u64, u32)> = Vec::new();
+
+        for team in teams {
+            if team.id == player.team_id.unwrap_or(0) {
+                continue;
+            }
+
+            let plan = match self.team_plans.get(&team.id) {
+                Some(p) => p,
+                None => continue,
+            };
+
+            if !plan.financial_status.can_buy() {
+                continue;
+            }
+
+            // 寻找急需该位置的球队
+            let position_need = plan.position_needs.get(&position_key).copied().unwrap_or(0);
+            if position_need < 70 {
+                continue;
+            }
+
+            let offer = market_value;
+            if plan.transfer_budget >= offer as i64 {
+                candidates.push((team.clone(), offer, position_need));
+            }
+        }
+
+        // 随机选择一个候选球队（优先需求度高的）
+        if candidates.is_empty() {
+            return None;
+        }
+
+        let mut rng = rand::thread_rng();
+        // 按需求度排序后随机选择前几个
+        candidates.sort_by(|a, b| b.2.cmp(&a.2));
+        let top_candidates: Vec<_> = candidates.into_iter().take(3).collect();
+        top_candidates.choose(&mut rng).map(|(t, o, _)| (t.clone(), *o))
+    }
+
+    /// 为重建清洗找争冠球队买家
+    fn find_contender_buyer(&self, player: &Player, teams: &[Team], price: u64) -> Option<Team> {
+        let position_key = player.position
+            .map(|p| format!("{:?}", p).to_uppercase())
+            .unwrap_or_default();
+
+        for team in teams {
+            if team.id == player.team_id.unwrap_or(0) {
+                continue;
+            }
+
+            let plan = match self.team_plans.get(&team.id) {
+                Some(p) => p,
+                None => continue,
+            };
+
+            // 争冠球队才会买老将
+            if plan.ambition != AmbitionLevel::Championship {
+                continue;
+            }
+
+            if !plan.financial_status.can_buy() {
+                continue;
+            }
+
+            // 检查位置需求
+            let position_need = plan.position_needs.get(&position_key).copied().unwrap_or(0);
+            if position_need < 50 {
+                continue;
+            }
+
+            if plan.transfer_budget >= price as i64 {
+                return Some(team.clone());
+            }
+        }
+
+        None
+    }
+
     // ==================== 事件创建方法 ====================
 
     fn create_retirement_event(&self, round: u32, player: &Player, team: Option<&Team>) -> TransferEvent {
@@ -995,7 +1505,7 @@ impl TransferWindowEngine {
             headline,
             description: format!(
                 "自由球员 {} 与 {} 签下{}年合同，年薪{}万",
-                fa_info.player.game_id, team.name, contract_years, salary
+                fa_info.player.game_id, team.name, contract_years, salary / 10000
             ),
             importance,
             competing_teams,
@@ -1048,7 +1558,7 @@ impl TransferWindowEngine {
             description: format!(
                 "{} 以{}万（身价{}折）从 {} 转会至 {}",
                 player.game_id,
-                price,
+                price / 10000,
                 (price_ratio * 100.0) as u32,
                 seller.name,
                 buyer.name
@@ -1075,9 +1585,9 @@ impl TransferWindowEngine {
         let importance = NewsImportance::from_ability(player.ability);
 
         let headline = if player.ability >= 85 {
-            format!("重磅！{} 以{}万加盟 {}", player.game_id, price, buyer.name)
+            format!("重磅！{} 以{}万加盟 {}", player.game_id, price / 10000, buyer.name)
         } else {
-            format!("{} 转会 {}，转会费{}万", player.game_id, buyer.name, price)
+            format!("{} 转会 {}，转会费{}万", player.game_id, buyer.name, price / 10000)
         };
 
         TransferEvent {
@@ -1109,9 +1619,177 @@ impl TransferWindowEngine {
                 player.game_id,
                 seller.name,
                 buyer.name,
-                price,
+                price / 10000,
                 contract_years,
-                salary
+                salary / 10000
+            ),
+            importance,
+            competing_teams: vec![],
+            was_bidding_war: false,
+            created_at: Some(chrono::Utc::now().to_rfc3339()),
+        }
+    }
+
+    /// 创建忠诚留队事件
+    fn create_loyalty_stay_event(
+        &self,
+        round: u32,
+        player: &Player,
+        team: &Team,
+    ) -> TransferEvent {
+        let importance = NewsImportance::from_ability(player.ability);
+        let headline = format!(
+            "忠诚！{} 拒绝离队，选择留在 {}",
+            player.game_id, team.name
+        );
+
+        TransferEvent {
+            id: 0,
+            save_id: self.window.save_id.clone(),
+            season_id: self.window.season_id,
+            round,
+            event_type: TransferEventType::LoyaltyStay,
+            status: TransferEventStatus::Completed,
+            player_id: player.id,
+            player_name: player.game_id.clone(),
+            position: player.position.map(|p| format!("{:?}", p)),
+            age: player.age,
+            ability: player.ability,
+            potential: player.potential,
+            market_value: player.calculate_market_value(),
+            from_team_id: Some(team.id),
+            from_team_name: Some(team.name.clone()),
+            to_team_id: Some(team.id),
+            to_team_name: Some(team.name.clone()),
+            transfer_fee: 0,
+            new_salary: None,
+            contract_years: None,
+            contract_type: ContractType::Standard,
+            price_ratio: None,
+            headline,
+            description: format!(
+                "尽管有离队意愿，{} 出于对球队的忠诚选择继续留在 {}",
+                player.game_id, team.name
+            ),
+            importance,
+            competing_teams: vec![],
+            was_bidding_war: false,
+            created_at: Some(chrono::Utc::now().to_rfc3339()),
+        }
+    }
+
+    /// 创建申请转会事件
+    fn create_transfer_request_event(
+        &self,
+        round: u32,
+        player: &Player,
+        from_team: &Team,
+        to_team: &Team,
+        price: u64,
+    ) -> TransferEvent {
+        let market_value = player.calculate_market_value();
+        let price_ratio = price as f64 / market_value as f64;
+        let importance = NewsImportance::from_ability(player.ability);
+
+        let headline = format!(
+            "{} 申请转会成功！以{}万加盟 {}",
+            player.game_id, price / 10000, to_team.name
+        );
+
+        let salary_exp = calculate_expected_salary(market_value);
+        let new_salary = salary_exp.expected;
+        let contract_years = calculate_contract_years(player.age, player.potential, true);
+
+        TransferEvent {
+            id: 0,
+            save_id: self.window.save_id.clone(),
+            season_id: self.window.season_id,
+            round,
+            event_type: TransferEventType::TransferRequest,
+            status: TransferEventStatus::Completed,
+            player_id: player.id,
+            player_name: player.game_id.clone(),
+            position: player.position.map(|p| format!("{:?}", p)),
+            age: player.age,
+            ability: player.ability,
+            potential: player.potential,
+            market_value,
+            from_team_id: Some(from_team.id),
+            from_team_name: Some(from_team.name.clone()),
+            to_team_id: Some(to_team.id),
+            to_team_name: Some(to_team.name.clone()),
+            transfer_fee: price,
+            new_salary: Some(new_salary),
+            contract_years: Some(contract_years),
+            contract_type: ContractType::Standard,
+            price_ratio: Some(price_ratio),
+            headline,
+            description: format!(
+                "{} 主动申请离开 {}，以{}万转会费加盟 {}",
+                player.game_id,
+                from_team.name,
+                price / 10000,
+                to_team.name
+            ),
+            importance,
+            competing_teams: vec![],
+            was_bidding_war: false,
+            created_at: Some(chrono::Utc::now().to_rfc3339()),
+        }
+    }
+
+    /// 创建重建出售事件
+    fn create_rebuild_sale_event(
+        &self,
+        round: u32,
+        player: &Player,
+        seller: &Team,
+        buyer: &Team,
+        price: u64,
+    ) -> TransferEvent {
+        let market_value = player.calculate_market_value();
+        let price_ratio = price as f64 / market_value as f64;
+        let importance = NewsImportance::from_ability(player.ability);
+
+        let headline = format!(
+            "{} 重建！{} 以{}万出售 {}",
+            seller.name, player.game_id, price / 10000, buyer.name
+        );
+
+        let salary_exp = calculate_expected_salary(market_value);
+        let new_salary = salary_exp.expected;
+
+        TransferEvent {
+            id: 0,
+            save_id: self.window.save_id.clone(),
+            season_id: self.window.season_id,
+            round,
+            event_type: TransferEventType::RebuildSale,
+            status: TransferEventStatus::Completed,
+            player_id: player.id,
+            player_name: player.game_id.clone(),
+            position: player.position.map(|p| format!("{:?}", p)),
+            age: player.age,
+            ability: player.ability,
+            potential: player.potential,
+            market_value,
+            from_team_id: Some(seller.id),
+            from_team_name: Some(seller.name.clone()),
+            to_team_id: Some(buyer.id),
+            to_team_name: Some(buyer.name.clone()),
+            transfer_fee: price,
+            new_salary: Some(new_salary),
+            contract_years: Some(2),
+            contract_type: ContractType::Standard,
+            price_ratio: Some(price_ratio),
+            headline,
+            description: format!(
+                "{} 因战绩不佳开始重建，以{}万（身价{}%）将 {} 出售给 {}",
+                seller.name,
+                price / 10000,
+                (price_ratio * 100.0) as u32,
+                player.game_id,
+                buyer.name
             ),
             importance,
             competing_teams: vec![],
@@ -1127,29 +1805,66 @@ impl TransferWindowEngine {
         let events_count = round_events.len() as u32;
         let transfers_count = round_events
             .iter()
-            .filter(|e| matches!(e.event_type, TransferEventType::FreeAgent | TransferEventType::Purchase))
+            .filter(|e| matches!(
+                e.event_type,
+                TransferEventType::FreeAgent
+                    | TransferEventType::Purchase
+                    | TransferEventType::TransferRequest
+                    | TransferEventType::RebuildSale
+            ))
             .count() as u32;
         let total_fees: u64 = round_events.iter().map(|e| e.transfer_fee).sum();
 
         let summary = match round {
+            0 => format!(
+                "赛季结算完成，{}名选手计算了满意度和忠诚度变化，{}名选手表达了离队意愿",
+                self.player_statuses.len(),
+                self.departure_candidates.len()
+            ),
             1 => format!(
                 "本轮共有{}名选手合同到期，{}名选手宣布退役",
                 self.window.contract_expires,
                 self.window.retirements
             ),
-            2 => format!(
+            2 => {
+                let transfer_requests = round_events
+                    .iter()
+                    .filter(|e| e.event_type == TransferEventType::TransferRequest)
+                    .count();
+                let loyalty_stays = round_events
+                    .iter()
+                    .filter(|e| e.event_type == TransferEventType::LoyaltyStay)
+                    .count();
+                format!(
+                    "选手意愿处理完成，{}名选手申请转会成功，{}名选手因忠诚选择留队",
+                    transfer_requests, loyalty_stays
+                )
+            }
+            3 => format!(
                 "自由球员争夺战结束！本轮共签约{}名自由球员",
                 round_events.iter().filter(|e| e.event_type == TransferEventType::FreeAgent).count()
             ),
-            3 => format!(
+            4 => {
+                let rebuild_sales = round_events
+                    .iter()
+                    .filter(|e| e.event_type == TransferEventType::RebuildSale)
+                    .count();
+                format!(
+                    "重建清洗阶段完成，{}支球队开始重建，共出售{}名老将，总金额{}万",
+                    self.team_plans.values().filter(|p| p.strategy == TransferStrategy::FullRebuild).count(),
+                    rebuild_sales,
+                    total_fees / 10000
+                )
+            }
+            5 => format!(
                 "财政清洗阶段完成，本轮发生{}笔交易，总金额{}万",
-                transfers_count, total_fees
+                transfers_count, total_fees / 10000
             ),
-            4 => format!(
+            6 => format!(
                 "强队补强阶段完成，本轮发生{}笔重磅转会，总金额{}万",
-                transfers_count, total_fees
+                transfers_count, total_fees / 10000
             ),
-            5 => format!("转会窗口收尾完成"),
+            7 => format!("转会窗口收尾完成，所有球队阵容已补齐"),
             _ => String::new(),
         };
 
@@ -1198,7 +1913,7 @@ impl Default for TransferAIConfig {
             potential_weight: 0.3,
             age_weight: 0.15,
             position_need_weight: 0.15,
-            budget_ratio: 0.3,
+            budget_ratio: 0.6,  // 与 TransferEngineConfig 保持一致
         }
     }
 }

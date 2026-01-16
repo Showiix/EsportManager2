@@ -1,142 +1,180 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type {
-  SuperBracket,
-  SuperMatch,
-  SuperStage,
   GenerateSuperRequest,
   SimulateSuperMatchRequest,
 } from '@/types'
+import type { BracketInfo, TeamAnnualPoints } from '@/api/tauri'
 
 export const useSuperStore = defineStore('super', () => {
   // 状态
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  // Super对阵数据(按Super周期存储，如"S1-S2"、"S3-S4")
-  const superBrackets = ref<Map<string, SuperBracket>>(new Map())
+  // Super对阵数据(按tournament_id存储)
+  const superBrackets = ref<Map<number, BracketInfo>>(new Map())
 
-  // 当前选中的Super
-  const currentBracket = ref<SuperBracket | null>(null)
+  // 当前赛事ID
+  const currentTournamentId = ref<number | null>(null)
+
+  // 资格队伍（Top16）
+  const qualifiedTeams = ref<TeamAnnualPoints[]>([])
+
+  // 当前对阵信息
+  const currentBracket = ref<BracketInfo | null>(null)
 
   // 计算属性
 
   /**
-   * 当前参赛队伍
+   * 当前参赛队伍（从资格队伍获取）
    */
   const currentQualifiedTeams = computed(() => {
-    return currentBracket.value?.qualifiedTeams || []
+    return qualifiedTeams.value || []
   })
 
   /**
    * 传奇组队伍（第1-4名）
    */
   const legendaryGroup = computed(() => {
-    return currentBracket.value?.legendaryGroup || []
+    return qualifiedTeams.value.slice(0, 4)
   })
 
   /**
    * 挑战者组队伍（第5-8名）
    */
   const challengerGroup = computed(() => {
-    return currentBracket.value?.challengerGroup || []
+    return qualifiedTeams.value.slice(4, 8)
   })
 
   /**
    * Fighter组队伍（第9-16名）
    */
   const fighterGroup = computed(() => {
-    return currentBracket.value?.fighterGroup || []
+    return qualifiedTeams.value.slice(8, 16)
   })
 
   /**
    * Fighter A组
    */
   const fighterGroupA = computed(() => {
-    return currentBracket.value?.fighterGroupA || []
+    return qualifiedTeams.value.slice(8, 12)
   })
 
   /**
    * Fighter B组
    */
   const fighterGroupB = computed(() => {
-    return currentBracket.value?.fighterGroupB || []
+    return qualifiedTeams.value.slice(12, 16)
   })
 
   /**
-   * 所有轮次
+   * 所有比赛
    */
-  const currentRounds = computed(() => {
-    return currentBracket.value?.rounds || []
+  const currentMatches = computed(() => {
+    return currentBracket.value?.matches || []
   })
 
   /**
-   * Fighter组积分榜
+   * 所有阶段
    */
-  const fighterStandings = computed(() => {
-    return currentBracket.value?.fighterStandings || []
+  const currentStages = computed(() => {
+    return currentBracket.value?.stages || []
   })
 
   /**
-   * 当前阶段
+   * 当前阶段状态
    */
   const currentStage = computed(() => {
-    return currentBracket.value?.status || 'not_started'
+    // 根据比赛状态判断当前阶段
+    const stages = currentBracket.value?.stages || []
+    const inProgressStage = stages.find(s => s.completed_matches < s.total_matches)
+    return inProgressStage?.name || 'completed'
   })
 
   /**
    * 是否完成
    */
   const isSuperComplete = computed(() => {
-    return currentBracket.value?.status === 'completed'
+    const stages = currentBracket.value?.stages || []
+    return stages.every(s => s.completed_matches >= s.total_matches)
   })
 
   /**
-   * 冠军
+   * 冠军（从决赛获取）
    */
   const champion = computed(() => {
-    return currentBracket.value?.champion || null
+    const matches = currentBracket.value?.matches || []
+    const grandFinal = matches.find(m => m.stage === 'GRAND_FINAL')
+    if (grandFinal?.winner_id) {
+      return grandFinal.home_team?.id === grandFinal.winner_id
+        ? grandFinal.home_team
+        : grandFinal.away_team
+    }
+    return null
   })
 
   /**
    * 亚军
    */
   const runnerUp = computed(() => {
-    return currentBracket.value?.runnerUp || null
+    const matches = currentBracket.value?.matches || []
+    const grandFinal = matches.find(m => m.stage === 'GRAND_FINAL')
+    if (grandFinal?.winner_id) {
+      return grandFinal.home_team?.id === grandFinal.winner_id
+        ? grandFinal.away_team
+        : grandFinal.home_team
+    }
+    return null
   })
 
   /**
-   * 季军
+   * 季军（从季军赛获取）
    */
   const thirdPlace = computed(() => {
-    return currentBracket.value?.thirdPlace || null
+    const matches = currentBracket.value?.matches || []
+    const thirdPlaceMatch = matches.find(m => m.stage === 'THIRD_PLACE')
+    if (thirdPlaceMatch?.winner_id) {
+      return thirdPlaceMatch.home_team?.id === thirdPlaceMatch.winner_id
+        ? thirdPlaceMatch.home_team
+        : thirdPlaceMatch.away_team
+    }
+    return null
   })
 
   /**
    * 第四名
    */
   const fourthPlace = computed(() => {
-    return currentBracket.value?.fourthPlace || null
+    const matches = currentBracket.value?.matches || []
+    const thirdPlaceMatch = matches.find(m => m.stage === 'THIRD_PLACE')
+    if (thirdPlaceMatch?.winner_id) {
+      return thirdPlaceMatch.home_team?.id === thirdPlaceMatch.winner_id
+        ? thirdPlaceMatch.away_team
+        : thirdPlaceMatch.home_team
+    }
+    return null
   })
 
   // 动作
 
   /**
-   * 获取Super对阵信息
+   * 获取Super对阵信息（通过tournament_id）
    */
-  async function fetchSuperBracket(season1Code: string, season2Code: string) {
+  async function fetchSuperBracket(tournamentId: number) {
     loading.value = true
     error.value = null
 
     try {
-      console.log(`[SuperStore] 获取Super赛事数据: ${season1Code}-${season2Code}`)
+      console.log(`[SuperStore] 获取Super赛事数据: tournamentId=${tournamentId}`)
       const { superApi } = await import('@/api')
-      const response = await superApi.getSuperBracket(season1Code, season2Code)
+      const response = await superApi.getSuperBracket(tournamentId)
 
       if (response.data) {
-        const key = `${season1Code}-${season2Code}`
-        superBrackets.value.set(key, response.data)
-        currentBracket.value = response.data
+        // 使用 unknown 作为中间类型进行转换
+        const bracket = response.data as unknown as BracketInfo
+        superBrackets.value.set(tournamentId, bracket)
+        currentBracket.value = bracket
+        currentTournamentId.value = tournamentId
         console.log(`[SuperStore] ✅ Super赛事数据加载成功`)
         return response.data
       }
@@ -163,15 +201,18 @@ export const useSuperStore = defineStore('super', () => {
     error.value = null
 
     try {
-      console.log(`[SuperStore] 开始生成Super赛事: ${request.season1Code}-${request.season2Code}`)
+      console.log(`[SuperStore] 开始生成Super赛事`)
       const { superApi } = await import('@/api')
       const response = await superApi.generateSuper(request)
 
       if (response.data) {
-        const key = `${request.season1Code}-${request.season2Code}`
-        superBrackets.value.set(key, response.data)
-        currentBracket.value = response.data
-        console.log(`[SuperStore] ✅ Super赛事生成成功`)
+        // 使用 unknown 作为中间类型进行转换
+        const bracket = response.data as unknown as BracketInfo
+        const tournamentId = bracket.tournament_id
+        superBrackets.value.set(tournamentId, bracket)
+        currentBracket.value = bracket
+        currentTournamentId.value = tournamentId
+        console.log(`[SuperStore] ✅ Super赛事生成成功, tournamentId=${tournamentId}`)
         return response.data
       }
     } catch (err: any) {
@@ -186,11 +227,11 @@ export const useSuperStore = defineStore('super', () => {
   /**
    * 检查是否可以生成Super
    */
-  async function checkSuperEligibility(season1Code: string, season2Code: string) {
+  async function checkSuperEligibility() {
     try {
-      console.log(`[SuperStore] 检查Super资格: ${season1Code}-${season2Code}`)
+      console.log(`[SuperStore] 检查Super资格`)
       const { superApi } = await import('@/api')
-      const response = await superApi.checkSuperEligibility(season1Code, season2Code)
+      const response = await superApi.checkSuperEligibility()
       console.log(`[SuperStore] Super资格检查结果:`, response.data)
       return response.data
     } catch (err: any) {
@@ -201,14 +242,18 @@ export const useSuperStore = defineStore('super', () => {
   }
 
   /**
-   * 获取有资格参加Super的队伍（基于两年积分）
+   * 获取有资格参加Super的队伍（基于年度积分前16名）
    */
-  async function getQualifiedTeams(season1Code: string, season2Code: string) {
+  async function fetchQualifiedTeams() {
     try {
-      console.log(`[SuperStore] 获取晋级队伍: ${season1Code}-${season2Code}`)
+      console.log(`[SuperStore] 获取晋级队伍`)
       const { superApi } = await import('@/api')
-      const response = await superApi.getQualifiedTeams(season1Code, season2Code)
-      console.log(`[SuperStore] 晋级队伍数量:`, response.data?.length || 0)
+      const response = await superApi.getQualifiedTeams()
+      if (response.data) {
+        // 使用 unknown 作为中间类型进行转换
+        qualifiedTeams.value = response.data as unknown as TeamAnnualPoints[]
+        console.log(`[SuperStore] 晋级队伍数量:`, qualifiedTeams.value.length)
+      }
       return response.data
     } catch (err: any) {
       error.value = err.message || '获取晋级队伍失败'
@@ -231,35 +276,10 @@ export const useSuperStore = defineStore('super', () => {
 
       if (response.data) {
         console.log(`[SuperStore] ✅ 比赛模拟成功`, response.data)
-        
-        // 更新当前对阵信息
-        if (currentBracket.value) {
-          // 更新比赛结果
-          updateMatchInBracket(currentBracket.value, response.data.match)
 
-          // 更新Fighter组积分榜（如果有）
-          if (response.data.updatedStandings) {
-            currentBracket.value.fighterStandings = response.data.updatedStandings
-          }
-
-          // 如果Super完成,更新最终排名
-          if (response.data.isSuperComplete && response.data.finalStandings) {
-            currentBracket.value.champion = response.data.finalStandings.champion
-            currentBracket.value.runnerUp = response.data.finalStandings.runnerUp
-            currentBracket.value.thirdPlace = response.data.finalStandings.thirdPlace
-            currentBracket.value.fourthPlace = response.data.finalStandings.fourthPlace
-            currentBracket.value.championshipRound2Eliminated = response.data.finalStandings.championshipRound2Eliminated
-            currentBracket.value.championshipRound1Eliminated = response.data.finalStandings.championshipRound1Eliminated
-            currentBracket.value.prepStageEliminated = response.data.finalStandings.prepStageEliminated
-            currentBracket.value.advancementEliminated = response.data.finalStandings.advancementEliminated
-            currentBracket.value.fighterEliminated = response.data.finalStandings.fighterEliminated
-            currentBracket.value.status = 'completed'
-          }
-
-          // 如果阶段完成，更新状态
-          if (response.data.isStageComplete) {
-            console.log(`[SuperStore] 阶段完成，准备进入下一阶段`)
-          }
+        // 刷新对阵数据
+        if (currentTournamentId.value) {
+          await fetchSuperBracket(currentTournamentId.value)
         }
 
         return response.data
@@ -274,28 +294,38 @@ export const useSuperStore = defineStore('super', () => {
   }
 
   /**
-   * 开始下一阶段
+   * 获取Fighter组积分榜
    */
-  async function startNextStage(superId: string) {
+  async function fetchFighterStandings(tournamentId: number) {
+    try {
+      console.log(`[SuperStore] 获取Fighter组积分榜: tournamentId=${tournamentId}`)
+      const { superApi } = await import('@/api')
+      const response = await superApi.getFighterStandings(tournamentId)
+      console.log(`[SuperStore] Fighter组积分榜:`, response.data)
+      return response.data
+    } catch (err: any) {
+      error.value = err.message || '获取积分榜失败'
+      console.error('[SuperStore] ❌ 获取积分榜失败:', err)
+      throw err
+    }
+  }
+
+  /**
+   * 完成赛事（发放奖金和荣誉）
+   */
+  async function completeTournament(tournamentId: number) {
     loading.value = true
     error.value = null
 
     try {
-      console.log(`[SuperStore] 开始下一阶段: superId=${superId}`)
+      console.log(`[SuperStore] 完成赛事: tournamentId=${tournamentId}`)
       const { superApi } = await import('@/api')
-      const response = await superApi.startNextStage(superId)
-
-      if (response.data) {
-        // 刷新当前对阵数据
-        if (currentBracket.value) {
-          await fetchSuperBracket(currentBracket.value.season1Code, currentBracket.value.season2Code)
-        }
-        console.log(`[SuperStore] ✅ 进入下一阶段成功`)
-        return response.data
-      }
+      const response = await superApi.completeTournament(tournamentId)
+      console.log(`[SuperStore] ✅ 赛事完成成功`, response.data)
+      return response.data
     } catch (err: any) {
-      error.value = err.message || '开始下一阶段失败'
-      console.error('[SuperStore] ❌ 开始下一阶段失败:', err)
+      error.value = err.message || '完成赛事失败'
+      console.error('[SuperStore] ❌ 完成赛事失败:', err)
       throw err
     } finally {
       loading.value = false
@@ -303,30 +333,20 @@ export const useSuperStore = defineStore('super', () => {
   }
 
   /**
-   * 更新对阵中的比赛信息
+   * 设置当前Super对阵
    */
-  function updateMatchInBracket(bracket: SuperBracket, match: SuperMatch) {
-    bracket.rounds.forEach(round => {
-      const index = round.matches.findIndex(m => m.id === match.id)
-      if (index !== -1) {
-        round.matches[index] = match
-      }
-    })
-  }
-
-  /**
-   * 设置当前Super
-   */
-  function setCurrentBracket(bracket: SuperBracket | null) {
+  function setCurrentBracket(bracket: BracketInfo | null) {
     currentBracket.value = bracket
+    if (bracket) {
+      currentTournamentId.value = bracket.tournament_id
+    }
   }
 
   /**
-   * 根据周期获取Super对阵
+   * 根据tournament_id获取Super对阵
    */
-  function getBracketByPeriod(season1Code: string, season2Code: string): SuperBracket | undefined {
-    const key = `${season1Code}-${season2Code}`
-    return superBrackets.value.get(key)
+  function getBracketById(tournamentId: number): BracketInfo | undefined {
+    return superBrackets.value.get(tournamentId)
   }
 
   /**
@@ -335,6 +355,8 @@ export const useSuperStore = defineStore('super', () => {
   function clearAll() {
     superBrackets.value.clear()
     currentBracket.value = null
+    currentTournamentId.value = null
+    qualifiedTeams.value = []
     error.value = null
   }
 
@@ -348,13 +370,16 @@ export const useSuperStore = defineStore('super', () => {
   /**
    * 获取阶段名称（中文）
    */
-  function getStageName(stage: SuperStage): string {
-    const stageNames: Record<SuperStage, string> = {
+  function getStageName(stage: string): string {
+    const stageNames: Record<string, string> = {
       'not_started': '未开始',
-      'fighter_group': 'Fighter组预选赛',
-      'challenger_stage': '挑战者组阶段',
-      'preparation_stage': '冠军赛预备战',
-      'championship_stage': '终极冠军赛',
+      'FIGHTER_GROUP_A': 'Fighter A组',
+      'FIGHTER_GROUP_B': 'Fighter B组',
+      'CHALLENGER_STAGE': '挑战者组阶段',
+      'PREPARATION_STAGE': '冠军赛预备战',
+      'CHAMPIONSHIP_STAGE': '终极冠军赛',
+      'GRAND_FINAL': '总决赛',
+      'THIRD_PLACE': '季军赛',
       'completed': '已完成'
     }
     return stageNames[stage] || stage
@@ -366,6 +391,8 @@ export const useSuperStore = defineStore('super', () => {
     error,
     superBrackets,
     currentBracket,
+    currentTournamentId,
+    qualifiedTeams,
 
     // 计算属性
     currentQualifiedTeams,
@@ -374,8 +401,8 @@ export const useSuperStore = defineStore('super', () => {
     fighterGroup,
     fighterGroupA,
     fighterGroupB,
-    currentRounds,
-    fighterStandings,
+    currentMatches,
+    currentStages,
     currentStage,
     isSuperComplete,
     champion,
@@ -387,11 +414,12 @@ export const useSuperStore = defineStore('super', () => {
     fetchSuperBracket,
     generateSuper,
     checkSuperEligibility,
-    getQualifiedTeams,
+    fetchQualifiedTeams,
     simulateSuperMatch,
-    startNextStage,
+    fetchFighterStandings,
+    completeTournament,
     setCurrentBracket,
-    getBracketByPeriod,
+    getBracketById,
     clearAll,
     resetError,
     getStageName

@@ -199,7 +199,7 @@ export const useTeamStore = defineStore('team', () => {
 
       // 调用真实API
       const response = await teamApi.getTeam(id)
-      selectedTeam.value = response.data
+      selectedTeam.value = response.data ?? null
       return selectedTeam.value
     } catch (error) {
       console.error('Failed to fetch team:', error)
@@ -235,7 +235,9 @@ export const useTeamStore = defineStore('team', () => {
       // 调用真实API
       const response = await teamApi.createTeam(teamData)
       const newTeam = response.data
-      teams.value.push(newTeam)
+      if (newTeam) {
+        teams.value.push(newTeam)
+      }
       return newTeam
     } catch (error) {
       console.error('Failed to create team:', error)
@@ -267,11 +269,11 @@ export const useTeamStore = defineStore('team', () => {
       const updatedTeam = response.data
 
       const index = teams.value.findIndex(team => team.id === id)
-      if (index !== -1) {
+      if (index !== -1 && updatedTeam) {
         teams.value[index] = updatedTeam
       }
       if (selectedTeam.value?.id === id) {
-        selectedTeam.value = updatedTeam
+        selectedTeam.value = updatedTeam ?? null
       }
       return updatedTeam
     } catch (error) {

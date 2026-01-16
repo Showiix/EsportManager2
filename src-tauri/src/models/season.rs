@@ -26,6 +26,8 @@ pub enum SeasonPhase {
     IcpIntercontinental,
     /// Super洲际年度邀请赛
     SuperIntercontinental,
+    /// 年度颁奖典礼
+    AnnualAwards,
     /// 转会期
     TransferWindow,
     /// 选秀
@@ -49,6 +51,7 @@ impl SeasonPhase {
             SeasonPhase::ShanghaiMasters => "上海大师赛",
             SeasonPhase::IcpIntercontinental => "ICP四赛区洲际对抗赛",
             SeasonPhase::SuperIntercontinental => "Super洲际年度邀请赛",
+            SeasonPhase::AnnualAwards => "年度颁奖典礼",
             SeasonPhase::TransferWindow => "转会期",
             SeasonPhase::Draft => "选秀",
             SeasonPhase::SeasonEnd => "赛季结束",
@@ -68,7 +71,8 @@ impl SeasonPhase {
             SeasonPhase::WorldChampionship => Some(SeasonPhase::ShanghaiMasters),
             SeasonPhase::ShanghaiMasters => Some(SeasonPhase::IcpIntercontinental),
             SeasonPhase::IcpIntercontinental => Some(SeasonPhase::SuperIntercontinental),
-            SeasonPhase::SuperIntercontinental => Some(SeasonPhase::TransferWindow),
+            SeasonPhase::SuperIntercontinental => Some(SeasonPhase::AnnualAwards),
+            SeasonPhase::AnnualAwards => Some(SeasonPhase::TransferWindow),
             SeasonPhase::TransferWindow => Some(SeasonPhase::Draft),
             SeasonPhase::Draft => Some(SeasonPhase::SeasonEnd),
             SeasonPhase::SeasonEnd => None, // 需要新赛季

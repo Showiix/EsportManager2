@@ -13,7 +13,9 @@ pub struct TransferListingInfo {
     pub ability: u8,
     pub potential: u8,
     pub age: u8,
+    #[serde(rename = "seller_team_id")]
     pub team_id: u64,
+    #[serde(rename = "seller_team_name")]
     pub team_name: String,
     pub asking_price: u64,
     pub min_price: Option<u64>,
@@ -27,11 +29,13 @@ pub struct TransferListingInfo {
 pub struct FreeAgentInfo {
     pub id: u64,
     pub player_id: u64,
+    #[serde(rename = "name")]
     pub player_name: String,
     pub position: String,
     pub ability: u8,
     pub potential: u8,
     pub age: u8,
+    #[serde(rename = "expected_salary")]
     pub salary_demand: u64,
     pub reason: String,
     pub status: String,
@@ -80,7 +84,7 @@ pub async fn get_transfer_market(
         FROM transfer_listings tl
         JOIN players p ON tl.player_id = p.id
         JOIN teams t ON tl.team_id = t.id
-        WHERE tl.save_id = ? AND tl.status = 'Active'
+        WHERE tl.save_id = ? AND UPPER(tl.status) = 'ACTIVE'
         ORDER BY p.ability DESC
         "#,
     )
@@ -139,7 +143,7 @@ pub async fn get_free_agents(
         SELECT fa.*, p.game_id, p.position, p.ability, p.potential, p.age
         FROM free_agents fa
         JOIN players p ON fa.player_id = p.id
-        WHERE fa.save_id = ? AND fa.status = 'Available'
+        WHERE fa.save_id = ? AND UPPER(fa.status) = 'AVAILABLE'
         ORDER BY p.ability DESC
         "#,
     )
@@ -912,10 +916,13 @@ pub async fn execute_transfer_round(
             team_id: row.get::<Option<i64>, _>("team_id").map(|v| v as u64),
             salary: row.get::<i64, _>("salary") as u64,
             market_value: row.get::<i64, _>("market_value") as u64,
+            calculated_market_value: row.try_get::<i64, _>("calculated_market_value").ok().map(|v| v as u64).unwrap_or(0),
             contract_end_season: row.get::<Option<i64>, _>("contract_end_season").map(|v| v as u32),
             join_season: row.get::<i64, _>("join_season") as u32,
             retire_season: row.get::<Option<i64>, _>("retire_season").map(|v| v as u32),
             is_starter: row.get::<i64, _>("is_starter") != 0,
+            loyalty: row.get::<Option<i64>, _>("loyalty").map(|v| v as u8).unwrap_or(50),
+            satisfaction: row.get::<Option<i64>, _>("satisfaction").map(|v| v as u8).unwrap_or(50),
         };
 
         if let Some(tid) = player.team_id {
@@ -982,9 +989,9 @@ pub async fn execute_transfer_round(
 
         let status_str: String = row.get("status");
         let listing_status = match status_str.to_uppercase().as_str() {
-            "SOLD" => crate::models::ListingStatus::Sold,
-            "WITHDRAWN" => crate::models::ListingStatus::Withdrawn,
-            _ => crate::models::ListingStatus::Active,
+            "SOLD" => crate::models::TransferListingStatus::Sold,
+            "WITHDRAWN" => crate::models::TransferListingStatus::Withdrawn,
+            _ => crate::models::TransferListingStatus::Active,
         };
 
         TransferListing {
@@ -1005,11 +1012,14 @@ pub async fn execute_transfer_round(
 
     // 执行对应轮次
     let events = match next_round {
+        0 => engine.execute_round_0_season_settlement(&mut all_players, &teams, &players_by_team),
         1 => engine.execute_round_1_contracts_and_retirements(&mut all_players, &teams),
-        2 => engine.execute_round_2_free_agents(&teams, &players_by_team),
-        3 => engine.execute_round_3_financial_clearance(&teams, &players_by_team),
-        4 => engine.execute_round_4_reinforcement(&teams, &players_by_team),
-        5 => engine.execute_round_5_finalize(&teams),
+        2 => engine.execute_round_2_player_intentions(&mut all_players, &teams),
+        3 => engine.execute_round_3_free_agents(&teams, &players_by_team),
+        4 => engine.execute_round_4_rebuild(&teams, &players_by_team),
+        5 => engine.execute_round_5_financial_clearance(&teams, &players_by_team),
+        6 => engine.execute_round_6_reinforcement(&teams, &players_by_team),
+        7 => engine.execute_round_7_finalize(&teams),
         _ => vec![],
     };
 
@@ -1166,6 +1176,68 @@ pub async fn execute_transfer_round(
                         .map_err(|e| e.to_string())?;
                 }
             }
+            // 新增事件类型处理
+            crate::models::TransferEventType::TransferRequest
+            | crate::models::TransferEventType::StarPoached
+            | crate::models::TransferEventType::RebuildSale => {
+                // 和 Purchase 类似的处理
+                if let (Some(from_team_id), Some(to_team_id)) = (event.from_team_id, event.to_team_id) {
+                    sqlx::query(
+                        r#"
+                        UPDATE players SET
+                            team_id = ?,
+                            salary = ?,
+                            contract_end_season = ?,
+                            is_starter = 0
+                        WHERE id = ?
+                        "#
+                    )
+                    .bind(to_team_id as i64)
+                    .bind(event.new_salary.unwrap_or(50) as i64)
+                    .bind(current_season + event.contract_years.unwrap_or(2) as i64)
+                    .bind(event.player_id as i64)
+                    .execute(&pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                    sqlx::query("UPDATE teams SET balance = balance - ? WHERE id = ?")
+                        .bind(event.transfer_fee as i64)
+                        .bind(to_team_id as i64)
+                        .execute(&pool)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    sqlx::query("UPDATE teams SET balance = balance + ? WHERE id = ?")
+                        .bind(event.transfer_fee as i64)
+                        .bind(from_team_id as i64)
+                        .execute(&pool)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+            crate::models::TransferEventType::ContractRenewal => {
+                // 续约成功，更新合同
+                if let Some(new_salary) = event.new_salary {
+                    sqlx::query(
+                        r#"
+                        UPDATE players SET
+                            salary = ?,
+                            contract_end_season = ?
+                        WHERE id = ?
+                        "#
+                    )
+                    .bind(new_salary as i64)
+                    .bind(current_season + event.contract_years.unwrap_or(2) as i64)
+                    .bind(event.player_id as i64)
+                    .execute(&pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                }
+            }
+            crate::models::TransferEventType::RenewalFailed
+            | crate::models::TransferEventType::LoyaltyStay => {
+                // 这些事件只是通知，不需要修改数据库
+            }
         }
     }
 
@@ -1173,8 +1245,8 @@ pub async fn execute_transfer_round(
     let summary = engine.generate_round_summary(next_round as u32);
 
     // 更新转会窗口状态
-    let new_status = if next_round >= 5 { "COMPLETED" } else { "IN_PROGRESS" };
-    let completed_at = if next_round >= 5 { Some(chrono::Utc::now().to_rfc3339()) } else { None };
+    let new_status = if next_round >= 7 { "COMPLETED" } else { "IN_PROGRESS" };
+    let completed_at = if next_round >= 7 { Some(chrono::Utc::now().to_rfc3339()) } else { None };
 
     sqlx::query(
         r#"
@@ -1418,4 +1490,637 @@ pub async fn get_transfer_events(
     }).collect();
 
     Ok(CommandResult::ok(events))
+}
+
+// ==================== 新增：市场分析和选手市场 API ====================
+
+/// 球队转会计划信息
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TeamTransferPlanInfo {
+    pub team_id: u64,
+    pub team_name: String,
+    pub region_code: String,
+    // 财务
+    pub balance: i64,
+    pub financial_status: String,
+    pub transfer_budget: i64,
+    pub salary_space: i64,
+    pub current_total_salary: i64,
+    // 阵容
+    pub roster_count: u32,
+    pub avg_ability: f64,
+    pub avg_age: f64,
+    // 位置需求 (0-100)
+    pub position_needs: std::collections::HashMap<String, u32>,
+    // 策略
+    pub strategy: String,
+    pub ambition: String,
+    // 标记
+    pub must_sign: bool,
+    pub must_clear: bool,
+}
+
+/// 选手市场信息
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PlayerMarketInfo {
+    pub player_id: u64,
+    pub player_name: String,
+    pub position: String,
+    pub age: u8,
+    pub ability: u8,
+    pub potential: u8,
+    // 战队信息
+    pub team_id: Option<u64>,
+    pub team_name: Option<String>,
+    pub region_code: Option<String>,
+    // 合同信息
+    pub salary: u64,
+    pub contract_end_season: Option<u32>,
+    pub join_season: u32,
+    // 身价信息
+    pub base_market_value: u64,
+    pub calculated_market_value: u64,
+    // 状态信息
+    pub satisfaction: u8,
+    pub loyalty: u8,
+    pub loyalty_type: String,
+    pub wants_to_leave: bool,
+    pub departure_reasons: Vec<String>,
+}
+
+/// 忠诚度变化记录
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LoyaltyChangeInfo {
+    pub season_id: u64,
+    pub change_amount: i32,
+    pub reason: String,
+}
+
+/// 选手合同详情
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PlayerContractDetail {
+    // 基础信息
+    pub player_id: u64,
+    pub player_name: String,
+    pub position: String,
+    pub age: u8,
+    pub ability: u8,
+    pub potential: u8,
+    pub stability: u8,
+    // 战队
+    pub team_id: Option<u64>,
+    pub team_name: Option<String>,
+    pub region_code: Option<String>,
+    // 合同
+    pub salary: u64,
+    pub contract_end_season: Option<u32>,
+    pub join_season: u32,
+    pub years_in_team: u32,
+    // 身价详情
+    pub base_market_value: u64,
+    pub honor_factor: f64,
+    pub region_factor: f64,
+    pub calculated_market_value: u64,
+    // 满意度详情
+    pub satisfaction: u8,
+    // 忠诚度详情
+    pub loyalty: u8,
+    pub loyalty_type: String,
+    pub departure_threshold: u8,
+    pub loyalty_price_factor: f64,
+    pub wants_to_leave: bool,
+    pub departure_reasons: Vec<String>,
+    // 历史
+    pub market_value_history: Vec<MarketValueChangeInfo>,
+    pub loyalty_changes: Vec<LoyaltyChangeInfo>,
+}
+
+/// 身价变化记录
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MarketValueChangeInfo {
+    pub season_id: u64,
+    pub old_value: i64,
+    pub new_value: i64,
+    pub change_amount: i64,
+    pub change_percent: f64,
+    pub reason: String,
+}
+
+/// 获取球队转会计划列表
+#[tauri::command]
+pub async fn get_team_transfer_plans(
+    state: State<'_, AppState>,
+) -> Result<CommandResult<Vec<TeamTransferPlanInfo>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取所有球队及其赛区信息
+    let team_rows = sqlx::query(
+        r#"
+        SELECT t.id, t.name, t.short_name, t.balance, r.short_name as region_code
+        FROM teams t
+        LEFT JOIN regions r ON t.region_id = r.id
+        WHERE t.save_id = ?
+        ORDER BY r.short_name, t.name
+        "#
+    )
+    .bind(&save_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut plans = Vec::new();
+
+    for team_row in team_rows {
+        let team_id: i64 = team_row.get("id");
+        let team_name: String = team_row.get::<Option<String>, _>("short_name")
+            .unwrap_or_else(|| team_row.get("name"));
+        let balance: i64 = team_row.get("balance");
+        let region_code: String = team_row.get::<Option<String>, _>("region_code").unwrap_or_else(|| "LPL".to_string());
+
+        // 获取球队阵容
+        let player_rows = sqlx::query(
+            r#"
+            SELECT id, position, ability, age, salary, is_starter
+            FROM players
+            WHERE team_id = ? AND status = 'Active' AND save_id = ?
+            "#
+        )
+        .bind(team_id)
+        .bind(&save_id)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let roster_count = player_rows.len() as u32;
+
+        // 计算平均能力和年龄
+        let (avg_ability, avg_age, current_total_salary) = if !player_rows.is_empty() {
+            let total_ability: i64 = player_rows.iter().map(|r| r.get::<i64, _>("ability")).sum();
+            let total_age: i64 = player_rows.iter().map(|r| r.get::<i64, _>("age")).sum();
+            let total_salary: i64 = player_rows.iter().map(|r| r.get::<i64, _>("salary")).sum();
+            (
+                total_ability as f64 / player_rows.len() as f64,
+                total_age as f64 / player_rows.len() as f64,
+                total_salary,
+            )
+        } else {
+            (0.0, 0.0, 0)
+        };
+
+        // 计算位置需求
+        let mut position_needs = std::collections::HashMap::new();
+        for pos in &["TOP", "JUG", "MID", "ADC", "SUP"] {
+            let count = player_rows.iter()
+                .filter(|r| {
+                    let pos_str: Option<String> = r.get("position");
+                    pos_str.map(|p| p.to_uppercase() == *pos).unwrap_or(false)
+                })
+                .count();
+            let need = match count {
+                0 => 100u32,
+                1 => 70,
+                2 => 30,
+                _ => 0,
+            };
+            position_needs.insert(pos.to_string(), need);
+        }
+
+        // 计算财务状态（balance单位是元，转换为万进行判断）
+        let balance_in_wan = balance / 10000;
+        let financial_status = if balance_in_wan >= 2000 {
+            "Wealthy"
+        } else if balance_in_wan >= 500 {
+            "Healthy"
+        } else if balance_in_wan >= 0 {
+            "Struggling"
+        } else {
+            "Bankrupt"
+        };
+
+        // 计算转会预算（余额的30%，转换为万）
+        let transfer_budget = if balance > 0 { (balance as f64 * 0.3 / 10000.0) as i64 } else { 0 };
+
+        // 计算薪资空间（基于余额估算，假设薪资上限为余额的60%，转换为万）
+        // current_total_salary 也是元，需要转换
+        let max_salary_budget = if balance > 0 { (balance as f64 * 0.6 / 10000.0) as i64 } else { 0 };
+        let current_salary_in_wan = current_total_salary / 10000;
+        let salary_space = (max_salary_budget - current_salary_in_wan).max(0);
+
+        // 确定策略
+        let must_sign = roster_count < 5;
+        let must_clear = roster_count > 10;
+
+        let strategy = if must_clear {
+            "ForceClear"
+        } else if financial_status == "Bankrupt" || financial_status == "Struggling" {
+            "MustSell"
+        } else if must_sign || position_needs.values().any(|&n| n >= 100) {
+            "AggressiveBuy"
+        } else if financial_status == "Wealthy" && position_needs.values().any(|&n| n >= 70) {
+            "AggressiveBuy"
+        } else {
+            "Passive"
+        };
+
+        // 确定野心
+        let ambition = if avg_ability >= 85.0 {
+            "Championship"
+        } else if avg_ability >= 75.0 {
+            "Playoff"
+        } else {
+            "Rebuild"
+        };
+
+        plans.push(TeamTransferPlanInfo {
+            team_id: team_id as u64,
+            team_name,
+            region_code,
+            balance,
+            financial_status: financial_status.to_string(),
+            transfer_budget,
+            salary_space,
+            current_total_salary,
+            roster_count,
+            avg_ability,
+            avg_age,
+            position_needs,
+            strategy: strategy.to_string(),
+            ambition: ambition.to_string(),
+            must_sign,
+            must_clear,
+        });
+    }
+
+    Ok(CommandResult::ok(plans))
+}
+
+/// 获取选手市场列表
+#[tauri::command]
+pub async fn get_player_market_list(
+    state: State<'_, AppState>,
+) -> Result<CommandResult<Vec<PlayerMarketInfo>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取当前赛季
+    let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+        .bind(&save_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let current_season: i64 = save_row.get("current_season");
+
+    // 获取所有活跃选手及其球队信息
+    let rows = sqlx::query(
+        r#"
+        SELECT p.id, p.game_id, p.position, p.age, p.ability, p.potential,
+               p.salary, p.contract_end_season, p.join_season,
+               p.market_value, p.calculated_market_value,
+               p.satisfaction, p.loyalty,
+               p.team_id, COALESCE(t.short_name, t.name) as team_name, r.short_name as region_code
+        FROM players p
+        LEFT JOIN teams t ON p.team_id = t.id
+        LEFT JOIN regions r ON t.region_id = r.id
+        WHERE p.save_id = ? AND p.status = 'Active'
+        ORDER BY p.ability DESC
+        "#
+    )
+    .bind(&save_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let players: Vec<PlayerMarketInfo> = rows.iter().map(|row| {
+        let loyalty: u8 = row.get::<Option<i64>, _>("loyalty").map(|v| v as u8).unwrap_or(50);
+        let satisfaction: u8 = row.get::<Option<i64>, _>("satisfaction").map(|v| v as u8).unwrap_or(50);
+        let contract_end: Option<u32> = row.get::<Option<i64>, _>("contract_end_season").map(|v| v as u32);
+
+        // 判断忠诚度类型
+        let loyalty_type = match loyalty {
+            90..=100 => "忠心耿耿",
+            70..=89 => "忠诚",
+            50..=69 => "中立",
+            30..=49 => "机会主义",
+            _ => "雇佣兵",
+        };
+
+        // 计算离队阈值
+        let departure_threshold = match loyalty {
+            90..=100 => 20,
+            70..=89 => 35,
+            50..=69 => 50,
+            30..=49 => 60,
+            _ => 70,
+        };
+
+        // 判断是否想离队
+        let wants_to_leave = satisfaction < departure_threshold;
+
+        // 生成离队原因
+        let mut departure_reasons = Vec::new();
+        if wants_to_leave {
+            if satisfaction < 30 {
+                departure_reasons.push("不满上场时间".to_string());
+            }
+            if row.get::<i64, _>("ability") as u8 >= 85 {
+                departure_reasons.push("追求冠军".to_string());
+            }
+            if departure_reasons.is_empty() {
+                departure_reasons.push("寻找机会".to_string());
+            }
+        }
+
+        PlayerMarketInfo {
+            player_id: row.get::<i64, _>("id") as u64,
+            player_name: row.get("game_id"),
+            position: row.get::<Option<String>, _>("position").unwrap_or_default(),
+            age: row.get::<i64, _>("age") as u8,
+            ability: row.get::<i64, _>("ability") as u8,
+            potential: row.get::<i64, _>("potential") as u8,
+            team_id: row.get::<Option<i64>, _>("team_id").map(|v| v as u64),
+            team_name: row.get("team_name"),
+            region_code: row.get("region_code"),
+            salary: row.get::<i64, _>("salary") as u64 / 10000, // 转换为万元
+            contract_end_season: contract_end,
+            join_season: row.get::<i64, _>("join_season") as u32,
+            base_market_value: row.get::<i64, _>("market_value") as u64,
+            calculated_market_value: row.get::<Option<i64>, _>("calculated_market_value").map(|v| v as u64).unwrap_or(0),
+            satisfaction,
+            loyalty,
+            loyalty_type: loyalty_type.to_string(),
+            wants_to_leave,
+            departure_reasons,
+        }
+    }).collect();
+
+    Ok(CommandResult::ok(players))
+}
+
+/// 获取选手合同详情
+#[tauri::command]
+pub async fn get_player_contract_detail(
+    state: State<'_, AppState>,
+    player_id: u64,
+) -> Result<CommandResult<PlayerContractDetail>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取当前赛季
+    let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+        .bind(&save_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let current_season: i64 = save_row.get("current_season");
+
+    // 获取选手详情
+    let player_row = sqlx::query(
+        r#"
+        SELECT p.id, p.game_id, p.position, p.age, p.ability, p.potential, p.stability,
+               p.salary, p.contract_end_season, p.join_season,
+               p.market_value, p.calculated_market_value,
+               p.satisfaction, p.loyalty,
+               p.team_id, COALESCE(t.short_name, t.name) as team_name, r.short_name as region_code
+        FROM players p
+        LEFT JOIN teams t ON p.team_id = t.id
+        LEFT JOIN regions r ON t.region_id = r.id
+        WHERE p.id = ?
+        "#
+    )
+    .bind(player_id as i64)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let row = match player_row {
+        Some(r) => r,
+        None => return Ok(CommandResult::err("Player not found")),
+    };
+
+    let loyalty: u8 = row.get::<Option<i64>, _>("loyalty").map(|v| v as u8).unwrap_or(50);
+    let satisfaction: u8 = row.get::<Option<i64>, _>("satisfaction").map(|v| v as u8).unwrap_or(50);
+    let join_season: u32 = row.get::<i64, _>("join_season") as u32;
+    let years_in_team = (current_season as u32).saturating_sub(join_season);
+
+    // 计算忠诚度类型
+    let loyalty_type = match loyalty {
+        90..=100 => "忠心耿耿",
+        70..=89 => "忠诚",
+        50..=69 => "中立",
+        30..=49 => "机会主义",
+        _ => "雇佣兵",
+    };
+
+    // 计算离队阈值
+    let departure_threshold = match loyalty {
+        90..=100 => 20,
+        70..=89 => 35,
+        50..=69 => 50,
+        30..=49 => 60,
+        _ => 70,
+    };
+
+    // 计算转会溢价因子
+    let loyalty_price_factor = match loyalty {
+        80..=100 => 1.3,
+        60..=79 => 1.15,
+        _ => 1.0,
+    };
+
+    // 判断是否想离队
+    let wants_to_leave = satisfaction < departure_threshold;
+
+    // 生成离队原因
+    let mut departure_reasons = Vec::new();
+    if wants_to_leave {
+        if satisfaction < 30 {
+            departure_reasons.push("不满上场时间".to_string());
+        }
+        if row.get::<i64, _>("ability") as u8 >= 85 {
+            departure_reasons.push("追求冠军".to_string());
+        }
+        if departure_reasons.is_empty() {
+            departure_reasons.push("寻找机会".to_string());
+        }
+    }
+
+    // 获取身价变化历史
+    let mv_rows = sqlx::query(
+        r#"
+        SELECT season_id, old_value, new_value, change_amount, change_percent, reason
+        FROM market_value_changes
+        WHERE save_id = ? AND player_id = ?
+        ORDER BY season_id DESC
+        LIMIT 10
+        "#
+    )
+    .bind(&save_id)
+    .bind(player_id as i64)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let market_value_history: Vec<MarketValueChangeInfo> = mv_rows.iter().map(|r| {
+        MarketValueChangeInfo {
+            season_id: r.get::<i64, _>("season_id") as u64,
+            old_value: r.get("old_value"),
+            new_value: r.get("new_value"),
+            change_amount: r.get("change_amount"),
+            change_percent: r.get("change_percent"),
+            reason: r.get("reason"),
+        }
+    }).collect();
+
+    // 获取忠诚度变化历史
+    let loyalty_rows = sqlx::query(
+        r#"
+        SELECT season_id, change_amount, reason
+        FROM loyalty_changes
+        WHERE save_id = ? AND player_id = ?
+        ORDER BY season_id DESC
+        LIMIT 10
+        "#
+    )
+    .bind(&save_id)
+    .bind(player_id as i64)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let loyalty_changes: Vec<LoyaltyChangeInfo> = loyalty_rows.iter().map(|r| {
+        LoyaltyChangeInfo {
+            season_id: r.get::<i64, _>("season_id") as u64,
+            change_amount: r.get::<i64, _>("change_amount") as i32,
+            reason: r.get("reason"),
+        }
+    }).collect();
+
+    // 计算荣誉系数
+    let honor_rows = sqlx::query(
+        r#"
+        SELECT honor_type, tournament_type
+        FROM honors
+        WHERE save_id = ? AND player_id = ?
+        "#
+    )
+    .bind(&save_id)
+    .bind(player_id as i64)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let mut honor_bonus = 0.0f64;
+    for hr in &honor_rows {
+        let honor_type: String = hr.get("honor_type");
+        let tournament_type: Option<String> = hr.get("tournament_type");
+
+        let bonus = match honor_type.as_str() {
+            "PLAYER_CHAMPION" | "TEAM_CHAMPION" => {
+                match tournament_type.as_deref() {
+                    Some("WORLDS") => 0.5,
+                    Some("MSI") | Some("INTERCONTINENTAL") => 0.3,
+                    _ => 0.2,
+                }
+            }
+            "PLAYER_RUNNER_UP" => {
+                match tournament_type.as_deref() {
+                    Some("WORLDS") => 0.3,
+                    Some("MSI") | Some("INTERCONTINENTAL") => 0.15,
+                    _ => 0.1,
+                }
+            }
+            "FINAL_MVP" | "SPLIT_MVP" => 0.3,
+            "ALL_PRO_FIRST" => 0.1,
+            "ROOKIE_OF_SPLIT" => 0.15,
+            _ => 0.05,
+        };
+        honor_bonus += bonus;
+    }
+    let honor_factor = (1.0 + honor_bonus).min(4.0);
+
+    // 赛区系数
+    let region_code: Option<String> = row.get("region_code");
+    let region_factor = match region_code.as_deref() {
+        Some("LPL") => 1.3,
+        Some("LCK") => 1.2,
+        Some("LEC") => 1.0,
+        Some("LCS") => 0.9,
+        _ => 0.8,
+    };
+
+    let base_market_value = row.get::<i64, _>("market_value") as u64;
+    let calculated_market_value = row.get::<Option<i64>, _>("calculated_market_value").map(|v| v as u64).unwrap_or(0);
+
+    Ok(CommandResult::ok(PlayerContractDetail {
+        player_id: row.get::<i64, _>("id") as u64,
+        player_name: row.get("game_id"),
+        position: row.get::<Option<String>, _>("position").unwrap_or_default(),
+        age: row.get::<i64, _>("age") as u8,
+        ability: row.get::<i64, _>("ability") as u8,
+        potential: row.get::<i64, _>("potential") as u8,
+        stability: row.get::<i64, _>("stability") as u8,
+        team_id: row.get::<Option<i64>, _>("team_id").map(|v| v as u64),
+        team_name: row.get("team_name"),
+        region_code,
+        salary: row.get::<i64, _>("salary") as u64,
+        contract_end_season: row.get::<Option<i64>, _>("contract_end_season").map(|v| v as u32),
+        join_season,
+        years_in_team,
+        base_market_value,
+        honor_factor,
+        region_factor,
+        calculated_market_value,
+        satisfaction,
+        loyalty,
+        loyalty_type: loyalty_type.to_string(),
+        departure_threshold,
+        loyalty_price_factor,
+        wants_to_leave,
+        departure_reasons,
+        market_value_history,
+        loyalty_changes,
+    }))
 }

@@ -68,6 +68,870 @@ impl DatabaseManager {
             .await
             .map_err(|e| DatabaseError::Migration(e.to_string()))?;
 
+        // 运行增量迁移
+        self.run_incremental_migrations(pool).await?;
+
+        Ok(())
+    }
+
+    /// 运行增量迁移
+    async fn run_incremental_migrations(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        // 迁移1: 为 financial_transactions 表添加 related_tournament_id 和 related_player_id 字段
+        // SQLite 不支持 ADD COLUMN IF NOT EXISTS，所以需要先检查
+        let columns: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM pragma_table_info('financial_transactions')"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        let column_names: Vec<&str> = columns.iter().map(|c| c.0.as_str()).collect();
+
+        if !column_names.contains(&"related_tournament_id") {
+            sqlx::query("ALTER TABLE financial_transactions ADD COLUMN related_tournament_id INTEGER")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !column_names.contains(&"related_player_id") {
+            sqlx::query("ALTER TABLE financial_transactions ADD COLUMN related_player_id INTEGER")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        // 迁移2: 为 players 表添加 loyalty 字段
+        let player_columns: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM pragma_table_info('players')"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        let player_column_names: Vec<&str> = player_columns.iter().map(|c| c.0.as_str()).collect();
+
+        if !player_column_names.contains(&"loyalty") {
+            sqlx::query("ALTER TABLE players ADD COLUMN loyalty INTEGER NOT NULL DEFAULT 50")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        // 迁移: 为 players 表添加 calculated_market_value 字段
+        if !player_column_names.contains(&"calculated_market_value") {
+            sqlx::query("ALTER TABLE players ADD COLUMN calculated_market_value INTEGER NOT NULL DEFAULT 0")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        // 迁移3: 运行 005_player_satisfaction.sql 的表创建
+        self.run_satisfaction_tables_migration(pool).await?;
+
+        // 迁移4: 运行 006_draft_auction.sql 的表创建
+        self.run_draft_auction_tables_migration(pool).await?;
+
+        // 迁移5: 运行 007_transfer_market.sql 的表创建
+        self.run_transfer_market_tables_migration(pool).await?;
+
+        // 迁移6: 运行 009_llm_task_log.sql 的表创建
+        self.run_llm_task_log_migration(pool).await?;
+
+        Ok(())
+    }
+
+    /// 运行满意度系统相关表的迁移
+    async fn run_satisfaction_tables_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        // 检查表是否已存在
+        let tables: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='player_season_status'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if tables.is_empty() {
+            // 创建选手赛季状态表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS player_season_status (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    player_id INTEGER NOT NULL,
+                    satisfaction INTEGER NOT NULL DEFAULT 70,
+                    wants_to_leave BOOLEAN NOT NULL DEFAULT FALSE,
+                    departure_reasons TEXT DEFAULT '[]',
+                    games_as_starter INTEGER DEFAULT 0,
+                    total_games INTEGER DEFAULT 0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(save_id, season_id, player_id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建球队赛季表现表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS team_season_performance (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    team_id INTEGER NOT NULL,
+                    final_rank INTEGER,
+                    made_playoffs BOOLEAN DEFAULT FALSE,
+                    playoff_result TEXT,
+                    international_result TEXT,
+                    consecutive_no_playoffs INTEGER DEFAULT 0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(save_id, season_id, team_id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建忠诚度变化记录表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS loyalty_changes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    player_id INTEGER NOT NULL,
+                    change_amount INTEGER NOT NULL,
+                    reason TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建索引
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_season_status_lookup ON player_season_status(save_id, season_id, player_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_season_status_departure ON player_season_status(save_id, season_id, wants_to_leave)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_season_performance_lookup ON team_season_performance(save_id, season_id, team_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_loyalty_changes_player ON loyalty_changes(save_id, player_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// 运行选秀权拍卖系统相关表的迁移
+    async fn run_draft_auction_tables_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        // 检查表是否已存在
+        let tables: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='draft_pick_auctions'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if tables.is_empty() {
+            // 创建选秀权拍卖主表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS draft_pick_auctions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    region_id INTEGER NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'PREPARING',
+                    current_round INTEGER NOT NULL DEFAULT 0,
+                    total_rounds INTEGER NOT NULL DEFAULT 3,
+                    total_auctions INTEGER NOT NULL DEFAULT 0,
+                    successful_auctions INTEGER NOT NULL DEFAULT 0,
+                    total_revenue INTEGER NOT NULL DEFAULT 0,
+                    total_commission INTEGER NOT NULL DEFAULT 0,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    UNIQUE(save_id, season_id, region_id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建选秀权挂牌表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS draft_pick_listings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    region_id INTEGER NOT NULL,
+                    auction_id INTEGER NOT NULL,
+                    seller_team_id INTEGER NOT NULL,
+                    seller_team_name TEXT NOT NULL,
+                    draft_position INTEGER NOT NULL,
+                    starting_price INTEGER NOT NULL,
+                    current_price INTEGER NOT NULL,
+                    min_increment INTEGER NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'PENDING',
+                    buyer_team_id INTEGER,
+                    buyer_team_name TEXT,
+                    final_price INTEGER,
+                    commission_fee INTEGER,
+                    seller_revenue INTEGER,
+                    current_bid_round INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    sold_at TEXT,
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    FOREIGN KEY (auction_id) REFERENCES draft_pick_auctions(id) ON DELETE CASCADE,
+                    FOREIGN KEY (seller_team_id) REFERENCES teams(id) ON DELETE CASCADE,
+                    FOREIGN KEY (buyer_team_id) REFERENCES teams(id) ON DELETE SET NULL
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建竞拍出价记录表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS draft_pick_bids (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    listing_id INTEGER NOT NULL,
+                    bidder_team_id INTEGER NOT NULL,
+                    bidder_team_name TEXT NOT NULL,
+                    bid_amount INTEGER NOT NULL,
+                    bid_round INTEGER NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'ACTIVE',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    FOREIGN KEY (listing_id) REFERENCES draft_pick_listings(id) ON DELETE CASCADE,
+                    FOREIGN KEY (bidder_team_id) REFERENCES teams(id) ON DELETE CASCADE
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建拍卖事件表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS draft_pick_auction_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    auction_id INTEGER NOT NULL,
+                    listing_id INTEGER,
+                    event_type TEXT NOT NULL,
+                    team_id INTEGER,
+                    team_name TEXT,
+                    draft_position INTEGER,
+                    amount INTEGER,
+                    headline TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    importance TEXT NOT NULL DEFAULT 'NORMAL',
+                    round INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    FOREIGN KEY (auction_id) REFERENCES draft_pick_auctions(id) ON DELETE CASCADE
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建索引
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pick_auctions_save_season_region ON draft_pick_auctions(save_id, season_id, region_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pick_listings_auction ON draft_pick_listings(auction_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pick_listings_status ON draft_pick_listings(status)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pick_bids_listing ON draft_pick_bids(listing_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pick_auction_events_auction ON draft_pick_auction_events(auction_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        // 检查 draft_orders 表是否需要添加新字段
+        let order_columns: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM pragma_table_info('draft_orders')"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        let order_column_names: Vec<&str> = order_columns.iter().map(|c| c.0.as_str()).collect();
+
+        if !order_column_names.contains(&"original_team_id") {
+            sqlx::query("ALTER TABLE draft_orders ADD COLUMN original_team_id INTEGER")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !order_column_names.contains(&"acquired_via") {
+            sqlx::query("ALTER TABLE draft_orders ADD COLUMN acquired_via TEXT DEFAULT 'LOTTERY'")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !order_column_names.contains(&"acquisition_price") {
+            sqlx::query("ALTER TABLE draft_orders ADD COLUMN acquisition_price INTEGER DEFAULT 0")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// 运行 LLM 转会市场系统相关表的迁移
+    async fn run_transfer_market_tables_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        // 检查 transfer_market_states 表是否已存在
+        let tables: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='transfer_market_states'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if tables.is_empty() {
+            // 创建转会市场整体状态表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS transfer_market_states (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    current_phase TEXT NOT NULL DEFAULT 'INITIALIZATION',
+                    current_round INTEGER NOT NULL DEFAULT 0,
+                    max_negotiation_rounds INTEGER NOT NULL DEFAULT 5,
+                    free_agent_ids TEXT DEFAULT '[]',
+                    active_negotiation_ids TEXT DEFAULT '[]',
+                    completed_transfer_ids TEXT DEFAULT '[]',
+                    intentions_generated INTEGER NOT NULL DEFAULT 0,
+                    total_players INTEGER NOT NULL DEFAULT 0,
+                    strategies_generated INTEGER NOT NULL DEFAULT 0,
+                    total_teams INTEGER NOT NULL DEFAULT 0,
+                    is_market_stable INTEGER NOT NULL DEFAULT 0,
+                    stable_rounds_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    UNIQUE(save_id, season_id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建球队市场状态表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS team_market_states (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    team_id INTEGER NOT NULL,
+                    team_name TEXT NOT NULL,
+                    initial_balance INTEGER NOT NULL DEFAULT 0,
+                    remaining_budget INTEGER NOT NULL DEFAULT 0,
+                    spent_amount INTEGER NOT NULL DEFAULT 0,
+                    salary_increase INTEGER NOT NULL DEFAULT 0,
+                    roster_count INTEGER NOT NULL DEFAULT 0,
+                    min_roster_size INTEGER NOT NULL DEFAULT 5,
+                    max_roster_size INTEGER NOT NULL DEFAULT 10,
+                    pending_negotiation_ids TEXT DEFAULT '[]',
+                    completed_signing_ids TEXT DEFAULT '[]',
+                    departed_player_ids TEXT DEFAULT '[]',
+                    strategy_generated INTEGER NOT NULL DEFAULT 0,
+                    strategy_id INTEGER,
+                    needs_emergency_signing INTEGER NOT NULL DEFAULT 0,
+                    position_needs TEXT DEFAULT '{}',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+                    UNIQUE(save_id, season_id, team_id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建谈判记录表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS negotiations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    player_id INTEGER NOT NULL,
+                    player_name TEXT NOT NULL,
+                    player_position TEXT,
+                    player_ability INTEGER,
+                    from_team_id INTEGER,
+                    from_team_name TEXT,
+                    status TEXT NOT NULL DEFAULT 'OPEN',
+                    current_round INTEGER NOT NULL DEFAULT 0,
+                    max_rounds INTEGER NOT NULL DEFAULT 5,
+                    competing_team_ids TEXT DEFAULT '[]',
+                    final_team_id INTEGER,
+                    final_team_name TEXT,
+                    final_salary INTEGER,
+                    final_years INTEGER,
+                    final_starter INTEGER,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+                    FOREIGN KEY (from_team_id) REFERENCES teams(id) ON DELETE SET NULL,
+                    FOREIGN KEY (final_team_id) REFERENCES teams(id) ON DELETE SET NULL
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建报价表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS offers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    negotiation_id INTEGER NOT NULL,
+                    from_team_id INTEGER NOT NULL,
+                    from_team_name TEXT NOT NULL,
+                    to_player_id INTEGER NOT NULL,
+                    round INTEGER NOT NULL,
+                    salary_offer INTEGER NOT NULL DEFAULT 0,
+                    contract_years INTEGER NOT NULL DEFAULT 1,
+                    guarantee_starter INTEGER NOT NULL DEFAULT 0,
+                    signing_bonus INTEGER NOT NULL DEFAULT 0,
+                    transfer_fee INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'PENDING',
+                    offer_reasoning TEXT,
+                    analysis_steps TEXT DEFAULT '[]',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (negotiation_id) REFERENCES negotiations(id) ON DELETE CASCADE,
+                    FOREIGN KEY (from_team_id) REFERENCES teams(id) ON DELETE CASCADE,
+                    FOREIGN KEY (to_player_id) REFERENCES players(id) ON DELETE CASCADE
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建报价回应表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS offer_responses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    offer_id INTEGER NOT NULL,
+                    player_id INTEGER NOT NULL,
+                    response_type TEXT NOT NULL,
+                    counter_salary INTEGER,
+                    counter_years INTEGER,
+                    counter_starter INTEGER,
+                    reasoning TEXT,
+                    analysis_steps TEXT DEFAULT '[]',
+                    responded_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE,
+                    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建市场事件表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS transfer_market_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    event_type TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    round INTEGER NOT NULL DEFAULT 0,
+                    player_id INTEGER,
+                    player_name TEXT,
+                    team_id INTEGER,
+                    team_name TEXT,
+                    secondary_team_id INTEGER,
+                    secondary_team_name TEXT,
+                    amount INTEGER,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    ai_analysis TEXT,
+                    importance INTEGER NOT NULL DEFAULT 2,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE SET NULL,
+                    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL,
+                    FOREIGN KEY (secondary_team_id) REFERENCES teams(id) ON DELETE SET NULL
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建球队转会策略表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS team_transfer_strategies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    team_id INTEGER NOT NULL,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    overall_strategy TEXT,
+                    strategy_description TEXT,
+                    reasoning TEXT,
+                    targets TEXT DEFAULT '[]',
+                    willing_to_sell TEXT DEFAULT '[]',
+                    priority_positions TEXT DEFAULT '[]',
+                    total_budget INTEGER NOT NULL DEFAULT 0,
+                    transfer_spend INTEGER NOT NULL DEFAULT 0,
+                    salary_spend INTEGER NOT NULL DEFAULT 0,
+                    reserve INTEGER NOT NULL DEFAULT 0,
+                    analysis_steps TEXT DEFAULT '[]',
+                    is_mock INTEGER NOT NULL DEFAULT 1,
+                    generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    UNIQUE(team_id, save_id, season_id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建索引
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_market_states_save ON transfer_market_states(save_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_market_save_season ON team_market_states(save_id, season_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_negotiations_save_season ON negotiations(save_id, season_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_negotiations_status ON negotiations(status)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_offers_negotiation ON offers(negotiation_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_market_events_save_season ON transfer_market_events(save_id, season_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_strategies_save_season ON team_transfer_strategies(save_id, season_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建 AI 球队策略表（简化版，存储 JSON）
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS ai_transfer_strategies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    team_id INTEGER NOT NULL,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    strategy_json TEXT NOT NULL,
+                    generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    UNIQUE(team_id, save_id, season_id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_ai_strategies_save_season ON ai_transfer_strategies(save_id, season_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        // 确保 ai_transfer_strategies 表存在（即使其他表已存在）
+        let ai_strategy_tables: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_transfer_strategies'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if ai_strategy_tables.is_empty() {
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS ai_transfer_strategies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    team_id INTEGER NOT NULL,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    strategy_json TEXT NOT NULL,
+                    generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    UNIQUE(team_id, save_id, season_id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_ai_strategies_save_season ON ai_transfer_strategies(save_id, season_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        // 检查 player_transfer_strategies 表是否需要扩展字段
+        let strategy_columns: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM pragma_table_info('player_transfer_strategies')"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        let strategy_column_names: Vec<&str> = strategy_columns.iter().map(|c| c.0.as_str()).collect();
+
+        // 添加新字段（如果不存在）
+        if !strategy_column_names.contains(&"wants_to_leave") {
+            sqlx::query("ALTER TABLE player_transfer_strategies ADD COLUMN wants_to_leave INTEGER NOT NULL DEFAULT 0")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !strategy_column_names.contains(&"decision_confidence") {
+            sqlx::query("ALTER TABLE player_transfer_strategies ADD COLUMN decision_confidence INTEGER NOT NULL DEFAULT 50")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !strategy_column_names.contains(&"departure_reasons") {
+            sqlx::query("ALTER TABLE player_transfer_strategies ADD COLUMN departure_reasons TEXT DEFAULT '[]'")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !strategy_column_names.contains(&"leave_reasoning") {
+            sqlx::query("ALTER TABLE player_transfer_strategies ADD COLUMN leave_reasoning TEXT")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !strategy_column_names.contains(&"preferred_teams") {
+            sqlx::query("ALTER TABLE player_transfer_strategies ADD COLUMN preferred_teams TEXT DEFAULT '[]'")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !strategy_column_names.contains(&"team_preference_reasoning") {
+            sqlx::query("ALTER TABLE player_transfer_strategies ADD COLUMN team_preference_reasoning TEXT")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !strategy_column_names.contains(&"expected_salary") {
+            sqlx::query("ALTER TABLE player_transfer_strategies ADD COLUMN expected_salary INTEGER NOT NULL DEFAULT 0")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !strategy_column_names.contains(&"expected_min_salary") {
+            sqlx::query("ALTER TABLE player_transfer_strategies ADD COLUMN expected_min_salary INTEGER NOT NULL DEFAULT 0")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !strategy_column_names.contains(&"expected_years") {
+            sqlx::query("ALTER TABLE player_transfer_strategies ADD COLUMN expected_years INTEGER NOT NULL DEFAULT 1")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !strategy_column_names.contains(&"requires_starter") {
+            sqlx::query("ALTER TABLE player_transfer_strategies ADD COLUMN requires_starter INTEGER NOT NULL DEFAULT 0")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !strategy_column_names.contains(&"analysis_data") {
+            sqlx::query("ALTER TABLE player_transfer_strategies ADD COLUMN analysis_data TEXT")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !strategy_column_names.contains(&"analysis_steps") {
+            sqlx::query("ALTER TABLE player_transfer_strategies ADD COLUMN analysis_steps TEXT DEFAULT '[]'")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !strategy_column_names.contains(&"is_mock") {
+            sqlx::query("ALTER TABLE player_transfer_strategies ADD COLUMN is_mock INTEGER NOT NULL DEFAULT 1")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        // 创建续约决策表（用于持久化续约结果）
+        let renewal_tables: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='renewal_decisions'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if renewal_tables.is_empty() {
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS renewal_decisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    player_id INTEGER NOT NULL,
+                    player_name TEXT NOT NULL,
+                    team_id INTEGER NOT NULL,
+                    team_name TEXT NOT NULL,
+                    team_wants_renewal INTEGER NOT NULL DEFAULT 1,
+                    team_rejection_reason TEXT,
+                    offered_salary INTEGER NOT NULL DEFAULT 0,
+                    offered_years INTEGER NOT NULL DEFAULT 1,
+                    player_accepts INTEGER NOT NULL DEFAULT 1,
+                    player_rejection_reason TEXT,
+                    renewal_successful INTEGER NOT NULL DEFAULT 0,
+                    final_salary INTEGER,
+                    final_years INTEGER,
+                    team_analysis TEXT DEFAULT '[]',
+                    player_analysis TEXT DEFAULT '[]',
+                    summary TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+                    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_renewal_decisions_save_season ON renewal_decisions(save_id, season_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_renewal_decisions_result ON renewal_decisions(renewal_successful)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// 运行 LLM 任务日志表的迁移
+    async fn run_llm_task_log_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        // 检查表是否已存在
+        let tables: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='llm_task_log'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if tables.is_empty() {
+            // 创建 LLM 任务日志表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS llm_task_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    task_type TEXT NOT NULL,
+                    entity_id INTEGER NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    max_attempts INTEGER NOT NULL DEFAULT 3,
+                    error_msg TEXT,
+                    last_error_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    completed_at TEXT,
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    UNIQUE(save_id, season_id, task_type, entity_id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建索引
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_llm_task_status ON llm_task_log(save_id, season_id, status)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_llm_task_type ON llm_task_log(save_id, season_id, task_type)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_llm_task_entity ON llm_task_log(entity_type, entity_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_llm_task_updated ON llm_task_log(updated_at)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            log::info!("✅ LLM 任务日志表创建成功");
+        }
+
         Ok(())
     }
 }
@@ -155,6 +1019,7 @@ CREATE TABLE IF NOT EXISTS players (
     team_id INTEGER,
     salary INTEGER NOT NULL DEFAULT 0,
     market_value INTEGER NOT NULL DEFAULT 0,
+    calculated_market_value INTEGER NOT NULL DEFAULT 0,
     contract_end_season INTEGER,
     join_season INTEGER,
     retire_season INTEGER,
@@ -172,6 +1037,8 @@ CREATE TABLE IF NOT EXISTS tournaments (
     name TEXT NOT NULL,
     tournament_type TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'Scheduled',
+    current_stage TEXT,
+    current_round INTEGER,
     start_date TEXT,
     end_date TEXT,
     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE
@@ -186,17 +1053,15 @@ CREATE TABLE IF NOT EXISTS matches (
     round INTEGER,
     match_order INTEGER,
     format TEXT NOT NULL DEFAULT 'Bo3',
-    home_team_id INTEGER NOT NULL,
-    away_team_id INTEGER NOT NULL,
+    home_team_id INTEGER,
+    away_team_id INTEGER,
     home_score INTEGER NOT NULL DEFAULT 0,
     away_score INTEGER NOT NULL DEFAULT 0,
     winner_id INTEGER,
     status TEXT NOT NULL DEFAULT 'Scheduled',
     played_at TEXT,
     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
-    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
-    FOREIGN KEY (home_team_id) REFERENCES teams(id),
-    FOREIGN KEY (away_team_id) REFERENCES teams(id)
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
 );
 
 -- 联赛积分榜表
@@ -220,7 +1085,7 @@ CREATE TABLE IF NOT EXISTS league_standings (
 );
 
 -- 年度积分明细表
-CREATE TABLE IF NOT EXISTS annual_points_details (
+CREATE TABLE IF NOT EXISTS annual_points_detail (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     save_id TEXT NOT NULL,
     season_id INTEGER NOT NULL,
@@ -318,12 +1183,15 @@ CREATE TABLE IF NOT EXISTS transfer_listings (
     save_id TEXT NOT NULL,
     season_id INTEGER NOT NULL,
     player_id INTEGER NOT NULL,
-    selling_team_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    listing_type TEXT NOT NULL DEFAULT 'FOR_SALE',
     asking_price INTEGER NOT NULL,
-    listed_at INTEGER NOT NULL,
+    min_price INTEGER,
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
     FOREIGN KEY (player_id) REFERENCES players(id),
-    FOREIGN KEY (selling_team_id) REFERENCES teams(id)
+    FOREIGN KEY (team_id) REFERENCES teams(id)
 );
 
 -- 自由球员表
@@ -332,8 +1200,10 @@ CREATE TABLE IF NOT EXISTS free_agents (
     save_id TEXT NOT NULL,
     season_id INTEGER NOT NULL,
     player_id INTEGER NOT NULL,
-    expected_salary INTEGER NOT NULL,
-    available_from INTEGER NOT NULL,
+    salary_demand INTEGER NOT NULL,
+    reason TEXT NOT NULL DEFAULT 'CONTRACT_EXPIRE',
+    status TEXT NOT NULL DEFAULT 'AVAILABLE',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
     FOREIGN KEY (player_id) REFERENCES players(id)
 );
@@ -449,14 +1319,16 @@ CREATE TABLE IF NOT EXISTS player_tournament_stats (
 -- 选手状态因子表 (用于动态计算 condition)
 CREATE TABLE IF NOT EXISTS player_form_factors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    player_id INTEGER NOT NULL UNIQUE,
+    save_id TEXT NOT NULL,
+    player_id INTEGER NOT NULL,
     form_cycle REAL NOT NULL DEFAULT 50.0,
     momentum INTEGER NOT NULL DEFAULT 0,
     last_performance REAL NOT NULL DEFAULT 0.0,
     last_match_won INTEGER NOT NULL DEFAULT 0,
     games_since_rest INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+    UNIQUE(save_id, player_id)
 );
 
 -- 选手特性表
@@ -472,6 +1344,7 @@ CREATE TABLE IF NOT EXISTS player_traits (
 );
 
 -- 选手赛季统计表 (数据中心)
+-- 注意：player_id 不设置外键约束，因为统计数据可能来自不同来源
 CREATE TABLE IF NOT EXISTS player_season_stats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     save_id TEXT NOT NULL,
@@ -496,11 +1369,152 @@ CREATE TABLE IF NOT EXISTS player_season_stats (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
-    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
     UNIQUE(save_id, player_id, season_id)
 );
 
+-- 比赛每局详情表
+CREATE TABLE IF NOT EXISTS match_games (
+    id TEXT PRIMARY KEY,
+    save_id TEXT NOT NULL,
+    match_id INTEGER NOT NULL,
+    game_number INTEGER NOT NULL,
+    winner_team_id INTEGER NOT NULL,
+    loser_team_id INTEGER NOT NULL,
+    duration_minutes INTEGER,
+    mvp_player_id INTEGER,
+    key_player_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+    FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+    FOREIGN KEY (winner_team_id) REFERENCES teams(id),
+    FOREIGN KEY (loser_team_id) REFERENCES teams(id),
+    FOREIGN KEY (mvp_player_id) REFERENCES players(id),
+    FOREIGN KEY (key_player_id) REFERENCES players(id)
+);
+
+-- 每局选手表现表
+CREATE TABLE IF NOT EXISTS game_player_performances (
+    id TEXT PRIMARY KEY,
+    save_id TEXT NOT NULL,
+    game_id TEXT NOT NULL,
+    player_id INTEGER NOT NULL,
+    player_name TEXT NOT NULL DEFAULT '',
+    team_id INTEGER NOT NULL,
+    team_name TEXT NOT NULL DEFAULT '',
+    position TEXT NOT NULL,
+    base_ability REAL NOT NULL DEFAULT 0.0,
+    condition_bonus REAL NOT NULL DEFAULT 0.0,
+    stability_noise REAL NOT NULL DEFAULT 0.0,
+    actual_ability REAL NOT NULL,
+    impact_score REAL NOT NULL,
+    mvp_score REAL NOT NULL DEFAULT 0.0,
+    is_mvp INTEGER NOT NULL DEFAULT 0,
+    is_key_player INTEGER NOT NULL DEFAULT 0,
+    kills INTEGER,
+    deaths INTEGER,
+    assists INTEGER,
+    cs INTEGER,
+    gold INTEGER,
+    damage_dealt INTEGER,
+    damage_taken INTEGER,
+    vision_score INTEGER,
+    traits_json TEXT,
+    activated_traits_json TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+    FOREIGN KEY (game_id) REFERENCES match_games(id) ON DELETE CASCADE,
+    FOREIGN KEY (player_id) REFERENCES players(id),
+    FOREIGN KEY (team_id) REFERENCES teams(id)
+);
+
+-- 转会窗口表
+CREATE TABLE IF NOT EXISTS transfer_windows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_id TEXT NOT NULL,
+    season_id INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    current_round INTEGER NOT NULL DEFAULT 0,
+    total_rounds INTEGER NOT NULL DEFAULT 5,
+    total_transfers INTEGER NOT NULL DEFAULT 0,
+    total_fees INTEGER NOT NULL DEFAULT 0,
+    free_agents_signed INTEGER NOT NULL DEFAULT 0,
+    retirements INTEGER NOT NULL DEFAULT 0,
+    contract_expires INTEGER NOT NULL DEFAULT 0,
+    started_at TEXT,
+    completed_at TEXT,
+    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+    UNIQUE(save_id, season_id)
+);
+
+-- 转会事件表
+CREATE TABLE IF NOT EXISTS transfer_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_id TEXT NOT NULL,
+    season_id INTEGER NOT NULL,
+    round INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    player_id INTEGER NOT NULL,
+    player_name TEXT NOT NULL,
+    position TEXT,
+    age INTEGER NOT NULL,
+    ability INTEGER NOT NULL,
+    potential INTEGER NOT NULL,
+    market_value INTEGER NOT NULL,
+    from_team_id INTEGER,
+    from_team_name TEXT,
+    to_team_id INTEGER,
+    to_team_name TEXT,
+    transfer_fee INTEGER NOT NULL DEFAULT 0,
+    new_salary INTEGER,
+    contract_years INTEGER,
+    contract_type TEXT NOT NULL DEFAULT 'RENEWAL',
+    price_ratio REAL,
+    headline TEXT NOT NULL,
+    description TEXT NOT NULL,
+    importance TEXT NOT NULL DEFAULT 'NORMAL',
+    competing_teams TEXT,
+    was_bidding_war INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+    FOREIGN KEY (player_id) REFERENCES players(id)
+);
+
+-- 身价变化记录表
+CREATE TABLE IF NOT EXISTS market_value_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_id TEXT NOT NULL,
+    season_id INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    player_name TEXT NOT NULL,
+    old_value INTEGER NOT NULL,
+    new_value INTEGER NOT NULL,
+    change_amount INTEGER NOT NULL,
+    change_percent REAL NOT NULL,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+    FOREIGN KEY (player_id) REFERENCES players(id)
+);
+
+-- 选手转会策略表
+CREATE TABLE IF NOT EXISTS player_transfer_strategies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL,
+    save_id TEXT NOT NULL,
+    season_id INTEGER NOT NULL,
+    strategy_json TEXT NOT NULL,
+    generated_at TEXT NOT NULL,
+    UNIQUE(player_id, save_id, season_id),
+    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+    FOREIGN KEY (player_id) REFERENCES players(id)
+);
+
 -- 创建索引
+CREATE INDEX IF NOT EXISTS idx_match_games_match ON match_games(match_id);
+CREATE INDEX IF NOT EXISTS idx_match_games_save ON match_games(save_id);
+CREATE INDEX IF NOT EXISTS idx_game_player_performances_game ON game_player_performances(game_id);
+CREATE INDEX IF NOT EXISTS idx_game_player_performances_player ON game_player_performances(player_id);
 CREATE INDEX IF NOT EXISTS idx_teams_region ON teams(region_id);
 CREATE INDEX IF NOT EXISTS idx_teams_save ON teams(save_id);
 CREATE INDEX IF NOT EXISTS idx_players_team ON players(team_id);
@@ -526,4 +1540,13 @@ CREATE INDEX IF NOT EXISTS idx_player_traits ON player_traits(player_id);
 CREATE INDEX IF NOT EXISTS idx_player_season_stats_save ON player_season_stats(save_id, season_id);
 CREATE INDEX IF NOT EXISTS idx_player_season_stats_player ON player_season_stats(player_id);
 CREATE INDEX IF NOT EXISTS idx_player_season_stats_yearly ON player_season_stats(yearly_top_score DESC);
+CREATE INDEX IF NOT EXISTS idx_transfer_listings_status ON transfer_listings(status);
+CREATE INDEX IF NOT EXISTS idx_transfer_listings_save ON transfer_listings(save_id, season_id);
+CREATE INDEX IF NOT EXISTS idx_free_agents_status ON free_agents(status);
+CREATE INDEX IF NOT EXISTS idx_free_agents_save ON free_agents(save_id, season_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_windows_save ON transfer_windows(save_id, season_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_events_save ON transfer_events(save_id, season_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_events_round ON transfer_events(round);
+CREATE INDEX IF NOT EXISTS idx_player_transfer_strategies_save ON player_transfer_strategies(save_id, season_id);
+CREATE INDEX IF NOT EXISTS idx_player_transfer_strategies_player ON player_transfer_strategies(player_id);
 "#;

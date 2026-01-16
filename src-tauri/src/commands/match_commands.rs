@@ -1,6 +1,9 @@
 use crate::commands::save_commands::{AppState, CommandResult};
 use crate::engines::{MatchSimulationEngine, ConditionEngine, PlayerFormFactors, TraitType, TraitEngine, TraitContext};
 use crate::models::MatchFormat;
+use crate::models::tournament_result::PlayerTournamentStats;
+use crate::services::LeagueService;
+use crate::db::{MatchRepository, PlayerTournamentStatsRepository};
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
@@ -14,6 +17,8 @@ pub struct DetailedMatchResult {
     pub tournament_id: u64,
     pub home_team_id: u64,
     pub away_team_id: u64,
+    pub home_team_name: String,
+    pub away_team_name: String,
     pub home_score: u8,
     pub away_score: u8,
     pub winner_id: u64,
@@ -82,6 +87,18 @@ pub struct PlayerGameStats {
     pub vision_score: u32,
     pub mvp_score: f64,
     pub impact_score: f64,       // 影响力分数
+    pub traits: Vec<String>,     // 选手特性列表
+    pub activated_traits: Vec<ActivatedTraitInfo>,  // 本局激活的特性效果
+}
+
+/// 激活的特性效果信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivatedTraitInfo {
+    pub trait_type: String,
+    pub name: String,
+    pub effect: String,
+    pub value: f64,
+    pub is_positive: bool,
 }
 
 /// 比赛关键事件
@@ -137,8 +154,10 @@ pub async fn simulate_match_detailed(
     // 获取比赛信息
     let match_row = sqlx::query(
         r#"
-        SELECT m.id, m.tournament_id, m.format, m.home_team_id, m.away_team_id,
-               ht.power_rating as home_power, at.power_rating as away_power
+        SELECT m.id, m.tournament_id, m.format, m.home_team_id, m.away_team_id, m.stage,
+               ht.power_rating as home_power, at.power_rating as away_power,
+               ht.name as home_team_name, at.name as away_team_name,
+               ht.region_id as home_region_id, at.region_id as away_region_id
         FROM matches m
         JOIN teams ht ON m.home_team_id = ht.id
         JOIN teams at ON m.away_team_id = at.id
@@ -161,6 +180,11 @@ pub async fn simulate_match_detailed(
     let home_power: f64 = match_row.get("home_power");
     let away_power: f64 = match_row.get("away_power");
     let format_str: String = match_row.get("format");
+    let stage: String = match_row.get("stage");
+    let home_team_name: String = match_row.get("home_team_name");
+    let away_team_name: String = match_row.get("away_team_name");
+    let _home_region_id: Option<i64> = match_row.get("home_region_id");
+    let _away_region_id: Option<i64> = match_row.get("away_region_id");
 
     // 获取当前赛季
     let current_season: i64 = sqlx::query_scalar(
@@ -211,7 +235,9 @@ pub async fn simulate_match_detailed(
         // 构建特性上下文
         let is_international = matches!(
             tournament_type.as_str(),
-            "msi" | "worlds" | "masters" | "shanghai" | "clauch"
+            "msi" | "Msi" | "worlds" | "WorldChampionship" | "masters" | "MadridMasters"
+            | "shanghai" | "ShanghaiMasters" | "clauch" | "ClaudeIntercontinental"
+            | "icp" | "Icp" | "IcpIntercontinental" | "super" | "SuperIntercontinental"
         );
         let is_playoff = tournament_type.contains("playoff") ||
                          tournament_type == "knockout";
@@ -252,11 +278,13 @@ pub async fn simulate_match_detailed(
             away_team_id as u64
         };
 
-        // 选择MVP
-        let all_stats: Vec<&PlayerGameStats> = home_player_stats.iter()
-            .chain(away_player_stats.iter())
-            .collect();
-        let game_mvp = select_mvp(&all_stats);
+        // 选择MVP（仅从胜方队伍中选择）
+        let winner_player_stats: Vec<&PlayerGameStats> = if winner_id == home_team_id as u64 {
+            home_player_stats.iter().collect()
+        } else {
+            away_player_stats.iter().collect()
+        };
+        let game_mvp = select_mvp(&winner_player_stats, winner_id);
 
         // 生成关键事件
         let events = generate_key_events(
@@ -302,12 +330,12 @@ pub async fn simulate_match_detailed(
     total_home_stats.average_game_duration = total_duration / games.len() as u32;
     total_away_stats.average_game_duration = total_duration / games.len() as u32;
 
-    // 选择比赛MVP
-    let match_mvp = select_match_mvp(&games);
+    // 选择比赛MVP（仅从胜方队伍中选择）
+    let match_mvp = select_match_mvp(&games, home_team_id as u64, away_team_id as u64, winner_id);
 
     // 更新数据库中的比赛结果
     sqlx::query(
-        "UPDATE matches SET home_score = ?, away_score = ?, winner_id = ?, status = 'Completed' WHERE id = ?"
+        "UPDATE matches SET home_score = ?, away_score = ?, winner_id = ?, status = 'COMPLETED' WHERE id = ?"
     )
     .bind(home_score as i64)
     .bind(away_score as i64)
@@ -342,48 +370,52 @@ pub async fn simulate_match_detailed(
         (2, 1)  // 2:1
     };
 
-    // 更新胜方积分榜
+    // 更新胜方积分榜 (使用 upsert，如果记录不存在则创建)
     sqlx::query(
         r#"
-        UPDATE league_standings
-        SET matches_played = matches_played + 1,
+        INSERT INTO league_standings (save_id, tournament_id, team_id, rank, matches_played, wins, losses, points, games_won, games_lost, game_diff)
+        VALUES (?, ?, ?, NULL, 1, 1, 0, ?, ?, ?, ?)
+        ON CONFLICT(tournament_id, team_id) DO UPDATE SET
+            matches_played = matches_played + 1,
             wins = wins + 1,
-            points = points + ?,
-            games_won = games_won + ?,
-            games_lost = games_lost + ?,
-            game_diff = game_diff + ?
-        WHERE tournament_id = ? AND team_id = ?
+            points = points + excluded.points,
+            games_won = games_won + excluded.games_won,
+            games_lost = games_lost + excluded.games_lost,
+            game_diff = game_diff + excluded.game_diff
         "#
     )
+    .bind(&save_id)
+    .bind(tournament_id)
+    .bind(winner_id as i64)
     .bind(winner_points as i64)
     .bind(winner_games_won as i64)
     .bind(winner_games_lost as i64)
     .bind((winner_games_won - winner_games_lost) as i64)
-    .bind(tournament_id)
-    .bind(winner_id as i64)
     .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
-    // 更新负方积分榜
+    // 更新负方积分榜 (使用 upsert，如果记录不存在则创建)
     sqlx::query(
         r#"
-        UPDATE league_standings
-        SET matches_played = matches_played + 1,
+        INSERT INTO league_standings (save_id, tournament_id, team_id, rank, matches_played, wins, losses, points, games_won, games_lost, game_diff)
+        VALUES (?, ?, ?, NULL, 1, 0, 1, ?, ?, ?, ?)
+        ON CONFLICT(tournament_id, team_id) DO UPDATE SET
+            matches_played = matches_played + 1,
             losses = losses + 1,
-            points = points + ?,
-            games_won = games_won + ?,
-            games_lost = games_lost + ?,
-            game_diff = game_diff + ?
-        WHERE tournament_id = ? AND team_id = ?
+            points = points + excluded.points,
+            games_won = games_won + excluded.games_won,
+            games_lost = games_lost + excluded.games_lost,
+            game_diff = game_diff + excluded.game_diff
         "#
     )
+    .bind(&save_id)
+    .bind(tournament_id)
+    .bind(loser_id as i64)
     .bind(loser_points as i64)
     .bind(loser_games_won as i64)
     .bind(loser_games_lost as i64)
     .bind((loser_games_won - loser_games_lost) as i64)
-    .bind(tournament_id)
-    .bind(loser_id as i64)
     .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -408,27 +440,101 @@ pub async fn simulate_match_detailed(
     .await
     .map_err(|e| e.to_string())?;
 
-    // 保存小局详情
+    // 保存小局详情（使用正确的表结构，包含 save_id）
     for game in &games {
+        let game_id = format!("{}_{}", match_id, game.game_number);
+        let loser_id = if game.winner_id == home_team_id as u64 {
+            away_team_id
+        } else {
+            home_team_id
+        };
+
+        // 找出本局 MVP（影响力最高的选手）
+        let all_players: Vec<_> = game.home_players.iter().chain(game.away_players.iter()).collect();
+        let mvp_player_id = all_players.iter()
+            .max_by(|a, b| a.mvp_score.partial_cmp(&b.mvp_score).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|p| p.player_id as i64)
+            .unwrap_or(0);
+
         sqlx::query(
             r#"
             INSERT INTO match_games (
-                match_id, game_number, home_power, away_power,
-                home_performance, away_performance, winner_id, duration_minutes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                id, save_id, match_id, game_number, winner_team_id, loser_team_id,
+                duration_minutes, mvp_player_id, key_player_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                winner_team_id = excluded.winner_team_id,
+                loser_team_id = excluded.loser_team_id,
+                duration_minutes = excluded.duration_minutes,
+                mvp_player_id = excluded.mvp_player_id
             "#,
         )
+        .bind(&game_id)
+        .bind(&save_id)
         .bind(match_id as i64)
         .bind(game.game_number as i64)
-        .bind(home_power)
-        .bind(away_power)
-        .bind(game.home_performance)
-        .bind(game.away_performance)
         .bind(game.winner_id as i64)
+        .bind(loser_id)
         .bind(game.duration_minutes as i64)
+        .bind(mvp_player_id)
+        .bind(mvp_player_id) // key_player 暂时与 mvp 相同
         .execute(&pool)
         .await
-        .ok(); // 忽略错误（表可能不存在）
+        .ok();
+
+        // 保存选手详细表现数据
+        for player in game.home_players.iter().chain(game.away_players.iter()) {
+            let perf_id = format!("{}_{}_{}", game_id, player.player_id, player.position);
+            let is_home = game.home_players.iter().any(|p| p.player_id == player.player_id);
+            let team_id = if is_home { home_team_id } else { away_team_id };
+            let team_name = if is_home { &home_team_name } else { &away_team_name };
+
+            sqlx::query(
+                r#"
+                INSERT INTO game_player_performances (
+                    id, save_id, game_id, player_id, player_name, team_id, team_name, position,
+                    base_ability, condition_bonus, stability_noise, actual_ability,
+                    impact_score, mvp_score, is_mvp, is_key_player,
+                    kills, deaths, assists, cs, gold, damage_dealt, damage_taken, vision_score
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    actual_ability = excluded.actual_ability,
+                    impact_score = excluded.impact_score,
+                    mvp_score = excluded.mvp_score,
+                    is_mvp = excluded.is_mvp,
+                    kills = excluded.kills,
+                    deaths = excluded.deaths,
+                    assists = excluded.assists
+                "#,
+            )
+            .bind(&perf_id)
+            .bind(&save_id)
+            .bind(&game_id)
+            .bind(player.player_id as i64)
+            .bind(&player.player_name)
+            .bind(team_id)
+            .bind(team_name)
+            .bind(&player.position)
+            .bind(player.base_ability)
+            .bind(player.condition_bonus)
+            .bind(player.stability_noise)
+            .bind(player.actual_ability)
+            .bind(player.impact_score)
+            .bind(player.mvp_score)
+            .bind(player.player_id as i64 == mvp_player_id)
+            .bind(player.player_id as i64 == mvp_player_id)
+            .bind(player.kills as i64)
+            .bind(player.deaths as i64)
+            .bind(player.assists as i64)
+            .bind(player.cs as i64)
+            .bind(player.gold as i64)
+            .bind(player.damage_dealt as i64)
+            .bind(player.damage_taken as i64)
+            .bind(player.vision_score as i64)
+            .execute(&pool)
+            .await
+            .ok();
+        }
     }
 
     // 更新选手状态因子（比赛后动态调整）
@@ -447,11 +553,59 @@ pub async fn simulate_match_detailed(
     update_player_form_factors(&pool, &home_players, home_won, home_avg_perf).await.ok();
     update_player_form_factors(&pool, &away_players, !home_won, away_avg_perf).await.ok();
 
+    // 保存选手赛事统计（用于MVP计算）
+    save_player_tournament_stats(
+        &pool,
+        &save_id,
+        current_season as u64,
+        tournament_id as u64,
+        &tournament_type,
+        home_team_id as u64,
+        &home_team_name,
+        away_team_id as u64,
+        &away_team_name,
+        &games,
+        winner_id,
+    ).await.ok();
+
+    // 如果是季后赛比赛，推进对阵生成后续比赛
+    let is_playoff = stage.contains("WINNERS")
+        || stage.contains("LOSERS")
+        || stage.contains("GRAND_FINAL");
+
+    if is_playoff {
+        println!("[Playoffs] 检测到季后赛比赛完成: stage={}", stage);
+
+        let all_matches = MatchRepository::get_by_tournament(&pool, tournament_id as u64)
+            .await
+            .unwrap_or_default();
+
+        println!("[Playoffs] 获取到 {} 场比赛", all_matches.len());
+
+        let league_service = LeagueService::new();
+        let new_matches = league_service.advance_playoff_bracket(tournament_id as u64, &all_matches);
+
+        if !new_matches.is_empty() {
+            println!("[Playoffs] 生成 {} 场新比赛", new_matches.len());
+            for nm in &new_matches {
+                println!("[Playoffs] 新比赛: stage={}, home={}, away={}", nm.stage, nm.home_team_id, nm.away_team_id);
+            }
+            match MatchRepository::create_batch(&pool, &save_id, &new_matches).await {
+                Ok(_) => println!("[Playoffs] 比赛保存成功"),
+                Err(e) => println!("[Playoffs] 比赛保存失败: {:?}", e),
+            }
+        } else {
+            println!("[Playoffs] 条件不满足，未生成新比赛");
+        }
+    }
+
     Ok(CommandResult::ok(DetailedMatchResult {
         match_id,
         tournament_id: tournament_id as u64,
         home_team_id: home_team_id as u64,
         away_team_id: away_team_id as u64,
+        home_team_name,
+        away_team_name,
         home_score,
         away_score,
         winner_id,
@@ -620,7 +774,7 @@ async fn get_starting_players(
     let rows = sqlx::query(
         r#"
         SELECT p.id, p.game_id, p.position, p.ability, p.age, p.stability, p.join_season,
-               pff.form_cycle, pff.momentum, pff.last_performance, pff.last_match_won
+               pff.form_cycle, pff.momentum, pff.last_performance, pff.last_match_won, pff.games_since_rest
         FROM players p
         LEFT JOIN player_form_factors pff ON p.id = pff.player_id
         WHERE p.save_id = ? AND p.team_id = ? AND p.status = 'Active' AND p.is_starter = 1
@@ -649,7 +803,7 @@ async fn get_starting_players(
             momentum: r.get::<Option<i64>, _>("momentum").unwrap_or(0) as i8,
             last_performance: r.get::<Option<f64>, _>("last_performance").unwrap_or(0.0),
             last_match_won: r.get::<Option<i64>, _>("last_match_won").unwrap_or(0) == 1,
-            games_since_rest: 0,
+            games_since_rest: r.get::<Option<i64>, _>("games_since_rest").unwrap_or(0) as u32,
         };
 
         // 加载选手特性
@@ -666,7 +820,11 @@ async fn get_starting_players(
         players.push(PlayerData {
             id: player_id,
             game_id: r.get::<String, _>("game_id"),
-            position: r.get::<Option<String>, _>("position").unwrap_or_default(),
+            position: r.get::<Option<String>, _>("position")
+                .unwrap_or_default()
+                .trim_start_matches("Some(")
+                .trim_end_matches(")")
+                .to_string(),
             ability,
             age,
             stability: r.get::<Option<i64>, _>("stability").unwrap_or(70) as u8,
@@ -682,7 +840,7 @@ async fn get_starting_players(
         let bench_rows = sqlx::query(
             r#"
             SELECT p.id, p.game_id, p.position, p.ability, p.age, p.stability, p.join_season,
-                   pff.form_cycle, pff.momentum, pff.last_performance, pff.last_match_won
+                   pff.form_cycle, pff.momentum, pff.last_performance, pff.last_match_won, pff.games_since_rest
             FROM players p
             LEFT JOIN player_form_factors pff ON p.id = pff.player_id
             WHERE p.save_id = ? AND p.team_id = ? AND p.status = 'Active' AND p.is_starter = 0
@@ -710,7 +868,7 @@ async fn get_starting_players(
                 momentum: r.get::<Option<i64>, _>("momentum").unwrap_or(0) as i8,
                 last_performance: r.get::<Option<f64>, _>("last_performance").unwrap_or(0.0),
                 last_match_won: r.get::<Option<i64>, _>("last_match_won").unwrap_or(0) == 1,
-                games_since_rest: 0,
+                games_since_rest: r.get::<Option<i64>, _>("games_since_rest").unwrap_or(0) as u32,
             };
 
             let traits = load_player_traits(pool, player_id).await?;
@@ -811,7 +969,7 @@ fn simulate_game_with_players(
         let mut total_actual_ability = 0.0;
 
         // 第一遍：计算每个选手的发挥值（应用特性修正）
-        let mut player_performances: Vec<(f64, f64, f64, f64)> = Vec::new();
+        let mut player_performances: Vec<(f64, f64, f64, f64, Vec<ActivatedTraitInfo>)> = Vec::new();
         for player in players {
             // 构建选手专属的特性上下文
             let player_trait_ctx = TraitContext {
@@ -823,6 +981,56 @@ fn simulate_game_with_players(
 
             // 计算特性修正
             let modifiers = TraitEngine::calculate_combined_modifiers(&player.traits, &player_trait_ctx);
+
+            // 构建激活特性列表
+            let activated_traits: Vec<ActivatedTraitInfo> = player.traits.iter().filter_map(|t| {
+                let (effect_desc, value, is_positive) = match t {
+                    TraitType::Clutch if player_trait_ctx.is_playoff || player_trait_ctx.is_international => {
+                        ("状态 +3".to_string(), 3.0, true)
+                    }
+                    TraitType::SlowStarter if player_trait_ctx.game_number == 1 => {
+                        ("状态 -2".to_string(), -2.0, false)
+                    }
+                    TraitType::SlowStarter if player_trait_ctx.game_number >= 3 => {
+                        ("状态 +2".to_string(), 2.0, true)
+                    }
+                    TraitType::FastStarter if player_trait_ctx.game_number == 1 => {
+                        ("状态 +2".to_string(), 2.0, true)
+                    }
+                    TraitType::FastStarter if player_trait_ctx.game_number >= 3 => {
+                        ("状态 -1".to_string(), -1.0, false)
+                    }
+                    TraitType::Explosive => {
+                        ("稳定性 -15, 上限 +5".to_string(), 5.0, true)
+                    }
+                    TraitType::Consistent => {
+                        ("稳定性 +10, 上限 -3".to_string(), 10.0, true)
+                    }
+                    TraitType::ComebackKing if player_trait_ctx.score_diff < 0 => {
+                        ("状态 +3".to_string(), 3.0, true)
+                    }
+                    TraitType::Tilter if player_trait_ctx.score_diff > 0 => {
+                        ("状态 -2".to_string(), -2.0, false)
+                    }
+                    TraitType::Tilter if player_trait_ctx.score_diff < 0 => {
+                        ("状态 -3".to_string(), -3.0, false)
+                    }
+                    TraitType::RisingStar if player.is_first_season => {
+                        ("能力 +3".to_string(), 3.0, true)
+                    }
+                    TraitType::Veteran if player.age >= 30 => {
+                        ("稳定性 +15".to_string(), 15.0, true)
+                    }
+                    _ => return None,
+                };
+                Some(ActivatedTraitInfo {
+                    trait_type: format!("{:?}", t),
+                    name: t.display_name().to_string(),
+                    effect: effect_desc,
+                    value,
+                    is_positive,
+                })
+            }).collect();
 
             // 应用特性修正到基础属性
             let (modified_ability, modified_stability, modified_condition, ability_ceiling) =
@@ -851,14 +1059,14 @@ fn simulate_game_with_players(
             let actual_ability = raw_ability.clamp(min_ability, max_ability);
 
             total_actual_ability += actual_ability;
-            player_performances.push((player.ability as f64, condition_bonus, stability_noise, actual_ability));
+            player_performances.push((player.ability as f64, condition_bonus, stability_noise, actual_ability, activated_traits));
         }
 
         let team_avg = if !players.is_empty() { total_actual_ability / players.len() as f64 } else { 0.0 };
 
         // 第二遍：生成详细统计
         for (i, player) in players.iter().enumerate() {
-            let (base_ability, condition_bonus, stability_noise, actual_ability) = player_performances[i];
+            let (base_ability, condition_bonus, stability_noise, actual_ability, ref activated_traits) = player_performances[i];
 
             // 根据发挥值生成KDA等统计
             let base = actual_ability / 100.0;
@@ -898,6 +1106,8 @@ fn simulate_game_with_players(
                 vision_score: (duration as f64 * (0.5 + rng.gen::<f64>() * 1.5)) as u32,
                 mvp_score,
                 impact_score,
+                traits: player.traits.iter().map(|t| format!("{:?}", t)).collect(),
+                activated_traits: activated_traits.clone(),
             });
         }
 
@@ -1001,6 +1211,8 @@ fn generate_player_stats(
                 vision_score: (duration as f64 * (0.5 + rng.gen::<f64>() * 1.5)) as u32,
                 mvp_score,
                 impact_score: 0.0, // 稍后计算
+                traits: player.traits.iter().map(|t| format!("{:?}", t)).collect(),
+                activated_traits: vec![], // 简化版函数不计算激活特性
             });
         }
 
@@ -1020,8 +1232,8 @@ fn generate_player_stats(
     (home_stats, away_stats)
 }
 
-/// 选择MVP
-fn select_mvp(stats: &[&PlayerGameStats]) -> PlayerMvpInfo {
+/// 选择MVP（仅从传入的选手列表中选择）
+fn select_mvp(stats: &[&PlayerGameStats], team_id: u64) -> PlayerMvpInfo {
     let best = stats.iter()
         .max_by(|a, b| a.mvp_score.partial_cmp(&b.mvp_score).unwrap())
         .unwrap();
@@ -1029,23 +1241,34 @@ fn select_mvp(stats: &[&PlayerGameStats]) -> PlayerMvpInfo {
     PlayerMvpInfo {
         player_id: best.player_id,
         player_name: best.player_name.clone(),
-        team_id: 0, // 需要从外部传入
+        team_id,
         position: best.position.clone(),
         mvp_score: best.mvp_score,
     }
 }
 
-/// 选择比赛MVP
-fn select_match_mvp(games: &[DetailedGameResult]) -> Option<PlayerMvpInfo> {
+/// 选择比赛MVP（仅从胜方队伍中选择）
+fn select_match_mvp(
+    games: &[DetailedGameResult],
+    home_team_id: u64,
+    _away_team_id: u64,
+    winner_id: u64,
+) -> Option<PlayerMvpInfo> {
+    // 确定胜方是主队还是客队
+    let is_home_winner = winner_id == home_team_id;
+
+    // 只统计胜方队伍选手的数据: (player_name, position, total_mvp_score, game_count)
     let mut player_scores: std::collections::HashMap<u64, (String, String, f64, u32)> = std::collections::HashMap::new();
 
     for game in games {
-        for p in &game.home_players {
-            let entry = player_scores.entry(p.player_id).or_insert((p.player_name.clone(), p.position.clone(), 0.0, 0));
-            entry.2 += p.mvp_score;
-            entry.3 += 1;
-        }
-        for p in &game.away_players {
+        // 只收集胜方队伍的选手数据
+        let winner_players = if is_home_winner {
+            &game.home_players
+        } else {
+            &game.away_players
+        };
+
+        for p in winner_players {
             let entry = player_scores.entry(p.player_id).or_insert((p.player_name.clone(), p.position.clone(), 0.0, 0));
             entry.2 += p.mvp_score;
             entry.3 += 1;
@@ -1057,7 +1280,7 @@ fn select_match_mvp(games: &[DetailedGameResult]) -> Option<PlayerMvpInfo> {
         .map(|(id, (name, pos, score, count))| PlayerMvpInfo {
             player_id: id,
             player_name: name,
-            team_id: 0,
+            team_id: winner_id,
             position: pos,
             mvp_score: score / count as f64,
         })
@@ -1239,4 +1462,324 @@ async fn update_player_form_factors(
     }
 
     Ok(())
+}
+
+/// 保存选手赛事统计（用于MVP计算）
+///
+/// 在每场比赛后调用，汇总选手在本场比赛中的表现数据
+async fn save_player_tournament_stats(
+    pool: &sqlx::SqlitePool,
+    save_id: &str,
+    season_id: u64,
+    tournament_id: u64,
+    tournament_type: &str,
+    home_team_id: u64,
+    home_team_name: &str,
+    away_team_id: u64,
+    away_team_name: &str,
+    games: &[DetailedGameResult],
+    _winner_id: u64,
+) -> Result<(), String> {
+    use std::collections::HashMap;
+
+    // 用于汇总每个选手的统计数据
+    struct PlayerAggregatedStats {
+        player_name: String,
+        team_id: u64,
+        team_name: String,
+        position: String,
+        games_played: u32,
+        games_won: u32,
+        total_impact: f64,
+        max_impact: f64,
+        performances: Vec<f64>,
+        game_mvp_count: u32,
+    }
+
+    let mut player_stats_map: HashMap<u64, PlayerAggregatedStats> = HashMap::new();
+
+    // 遍历所有小局，汇总选手数据
+    for game in games {
+        let game_winner_id = game.winner_id;
+
+        // 处理主队选手
+        for player in &game.home_players {
+            let entry = player_stats_map.entry(player.player_id).or_insert(PlayerAggregatedStats {
+                player_name: player.player_name.clone(),
+                team_id: home_team_id,
+                team_name: home_team_name.to_string(),
+                position: player.position.clone(),
+                games_played: 0,
+                games_won: 0,
+                total_impact: 0.0,
+                max_impact: f64::NEG_INFINITY,
+                performances: Vec::new(),
+                game_mvp_count: 0,
+            });
+
+            entry.games_played += 1;
+            if game_winner_id == home_team_id {
+                entry.games_won += 1;
+            }
+            entry.total_impact += player.impact_score;
+            if player.impact_score > entry.max_impact {
+                entry.max_impact = player.impact_score;
+            }
+            entry.performances.push(player.actual_ability);
+
+            // 检查是否是本局MVP
+            if game.game_mvp.player_id == player.player_id {
+                entry.game_mvp_count += 1;
+            }
+        }
+
+        // 处理客队选手
+        for player in &game.away_players {
+            let entry = player_stats_map.entry(player.player_id).or_insert(PlayerAggregatedStats {
+                player_name: player.player_name.clone(),
+                team_id: away_team_id,
+                team_name: away_team_name.to_string(),
+                position: player.position.clone(),
+                games_played: 0,
+                games_won: 0,
+                total_impact: 0.0,
+                max_impact: f64::NEG_INFINITY,
+                performances: Vec::new(),
+                game_mvp_count: 0,
+            });
+
+            entry.games_played += 1;
+            if game_winner_id == away_team_id {
+                entry.games_won += 1;
+            }
+            entry.total_impact += player.impact_score;
+            if player.impact_score > entry.max_impact {
+                entry.max_impact = player.impact_score;
+            }
+            entry.performances.push(player.actual_ability);
+
+            // 检查是否是本局MVP
+            if game.game_mvp.player_id == player.player_id {
+                entry.game_mvp_count += 1;
+            }
+        }
+    }
+
+    // 保存每个选手的汇总统计
+    for (player_id, stats) in player_stats_map {
+        let games_count = stats.games_played as f64;
+        let avg_impact = if games_count > 0.0 { stats.total_impact / games_count } else { 0.0 };
+        let avg_performance = if !stats.performances.is_empty() {
+            stats.performances.iter().sum::<f64>() / stats.performances.len() as f64
+        } else {
+            0.0
+        };
+        let best_performance = stats.performances.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let max_impact = if stats.max_impact == f64::NEG_INFINITY { 0.0 } else { stats.max_impact };
+        let best_perf_final = if best_performance == f64::NEG_INFINITY { 0.0 } else { best_performance };
+
+        let player_stats = PlayerTournamentStats {
+            id: 0,
+            save_id: save_id.to_string(),
+            season_id,
+            tournament_id,
+            tournament_type: tournament_type.to_string(),
+            player_id,
+            player_name: stats.player_name,
+            team_id: stats.team_id,
+            team_name: stats.team_name,
+            position: stats.position,
+            games_played: stats.games_played,
+            games_won: stats.games_won,
+            total_impact: stats.total_impact,
+            avg_impact,
+            max_impact,
+            avg_performance,
+            best_performance: best_perf_final,
+            game_mvp_count: stats.game_mvp_count,
+            created_at: None,
+            updated_at: None,
+        };
+
+        // 使用 upsert 保存或更新（累加统计）
+        // 由于 upsert 会覆盖而非累加，我们需要先获取现有数据再合并
+        let existing = PlayerTournamentStatsRepository::get_by_player_tournament(
+            pool, save_id, tournament_id, player_id
+        ).await;
+
+        let final_stats = if let Ok(Some(existing_stats)) = existing {
+            // 合并现有数据
+            let total_games = existing_stats.games_played + stats.games_played;
+            let total_won = existing_stats.games_won + stats.games_won;
+            let combined_total_impact = existing_stats.total_impact + stats.total_impact;
+            let combined_avg_impact = if total_games > 0 {
+                combined_total_impact / total_games as f64
+            } else {
+                0.0
+            };
+            let combined_max_impact = existing_stats.max_impact.max(max_impact);
+            // 对于平均发挥值，做加权平均
+            let combined_avg_perf = if total_games > 0 {
+                (existing_stats.avg_performance * existing_stats.games_played as f64
+                    + avg_performance * stats.games_played as f64) / total_games as f64
+            } else {
+                0.0
+            };
+            let combined_best_perf = existing_stats.best_performance.max(best_perf_final);
+            let combined_mvp_count = existing_stats.game_mvp_count + stats.game_mvp_count;
+
+            PlayerTournamentStats {
+                id: existing_stats.id,
+                save_id: save_id.to_string(),
+                season_id,
+                tournament_id,
+                tournament_type: tournament_type.to_string(),
+                player_id,
+                player_name: player_stats.player_name,
+                team_id: player_stats.team_id,
+                team_name: player_stats.team_name,
+                position: player_stats.position,
+                games_played: total_games,
+                games_won: total_won,
+                total_impact: combined_total_impact,
+                avg_impact: combined_avg_impact,
+                max_impact: combined_max_impact,
+                avg_performance: combined_avg_perf,
+                best_performance: combined_best_perf,
+                game_mvp_count: combined_mvp_count,
+                created_at: None,
+                updated_at: None,
+            }
+        } else {
+            player_stats
+        };
+
+        if let Err(e) = PlayerTournamentStatsRepository::upsert(pool, &final_stats).await {
+            eprintln!("[save_player_tournament_stats] 保存选手 {} 统计失败: {}", player_id, e);
+        }
+    }
+
+    Ok(())
+}
+
+/// 更新比赛结果（用于前端本地模拟后同步数据库）
+#[tauri::command]
+pub async fn update_match_result(
+    state: State<'_, AppState>,
+    match_id: u64,
+    home_score: u32,
+    away_score: u32,
+    winner_id: u64,
+) -> Result<CommandResult<bool>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 更新比赛结果
+    sqlx::query(
+        r#"
+        UPDATE matches SET
+            home_score = ?,
+            away_score = ?,
+            winner_id = ?,
+            status = 'COMPLETED',
+            played_at = datetime('now')
+        WHERE id = ?
+        "#,
+    )
+    .bind(home_score as i64)
+    .bind(away_score as i64)
+    .bind(winner_id as i64)
+    .bind(match_id as i64)
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("Failed to update match result: {}", e))?;
+
+    println!("[update_match_result] Match {} updated: {}:{}, winner={}",
+        match_id, home_score, away_score, winner_id);
+
+    Ok(CommandResult::ok(true))
+}
+
+/// 更新比赛队伍（用于填充淘汰赛待定队伍）
+#[tauri::command]
+pub async fn update_match_teams(
+    state: State<'_, AppState>,
+    match_id: u64,
+    home_team_id: u64,
+    away_team_id: u64,
+) -> Result<CommandResult<bool>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 更新比赛队伍
+    sqlx::query(
+        r#"
+        UPDATE matches SET
+            home_team_id = ?,
+            away_team_id = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(home_team_id as i64)
+    .bind(away_team_id as i64)
+    .bind(match_id as i64)
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("Failed to update match teams: {}", e))?;
+
+    println!("[update_match_teams] Match {} updated: home={}, away={}",
+        match_id, home_team_id, away_team_id);
+
+    Ok(CommandResult::ok(true))
+}
+
+/// 取消比赛（标记为 CANCELLED）
+#[tauri::command]
+pub async fn cancel_match(
+    state: State<'_, AppState>,
+    match_id: u64,
+) -> Result<CommandResult<bool>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 更新比赛状态为 CANCELLED
+    sqlx::query(
+        r#"
+        UPDATE matches SET
+            status = 'CANCELLED'
+        WHERE id = ?
+        "#,
+    )
+    .bind(match_id as i64)
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("Failed to cancel match: {}", e))?;
+
+    println!("[cancel_match] Match {} cancelled", match_id);
+
+    Ok(CommandResult::ok(true))
 }

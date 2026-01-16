@@ -23,12 +23,36 @@ pub enum HonorType {
     FinalsMvp,
     /// 常规赛MVP
     RegularSeasonMvp,
-    /// 季后赛MVP
-    PlayoffsMvp,
+    /// 季后赛FMVP（决赛最有价值选手）
+    PlayoffsFmvp,
 
-    // 选手冠军荣誉（跟随战队）
+    // 选手名次荣誉（跟随战队）
     /// 选手获得冠军（作为冠军队成员）
     PlayerChampion,
+    /// 选手获得亚军（作为亚军队成员）
+    PlayerRunnerUp,
+    /// 选手获得季军（作为季军队成员）
+    PlayerThird,
+    /// 选手获得殿军（作为殿军队成员）
+    PlayerFourth,
+
+    // 年度颁奖荣誉
+    /// 年度MVP（年度IM第一）
+    AnnualMvp,
+    /// 年度Top20
+    AnnualTop20,
+    /// 年度最佳上单
+    AnnualBestTop,
+    /// 年度最佳打野
+    AnnualBestJungle,
+    /// 年度最佳中单
+    AnnualBestMid,
+    /// 年度最佳ADC
+    AnnualBestAdc,
+    /// 年度最佳辅助
+    AnnualBestSupport,
+    /// 年度最佳新秀
+    AnnualRookie,
 }
 
 impl HonorType {
@@ -42,8 +66,19 @@ impl HonorType {
             HonorType::TournamentMvp => "赛事MVP",
             HonorType::FinalsMvp => "决赛MVP",
             HonorType::RegularSeasonMvp => "常规赛MVP",
-            HonorType::PlayoffsMvp => "季后赛MVP",
+            HonorType::PlayoffsFmvp => "季后赛FMVP",
             HonorType::PlayerChampion => "冠军成员",
+            HonorType::PlayerRunnerUp => "亚军成员",
+            HonorType::PlayerThird => "季军成员",
+            HonorType::PlayerFourth => "殿军成员",
+            HonorType::AnnualMvp => "年度MVP",
+            HonorType::AnnualTop20 => "年度Top20",
+            HonorType::AnnualBestTop => "年度最佳上单",
+            HonorType::AnnualBestJungle => "年度最佳打野",
+            HonorType::AnnualBestMid => "年度最佳中单",
+            HonorType::AnnualBestAdc => "年度最佳ADC",
+            HonorType::AnnualBestSupport => "年度最佳辅助",
+            HonorType::AnnualRookie => "年度最佳新秀",
         }
     }
 
@@ -66,7 +101,34 @@ impl HonorType {
             HonorType::TournamentMvp
                 | HonorType::FinalsMvp
                 | HonorType::RegularSeasonMvp
-                | HonorType::PlayoffsMvp
+                | HonorType::PlayoffsFmvp
+                | HonorType::AnnualMvp
+        )
+    }
+
+    /// 是否是选手名次荣誉（跟随战队名次）
+    pub fn is_player_placement_honor(&self) -> bool {
+        matches!(
+            self,
+            HonorType::PlayerChampion
+                | HonorType::PlayerRunnerUp
+                | HonorType::PlayerThird
+                | HonorType::PlayerFourth
+        )
+    }
+
+    /// 是否是年度颁奖荣誉
+    pub fn is_annual_award(&self) -> bool {
+        matches!(
+            self,
+            HonorType::AnnualMvp
+                | HonorType::AnnualTop20
+                | HonorType::AnnualBestTop
+                | HonorType::AnnualBestJungle
+                | HonorType::AnnualBestMid
+                | HonorType::AnnualBestAdc
+                | HonorType::AnnualBestSupport
+                | HonorType::AnnualRookie
         )
     }
 }
@@ -93,7 +155,7 @@ pub struct Honor {
     pub save_id: String,
     pub honor_type: HonorType,
     pub season_id: u64,
-    pub tournament_id: u64,
+    pub tournament_id: Option<u64>,
     pub tournament_name: String,
     pub tournament_type: String,
 
@@ -127,7 +189,7 @@ impl Honor {
             save_id: save_id.to_string(),
             honor_type,
             season_id,
-            tournament_id,
+            tournament_id: Some(tournament_id),
             tournament_name: tournament_name.to_string(),
             tournament_type: tournament_type.to_string(),
             team_id: Some(team_id),
@@ -145,7 +207,7 @@ impl Honor {
         save_id: &str,
         honor_type: HonorType,
         season_id: u64,
-        tournament_id: u64,
+        tournament_id: Option<u64>,
         tournament_name: &str,
         tournament_type: &str,
         team_id: u64,

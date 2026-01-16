@@ -260,7 +260,7 @@
               <div class="honor-info">
                 <div class="honor-title">{{ honor.tournament_name }}</div>
                 <el-tag :type="getHonorTagType(honor.honor_type)" size="default" effect="dark">
-                  {{ honor.honor_type }}
+                  {{ formatHonorType(honor.honor_type) }}
                 </el-tag>
               </div>
             </div>
@@ -476,7 +476,7 @@ import {
   Sunrise,
 } from '@element-plus/icons-vue'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
-import { honorApi, type HonorRecord } from '@/api/tauri'
+import { honorApi, formatHonorType, type HonorRecord } from '@/api/tauri'
 
 const route = useRoute()
 const router = useRouter()
@@ -1119,40 +1119,98 @@ const getPositionClass = (position: string) => {
   return classes[position] || ''
 }
 
-const getHonorColor = (position: string) => {
+const getHonorColor = (honorType: string) => {
   const colors: Record<string, string> = {
+    // 英文类型
+    'TEAM_CHAMPION': '#fbbf24',
+    'TEAM_RUNNER_UP': '#9ca3af',
+    'TEAM_THIRD': '#f97316',
+    'TEAM_FOURTH': '#3b82f6',
+    'PLAYER_CHAMPION': '#fbbf24',
+    'PLAYER_RUNNER_UP': '#9ca3af',
+    'PLAYER_THIRD': '#f97316',
+    'PLAYER_FOURTH': '#3b82f6',
+    'TOURNAMENT_MVP': '#ef4444',
+    'FINALS_MVP': '#ef4444',
+    'REGULAR_SEASON_MVP': '#ef4444',
+    'PLAYOFFS_FMVP': '#ef4444',
+    // 中文类型
     '冠军': '#fbbf24',
     '亚军': '#9ca3af',
     '季军': '#f97316',
+    '殿军': '#3b82f6',
   }
-  return colors[position] || '#3b82f6'
+  return colors[honorType] || '#3b82f6'
 }
 
-const getHonorClass = (position: string) => {
+const getHonorClass = (honorType: string) => {
   const classes: Record<string, string> = {
+    // 英文类型
+    'TEAM_CHAMPION': 'champion',
+    'TEAM_RUNNER_UP': 'runner-up',
+    'TEAM_THIRD': 'third-place',
+    'TEAM_FOURTH': 'fourth-place',
+    'PLAYER_CHAMPION': 'champion',
+    'PLAYER_RUNNER_UP': 'runner-up',
+    'PLAYER_THIRD': 'third-place',
+    'PLAYER_FOURTH': 'fourth-place',
+    // 中文类型
     '冠军': 'champion',
     '亚军': 'runner-up',
     '季军': 'third-place',
+    '殿军': 'fourth-place',
   }
-  return classes[position] || ''
+  return classes[honorType] || ''
 }
 
-const getHonorEmoji = (position: string) => {
+const getHonorEmoji = (honorType: string) => {
   const emojis: Record<string, string> = {
+    // 英文类型
+    'TEAM_CHAMPION': '🏆',
+    'TEAM_RUNNER_UP': '🥈',
+    'TEAM_THIRD': '🥉',
+    'TEAM_FOURTH': '4️⃣',
+    'PLAYER_CHAMPION': '🏆',
+    'PLAYER_RUNNER_UP': '🥈',
+    'PLAYER_THIRD': '🥉',
+    'PLAYER_FOURTH': '4️⃣',
+    'TOURNAMENT_MVP': '⭐',
+    'FINALS_MVP': '⭐',
+    'REGULAR_SEASON_MVP': '⭐',
+    'PLAYOFFS_FMVP': '⭐',
+    'REGULAR_SEASON_FIRST': '🥇',
+    // 中文类型
     '冠军': '🏆',
     '亚军': '🥈',
     '季军': '🥉',
+    '殿军': '4️⃣',
   }
-  return emojis[position] || '🏅'
+  return emojis[honorType] || '🏅'
 }
 
-const getHonorTagType = (position: string) => {
+const getHonorTagType = (honorType: string) => {
   const types: Record<string, string> = {
+    // 英文类型
+    'TEAM_CHAMPION': 'warning',
+    'TEAM_RUNNER_UP': '',        // 默认银色
+    'TEAM_THIRD': 'success',     // 绿色
+    'TEAM_FOURTH': 'info',       // 蓝色
+    'PLAYER_CHAMPION': 'warning',
+    'PLAYER_RUNNER_UP': '',
+    'PLAYER_THIRD': 'success',
+    'PLAYER_FOURTH': 'info',
+    'TOURNAMENT_MVP': 'danger',
+    'FINALS_MVP': 'danger',
+    'REGULAR_SEASON_MVP': 'danger',
+    'PLAYOFFS_FMVP': 'danger',
+    'REGULAR_SEASON_FIRST': 'primary',
+    // 中文类型
     '冠军': 'warning',
-    '亚军': 'info',
-    '季军': 'danger',
+    '亚军': '',
+    '季军': 'success',
+    '殿军': 'info',
   }
-  return types[position] || 'primary'
+  return types[honorType] || 'primary'
 }
 
 const getRankTagType = (rank: number) => {

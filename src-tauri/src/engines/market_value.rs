@@ -235,7 +235,7 @@ impl MarketValueEngine {
                     _ => None,
                 }
             }
-            "regularseasonmvp" | "regular_season_mvp" | "playoffsmvp" | "playoffs_mvp" => {
+            "regularseasonmvp" | "regular_season_mvp" | "playoffsfmvp" | "playoffs_fmvp" => {
                 Some(HonorCategory::RegionalMvp)
             }
             "allprofirst" | "all_pro_first" => Some(HonorCategory::AllProFirst),

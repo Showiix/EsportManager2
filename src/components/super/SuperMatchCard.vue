@@ -26,7 +26,7 @@
           <span class="team-name">
             {{ match.teamAName || '待定' }}
           </span>
-          <el-tag v-if="match.teamARegion" size="small" type="info" class="region-tag">
+          <el-tag v-if="match.teamARegion" size="small" :type="getRegionTagType(match.teamARegion)" class="region-tag">
             {{ match.teamARegion }}
           </el-tag>
         </div>
@@ -45,7 +45,7 @@
           <span class="team-name">
             {{ match.teamBName || '待定' }}
           </span>
-          <el-tag v-if="match.teamBRegion" size="small" type="info" class="region-tag">
+          <el-tag v-if="match.teamBRegion" size="small" :type="getRegionTagType(match.teamBRegion)" class="region-tag">
             {{ match.teamBRegion }}
           </el-tag>
         </div>
@@ -109,6 +109,7 @@ const emit = defineEmits<{
  */
 const canSimulate = computed(() => {
   return (
+    props.match.id &&
     props.match.status !== 'completed' &&
     props.match.teamAId &&
     props.match.teamBId
@@ -124,14 +125,27 @@ const isWinner = (teamId: string | number | undefined): boolean => {
 }
 
 /**
+ * 获取赛区标签颜色
+ */
+const getRegionTagType = (region?: string): string => {
+  const typeMap: Record<string, string> = {
+    'LPL': 'danger',
+    'LCK': 'primary',
+    'LEC': 'success',
+    'LCS': 'warning'
+  }
+  return typeMap[region || ''] || 'info'
+}
+
+/**
  * 获取比赛类型标签
  */
 const getMatchTypeBadgeType = (): string => {
   if (props.match.stage === 'fighter_group') return 'primary'
-  if (props.match.matchType === 'grand_final') return 'danger'
-  if (props.match.matchType === 'third_place') return 'warning'
-  if (props.match.matchType === 'positioning') return ''
-  if (props.match.matchType === 'promotion') return 'info'
+  if (props.match.matchType === 'GRAND_FINAL') return 'danger'
+  if (props.match.matchType === 'THIRD_PLACE') return 'warning'
+  if (props.match.matchType === 'CHALLENGER_POSITIONING') return ''
+  if (props.match.matchType === 'CHALLENGER_PROMOTION') return 'info'
   return 'success'
 }
 
@@ -145,17 +159,17 @@ const getMatchTypeLabel = (): string => {
 
   const roundLabels: Record<string, string> = {
     // 第二阶段
-    'positioning': '挑战者定位赛',
-    'promotion': '晋级赛',
+    'CHALLENGER_POSITIONING': '挑战者定位赛',
+    'CHALLENGER_PROMOTION': '晋级赛',
     // 第三阶段
-    'winners_match': '胜者组对决',
-    'losers_match': '败者组对决',
-    'losers_final': '败者组决赛',
+    'PREP_WINNERS': '胜者组对决',
+    'PREP_LOSERS': '败者组对决',
+    'PREP_LOSERS_FINAL': '败者组决赛',
     // 第四阶段
-    'final_round1': '终极赛首轮',
-    'final_round2': '终极赛次轮',
-    'third_place': '季军赛',
-    'grand_final': '总决赛'
+    'FINALS_R1': '终极赛首轮',
+    'FINALS_R2': '终极赛次轮',
+    'THIRD_PLACE': '季军赛',
+    'GRAND_FINAL': '总决赛'
   }
 
   return roundLabels[props.match.matchType || ''] || '淘汰赛'

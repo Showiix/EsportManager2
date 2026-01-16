@@ -83,6 +83,12 @@ pub struct AnnualPointsDetail {
     pub season_id: u64,
     pub team_id: u64,
     pub tournament_id: u64,
+    /// 赛事名称
+    #[serde(default)]
+    pub tournament_name: Option<String>,
+    /// 赛事类型
+    #[serde(default)]
+    pub tournament_type: Option<String>,
     /// 获得积分
     pub points: u32,
     /// 赛事最终排名

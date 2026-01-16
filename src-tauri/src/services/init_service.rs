@@ -155,6 +155,10 @@ impl InitService {
         let tag = Self::determine_player_tag(config.ability, config.potential, config.age);
         let salary = Self::calculate_initial_salary(config.ability, config.potential, tag);
 
+        // 根据选手属性计算独特的忠诚度和满意度
+        let loyalty = Self::calculate_initial_loyalty(config.ability, config.potential, config.age, tag);
+        let satisfaction = Self::calculate_initial_satisfaction(config.ability, config.potential, config.age, config.is_starter, tag);
+
         Player {
             id: 0,
             game_id: config.game_id.to_string(),
@@ -169,11 +173,14 @@ impl InitService {
             position: Some(config.position),
             team_id: Some(team_id),
             salary,
-            market_value: Self::calculate_market_value(config.ability, config.potential, config.age),
+            market_value: Self::calculate_market_value(config.ability, config.potential, config.age, tag, config.position),
+            calculated_market_value: 0, // 初始化时为0，年度结算时计算
             contract_end_season: Some(current_season + rng.gen_range(1..4)),
             join_season: current_season,
             retire_season: None,
             is_starter: config.is_starter,
+            loyalty,
+            satisfaction,
         }
     }
 
@@ -215,6 +222,10 @@ impl InitService {
                 let tag = Self::determine_player_tag(ability, potential, age);
                 let salary = Self::calculate_initial_salary(ability, potential, tag);
 
+                // 根据选手属性计算独特的忠诚度和满意度
+                let loyalty = Self::calculate_initial_loyalty(ability, potential, age, tag);
+                let satisfaction = Self::calculate_initial_satisfaction(ability, potential, age, is_starter, tag);
+
                 players.push(Player {
                     id: 0,
                     game_id: format!("Player_{}_{}", team_id, player_counter),
@@ -229,11 +240,14 @@ impl InitService {
                     position: Some(*pos),
                     team_id: Some(team_id),
                     salary,
-                    market_value: Self::calculate_market_value(ability, potential, age),
+                    market_value: Self::calculate_market_value(ability, potential, age, tag, *pos),
+                    calculated_market_value: 0, // 初始化时为0，年度结算时计算
                     contract_end_season: Some(current_season + rng.gen_range(1..4)),
                     join_season: current_season,
                     retire_season: None,
                     is_starter,
+                    loyalty,
+                    satisfaction,
                 });
 
                 player_counter += 1;
@@ -254,6 +268,113 @@ impl InitService {
         }
     }
 
+    /// 计算初始忠诚度 (基于年龄、能力、潜力等因素)
+    /// 返回值范围: 55-95
+    ///
+    /// 设计原则：大多数选手（70-80%）应该对球队有合理的忠诚度
+    /// 只有少数选手会有较低的忠诚度想离队
+    fn calculate_initial_loyalty(ability: u8, potential: u8, age: u8, tag: PlayerTag) -> u8 {
+        let mut rng = rand::thread_rng();
+
+        // 基础值提高到 72（大多数选手应该有较高忠诚度）
+        let mut base: f64 = 72.0;
+
+        // 年龄因素: 调整幅度减小，不让年轻选手过度受罚
+        base += match age {
+            17..=19 => -3.0,   // 年轻新秀，略有野心
+            20..=22 => 0.0,    // 黄金期，正常
+            23..=25 => 4.0,    // 成熟期，开始稳定
+            26..=28 => 8.0,    // 老将，更看重稳定
+            _ => 10.0,         // 高龄，非常忠诚
+        };
+
+        // 能力因素: 减小惩罚，顶级选手也可以忠诚
+        base += match ability {
+            90..=100 => -2.0,  // 顶级选手，略有降低
+            85..=89 => 0.0,    // 明星选手，正常
+            80..=84 => 2.0,    // 优秀选手，略高
+            70..=79 => 3.0,    // 普通选手，珍惜机会
+            _ => 4.0,          // 替补选手，更加忠诚
+        };
+
+        // 潜力因素: 高潜力年轻人的惩罚减小
+        if age <= 21 && potential >= 90 {
+            base -= 3.0;  // 只有超高潜力才略有影响
+        }
+
+        // 天赋因素: 减小差异
+        base += match tag {
+            PlayerTag::Genius => -2.0,  // 天才型略低
+            PlayerTag::Normal => 0.0,
+            PlayerTag::Ordinary => 2.0,  // 普通型略高
+        };
+
+        // 添加随机波动 (-6 到 +6)
+        let random_factor: f64 = rng.gen_range(-6.0..6.0);
+        base += random_factor;
+
+        base.clamp(55.0, 95.0) as u8
+    }
+
+    /// 计算初始满意度 (基于能力、是否首发等因素)
+    /// 返回值范围: 60-95
+    ///
+    /// 设计原则：大多数选手（70-80%）应该对当前处境较为满意
+    /// 首发选手普遍满意，替补选手有机会稍微不满
+    fn calculate_initial_satisfaction(ability: u8, potential: u8, age: u8, is_starter: bool, tag: PlayerTag) -> u8 {
+        let mut rng = rand::thread_rng();
+
+        // 基础值提高：首发 78，替补 68
+        let mut base: f64 = if is_starter { 78.0 } else { 68.0 };
+
+        // 首发/替补因素：减小惩罚
+        if !is_starter {
+            // 替补选手如果能力高，满意度会降低（觉得自己应该首发）
+            if ability >= 85 {
+                base -= 5.0;  // 从 -8 减小到 -5
+            } else if ability >= 80 {
+                base -= 3.0;  // 从 -4 减小到 -3
+            }
+        }
+
+        // 年龄因素: 年轻选手对替补更能接受
+        if !is_starter {
+            base += match age {
+                17..=19 => 6.0,   // 年轻，可以接受做替补学习
+                20..=22 => 3.0,   // 还年轻，但开始着急
+                23..=25 => 0.0,   // 黄金期，想要上场
+                _ => -2.0,        // 老了还是替补，不太满意
+            };
+        }
+
+        // 潜力因素: 减小惩罚
+        if !is_starter && potential >= 88 && age <= 21 {
+            base -= 3.0;  // 从 -5 减小到 -3
+        }
+
+        // 天赋因素: 减小差异
+        base += match tag {
+            PlayerTag::Genius => 2.0,   // 天才型选手反而更自信满足
+            PlayerTag::Normal => 0.0,
+            PlayerTag::Ordinary => -1.0, // 普通选手可能略有不安
+        };
+
+        // 能力因素: 高能力选手更自信
+        base += match ability {
+            90..=100 => 5.0,   // 顶级选手，自信满满
+            85..=89 => 3.0,
+            80..=84 => 1.0,
+            70..=79 => 0.0,    // 普通选手，正常
+            _ => -2.0,         // 能力较低，可能有些焦虑
+        };
+
+        // 添加随机波动 (-5 到 +5)
+        let random_factor: f64 = rng.gen_range(-5.0..5.0);
+        base += random_factor;
+
+        base.clamp(60.0, 95.0) as u8
+    }
+
     /// 计算初始薪资（返回实际金额，单位：元）
     fn calculate_initial_salary(ability: u8, _potential: u8, tag: PlayerTag) -> u64 {
         // base 单位为万元
@@ -272,43 +393,56 @@ impl InitService {
             PlayerTag::Ordinary => 0.8,
         };
 
-        // 转换为实际金额（乘以10000）
-        (((base as f64) * tag_multiplier) as u64) * 10000
+        // 返回万元
+        ((base as f64) * tag_multiplier) as u64
     }
 
-    /// 计算市场价值（返回实际金额，单位：元）
-    fn calculate_market_value(ability: u8, potential: u8, age: u8) -> u64 {
-        // base 单位为万元
-        let base = match ability {
-            90..=100 => 500,
-            85..=89 => 350,
-            80..=84 => 250,
-            75..=79 => 180,
-            70..=74 => 120,
-            65..=69 => 80,
-            _ => 50,
+    /// 计算市场价值（单位：万元）
+    /// 使用与 Player::calculate_base_market_value 相同的公式
+    fn calculate_market_value(ability: u8, potential: u8, age: u8, tag: PlayerTag, position: Position) -> u64 {
+        // 基础身价系数（与 player.rs 保持一致）
+        let multiplier = match ability {
+            95..=100 => 50,  // 顶级选手
+            90..=94 => 35,   // 世界级
+            85..=89 => 20,   // 顶尖
+            80..=84 => 12,   // 优秀
+            75..=79 => 7,    // 合格首发
+            70..=74 => 4,    // 替补级
+            60..=69 => 2,    // 新人
+            _ => 1,          // 青训
         };
+
+        // 基础身价 = 能力值 × 系数（单位：万元）
+        let base = ability as u64 * multiplier;
 
         // 年龄因素
         let age_factor = match age {
-            17..=20 => 1.3,
-            21..=24 => 1.2,
-            25..=27 => 1.0,
-            28..=30 => 0.8,
-            _ => 0.5,
+            17..=19 => 1.5,  // 超新星溢价
+            20..=22 => 1.3,  // 年轻潜力股
+            23..=25 => 1.0,  // 黄金年龄
+            26..=27 => 0.85, // 巅峰末期
+            28..=29 => 0.7,  // 开始下滑
+            _ => 0.5,        // 老将或太年轻
         };
 
         // 潜力加成
-        let potential_bonus = if potential > ability + 10 {
-            1.4
-        } else if potential > ability + 5 {
-            1.2
+        let diff = potential.saturating_sub(ability);
+        let potential_factor = if diff > 10 {
+            1.25
+        } else if diff >= 5 {
+            1.1
         } else {
             1.0
         };
 
-        // 转换为实际金额（乘以10000）
-        (((base as f64) * age_factor * potential_bonus) as u64) * 10000
+        // 天赋系数
+        let tag_factor = tag.market_value_factor();
+
+        // 位置系数
+        let position_factor = position.market_value_factor();
+
+        // 返回万元
+        ((base as f64) * age_factor * potential_factor * tag_factor * position_factor) as u64
     }
 
     /// 初始化所有数据
@@ -444,7 +578,8 @@ impl InitService {
         Ok(())
     }
 
-    /// 创建初始赛事（完整赛季）
+    /// 创建初始赛事（仅春季常规赛）
+    /// 其他赛事（季后赛、夏季赛、国际赛事）通过时间推进引擎动态创建
     async fn create_initial_tournaments(
         pool: &Pool<Sqlite>,
         save_id: &str,
@@ -454,7 +589,8 @@ impl InitService {
         let region_names = ["LPL", "LCK", "LEC", "LCS"];
         let league_service = LeagueService::new();
 
-        // 1. 创建各赛区的联赛赛事
+        // 仅创建春季常规赛（四个赛区各一个）
+        // 其他赛事通过 GameFlowService::initialize_phase 在时间推进时动态创建
         for (idx, &region_id) in region_ids.iter().enumerate() {
             let region_name = region_names.get(idx).unwrap_or(&"LPL");
 
@@ -504,83 +640,10 @@ impl InitService {
             StandingRepository::upsert_batch(pool, save_id, &initial_standings)
                 .await
                 .map_err(|e| e.to_string())?;
-
-            // 春季季后赛 (待开始)
-            let spring_playoffs = Tournament {
-                id: 0,
-                save_id: save_id.to_string(),
-                name: format!("S{} {} 春季季后赛", current_season, region_name),
-                tournament_type: TournamentType::SpringPlayoffs,
-                season_id: current_season as u64,
-                region_id: Some(region_id),
-                status: TournamentStatus::Upcoming,
-                current_stage: None,
-                current_round: None,
-            };
-            TournamentRepository::create(pool, save_id, &spring_playoffs)
-                .await
-                .map_err(|e| e.to_string())?;
-
-            // 夏季常规赛 (待开始)
-            let summer_regular = Tournament {
-                id: 0,
-                save_id: save_id.to_string(),
-                name: format!("S{} {} 夏季赛", current_season, region_name),
-                tournament_type: TournamentType::SummerRegular,
-                season_id: current_season as u64,
-                region_id: Some(region_id),
-                status: TournamentStatus::Upcoming,
-                current_stage: None,
-                current_round: None,
-            };
-            TournamentRepository::create(pool, save_id, &summer_regular)
-                .await
-                .map_err(|e| e.to_string())?;
-
-            // 夏季季后赛 (待开始)
-            let summer_playoffs = Tournament {
-                id: 0,
-                save_id: save_id.to_string(),
-                name: format!("S{} {} 夏季季后赛", current_season, region_name),
-                tournament_type: TournamentType::SummerPlayoffs,
-                season_id: current_season as u64,
-                region_id: Some(region_id),
-                status: TournamentStatus::Upcoming,
-                current_stage: None,
-                current_round: None,
-            };
-            TournamentRepository::create(pool, save_id, &summer_playoffs)
-                .await
-                .map_err(|e| e.to_string())?;
         }
 
-        // 2. 创建国际赛事 (无赛区，待开始)
-        let international_tournaments = vec![
-            (TournamentType::Msi, format!("S{} MSI季中冠军赛", current_season)),
-            (TournamentType::MadridMasters, format!("S{} 马德里大师赛", current_season)),
-            (TournamentType::ClaudeIntercontinental, format!("S{} Claude洲际赛", current_season)),
-            (TournamentType::WorldChampionship, format!("S{} 全球总决赛", current_season)),
-            (TournamentType::ShanghaiMasters, format!("S{} 上海大师赛", current_season)),
-            (TournamentType::IcpIntercontinental, format!("S{} ICP四赛区洲际对抗赛", current_season)),
-            (TournamentType::SuperIntercontinental, format!("S{} Super洲际年度邀请赛", current_season)),
-        ];
-
-        for (tournament_type, name) in international_tournaments {
-            let tournament = Tournament {
-                id: 0,
-                save_id: save_id.to_string(),
-                name,
-                tournament_type,
-                season_id: current_season as u64,
-                region_id: None, // 国际赛事无赛区
-                status: TournamentStatus::Upcoming,
-                current_stage: None,
-                current_round: None,
-            };
-            TournamentRepository::create(pool, save_id, &tournament)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
+        // 注意：春季季后赛、夏季赛、国际赛事等将通过时间推进引擎动态创建
+        // 参见 GameFlowService::initialize_phase (game_flow.rs)
 
         Ok(())
     }
@@ -592,6 +655,13 @@ impl InitService {
         current_season: u32,
         region_ids: &[u64],
     ) -> Result<(), String> {
+        // 先清空该存档的所有选秀池数据（确保初始化时是干净的）
+        sqlx::query("DELETE FROM draft_players WHERE save_id = ?")
+            .bind(save_id)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("Failed to clear draft pool: {}", e))?;
+
         // 赛区 ID 映射: region_ids[0]=LPL(1), region_ids[1]=LCK(2), region_ids[2]=LEC(3), region_ids[3]=LCS(4)
         for (idx, &region_id) in region_ids.iter().enumerate() {
             let config_region_id = (idx + 1) as u64; // 1=LPL, 2=LCK, 3=LEC, 4=LCS
@@ -626,6 +696,69 @@ impl InitService {
         }
 
         Ok(())
+    }
+
+    /// 迁移现有选手的忠诚度和满意度
+    /// 根据选手属性重新计算并更新数据库
+    pub async fn migrate_loyalty_satisfaction(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+    ) -> Result<u32, String> {
+        use sqlx::Row;
+
+        // 获取所有活跃选手
+        let rows = sqlx::query(
+            r#"
+            SELECT id, ability, potential, age, tag, is_starter
+            FROM players
+            WHERE save_id = ? AND status = 'Active'
+            "#
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to fetch players: {}", e))?;
+
+        let mut updated_count = 0u32;
+
+        for row in rows {
+            let player_id: i64 = row.get("id");
+            let ability: i64 = row.get("ability");
+            let potential: i64 = row.get("potential");
+            let age: i64 = row.get("age");
+            let tag_str: String = row.get("tag");
+            let is_starter: bool = row.get("is_starter");
+
+            let ability = ability as u8;
+            let potential = potential as u8;
+            let age = age as u8;
+
+            // 解析 tag
+            let tag = match tag_str.as_str() {
+                "Genius" => PlayerTag::Genius,
+                "Normal" => PlayerTag::Normal,
+                _ => PlayerTag::Ordinary,
+            };
+
+            // 计算新的忠诚度和满意度
+            let loyalty = Self::calculate_initial_loyalty(ability, potential, age, tag);
+            let satisfaction = Self::calculate_initial_satisfaction(ability, potential, age, is_starter, tag);
+
+            // 更新数据库
+            sqlx::query(
+                "UPDATE players SET loyalty = ?, satisfaction = ? WHERE id = ?"
+            )
+            .bind(loyalty as i64)
+            .bind(satisfaction as i64)
+            .bind(player_id)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("Failed to update player {}: {}", player_id, e))?;
+
+            updated_count += 1;
+        }
+
+        Ok(updated_count)
     }
 }
 

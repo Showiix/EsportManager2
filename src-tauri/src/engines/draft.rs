@@ -189,10 +189,13 @@ impl DraftEngine {
             team_id: Some(team_id),
             salary: calculate_draft_salary(draft_player.ability, draft_player.potential),
             market_value: 0, // 稍后计算
+            calculated_market_value: 0, // 选秀新秀尚无荣誉加成
             contract_end_season: Some(current_season + 3), // 默认3年合同
             join_season: current_season,
             retire_season: None,
             is_starter: false,
+            loyalty: 50, // 新秀默认忠诚度50
+            satisfaction: 50, // 新秀默认满意度50
         }
     }
 

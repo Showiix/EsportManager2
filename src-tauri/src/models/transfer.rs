@@ -58,7 +58,7 @@ pub struct TransferRecord {
 /// 转会市场挂牌状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ListingStatus {
+pub enum TransferListingStatus {
     Active,
     Sold,
     Withdrawn,
@@ -78,7 +78,7 @@ pub struct TransferListing {
     pub asking_price: u64,
     /// 最低接受价
     pub min_price: Option<u64>,
-    pub status: ListingStatus,
+    pub status: TransferListingStatus,
 }
 
 /// 挂牌类型
@@ -105,6 +105,8 @@ pub enum FreeAgentReason {
     ContractExpire,
     Released,
     RetiredTeam,
+    /// 被挖角（TransferRounds 阶段）
+    Poached,
 }
 
 /// 自由球员
@@ -194,7 +196,7 @@ impl Default for TransferWindow {
             season_id: 0,
             status: TransferWindowStatus::Preparing,
             current_round: 0,
-            total_rounds: 5,
+            total_rounds: 7, // 改为7轮制
             total_transfers: 0,
             total_fees: 0,
             free_agents_signed: 0,
@@ -218,6 +220,18 @@ pub enum TransferEventType {
     Retirement,
     /// 合同到期
     ContractExpire,
+    /// 选手申请转会
+    TransferRequest,
+    /// 续约成功
+    ContractRenewal,
+    /// 续约谈崩
+    RenewalFailed,
+    /// 核心被挖角
+    StarPoached,
+    /// 忠诚留队（拒绝挖角）
+    LoyaltyStay,
+    /// 重建清洗
+    RebuildSale,
 }
 
 impl TransferEventType {
@@ -227,7 +241,31 @@ impl TransferEventType {
             TransferEventType::Purchase => "转会引进",
             TransferEventType::Retirement => "退役",
             TransferEventType::ContractExpire => "合同到期",
+            TransferEventType::TransferRequest => "申请转会",
+            TransferEventType::ContractRenewal => "续约成功",
+            TransferEventType::RenewalFailed => "续约谈崩",
+            TransferEventType::StarPoached => "核心被挖",
+            TransferEventType::LoyaltyStay => "忠诚留队",
+            TransferEventType::RebuildSale => "重建出售",
         }
+    }
+
+    /// 是否是负面事件（对原球队而言）
+    pub fn is_negative_for_team(&self) -> bool {
+        matches!(
+            self,
+            TransferEventType::TransferRequest
+                | TransferEventType::RenewalFailed
+                | TransferEventType::StarPoached
+        )
+    }
+
+    /// 是否是正面事件
+    pub fn is_positive(&self) -> bool {
+        matches!(
+            self,
+            TransferEventType::ContractRenewal | TransferEventType::LoyaltyStay
+        )
     }
 }
 
@@ -343,14 +381,40 @@ pub struct TransferRoundSummary {
 }
 
 /// 转会轮次名称
+/// 7轮制转会窗口：
+/// - 第0轮：赛季结算（满意度/忠诚度计算）
+/// - 第1轮：合同到期与退役
+/// - 第2轮：选手意愿处理（申请转会、续约谈判）
+/// - 第3轮：自由球员争夺战
+/// - 第4轮：重建球队清洗
+/// - 第5轮：财政清洗
+/// - 第6轮：强队补强
+/// - 第7轮：收尾补救
 pub fn get_round_name(round: u32) -> &'static str {
     match round {
         0 => "赛季结算",
         1 => "合同到期与退役",
-        2 => "自由球员争夺战",
-        3 => "财政清洗",
-        4 => "强队补强",
-        5 => "收尾补救",
+        2 => "选手意愿处理",
+        3 => "自由球员争夺战",
+        4 => "重建球队清洗",
+        5 => "财政清洗",
+        6 => "强队补强",
+        7 => "收尾补救",
+        _ => "未知轮次",
+    }
+}
+
+/// 获取轮次描述
+pub fn get_round_description(round: u32) -> &'static str {
+    match round {
+        0 => "计算选手满意度和忠诚度变化，评估球队赛季表现",
+        1 => "处理合同到期的选手和退役决定",
+        2 => "处理选手转会申请、续约谈判和离队意愿",
+        3 => "各队争夺自由球员市场上的优质选手",
+        4 => "战绩差的球队清洗高薪老将，开始重建",
+        5 => "财政困难的球队被迫出售选手",
+        6 => "强队补强弱点位置，追逐巨星",
+        7 => "最后机会补充阵容，完成转会窗口",
         _ => "未知轮次",
     }
 }
@@ -370,6 +434,27 @@ pub enum TransferStrategy {
     MustSell,
     /// 强制清洗
     ForceClear,
+    /// 全面重建（战绩差触发）
+    FullRebuild,
+    /// 追逐巨星（豪门追求顶级选手）
+    StarHunting,
+    /// 保留核心（防止核心流失）
+    RetainCore,
+}
+
+impl TransferStrategy {
+    /// 获取策略描述
+    pub fn description(&self) -> &'static str {
+        match self {
+            TransferStrategy::AggressiveBuy => "积极引援，补强阵容",
+            TransferStrategy::Passive => "观望市场，谨慎操作",
+            TransferStrategy::MustSell => "财政紧张，必须出售",
+            TransferStrategy::ForceClear => "阵容超员，强制清洗",
+            TransferStrategy::FullRebuild => "战绩低迷，全面重建",
+            TransferStrategy::StarHunting => "追逐巨星，冲击冠军",
+            TransferStrategy::RetainCore => "保留核心，稳定阵容",
+        }
+    }
 }
 
 /// 球队转会计划

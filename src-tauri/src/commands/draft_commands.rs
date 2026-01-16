@@ -4,6 +4,7 @@ use crate::services::draft_pool_data::{get_draft_pool, get_region_nationality};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::State;
+use std::collections::HashMap;
 
 /// 选秀球员信息
 #[derive(Debug, Serialize, Deserialize)]
@@ -74,6 +75,17 @@ pub async fn generate_draft_pool(
         .await
         .map_err(|e| e.to_string())?;
     let current_season: i64 = save_row.get("current_season");
+
+    // 先清空该赛区当前赛季的旧选秀池数据（只清除未被选中的）
+    sqlx::query(
+        "DELETE FROM draft_players WHERE save_id = ? AND season_id = ? AND region_id = ? AND is_picked = 0"
+    )
+    .bind(&save_id)
+    .bind(current_season)
+    .bind(region_id as i64)
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
     // 获取预定义的选秀选手数据
     let predefined_players = get_draft_pool(region_id);
@@ -536,7 +548,7 @@ pub async fn ai_auto_draft(
 
     // 获取选秀顺位
     let order_rows = sqlx::query(
-        "SELECT team_id FROM draft_orders WHERE save_id = ? AND season_id = ? AND region_id = ? ORDER BY draft_position"
+        "SELECT team_id, pick_number FROM draft_orders WHERE save_id = ? AND season_id = ? AND region_id = ? ORDER BY draft_position"
     )
     .bind(&save_id)
     .bind(current_season)
@@ -544,6 +556,69 @@ pub async fn ai_auto_draft(
     .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
+
+    // 加载所有 GM 配置
+    let gm_rows = sqlx::query("SELECT * FROM team_gm_profiles WHERE save_id = ?")
+        .bind(&save_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default();
+
+    let mut gm_profiles: HashMap<u64, crate::models::TeamGMProfile> = HashMap::new();
+    for row in gm_rows {
+        let team_id: i64 = row.get("team_id");
+        let personality_str: String = row.get("personality");
+        let personality = match personality_str.to_uppercase().as_str() {
+            "CHAMPIONSHIP" => crate::models::GMPersonality::Championship,
+            "YOUTH_DEVELOPMENT" | "YOUTHDEVELOPMENT" => crate::models::GMPersonality::YouthDevelopment,
+            "BALANCED" => crate::models::GMPersonality::Balanced,
+            "SPECULATOR" => crate::models::GMPersonality::Speculator,
+            "REBUILDING" => crate::models::GMPersonality::Rebuilding,
+            "CUSTOM" => crate::models::GMPersonality::Custom,
+            _ => crate::models::GMPersonality::Balanced,
+        };
+
+        let sell_agg_str: String = row.get("sell_aggressiveness");
+        let sell_aggressiveness = match sell_agg_str.to_uppercase().as_str() {
+            "CONSERVATIVE" => crate::models::SellAggressiveness::Conservative,
+            "AGGRESSIVE" => crate::models::SellAggressiveness::Aggressive,
+            _ => crate::models::SellAggressiveness::Normal,
+        };
+
+        let position_priorities_json: String = row.get("position_priorities");
+        let position_priorities: HashMap<String, u8> = serde_json::from_str(&position_priorities_json)
+            .unwrap_or_else(|_| {
+                let mut map = HashMap::new();
+                map.insert("TOP".to_string(), 50);
+                map.insert("JUG".to_string(), 50);
+                map.insert("MID".to_string(), 50);
+                map.insert("ADC".to_string(), 50);
+                map.insert("SUP".to_string(), 50);
+                map
+            });
+
+        gm_profiles.insert(team_id as u64, crate::models::TeamGMProfile {
+            id: row.get::<i64, _>("id") as u64,
+            team_id: team_id as u64,
+            save_id: save_id.clone(),
+            personality,
+            custom_prompt: row.get("custom_prompt"),
+            risk_tolerance: row.get::<i64, _>("risk_tolerance") as u8,
+            budget_ratio: row.get::<f64, _>("budget_ratio"),
+            sell_aggressiveness,
+            preferred_age_min: row.get::<i64, _>("preferred_age_min") as u8,
+            preferred_age_max: row.get::<i64, _>("preferred_age_max") as u8,
+            min_ability_threshold: row.get::<i64, _>("min_ability_threshold") as u8,
+            price_premium_max: row.get::<f64, _>("price_premium_max"),
+            position_priorities,
+            draft_pick_sell_threshold: row.get::<f64, _>("draft_pick_sell_threshold"),
+            draft_pick_bid_aggressiveness: row.get::<f64, _>("draft_pick_bid_aggressiveness"),
+            draft_preference_ability_weight: row.get::<f64, _>("draft_preference_ability_weight"),
+            draft_young_bias: row.get::<f64, _>("draft_young_bias"),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+        });
+    }
 
     // 释放锁
     drop(guard);
@@ -553,8 +628,9 @@ pub async fn ai_auto_draft(
 
     for order_row in order_rows {
         let team_id: i64 = order_row.get("team_id");
+        let pick_number: i64 = order_row.get("pick_number");
 
-        // 重新获取锁查询最佳球员
+        // 重新获取锁
         let guard = state.db.read().await;
         let db = match guard.as_ref() {
             Some(db) => db,
@@ -572,32 +648,82 @@ pub async fn ai_auto_draft(
             None => continue,
         };
 
-        // 获取最佳可用球员
-        let best_player = sqlx::query(
-            r#"
-            SELECT id FROM draft_players
-            WHERE save_id = ? AND season_id = ? AND region_id = ? AND is_picked = 0
-            ORDER BY (ability * 0.4 + potential * 0.6) DESC
-            LIMIT 1
-            "#,
+        // 获取 GM 配置
+        let gm_profile = gm_profiles
+            .get(&(team_id as u64))
+            .cloned()
+            .unwrap_or_else(|| crate::models::TeamGMProfile::new(team_id as u64, save_id.clone()));
+
+        // 获取球队阵容
+        let roster = crate::db::PlayerRepository::get_by_team(&pool, team_id as u64)
+            .await
+            .unwrap_or_default();
+
+        // 查询所有可选球员（简化版：只获取评分所需字段）
+        let player_rows = sqlx::query(
+            "SELECT id, ability, potential, age, position FROM draft_players WHERE save_id = ? AND season_id = ? AND region_id = ? AND is_picked = 0"
         )
         .bind(&save_id)
         .bind(current_season)
         .bind(region_id as i64)
-        .fetch_optional(&pool)
+        .fetch_all(&pool)
         .await
-        .ok()
-        .flatten();
+        .unwrap_or_default();
+
+        // 构建简化的选秀球员列表用于评分
+        let mut player_scores: Vec<(i64, f64)> = player_rows
+            .iter()
+            .map(|row| {
+                // 构建简化的 DraftPlayer 用于评分
+                let draft_player = crate::models::DraftPlayer {
+                    id: row.get::<i64, _>("id") as u64,
+                    save_id: save_id.clone(),
+                    season_id: current_season as u64,
+                    region_id,
+                    draft_rank: 0,
+                    game_id: String::new(),
+                    real_name: None,
+                    nationality: None,
+                    age: row.get::<i64, _>("age") as u8,
+                    ability: row.get::<i64, _>("ability") as u8,
+                    potential: row.get::<i64, _>("potential") as u8,
+                    tag: crate::models::PlayerTag::Normal,
+                    position: row.get::<Option<String>, _>("position")
+                        .and_then(|s| match s.to_uppercase().as_str() {
+                            "TOP" => Some(crate::models::Position::Top),
+                            "JUG" | "JUNGLE" => Some(crate::models::Position::Jug),
+                            "MID" | "MIDDLE" => Some(crate::models::Position::Mid),
+                            "ADC" | "BOT" => Some(crate::models::Position::Adc),
+                            "SUP" | "SUPPORT" => Some(crate::models::Position::Sup),
+                            _ => None,
+                        }),
+                    is_picked: false,
+                    picked_by_team_id: None,
+                };
+
+                let score = crate::services::DraftAIService::calculate_player_score(
+                    &draft_player,
+                    &gm_profile,
+                    &crate::services::DraftAIService::calculate_position_needs(&roster),
+                    &roster,
+                );
+
+                (row.get::<i64, _>("id"), score)
+            })
+            .collect();
+
+        // 按分数排序
+        player_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let best_player_id = player_scores.first().map(|(id, _)| *id);
 
         // 释放锁
         drop(guard);
         drop(current_save);
 
-        if let Some(player_row) = best_player {
-            let draft_player_id: i64 = player_row.get("id");
-
-            // 调用make_draft_pick
-            let result = make_draft_pick(state.clone(), team_id as u64, draft_player_id as u64).await?;
+        if let Some(player_id) = best_player_id {
+            // 调用 make_draft_pick 执行选秀
+            let result = make_draft_pick(state.clone(), team_id as u64, player_id as u64).await?;
             if let Some(pick_info) = result.data {
                 picks.push(pick_info);
             }

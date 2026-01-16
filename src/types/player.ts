@@ -60,6 +60,17 @@ export interface PlayerPerformance {
 
   // 统计分析
   impactScore: number          // 影响力分数 = actualAbility - teamAverage
+  mvpScore?: number            // MVP 得分
+
+  // 详细战斗数据（可选）
+  kills?: number
+  deaths?: number
+  assists?: number
+  cs?: number
+  gold?: number
+  damageDealt?: number
+  damageTaken?: number
+  visionScore?: number
 
   // 特性系统
   traits?: TraitType[]             // 选手拥有的特性
@@ -277,14 +288,32 @@ export const TRAIT_CONFIG: Record<TraitType, TraitInfo> = {
   }
 }
 
-// 获取特性显示名称
-export function getTraitName(traitType: TraitType): string {
-  return TRAIT_CONFIG[traitType]?.name || traitType
+// 获取特性显示名称（兼容多种格式）
+export function getTraitName(traitType: TraitType | string): string {
+  // 先尝试直接匹配
+  if (TRAIT_CONFIG[traitType as TraitType]?.name) {
+    return TRAIT_CONFIG[traitType as TraitType].name
+  }
+  // 尝试转换为 snake_case 后匹配（处理 PascalCase 如 "Veteran" -> "veteran"）
+  const snakeCase = String(traitType)
+    .replace(/([A-Z])/g, '_$1')
+    .toLowerCase()
+    .replace(/^_/, '') as TraitType
+  return TRAIT_CONFIG[snakeCase]?.name || traitType
 }
 
-// 获取特性描述
-export function getTraitDescription(traitType: TraitType): string {
-  return TRAIT_CONFIG[traitType]?.description || ''
+// 获取特性描述（兼容多种格式）
+export function getTraitDescription(traitType: TraitType | string): string {
+  // 先尝试直接匹配
+  if (TRAIT_CONFIG[traitType as TraitType]?.description) {
+    return TRAIT_CONFIG[traitType as TraitType].description
+  }
+  // 尝试转换为 snake_case 后匹配
+  const snakeCase = String(traitType)
+    .replace(/([A-Z])/g, '_$1')
+    .toLowerCase()
+    .replace(/^_/, '') as TraitType
+  return TRAIT_CONFIG[snakeCase]?.description || ''
 }
 
 // 根据稀有度获取颜色

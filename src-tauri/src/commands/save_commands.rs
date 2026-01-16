@@ -93,6 +93,17 @@ pub async fn create_save(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
     };
 
+    // 检查是否已存在同名存档
+    let existing: Option<(String,)> = sqlx::query_as("SELECT id FROM saves WHERE name = ?")
+        .bind(&name)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if existing.is_some() {
+        return Ok(CommandResult::err(format!("存档名称「{}」已存在，请使用其他名称", name)));
+    }
+
     let save = Save::new(name.clone());
 
     if let Err(e) = SaveRepository::create(&pool, &save).await {
@@ -229,4 +240,41 @@ pub async fn get_current_save_id(
 ) -> Result<CommandResult<Option<String>>, String> {
     let current = state.current_save_id.read().await;
     Ok(CommandResult::ok(current.clone()))
+}
+
+/// 删除数据库文件（开发调试用）
+#[tauri::command]
+pub async fn delete_database(
+    state: State<'_, AppState>,
+    db_path: String,
+) -> Result<CommandResult<()>, String> {
+    // 先关闭数据库连接
+    {
+        let mut guard = state.db.write().await;
+        if let Some(db) = guard.take() {
+            db.close().await;
+        }
+    }
+
+    // 清除当前存档ID
+    {
+        let mut current = state.current_save_id.write().await;
+        *current = None;
+    }
+
+    // 删除数据库文件
+    let path = std::path::PathBuf::from(&db_path);
+    if path.exists() {
+        if let Err(e) = std::fs::remove_file(&path) {
+            return Ok(CommandResult::err(format!("Failed to delete database file: {}", e)));
+        }
+    }
+
+    // 同时删除 SQLite 的 WAL 和 SHM 文件（如果存在）
+    let wal_path = format!("{}-wal", db_path);
+    let shm_path = format!("{}-shm", db_path);
+    let _ = std::fs::remove_file(&wal_path);
+    let _ = std::fs::remove_file(&shm_path);
+
+    Ok(CommandResult::ok(()))
 }

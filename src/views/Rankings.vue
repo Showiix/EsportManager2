@@ -137,43 +137,44 @@
               </template>
             </el-table-column>
 
-            <el-table-column label="积分明细" min-width="500">
+            <el-table-column label="积分明细" min-width="360">
               <template #default="{ row }">
-                <div class="points-breakdown">
-                  <div class="points-item" v-if="row.spring > 0">
-                    <span class="points-label">春季赛:</span>
-                    <span class="points-value spring">{{ row.spring }}</span>
-                  </div>
-                  <div class="points-item" v-if="row.msi > 0">
-                    <span class="points-label">MSI:</span>
-                    <span class="points-value msi">{{ row.msi }}</span>
-                  </div>
-                  <div class="points-item" v-if="row.madrid > 0">
-                    <span class="points-label">马德里:</span>
-                    <span class="points-value madrid">{{ row.madrid }}</span>
-                  </div>
-                  <div class="points-item" v-if="row.summer > 0">
-                    <span class="points-label">夏季赛:</span>
-                    <span class="points-value summer">{{ row.summer }}</span>
-                  </div>
-                  <div class="points-item" v-if="row.worlds > 0">
-                    <span class="points-label">世界赛:</span>
-                    <span class="points-value worlds">{{ row.worlds }}</span>
-                  </div>
-                  <div class="points-item" v-if="row.shanghai > 0">
-                    <span class="points-label">上海:</span>
-                    <span class="points-value shanghai">{{ row.shanghai }}</span>
-                  </div>
-                  <span v-if="row.points === 0" class="no-points">暂无积分</span>
+                <div class="points-breakdown-tags" v-if="row.pointsBreakdown">
+                  <!-- 最多显示4个标签 -->
+                  <template v-for="(item, index) in getVisibleTags(row.pointsBreakdown)" :key="item.key">
+                    <span :class="['point-tag', item.key]" v-if="index < 4">
+                      {{ item.label }} +{{ item.points }}
+                    </span>
+                  </template>
+                  <!-- 超过4个显示更多按钮 -->
+                  <el-popover
+                    v-if="getVisibleTags(row.pointsBreakdown).length > 4"
+                    placement="bottom"
+                    :width="200"
+                    trigger="hover"
+                  >
+                    <template #reference>
+                      <span class="point-tag more">+{{ getVisibleTags(row.pointsBreakdown).length - 4 }}</span>
+                    </template>
+                    <div class="more-tags-popover">
+                      <template v-for="(item, index) in getVisibleTags(row.pointsBreakdown)" :key="item.key">
+                        <span :class="['point-tag', item.key]" v-if="index >= 4">
+                          {{ item.label }} +{{ item.points }}
+                        </span>
+                      </template>
+                    </div>
+                  </el-popover>
                 </div>
+                <span v-else class="no-points">暂无积分</span>
               </template>
             </el-table-column>
 
             <el-table-column label="操作" width="120" fixed="right">
               <template #default="{ row }">
-                <el-button type="primary" link size="small" @click="showPointsDetail(row)">
-                  积分详情
-                </el-button>
+                <button class="detail-btn" @click="showPointsDetail(row)">
+                  <el-icon><Trophy /></el-icon>
+                  <span>详情</span>
+                </button>
               </template>
             </el-table-column>
           </el-table>
@@ -289,166 +290,139 @@
           </div>
         </div>
 
-        <!-- 积分来源明细 -->
+        <!-- 积分来源明细 - 卡片式布局 -->
         <div class="points-sources">
           <h3>积分来源明细</h3>
 
-          <!-- 春季赛 -->
-          <div class="source-section" v-if="selectedTeamDetail.spring">
-            <div class="source-header spring">
-              <el-icon><Trophy /></el-icon>
-              <span>春季赛</span>
-              <span class="source-total">+{{ selectedTeamDetail.spring.total }} 分</span>
-            </div>
-            <div class="source-items">
-              <div class="source-item" v-if="selectedTeamDetail.spring.regular > 0">
-                <span class="item-name">常规赛排名奖励</span>
-                <span class="item-desc">{{ selectedTeamDetail.spring.regularDesc }}</span>
-                <span class="item-points">+{{ selectedTeamDetail.spring.regular }}</span>
+          <!-- 卡片网格 -->
+          <div class="points-cards-grid">
+            <!-- 春季赛 -->
+            <div class="points-card spring" v-if="selectedTeamDetail.spring">
+              <div class="card-icon">
+                <el-icon :size="24"><Trophy /></el-icon>
               </div>
-              <div class="source-item" v-if="selectedTeamDetail.spring.playoffs > 0">
-                <span class="item-name">季后赛成绩</span>
-                <span class="item-desc">{{ selectedTeamDetail.spring.playoffsDesc }}</span>
-                <span class="item-points">+{{ selectedTeamDetail.spring.playoffs }}</span>
+              <div class="card-content">
+                <div class="card-title">春季赛</div>
+                <div class="card-points">+{{ selectedTeamDetail.spring.total }}</div>
+                <div class="card-desc" v-if="selectedTeamDetail.spring.playoffs > 0">
+                  季后赛 {{ selectedTeamDetail.spring.playoffsDesc }}
+                </div>
+                <div class="card-desc" v-if="selectedTeamDetail.spring.regular > 0">
+                  常规赛 {{ selectedTeamDetail.spring.regularDesc }}
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- MSI -->
-          <div class="source-section" v-if="selectedTeamDetail.msi && selectedTeamDetail.msi.total > 0">
-            <div class="source-header msi">
-              <el-icon><Flag /></el-icon>
-              <span>MSI 季中邀请赛</span>
-              <span class="source-total">+{{ selectedTeamDetail.msi.total }} 分</span>
-            </div>
-            <div class="source-items">
-              <div class="source-item">
-                <span class="item-name">赛事成绩</span>
-                <span class="item-desc">{{ selectedTeamDetail.msi.desc }}</span>
-                <span class="item-points">+{{ selectedTeamDetail.msi.total }}</span>
+            <!-- MSI -->
+            <div class="points-card msi" v-if="selectedTeamDetail.msi && selectedTeamDetail.msi.total > 0">
+              <div class="card-icon">
+                <el-icon :size="24"><Flag /></el-icon>
+              </div>
+              <div class="card-content">
+                <div class="card-title">MSI</div>
+                <div class="card-points">+{{ selectedTeamDetail.msi.total }}</div>
+                <div class="card-desc">{{ selectedTeamDetail.msi.desc }}</div>
               </div>
             </div>
-          </div>
 
-          <!-- 马德里大师赛 -->
-          <div class="source-section" v-if="selectedTeamDetail.madrid && selectedTeamDetail.madrid.total > 0">
-            <div class="source-header madrid">
-              <el-icon><Location /></el-icon>
-              <span>马德里大师赛</span>
-              <span class="source-total">+{{ selectedTeamDetail.madrid.total }} 分</span>
-            </div>
-            <div class="source-items">
-              <div class="source-item">
-                <span class="item-name">赛事成绩</span>
-                <span class="item-desc">{{ selectedTeamDetail.madrid.desc }}</span>
-                <span class="item-points">+{{ selectedTeamDetail.madrid.total }}</span>
+            <!-- 马德里大师赛 -->
+            <div class="points-card madrid" v-if="selectedTeamDetail.madrid && selectedTeamDetail.madrid.total > 0">
+              <div class="card-icon">
+                <el-icon :size="24"><Location /></el-icon>
+              </div>
+              <div class="card-content">
+                <div class="card-title">马德里大师赛</div>
+                <div class="card-points">+{{ selectedTeamDetail.madrid.total }}</div>
+                <div class="card-desc">{{ selectedTeamDetail.madrid.desc }}</div>
               </div>
             </div>
-          </div>
 
-          <!-- 夏季赛 -->
-          <div class="source-section" v-if="selectedTeamDetail.summer">
-            <div class="source-header summer">
-              <el-icon><Sunny /></el-icon>
-              <span>夏季赛</span>
-              <span class="source-total">+{{ selectedTeamDetail.summer.total }} 分</span>
-            </div>
-            <div class="source-items">
-              <div class="source-item" v-if="selectedTeamDetail.summer.regular > 0">
-                <span class="item-name">常规赛排名奖励</span>
-                <span class="item-desc">{{ selectedTeamDetail.summer.regularDesc }}</span>
-                <span class="item-points">+{{ selectedTeamDetail.summer.regular }}</span>
+            <!-- 夏季赛 -->
+            <div class="points-card summer" v-if="selectedTeamDetail.summer">
+              <div class="card-icon">
+                <el-icon :size="24"><Sunny /></el-icon>
               </div>
-              <div class="source-item" v-if="selectedTeamDetail.summer.playoffs > 0">
-                <span class="item-name">季后赛成绩</span>
-                <span class="item-desc">{{ selectedTeamDetail.summer.playoffsDesc }}</span>
-                <span class="item-points">+{{ selectedTeamDetail.summer.playoffs }}</span>
+              <div class="card-content">
+                <div class="card-title">夏季赛</div>
+                <div class="card-points">+{{ selectedTeamDetail.summer.total }}</div>
+                <div class="card-desc" v-if="selectedTeamDetail.summer.playoffs > 0">
+                  季后赛 {{ selectedTeamDetail.summer.playoffsDesc }}
+                </div>
+                <div class="card-desc" v-if="selectedTeamDetail.summer.regular > 0">
+                  常规赛 {{ selectedTeamDetail.summer.regularDesc }}
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- Claude洲际赛 -->
-          <div class="source-section" v-if="selectedTeamDetail.claude && selectedTeamDetail.claude.total > 0">
-            <div class="source-header claude">
-              <el-icon><Connection /></el-icon>
-              <span>Claude 洲际赛</span>
-              <span class="source-total">+{{ selectedTeamDetail.claude.total }} 分</span>
-            </div>
-            <div class="source-items">
-              <div class="source-item">
-                <span class="item-name">赛事成绩</span>
-                <span class="item-desc">{{ selectedTeamDetail.claude.desc }}</span>
-                <span class="item-points">+{{ selectedTeamDetail.claude.total }}</span>
+            <!-- Claude洲际赛 -->
+            <div class="points-card claude" v-if="selectedTeamDetail.claude && selectedTeamDetail.claude.total > 0">
+              <div class="card-icon">
+                <el-icon :size="24"><Connection /></el-icon>
+              </div>
+              <div class="card-content">
+                <div class="card-title">Claude洲际赛</div>
+                <div class="card-points">+{{ selectedTeamDetail.claude.total }}</div>
+                <div class="card-desc">{{ selectedTeamDetail.claude.desc }}</div>
               </div>
             </div>
-          </div>
 
-          <!-- 世界赛 -->
-          <div class="source-section" v-if="selectedTeamDetail.worlds && selectedTeamDetail.worlds.total > 0">
-            <div class="source-header worlds">
-              <el-icon><Trophy /></el-icon>
-              <span>S 世界赛</span>
-              <span class="source-total">+{{ selectedTeamDetail.worlds.total }} 分</span>
-            </div>
-            <div class="source-items">
-              <div class="source-item">
-                <span class="item-name">赛事成绩</span>
-                <span class="item-desc">{{ selectedTeamDetail.worlds.desc }}</span>
-                <span class="item-points">+{{ selectedTeamDetail.worlds.total }}</span>
+            <!-- 世界赛 -->
+            <div class="points-card worlds" v-if="selectedTeamDetail.worlds && selectedTeamDetail.worlds.total > 0">
+              <div class="card-icon">
+                <el-icon :size="24"><Trophy /></el-icon>
+              </div>
+              <div class="card-content">
+                <div class="card-title">S 世界赛</div>
+                <div class="card-points">+{{ selectedTeamDetail.worlds.total }}</div>
+                <div class="card-desc">{{ selectedTeamDetail.worlds.desc }}</div>
               </div>
             </div>
-          </div>
 
-          <!-- 上海大师赛 -->
-          <div class="source-section" v-if="selectedTeamDetail.shanghai && selectedTeamDetail.shanghai.total > 0">
-            <div class="source-header shanghai">
-              <el-icon><OfficeBuilding /></el-icon>
-              <span>上海大师赛</span>
-              <span class="source-total">+{{ selectedTeamDetail.shanghai.total }} 分</span>
-            </div>
-            <div class="source-items">
-              <div class="source-item">
-                <span class="item-name">赛事成绩</span>
-                <span class="item-desc">{{ selectedTeamDetail.shanghai.desc }}</span>
-                <span class="item-points">+{{ selectedTeamDetail.shanghai.total }}</span>
+            <!-- 上海大师赛 -->
+            <div class="points-card shanghai" v-if="selectedTeamDetail.shanghai && selectedTeamDetail.shanghai.total > 0">
+              <div class="card-icon">
+                <el-icon :size="24"><OfficeBuilding /></el-icon>
+              </div>
+              <div class="card-content">
+                <div class="card-title">上海大师赛</div>
+                <div class="card-points">+{{ selectedTeamDetail.shanghai.total }}</div>
+                <div class="card-desc">{{ selectedTeamDetail.shanghai.desc }}</div>
               </div>
             </div>
-          </div>
 
-          <!-- ICP洲际对抗赛 -->
-          <div class="source-section" v-if="selectedTeamDetail.icp && selectedTeamDetail.icp.total > 0">
-            <div class="source-header icp">
-              <el-icon><Promotion /></el-icon>
-              <span>ICP 洲际对抗赛</span>
-              <span class="source-total">+{{ selectedTeamDetail.icp.total }} 分</span>
-            </div>
-            <div class="source-items">
-              <div class="source-item">
-                <span class="item-name">赛区成绩</span>
-                <span class="item-desc">{{ selectedTeamDetail.icp.desc }}</span>
-                <span class="item-points">+{{ selectedTeamDetail.icp.total }}</span>
+            <!-- ICP洲际对抗赛 -->
+            <div class="points-card icp" v-if="selectedTeamDetail.icp && selectedTeamDetail.icp.total > 0">
+              <div class="card-icon">
+                <el-icon :size="24"><Promotion /></el-icon>
+              </div>
+              <div class="card-content">
+                <div class="card-title">ICP洲际赛</div>
+                <div class="card-points">+{{ selectedTeamDetail.icp.total }}</div>
+                <div class="card-desc">{{ selectedTeamDetail.icp.desc }}</div>
               </div>
             </div>
-          </div>
 
-          <!-- Super洲际邀请赛 -->
-          <div class="source-section" v-if="selectedTeamDetail.super && selectedTeamDetail.super.total > 0">
-            <div class="source-header super">
-              <el-icon><Star /></el-icon>
-              <span>Super 洲际邀请赛</span>
-              <span class="source-total">+{{ selectedTeamDetail.super.total }} 分</span>
-            </div>
-            <div class="source-items">
-              <div class="source-item">
-                <span class="item-name">赛事成绩</span>
-                <span class="item-desc">{{ selectedTeamDetail.super.desc }}</span>
-                <span class="item-points">+{{ selectedTeamDetail.super.total }}</span>
+            <!-- Super洲际邀请赛 -->
+            <div class="points-card super" v-if="selectedTeamDetail.super && selectedTeamDetail.super.total > 0">
+              <div class="card-icon">
+                <el-icon :size="24"><Star /></el-icon>
+              </div>
+              <div class="card-content">
+                <div class="card-title">Super邀请赛</div>
+                <div class="card-points">+{{ selectedTeamDetail.super.total }}</div>
+                <div class="card-desc">{{ selectedTeamDetail.super.desc }}</div>
               </div>
             </div>
           </div>
 
           <!-- 无积分提示 -->
-          <el-empty v-if="selectedTeam.points === 0" description="暂无积分记录" />
+          <el-empty v-if="teamPointsDetails.length === 0" description="暂无积分记录">
+            <template #default>
+              <p style="color: #909399; font-size: 12px; margin: 0;">
+                请完成赛事后查看积分明细
+              </p>
+            </template>
+          </el-empty>
         </div>
 
         <!-- 积分规则说明 -->
@@ -478,7 +452,7 @@
                 </div>
                 <div class="rule-section">
                   <h4>Super 洲际邀请赛</h4>
-                  <p>冠军35分、亚军30分、季军25分、殿军20分、第三阶段败者8分、第二阶段败者5分、Fighter组2分</p>
+                  <p>Super赛是年度积分的最终奖励，年度积分Top16的队伍获得参赛资格，<strong>不颁发积分</strong></p>
                 </div>
               </div>
             </el-collapse-item>
@@ -512,8 +486,8 @@ import {
   Promotion,
   Star,
 } from '@element-plus/icons-vue'
-import { teamApi, queryApi } from '@/api/tauri'
-import type { Team, Region } from '@/api/tauri'
+import { teamApi, queryApi, pointsApi } from '@/api/tauri'
+import type { Team, Region, TeamAnnualPoints, AnnualPointsDetail } from '@/api/tauri'
 
 const router = useRouter()
 
@@ -524,6 +498,10 @@ const selectedSeason = ref('S1')
 const pointsDetailVisible = ref(false)
 const selectedTeam = ref<any>(null)
 const loading = ref(false)
+const teamPointsDetails = ref<AnnualPointsDetail[]>([])
+
+// 缓存所有队伍的积分明细（用于表格显示）
+const allTeamPointsCache = ref<Map<number, any>>(new Map())
 
 // 赛区映射
 const regionsMap = ref<Map<number, string>>(new Map())
@@ -538,10 +516,11 @@ const powerRankings = ref<any[]>([])
 onMounted(async () => {
   loading.value = true
   try {
-    // 并行加载队伍和赛区数据
-    const [teams, regions] = await Promise.all([
+    // 并行加载队伍、赛区和积分排名数据
+    const [teams, regions, pointsRankings] = await Promise.all([
       teamApi.getAllTeams(),
       queryApi.getAllRegions(),
+      pointsApi.getRankings(),
     ])
 
     // 构建赛区ID到赛区代码的映射
@@ -549,24 +528,34 @@ onMounted(async () => {
       regionsMap.value.set(region.id, region.code)
     })
 
-    // 处理年度积分榜数据
-    const annualData = teams
-      .map((team: Team) => ({
-        id: team.id,
-        name: team.name,
-        short: team.short_name || team.name.slice(0, 3),
-        region: regionsMap.value.get(team.region_id) || 'LPL',
-        points: team.annual_points,
-        // 暂时没有详细积分来源，显示总分
-        spring: 0,
-        msi: 0,
-        madrid: 0,
-        summer: 0,
-        worlds: 0,
-        shanghai: 0,
-      }))
-      .sort((a, b) => b.points - a.points)
-      .map((team, index) => ({ ...team, rank: index + 1 }))
+    // 为有积分的队伍加载积分明细
+    const teamsWithPoints = pointsRankings.filter((item: TeamAnnualPoints) => item.total_points > 0)
+    const detailsPromises = teamsWithPoints.map((item: TeamAnnualPoints) =>
+      pointsApi.getTeamPoints(item.team_id).then(details => ({ teamId: item.team_id, details }))
+    )
+    const allDetails = await Promise.all(detailsPromises)
+
+    // 解析每个队伍的积分明细并缓存
+    allDetails.forEach(({ teamId, details }) => {
+      const parsed = parseTeamPointsDetails(details)
+      allTeamPointsCache.value.set(teamId, parsed)
+    })
+
+    // 使用积分排名API数据，并附加解析后的积分明细
+    const annualData = pointsRankings.map((item: TeamAnnualPoints) => {
+      const cached = allTeamPointsCache.value.get(item.team_id)
+      return {
+        id: item.team_id,
+        name: item.team_name,
+        short: item.team_short_name || item.team_name.slice(0, 3),
+        region: item.region_code,
+        points: item.total_points,
+        rank: item.rank,
+        tournamentsCount: item.tournaments_count,
+        // 各赛事积分
+        pointsBreakdown: cached || null,
+      }
+    })
 
     annualRankings.value = annualData
 
@@ -590,6 +579,74 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+// 解析队伍积分明细（用于表格显示）
+function parseTeamPointsDetails(details: AnnualPointsDetail[]) {
+  const result: any = {
+    spring: null,
+    msi: null,
+    madrid: null,
+    summer: null,
+    claude: null,
+    worlds: null,
+    shanghai: null,
+    icp: null,
+    super: null,
+  }
+
+  details.forEach(detail => {
+    const tournamentType = detail.tournament_type || ''
+
+    if (tournamentType.includes('SpringPlayoffs') || tournamentType.includes('SpringRegular')) {
+      if (!result.spring) result.spring = { total: 0 }
+      result.spring.total += detail.points
+    } else if (tournamentType.includes('SummerPlayoffs') || tournamentType.includes('SummerRegular')) {
+      if (!result.summer) result.summer = { total: 0 }
+      result.summer.total += detail.points
+    } else if (tournamentType.includes('Msi')) {
+      result.msi = { total: detail.points }
+    } else if (tournamentType.includes('MadridMasters')) {
+      result.madrid = { total: detail.points }
+    } else if (tournamentType.includes('ClaudeIntercontinental')) {
+      result.claude = { total: detail.points }
+    } else if (tournamentType.includes('WorldChampionship')) {
+      result.worlds = { total: detail.points }
+    } else if (tournamentType.includes('ShanghaiMasters')) {
+      result.shanghai = { total: detail.points }
+    } else if (tournamentType.includes('IcpIntercontinental')) {
+      result.icp = { total: detail.points }
+    } else if (tournamentType.includes('Super')) {
+      result.super = { total: detail.points }
+    }
+  })
+
+  return result
+}
+
+// 获取可见的标签列表（按赛季顺序）
+function getVisibleTags(breakdown: any) {
+  if (!breakdown) return []
+
+  const tagConfig = [
+    { key: 'spring', label: '春季赛' },
+    { key: 'msi', label: 'MSI' },
+    { key: 'madrid', label: '马德里' },
+    { key: 'summer', label: '夏季赛' },
+    { key: 'claude', label: 'Claude' },
+    { key: 'worlds', label: '世界赛' },
+    { key: 'shanghai', label: '上海' },
+    { key: 'icp', label: 'ICP' },
+    { key: 'super', label: 'Super' },
+  ]
+
+  return tagConfig
+    .filter(config => breakdown[config.key] && breakdown[config.key].total > 0)
+    .map(config => ({
+      key: config.key,
+      label: config.label,
+      points: breakdown[config.key].total,
+    }))
+}
 
 // 计算属性
 const filteredAnnualRankings = computed(() => {
@@ -616,27 +673,115 @@ const averagePower = computed(() => {
   return powerRankings.value.reduce((sum, t) => sum + t.power, 0) / powerRankings.value.length
 })
 
-// 积分详情数据（从实际团队数据获取）
+// 积分详情数据（从API获取）
 const selectedTeamDetail = computed(() => {
-  if (!selectedTeam.value) return {}
-  // 对于新存档，暂时没有详细积分来源
-  return {
-    spring: { total: 0, regular: 0, regularDesc: '', playoffs: 0, playoffsDesc: '暂无数据' },
-    msi: { total: 0, desc: '暂无数据' },
-    madrid: { total: 0, desc: '暂无数据' },
-    summer: { total: 0, regular: 0, regularDesc: '', playoffs: 0, playoffsDesc: '暂无数据' },
-    claude: { total: 0, desc: '暂无数据' },
-    worlds: { total: 0, desc: '暂无数据' },
-    shanghai: { total: 0, desc: '暂无数据' },
-    icp: { total: 0, desc: '暂无数据' },
-    super: { total: 0, desc: '暂无数据' },
+  if (!selectedTeam.value || teamPointsDetails.value.length === 0) {
+    return {
+      spring: null,
+      msi: null,
+      madrid: null,
+      summer: null,
+      claude: null,
+      worlds: null,
+      shanghai: null,
+      icp: null,
+      super: null,
+    }
   }
+
+  // 根据赛事类型分组积分明细
+  const details = teamPointsDetails.value
+  const result: any = {
+    spring: null,
+    msi: null,
+    madrid: null,
+    summer: null,
+    claude: null,
+    worlds: null,
+    shanghai: null,
+    icp: null,
+    super: null,
+  }
+
+  details.forEach(detail => {
+    const tournamentType = detail.tournament_type || ''
+    const rankDesc = detail.final_rank ? `第${detail.final_rank}名` : ''
+    const _tournamentName = detail.tournament_name || ''
+
+    if (tournamentType.includes('SpringPlayoffs') || tournamentType.includes('SpringRegular')) {
+      if (!result.spring) {
+        result.spring = { total: 0, regular: 0, regularDesc: '', playoffs: 0, playoffsDesc: '' }
+      }
+      if (tournamentType.includes('Playoffs')) {
+        result.spring.playoffs += detail.points
+        result.spring.playoffsDesc = `${rankDesc} +${detail.points}分`
+      } else {
+        result.spring.regular += detail.points
+        result.spring.regularDesc = `${rankDesc} +${detail.points}分`
+      }
+      result.spring.total = result.spring.regular + result.spring.playoffs
+    } else if (tournamentType.includes('SummerPlayoffs') || tournamentType.includes('SummerRegular')) {
+      if (!result.summer) {
+        result.summer = { total: 0, regular: 0, regularDesc: '', playoffs: 0, playoffsDesc: '' }
+      }
+      if (tournamentType.includes('Playoffs')) {
+        result.summer.playoffs += detail.points
+        result.summer.playoffsDesc = `${rankDesc} +${detail.points}分`
+      } else {
+        result.summer.regular += detail.points
+        result.summer.regularDesc = `${rankDesc} +${detail.points}分`
+      }
+      result.summer.total = result.summer.regular + result.summer.playoffs
+    } else if (tournamentType.includes('Msi')) {
+      result.msi = { total: detail.points, desc: `${rankDesc} +${detail.points}分` }
+    } else if (tournamentType.includes('MadridMasters')) {
+      result.madrid = { total: detail.points, desc: `${rankDesc} +${detail.points}分` }
+    } else if (tournamentType.includes('ClaudeIntercontinental')) {
+      result.claude = { total: detail.points, desc: `${rankDesc} +${detail.points}分` }
+    } else if (tournamentType.includes('WorldChampionship')) {
+      result.worlds = { total: detail.points, desc: `${rankDesc} +${detail.points}分` }
+    } else if (tournamentType.includes('ShanghaiMasters')) {
+      result.shanghai = { total: detail.points, desc: `${rankDesc} +${detail.points}分` }
+    } else if (tournamentType.includes('IcpIntercontinental')) {
+      result.icp = { total: detail.points, desc: `${rankDesc} +${detail.points}分` }
+    } else if (tournamentType.includes('Super')) {
+      result.super = { total: detail.points, desc: `${rankDesc} +${detail.points}分` }
+    }
+  })
+
+  return result
+})
+
+// 检查是否有任何可见的积分详情
+const _hasAnyVisibleDetail = computed(() => {
+  const detail = selectedTeamDetail.value
+  return (
+    detail.spring ||
+    (detail.msi && detail.msi.total > 0) ||
+    (detail.madrid && detail.madrid.total > 0) ||
+    detail.summer ||
+    (detail.claude && detail.claude.total > 0) ||
+    (detail.worlds && detail.worlds.total > 0) ||
+    (detail.shanghai && detail.shanghai.total > 0) ||
+    (detail.icp && detail.icp.total > 0) ||
+    (detail.super && detail.super.total > 0)
+  )
 })
 
 // 方法
-const showPointsDetail = (team: any) => {
+const showPointsDetail = async (team: any) => {
   selectedTeam.value = team
   pointsDetailVisible.value = true
+
+  // 加载队伍积分明细
+  try {
+    teamPointsDetails.value = await pointsApi.getTeamPoints(team.id)
+    console.log('[Rankings] Team points details for team', team.id, ':', teamPointsDetails.value)
+    console.log('[Rankings] selectedTeamDetail computed:', selectedTeamDetail.value)
+  } catch (error) {
+    console.error('Failed to load team points detail:', error)
+    teamPointsDetails.value = []
+  }
 }
 
 const goToTeamDetail = () => {
@@ -899,6 +1044,94 @@ const getPowerColor = (power: number) => {
   color: #00bcd4;
 }
 
+/* 积分明细小标签 */
+.points-breakdown-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.point-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.point-tag.spring {
+  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+}
+
+.point-tag.msi {
+  background: linear-gradient(135deg, #ffebee, #ffcdd2);
+  color: #c62828;
+  border: 1px solid #ef9a9a;
+}
+
+.point-tag.madrid {
+  background: linear-gradient(135deg, #fff8e1, #ffecb3);
+  color: #f57c00;
+  border: 1px solid #ffe082;
+}
+
+.point-tag.summer {
+  background: linear-gradient(135deg, #fff3e0, #ffe0b2);
+  color: #ef6c00;
+  border: 1px solid #ffcc80;
+}
+
+.point-tag.claude {
+  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+  color: #1565c0;
+  border: 1px solid #90caf9;
+}
+
+.point-tag.worlds {
+  background: linear-gradient(135deg, #f3e5f5, #e1bee7);
+  color: #7b1fa2;
+  border: 1px solid #ce93d8;
+}
+
+.point-tag.shanghai {
+  background: linear-gradient(135deg, #e0f7fa, #b2ebf2);
+  color: #00838f;
+  border: 1px solid #80deea;
+}
+
+.point-tag.icp {
+  background: linear-gradient(135deg, #fbe9e7, #ffccbc);
+  color: #d84315;
+  border: 1px solid #ffab91;
+}
+
+.point-tag.super {
+  background: linear-gradient(135deg, #fffde7, #fff9c4);
+  color: #f57f17;
+  border: 1px solid #fff176;
+}
+
+.point-tag.more {
+  background: linear-gradient(135deg, #f5f5f5, #e0e0e0);
+  color: #616161;
+  border: 1px solid #bdbdbd;
+  cursor: pointer;
+}
+
+.point-tag.more:hover {
+  background: linear-gradient(135deg, #e0e0e0, #bdbdbd);
+}
+
+.more-tags-popover {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .no-points {
   color: #c0c4cc;
   font-style: italic;
@@ -928,6 +1161,38 @@ const getPowerColor = (power: number) => {
 
 .change-none {
   color: #909399;
+}
+
+/* 积分详情按钮样式 */
+.detail-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.35);
+}
+
+.detail-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5);
+  background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
+}
+
+.detail-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+}
+
+.detail-btn .el-icon {
+  font-size: 14px;
 }
 
 /* 表格样式优化 */
@@ -1017,6 +1282,165 @@ const getPowerColor = (power: number) => {
   margin: 0 0 16px 0;
   padding-bottom: 8px;
   border-bottom: 2px solid #f0f2f5;
+}
+
+/* 卡片网格布局 */
+.points-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.points-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
+  border: 1px solid #e4e7ed;
+  transition: all 0.3s ease;
+}
+
+.points-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.points-card .card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.points-card .card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.points-card .card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #606266;
+  margin-bottom: 4px;
+}
+
+.points-card .card-points {
+  font-size: 22px;
+  font-weight: 700;
+  color: #303133;
+  margin-bottom: 4px;
+}
+
+.points-card .card-desc {
+  font-size: 11px;
+  color: #909399;
+  line-height: 1.4;
+}
+
+/* 各赛事卡片颜色 */
+.points-card.spring {
+  background: linear-gradient(135deg, #f0f9eb 0%, #e1f3d8 100%);
+  border-color: #c2e7b0;
+}
+.points-card.spring .card-icon {
+  background: linear-gradient(135deg, #67c23a, #85ce61);
+}
+.points-card.spring .card-points {
+  color: #67c23a;
+}
+
+.points-card.msi {
+  background: linear-gradient(135deg, #fef0f0 0%, #fde2e2 100%);
+  border-color: #f9d0d0;
+}
+.points-card.msi .card-icon {
+  background: linear-gradient(135deg, #f56c6c, #f89898);
+}
+.points-card.msi .card-points {
+  color: #f56c6c;
+}
+
+.points-card.madrid {
+  background: linear-gradient(135deg, #fdf6ec 0%, #faecd8 100%);
+  border-color: #f5dab1;
+}
+.points-card.madrid .card-icon {
+  background: linear-gradient(135deg, #e6a23c, #ebb563);
+}
+.points-card.madrid .card-points {
+  color: #e6a23c;
+}
+
+.points-card.summer {
+  background: linear-gradient(135deg, #fff7e6 0%, #ffedd5 100%);
+  border-color: #ffd591;
+}
+.points-card.summer .card-icon {
+  background: linear-gradient(135deg, #ff9500, #ffb74d);
+}
+.points-card.summer .card-points {
+  color: #ff9500;
+}
+
+.points-card.claude {
+  background: linear-gradient(135deg, #ecf5ff 0%, #d9ecff 100%);
+  border-color: #b3d8ff;
+}
+.points-card.claude .card-icon {
+  background: linear-gradient(135deg, #409eff, #66b1ff);
+}
+.points-card.claude .card-points {
+  color: #409eff;
+}
+
+.points-card.worlds {
+  background: linear-gradient(135deg, #f5e6ff 0%, #e8d5f5 100%);
+  border-color: #d4b8e8;
+}
+.points-card.worlds .card-icon {
+  background: linear-gradient(135deg, #9c27b0, #ba68c8);
+}
+.points-card.worlds .card-points {
+  color: #9c27b0;
+}
+
+.points-card.shanghai {
+  background: linear-gradient(135deg, #e6fcff 0%, #d1f7ff 100%);
+  border-color: #a8e8f5;
+}
+.points-card.shanghai .card-icon {
+  background: linear-gradient(135deg, #00bcd4, #4dd0e1);
+}
+.points-card.shanghai .card-points {
+  color: #00bcd4;
+}
+
+.points-card.icp {
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+  border-color: #ffcc80;
+}
+.points-card.icp .card-icon {
+  background: linear-gradient(135deg, #ff5722, #ff8a65);
+}
+.points-card.icp .card-points {
+  color: #ff5722;
+}
+
+.points-card.super {
+  background: linear-gradient(135deg, #fffde7 0%, #fff9c4 100%);
+  border-color: #fff176;
+}
+.points-card.super .card-icon {
+  background: linear-gradient(135deg, #ffc107, #ffd54f);
+}
+.points-card.super .card-points {
+  color: #ff8f00;
 }
 
 .source-section {

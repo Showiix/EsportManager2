@@ -64,12 +64,47 @@
       </div>
     </div>
 
-    <!-- 步骤1: 选秀池 -->
+    <!-- 步骤0: 抽取选秀名单 -->
     <div v-if="currentStep === 0" class="content-section">
       <div class="section-header">
         <div class="header-title">
           <el-icon :size="22"><User /></el-icon>
-          <h2>选秀池名单</h2>
+          <h2>抽取选秀名单</h2>
+        </div>
+      </div>
+
+      <div class="draw-roster-section">
+        <div class="draw-info">
+          <el-icon :size="48" color="#3b82f6"><Tickets /></el-icon>
+          <h3>从选秀池抽取本届选秀名单</h3>
+          <p>点击下方按钮，将从选秀池中按能力值排序抽取前14名新秀，组成本届选秀名单</p>
+        </div>
+
+        <!-- 非选秀阶段提示 -->
+        <div v-if="!isDraftPhase" class="phase-warning">
+          <el-icon :size="20" color="#f59e0b"><WarningFilled /></el-icon>
+          <span>当前阶段: {{ gameStore.currentPhaseDisplay }}，需要等到选秀阶段才能抽取</span>
+        </div>
+
+        <el-button
+          type="primary"
+          size="large"
+          @click="drawDraftRoster"
+          :loading="isLoading"
+          :disabled="!isDraftPhase"
+        >
+          <el-icon class="mr-2"><Aim /></el-icon>
+          {{ isDraftPhase ? '抽取选秀名单' : '未到选秀阶段' }}
+        </el-button>
+      </div>
+    </div>
+
+    <!-- 步骤1: 选秀名单 -->
+    <div v-if="currentStep === 1" class="content-section">
+      <div class="section-header">
+        <div class="header-title">
+          <el-icon :size="22"><User /></el-icon>
+          <h2>选秀名单</h2>
         </div>
         <div class="header-meta">
           <span class="meta-count">共 {{ draftPool.length }} 名新秀</span>
@@ -109,6 +144,10 @@
       </div>
 
       <div class="section-footer">
+        <el-button @click="currentStep = 0">
+          <el-icon><ArrowLeft /></el-icon>
+          返回上一步
+        </el-button>
         <el-button type="primary" size="large" @click="startLottery">
           开始选秀权抽签
           <el-icon class="ml-2"><ArrowRight /></el-icon>
@@ -117,7 +156,7 @@
     </div>
 
     <!-- 步骤2: 抽签 -->
-    <div v-if="currentStep === 1" class="content-section">
+    <div v-if="currentStep === 2" class="content-section">
       <div class="section-header">
         <div class="header-title">
           <el-icon :size="22"><Tickets /></el-icon>
@@ -173,19 +212,56 @@
       </div>
 
       <div class="section-footer">
-        <el-button @click="currentStep = 0">
+        <el-button @click="currentStep = 1">
           <el-icon><ArrowLeft /></el-icon>
           返回上一步
         </el-button>
-        <el-button type="primary" size="large" @click="proceedToAssignment" :disabled="hasUndrawnTeams">
-          进入选手分配
+        <el-button type="primary" size="large" @click="proceedToAuction" :disabled="hasUndrawnTeams">
+          进入选秀权拍卖
           <el-icon class="ml-2"><ArrowRight /></el-icon>
         </el-button>
       </div>
     </div>
 
-    <!-- 步骤3: 分配 -->
-    <div v-if="currentStep === 2" class="content-section">
+    <!-- 步骤3: 选秀权拍卖 -->
+    <div v-if="currentStep === 3" class="content-section">
+      <div class="section-header">
+        <div class="header-title">
+          <el-icon :size="22"><Sell /></el-icon>
+          <h2>选秀权拍卖</h2>
+        </div>
+      </div>
+
+      <div class="auction-section">
+        <div class="auction-info">
+          <el-icon :size="48" color="#f59e0b"><Money /></el-icon>
+          <h3>选秀权交易市场</h3>
+          <p>AI球队将根据财务状况和阵容需求自动挂牌/竞拍选秀权</p>
+          <p class="sub-info">成交后选秀顺位将自动转移，卖家收取扣除5%联盟佣金后的收益</p>
+        </div>
+
+        <div class="auction-actions">
+          <el-button type="primary" size="large" @click="goToAuction">
+            <el-icon class="mr-2"><Sell /></el-icon>
+            进入拍卖大厅
+          </el-button>
+          <el-button size="large" @click="skipAuction">
+            <el-icon class="mr-2"><Right /></el-icon>
+            跳过拍卖，直接分配
+          </el-button>
+        </div>
+      </div>
+
+      <div class="section-footer">
+        <el-button @click="currentStep = 2">
+          <el-icon><ArrowLeft /></el-icon>
+          返回上一步
+        </el-button>
+      </div>
+    </div>
+
+    <!-- 步骤4: 分配 -->
+    <div v-if="currentStep === 4" class="content-section">
       <div class="section-header">
         <div class="header-title">
           <el-icon :size="22"><Connection /></el-icon>
@@ -245,7 +321,7 @@
       </div>
 
       <div class="section-footer">
-        <el-button @click="currentStep = 1">
+        <el-button @click="currentStep = 3">
           <el-icon><ArrowLeft /></el-icon>
           返回上一步
         </el-button>
@@ -256,8 +332,8 @@
       </div>
     </div>
 
-    <!-- 步骤4: 完成 -->
-    <div v-if="currentStep >= 3" class="content-section">
+    <!-- 步骤5: 完成 -->
+    <div v-if="currentStep >= 5" class="content-section">
       <div class="completion-banner">
         <div class="completion-icon">
           <el-icon :size="48"><SuccessFilled /></el-icon>
@@ -312,6 +388,8 @@ import {
   SuccessFilled,
   Aim,
   MagicStick,
+  Sell,
+  Money,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { draftApi, teamApi, queryApi } from '@/api/tauri'
@@ -321,7 +399,10 @@ import { storeToRefs } from 'pinia'
 const route = useRoute()
 const router = useRouter()
 const gameStore = useGameStore()
-const { currentSeason: gameSeason } = storeToRefs(gameStore)
+const { currentSeason: gameSeason, currentPhase } = storeToRefs(gameStore)
+
+// 是否处于选秀阶段
+const isDraftPhase = computed(() => currentPhase.value === 'DRAFT')
 
 // 状态
 const selectedRegion = ref((route.params.region as string)?.toLowerCase() || 'lpl')
@@ -332,11 +413,16 @@ const currentRegionId = ref<number>(1)
 
 // 步骤定义
 const steps = [
-  { title: '查看选秀池', desc: '浏览新秀名单' },
+  { title: '抽取选秀名单', desc: '从选秀池抽取14人' },
+  { title: '查看选秀名单', desc: '浏览本届新秀' },
   { title: '选秀权抽签', desc: '决定选秀顺位' },
+  { title: '选秀权拍卖', desc: '交易选秀权' },
   { title: '分配选手', desc: '选手加入队伍' },
   { title: '完成选秀', desc: '选秀结束' },
 ]
+
+// 是否已抽取选秀名单
+const hasDraftRoster = ref(false)
 
 // 赛区列表
 const regionList = [
@@ -374,36 +460,6 @@ const getRegionId = async (regionCode: string): Promise<number> => {
   }
 }
 
-// 加载选秀池数据
-const loadDraftPool = async () => {
-  isLoading.value = true
-  try {
-    const regionId = await getRegionId(selectedRegion.value)
-    currentRegionId.value = regionId
-
-    // 生成选秀池
-    const players = await draftApi.generateDraftPool(regionId, 14)
-
-    // 按能力值排序并转换格式
-    const sorted = players.sort((a, b) => b.ability - a.ability)
-    draftPool.value = sorted.map((p, index) => ({
-      id: p.id,
-      rank: index + 1,
-      title: index === 0 ? '状元' : index === 1 ? '榜眼' : index === 2 ? '探花' : `第${index + 1}顺位`,
-      gameId: p.name,
-      ability: p.ability,
-      potential: p.potential,
-      tag: p.tag,
-      position: p.position,
-    }))
-  } catch (e) {
-    console.error('Failed to load draft pool:', e)
-    ElMessage.error('加载选秀池失败')
-  } finally {
-    isLoading.value = false
-  }
-}
-
 // 加载队伍数据
 const loadTeams = async () => {
   isLoading.value = true
@@ -427,7 +483,6 @@ const loadTeams = async () => {
 
 // 初始化
 onMounted(async () => {
-  await loadDraftPool()
   await loadTeams()
 })
 
@@ -446,8 +501,9 @@ watch(
 // 重置选秀状态
 const resetDraftState = async () => {
   currentStep.value = 0
-  // 重新加载数据
-  await loadDraftPool()
+  hasDraftRoster.value = false
+  draftPool.value = []
+  // 重新加载队伍数据
   await loadTeams()
 }
 
@@ -472,13 +528,13 @@ const handleRegionChange = (region: string) => {
 }
 
 const getStatusClass = () => {
-  if (currentStep.value >= 3) return 'completed'
+  if (currentStep.value >= 4) return 'completed'
   if (currentStep.value > 0) return 'in-progress'
   return 'pending'
 }
 
 const getStatusLabel = () => {
-  if (currentStep.value >= 3) return '已完成'
+  if (currentStep.value >= 4) return '已完成'
   if (currentStep.value > 0) return '进行中'
   return '待开始'
 }
@@ -511,7 +567,67 @@ const getAbilityColor = (ability: number) => {
 }
 
 const startLottery = () => {
-  currentStep.value = 1
+  currentStep.value = 2
+}
+
+// 进入拍卖步骤
+const proceedToAuction = () => {
+  currentStep.value = 3
+}
+
+// 前往拍卖大厅页面
+const goToAuction = () => {
+  router.push(`/draft/${selectedRegion.value}/auction`)
+}
+
+// 跳过拍卖，直接进入分配
+const skipAuction = () => {
+  currentStep.value = 4
+}
+
+// 抽取选秀名单
+const drawDraftRoster = async () => {
+  isLoading.value = true
+  try {
+    const regionId = await getRegionId(selectedRegion.value)
+    currentRegionId.value = regionId
+
+    // 从选秀池获取可用选手
+    const players = await draftApi.getAvailableDraftPlayers(regionId)
+
+    // 如果选秀池为空，提示用户先导入数据
+    if (players.length === 0) {
+      ElMessage.warning('选秀池为空，请先在选手池管理中导入或生成新秀数据')
+      return
+    }
+
+    if (players.length < 14) {
+      ElMessage.warning(`选秀池人数不足，当前仅有 ${players.length} 人，需要至少14人`)
+      return
+    }
+
+    // 按能力值排序并转换格式（取前14名作为选秀名单）
+    const sorted = players.sort((a, b) => b.ability - a.ability).slice(0, 14)
+    draftPool.value = sorted.map((p, index) => ({
+      id: p.id,
+      rank: index + 1,
+      title: index === 0 ? '状元' : index === 1 ? '榜眼' : index === 2 ? '探花' : `第${index + 1}顺位`,
+      gameId: p.game_id,
+      ability: p.ability,
+      potential: p.potential,
+      tag: p.tag,
+      position: p.position,
+    }))
+
+    hasDraftRoster.value = true
+    currentStep.value = 1
+    ElMessage.success('选秀名单抽取完成！')
+  } catch (e) {
+    console.error('Failed to draw draft roster:', e)
+    ElMessage.error('抽取选秀名单失败')
+  } finally {
+    isLoading.value = false
+  }
 }
 
 // 执行后端抽签
@@ -553,10 +669,6 @@ const drawAllPicks = async () => {
   await runBackendLottery()
 }
 
-const proceedToAssignment = () => {
-  currentStep.value = 2
-}
-
 // 分配选手到队伍 - 调用后端API
 const assignPlayers = async () => {
   isLoading.value = true
@@ -575,7 +687,7 @@ const assignPlayers = async () => {
     // 如果有手动选秀的需求，也可以遍历每个队伍单独调用 makeDraftPick
     // 这里使用 aiAutoDraft 简化流程
 
-    currentStep.value = 3
+    currentStep.value = 5
     ElMessage.success('选手分配完成!')
   } catch (e) {
     console.error('Failed to assign players:', e)
@@ -1452,5 +1564,90 @@ const completeDraft = () => {
 
 .ml-2 {
   margin-left: 8px;
+}
+
+.mr-2 {
+  margin-right: 8px;
+}
+
+/* 抽取选秀名单区块 */
+.draw-roster-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  text-align: center;
+
+  .draw-info {
+    margin-bottom: 32px;
+
+    h3 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #1f2937;
+      margin: 20px 0 8px 0;
+    }
+
+    p {
+      font-size: 14px;
+      color: #6b7280;
+      margin: 0;
+      max-width: 400px;
+    }
+  }
+
+  .phase-warning {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-size: 14px;
+    color: #92400e;
+  }
+}
+
+/* 拍卖区块 */
+.auction-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  text-align: center;
+
+  .auction-info {
+    margin-bottom: 32px;
+
+    h3 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #1f2937;
+      margin: 20px 0 8px 0;
+    }
+
+    p {
+      font-size: 14px;
+      color: #6b7280;
+      margin: 0 0 8px 0;
+      max-width: 500px;
+    }
+
+    .sub-info {
+      font-size: 13px;
+      color: #9ca3af;
+    }
+  }
+
+  .auction-actions {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
 }
 </style>

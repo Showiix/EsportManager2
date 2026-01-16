@@ -7,6 +7,10 @@
         <p>{{ currentSeason }} 赛季赛事概览</p>
       </div>
       <div class="header-actions">
+        <el-button type="warning" @click="handleFixTournamentStatus" :loading="isFixing">
+          <el-icon><Tools /></el-icon>
+          修复状态
+        </el-button>
         <el-button type="primary" @click="refreshTournaments" :loading="isLoading">
           <el-icon><Refresh /></el-icon>
           刷新
@@ -77,66 +81,58 @@
 
     <!-- 赛事卡片网格 -->
     <el-row v-else :gutter="20">
-      <el-col :span="8" v-for="tournament in tournaments" :key="tournament.id">
-        <el-card class="tournament-card" :class="getTournamentStatus(tournament)">
-          <!-- 赛事头部 -->
-          <div class="tournament-header" :class="tournament.region_id ? 'league' : 'international'">
-            <div class="tournament-badge">
-              {{ tournament.region_id ? '联赛' : '国际赛' }}
+      <el-col :span="8" v-for="group in groupedTournaments" :key="group.isLeague ? group.type : group.originalTournament?.id">
+        <el-card class="tournament-card" :class="group.status">
+          <!-- 联赛头部 -->
+          <div v-if="group.isLeague" class="tournament-header league">
+            <div class="tournament-badge">联赛</div>
+            <div class="tournament-icon">{{ group.icon }}</div>
+            <!-- 赛区标签 -->
+            <div v-if="group.regions.length > 0" class="region-tags">
+              <span v-for="region in group.regions" :key="region" class="region-tag">{{ region }}</span>
             </div>
-            <div class="tournament-icon">
-              {{ tournament.region_id ? '🏆' : '🌍' }}
-            </div>
+          </div>
+          <!-- 国际赛事头部 - 使用图片 -->
+          <div v-else class="tournament-header international" :style="getTournamentHeaderStyle(group.originalTournament)">
+            <div class="tournament-badge">国际赛</div>
           </div>
 
           <!-- 赛事内容 -->
           <div class="tournament-content">
             <div class="tournament-title-row">
-              <h3 class="tournament-name">{{ tournament.name }}</h3>
-              <el-tag :type="getStatusTagType(tournament)" size="default">
-                {{ getStatusText(tournament) }}
+              <h3 class="tournament-name">{{ group.name }}</h3>
+              <el-tag :type="group.status === 'active' ? 'success' : group.status === 'completed' ? 'primary' : 'info'" size="default">
+                {{ group.status === 'active' ? '进行中' : group.status === 'completed' ? '已完成' : '未开始' }}
               </el-tag>
             </div>
 
-            <p class="tournament-description">{{ tournament.tournament_type }}</p>
+            <p class="tournament-description">
+              {{ group.isLeague ? `四大赛区 ${group.tournaments.length} 场赛事` : group.originalTournament?.tournament_type || '' }}
+            </p>
 
             <div class="tournament-info">
               <div class="info-item">
+                <el-icon><Trophy /></el-icon>
+                <span>S{{ gameState?.current_season }} 赛季</span>
+              </div>
+              <div class="info-item" v-if="group.regions.length > 0">
                 <el-icon><UserFilled /></el-icon>
-                <span>{{ tournament.champion_team_name ?? '待定' }}</span>
+                <span>{{ group.regions.join(' / ') }}</span>
               </div>
-              <div class="info-item">
-                <el-icon><VideoPlay /></el-icon>
-                <span>第 {{ tournament.season_id }} 赛季</span>
-              </div>
-            </div>
-
-            <!-- 进度条 -->
-            <div class="tournament-progress" v-if="getTournamentStatus(tournament) === 'active'">
-              <div class="progress-label">
-                <span>比赛进度</span>
-                <span>{{ getProgress(tournament) }}%</span>
-              </div>
-              <el-progress
-                :percentage="getProgress(tournament)"
-                :stroke-width="8"
-                :show-text="false"
-                :color="'#67c23a'"
-              />
             </div>
 
             <!-- 操作按钮 -->
             <div class="tournament-actions">
               <el-button
-                v-if="getTournamentStatus(tournament) === 'active'"
+                v-if="group.status === 'active'"
                 type="success"
-                @click="continueTournament(tournament)"
+                @click="navigateToGroup(group)"
               >
                 <el-icon><VideoPlay /></el-icon>
                 继续比赛
               </el-button>
               <el-button
-                v-else-if="getTournamentStatus(tournament) === 'upcoming'"
+                v-else-if="group.status === 'upcoming'"
                 type="primary"
                 disabled
               >
@@ -146,12 +142,12 @@
               <el-button
                 v-else
                 type="info"
-                @click="viewResults(tournament)"
+                @click="navigateToGroup(group)"
               >
                 <el-icon><View /></el-icon>
                 查看结果
               </el-button>
-              <el-button @click="viewDetails(tournament)">
+              <el-button @click="navigateToGroup(group)">
                 详情
               </el-button>
             </div>
@@ -176,23 +172,23 @@
 
       <el-timeline>
         <el-timeline-item
-          v-for="tournament in tournaments"
-          :key="tournament.id"
-          :type="getTimelineType(tournament)"
-          :hollow="getTournamentStatus(tournament) === 'upcoming'"
+          v-for="phase in seasonTimeline"
+          :key="phase.type"
+          :type="phase.timelineType"
+          :hollow="phase.status === 'upcoming'"
           placement="top"
         >
-          <div class="timeline-content">
+          <div class="timeline-content" :class="{ 'current-phase': phase.isCurrent }">
             <div class="timeline-title">
-              <span class="timeline-name">{{ tournament.name }}</span>
+              <span class="timeline-name">{{ phase.name }}</span>
               <el-tag
-                :type="getStatusTagType(tournament)"
+                :type="phase.tagType"
                 size="small"
               >
-                {{ getStatusText(tournament) }}
+                {{ phase.statusText }}
               </el-tag>
             </div>
-            <p class="timeline-desc">{{ tournament.tournament_type }}</p>
+            <p class="timeline-desc">{{ phase.description }}</p>
           </div>
         </el-timeline-item>
       </el-timeline>
@@ -201,9 +197,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
+import { ElMessage } from 'element-plus'
 import {
   Trophy,
   VideoPlay,
@@ -212,29 +209,87 @@ import {
   UserFilled,
   View,
   Refresh,
+  Tools,
 } from '@element-plus/icons-vue'
 import { useTournamentStoreTauri } from '@/stores/useTournamentStoreTauri'
 import { useGameStore } from '@/stores/useGameStore'
+import { queryApi, timeApi } from '@/api/tauri'
 
 const router = useRouter()
 const tournamentStore = useTournamentStoreTauri()
 const gameStore = useGameStore()
 
 // 从 store 获取响应式数据
-const { tournaments, isLoading } = storeToRefs(tournamentStore)
 const { currentSeason, gameState } = storeToRefs(gameStore)
+
+// 本地赛事列表（合并赛季赛事和国际赛事）
+const tournaments = ref<any[]>([])
+const isLoading = ref(false)
+const isFixing = ref(false)
 
 // 初始化加载数据
 onMounted(async () => {
-  if (gameState.value?.current_season) {
-    await tournamentStore.loadSeasonTournaments(gameState.value.current_season)
-  }
+  await loadAllTournaments()
 })
+
+// 加载所有赛事（赛季 + 国际）
+const loadAllTournaments = async () => {
+  if (!gameState.value?.current_season) {
+    console.log('No current season')
+    return
+  }
+
+  isLoading.value = true
+  const seasonId = gameState.value.current_season
+  console.log('Loading tournaments for season:', seasonId)
+
+  try {
+    const [seasonTournaments, internationalTournaments] = await Promise.all([
+      queryApi.getSeasonTournaments(seasonId),
+      queryApi.getInternationalTournaments(seasonId)
+    ])
+
+    console.log('Season tournaments:', seasonTournaments)
+    console.log('International tournaments:', internationalTournaments)
+
+    // 合并并去重
+    const allTournaments = [...seasonTournaments]
+    for (const intl of internationalTournaments) {
+      if (!allTournaments.some(t => t.id === intl.id)) {
+        allTournaments.push(intl)
+      }
+    }
+    tournaments.value = allTournaments
+    console.log(`Loaded ${allTournaments.length} tournaments (${seasonTournaments.length} season + ${internationalTournaments.length} international)`)
+  } catch (e) {
+    console.error('Failed to load tournaments:', e)
+  } finally {
+    isLoading.value = false
+  }
+}
 
 // 刷新赛事列表
 const refreshTournaments = async () => {
-  if (gameState.value?.current_season) {
-    await tournamentStore.loadSeasonTournaments(gameState.value.current_season)
+  await loadAllTournaments()
+}
+
+// 修复赛事状态
+const handleFixTournamentStatus = async () => {
+  isFixing.value = true
+  try {
+    const result = await timeApi.fixTournamentStatus()
+    if (result.fixed_count > 0) {
+      ElMessage.success(`${result.message}`)
+      // 刷新赛事列表
+      await loadAllTournaments()
+    } else {
+      ElMessage.info(result.message)
+    }
+  } catch (e) {
+    console.error('修复赛事状态失败:', e)
+    ElMessage.error('修复赛事状态失败')
+  } finally {
+    isFixing.value = false
   }
 }
 
@@ -250,6 +305,165 @@ const upcomingTournaments = computed(() =>
 const completedTournaments = computed(() =>
   tournaments.value.filter(t => getTournamentStatus(t) === 'completed').length
 )
+
+// 赛季阶段顺序（按时间推进引擎顺序）
+const SEASON_PHASES = [
+  { type: 'SpringRegular', name: '春季常规赛', description: '四大赛区春季常规赛' },
+  { type: 'SpringPlayoffs', name: '春季季后赛', description: '四大赛区春季季后赛' },
+  { type: 'Msi', name: 'MSI季中赛', description: '赛区冠军国际对抗' },
+  { type: 'MadridMasters', name: '马德里大师赛', description: '国际邀请赛' },
+  { type: 'SummerRegular', name: '夏季常规赛', description: '四大赛区夏季常规赛' },
+  { type: 'SummerPlayoffs', name: '夏季季后赛', description: '四大赛区夏季季后赛' },
+  { type: 'ClaudeIntercontinental', name: 'Claude洲际赛', description: '洲际对抗赛' },
+  { type: 'WorldChampionship', name: 'S世界赛', description: '全球总决赛' },
+  { type: 'ShanghaiMasters', name: '上海大师赛', description: '年终大师赛' },
+  { type: 'IcpIntercontinental', name: 'ICP洲际对抗赛', description: '四赛区洲际对抗' },
+  { type: 'SuperIntercontinental', name: 'Super洲际邀请赛', description: '年度邀请赛' },
+]
+
+// 计算赛季时间线
+const seasonTimeline = computed(() => {
+  const currentPhase = gameState.value?.current_phase || 'SpringRegular'
+
+  return SEASON_PHASES.map((phase, index) => {
+    // 查找该阶段对应的赛事
+    const phaseTournaments = tournaments.value.filter(t => t.tournament_type === phase.type)
+
+    // 判断阶段状态
+    let status: 'active' | 'upcoming' | 'completed' = 'upcoming'
+    const currentPhaseIndex = SEASON_PHASES.findIndex(p => p.type === currentPhase)
+
+    if (index < currentPhaseIndex) {
+      status = 'completed'
+    } else if (index === currentPhaseIndex) {
+      status = 'active'
+    } else {
+      status = 'upcoming'
+    }
+
+    // 如果有对应赛事，根据赛事状态更精确判断
+    if (phaseTournaments.length > 0) {
+      const statuses = phaseTournaments.map(t => getTournamentStatus(t))
+      if (statuses.every(s => s === 'completed')) {
+        status = 'completed'
+      } else if (statuses.some(s => s === 'active')) {
+        status = 'active'
+      }
+    }
+
+    return {
+      type: phase.type,
+      name: phase.name,
+      description: phase.description,
+      status,
+      isCurrent: phase.type === currentPhase,
+      timelineType: status === 'active' ? 'success' : status === 'completed' ? 'primary' : 'info',
+      tagType: status === 'active' ? 'success' : status === 'completed' ? 'primary' : 'info',
+      statusText: status === 'active' ? '进行中' : status === 'completed' ? '已完成' : '未开始',
+    }
+  })
+})
+
+// 需要合并的联赛类型
+const leagueTypes = ['SpringRegular', 'SpringPlayoffs', 'SummerRegular', 'SummerPlayoffs']
+
+// 联赛类型配置
+const leagueTypeConfig: Record<string, { name: string, icon: string, order: number }> = {
+  'SpringRegular': { name: '春季常规赛', icon: '🌸', order: 1 },
+  'SpringPlayoffs': { name: '春季季后赛', icon: '🏆', order: 2 },
+  'SummerRegular': { name: '夏季常规赛', icon: '☀️', order: 4 },
+  'SummerPlayoffs': { name: '夏季季后赛', icon: '🏆', order: 5 },
+}
+
+// 赛事分组（只合并联赛，国际赛事保持原样）
+interface TournamentGroup {
+  type: string
+  name: string
+  icon: string
+  isLeague: boolean
+  order: number
+  tournaments: any[]
+  regions: string[]
+  status: 'active' | 'upcoming' | 'completed'
+  progress: number
+  // 国际赛事使用原始数据
+  originalTournament?: any
+}
+
+const groupedTournaments = computed<TournamentGroup[]>(() => {
+  const leagueGroups: Record<string, TournamentGroup> = {}
+  const internationalList: TournamentGroup[] = []
+
+  console.log('Processing tournaments:', tournaments.value.length)
+
+  for (const t of tournaments.value) {
+    const type = t.tournament_type || 'Unknown'
+
+    // 检查是否是需要合并的联赛类型
+    if (leagueTypes.includes(type)) {
+      const config = leagueTypeConfig[type]
+
+      if (!leagueGroups[type]) {
+        leagueGroups[type] = {
+          type,
+          name: config.name,
+          icon: config.icon,
+          isLeague: true,
+          order: config.order,
+          tournaments: [],
+          regions: [],
+          status: 'upcoming',
+          progress: 0
+        }
+      }
+
+      leagueGroups[type].tournaments.push(t)
+
+      // 提取赛区名称
+      const regionMatch = t.name?.match(/(LPL|LCK|LEC|LCS)/)
+      if (regionMatch && !leagueGroups[type].regions.includes(regionMatch[1])) {
+        leagueGroups[type].regions.push(regionMatch[1])
+      }
+    } else {
+      // 国际赛事 - 保持原样单独显示
+      console.log('International tournament:', t.name, t.tournament_type)
+      internationalList.push({
+        type,
+        name: t.name, // 使用原始名称
+        icon: '', // 国际赛事用图片，不需要emoji
+        isLeague: false,
+        order: 100, // 国际赛事排在后面
+        tournaments: [t],
+        regions: [],
+        status: getTournamentStatus(t),
+        progress: getProgress(t),
+        originalTournament: t
+      })
+    }
+  }
+
+  // 计算联赛组的状态和进度
+  for (const group of Object.values(leagueGroups)) {
+    const statuses = group.tournaments.map(t => getTournamentStatus(t))
+    if (statuses.some(s => s === 'active')) {
+      group.status = 'active'
+    } else if (statuses.every(s => s === 'completed')) {
+      group.status = 'completed'
+    } else {
+      group.status = 'upcoming'
+    }
+
+    // 计算平均进度
+    const progresses = group.tournaments.map(t => getProgress(t))
+    group.progress = Math.round(progresses.reduce((a, b) => a + b, 0) / progresses.length)
+  }
+
+  // 合并并排序：联赛在前，国际赛事在后
+  const allGroups = [...Object.values(leagueGroups), ...internationalList]
+  console.log('Grouped result:', allGroups.length, 'groups (', Object.keys(leagueGroups).length, 'leagues +', internationalList.length, 'international)')
+  console.log('All groups:', allGroups.map(g => ({ name: g.name, isLeague: g.isLeague, order: g.order })))
+  return allGroups.sort((a, b) => a.order - b.order)
+})
 
 // 获取赛事状态
 const getTournamentStatus = (tournament: any): 'active' | 'upcoming' | 'completed' => {
@@ -269,61 +483,20 @@ const getProgress = (tournament: any): number => {
   return 0
 }
 
-// 方法
-const getStatusTagType = (tournament: any) => {
-  const status = getTournamentStatus(tournament)
-  switch (status) {
-    case 'active': return 'success'
-    case 'upcoming': return 'info'
-    case 'completed': return 'primary'
-    default: return 'info'
-  }
-}
-
-const getStatusText = (tournament: any) => {
-  const status = getTournamentStatus(tournament)
-  switch (status) {
-    case 'active': return '进行中'
-    case 'upcoming': return '未开始'
-    case 'completed': return '已完成'
-    default: return '未知'
-  }
-}
-
-const getTimelineType = (tournament: any) => {
-  const status = getTournamentStatus(tournament)
-  switch (status) {
-    case 'active': return 'success'
-    case 'completed': return 'primary'
-    default: return 'info'
-  }
-}
-
-const continueTournament = async (tournament: any) => {
-  await tournamentStore.selectTournament(tournament.id)
-  navigateToDetail(tournament)
-}
-
-const viewResults = async (tournament: any) => {
-  await tournamentStore.selectTournament(tournament.id)
-  navigateToDetail(tournament)
-}
-
-const viewDetails = async (tournament: any) => {
-  await tournamentStore.selectTournament(tournament.id)
-  navigateToDetail(tournament)
-}
-
 const navigateToDetail = (tournament: any) => {
   // 根据赛事类型跳转到不同的详情页
   // 后端返回 PascalCase 格式如 SpringRegular，直接比较原始值
   const type = tournament.tournament_type || ''
 
   // 联赛 - 根据类型跳转
-  if (type === 'SpringRegular' || type === 'SpringPlayoffs') {
+  if (type === 'SpringRegular') {
     router.push(`/tournaments/spring/${tournament.id}`)
-  } else if (type === 'SummerRegular' || type === 'SummerPlayoffs') {
+  } else if (type === 'SpringPlayoffs') {
+    router.push(`/tournaments/spring-playoffs/${tournament.id}`)
+  } else if (type === 'SummerRegular') {
     router.push(`/tournaments/summer/${tournament.id}`)
+  } else if (type === 'SummerPlayoffs') {
+    router.push(`/tournaments/summer-playoffs/${tournament.id}`)
   } else if (type === 'Msi') {
     router.push('/tournaments/msi')
   } else if (type === 'WorldChampionship') {
@@ -342,6 +515,61 @@ const navigateToDetail = (tournament: any) => {
     // 默认跳转
     router.push(`/tournaments/${tournament.id}`)
   }
+}
+
+// 导航到合并的赛事组详情
+const navigateToGroup = async (group: TournamentGroup) => {
+  // 国际赛事直接跳转到原有页面
+  if (!group.isLeague && group.originalTournament) {
+    await tournamentStore.selectTournament(group.originalTournament.id)
+    navigateToDetail(group.originalTournament)
+    return
+  }
+
+  // 联赛：选择第一个赛事（通常是LPL）
+  const firstTournament = group.tournaments[0]
+  if (firstTournament) {
+    await tournamentStore.selectTournament(firstTournament.id)
+
+    // 根据类型跳转，传入 regionGroup 参数表示需要显示赛区选择
+    const type = group.type
+    if (type === 'SpringRegular') {
+      router.push({ path: `/tournaments/spring/${firstTournament.id}`, query: { grouped: 'true' } })
+    } else if (type === 'SpringPlayoffs') {
+      router.push({ path: `/tournaments/spring-playoffs/${firstTournament.id}`, query: { grouped: 'true' } })
+    } else if (type === 'SummerRegular') {
+      router.push({ path: `/tournaments/summer/${firstTournament.id}`, query: { grouped: 'true' } })
+    } else if (type === 'SummerPlayoffs') {
+      router.push({ path: `/tournaments/summer-playoffs/${firstTournament.id}`, query: { grouped: 'true' } })
+    } else {
+      router.push(`/tournaments/${firstTournament.id}`)
+    }
+  }
+}
+
+// 获取国际赛事头部样式（背景图片）
+const getTournamentHeaderStyle = (tournament: any) => {
+  if (!tournament) return {}
+
+  const type = tournament.tournament_type || ''
+  const imageMap: Record<string, string> = {
+    'Msi': '/images/tournaments/msi.png',
+    'WorldChampionship': '/images/tournaments/worlds.png',
+    'ShanghaiMasters': '/images/tournaments/shanghai.png',
+    'MadridMasters': '/images/tournaments/madrid.png',
+    'ClaudeIntercontinental': '/images/tournaments/claude.png',
+  }
+
+  const imagePath = imageMap[type]
+  if (imagePath) {
+    return {
+      backgroundImage: `url(${imagePath})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center'
+    }
+  }
+
+  return {}
 }
 </script>
 
@@ -380,6 +608,8 @@ const navigateToDetail = (tournament: any) => {
 .tournament-header.international { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
 .tournament-badge { position: absolute; top: 12px; left: 12px; padding: 4px 12px; background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(4px); border-radius: 20px; color: white; font-size: 12px; font-weight: 500; z-index: 1; }
 .tournament-icon { font-size: 48px; }
+.region-tags { position: absolute; bottom: 12px; left: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+.region-tag { padding: 2px 8px; background: rgba(255, 255, 255, 0.25); backdrop-filter: blur(4px); border-radius: 12px; color: white; font-size: 11px; font-weight: 500; }
 
 .tournament-content { padding: 20px; }
 .tournament-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
@@ -390,9 +620,6 @@ const navigateToDetail = (tournament: any) => {
 .info-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #606266; }
 .info-item .el-icon { color: #909399; }
 
-.tournament-progress { margin-bottom: 16px; }
-.progress-label { display: flex; justify-content: space-between; font-size: 13px; color: #606266; margin-bottom: 8px; }
-
 .tournament-actions { display: flex; gap: 8px; }
 .tournament-actions .el-button { flex: 1; }
 
@@ -400,7 +627,20 @@ const navigateToDetail = (tournament: any) => {
 .timeline-card { margin-top: 20px; border-radius: 12px; }
 .timeline-header { display: flex; justify-content: space-between; align-items: center; }
 .timeline-header h2 { font-size: 18px; font-weight: 600; color: #303133; margin: 0; }
-.timeline-content { padding: 12px 16px; background: #f5f7fa; border-radius: 8px; }
+.timeline-content {
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+.timeline-content.current-phase {
+  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+  border: 2px solid #4caf50;
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
+}
+.timeline-content.current-phase .timeline-name {
+  color: #2e7d32;
+}
 .timeline-title { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .timeline-name { font-weight: 600; color: #303133; }
 .timeline-desc { font-size: 13px; color: #909399; margin: 0; }

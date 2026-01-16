@@ -204,6 +204,10 @@ impl SeasonProgressEngine {
                     vec![GameAction::GenerateSuper, GameAction::SimulateSuperMatch]
                 }
             }
+            SeasonPhase::AnnualAwards => {
+                // 年度颁奖典礼，仅显示页面，无需操作
+                vec![]
+            }
             SeasonPhase::TransferWindow => {
                 if self.phase_completed {
                     vec![]
@@ -241,7 +245,7 @@ impl SeasonProgressEngine {
 
     /// 获取赛季进度 (已完成阶段数 / 总阶段数)
     pub fn get_progress(&self) -> (u32, u32) {
-        let total = 14u32; // 总共14个阶段
+        let total = 15u32; // 总共15个阶段（含年度颁奖典礼）
         let completed = match self.current_phase {
             SeasonPhase::SpringRegular => 0,
             SeasonPhase::SpringPlayoffs => 1,
@@ -254,9 +258,10 @@ impl SeasonProgressEngine {
             SeasonPhase::ShanghaiMasters => 8,
             SeasonPhase::IcpIntercontinental => 9,
             SeasonPhase::SuperIntercontinental => 10,
-            SeasonPhase::TransferWindow => 11,
-            SeasonPhase::Draft => 12,
-            SeasonPhase::SeasonEnd => 13,
+            SeasonPhase::AnnualAwards => 11,
+            SeasonPhase::TransferWindow => 12,
+            SeasonPhase::Draft => 13,
+            SeasonPhase::SeasonEnd => 14,
         };
 
         let completed = if self.phase_completed {

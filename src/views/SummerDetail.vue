@@ -19,7 +19,7 @@
       </div>
       <div class="header-actions">
         <el-button
-          v-if="tournament.status === 'active' && currentPhase === 'regular'"
+          v-if="tournament.status === 'active'"
           type="primary"
           @click="simulateNextMatch"
           :loading="simulating"
@@ -42,40 +42,23 @@
     <!-- 赛区选择器 (仅联赛显示) -->
     <el-card v-if="tournament.type === 'league'" class="region-selector-card">
       <div class="region-selector">
-        <span class="selector-label">选择赛区:</span>
-        <el-radio-group v-model="selectedRegion" @change="handleRegionChange">
-          <el-radio-button v-for="region in regions" :key="region.id" :value="region.id">
-            {{ region.name }}
-          </el-radio-button>
-        </el-radio-group>
+        <div class="selector-left">
+          <span class="selector-label">选择赛区:</span>
+          <el-radio-group v-model="selectedRegion" @change="handleRegionChange">
+            <el-radio-button v-for="region in regions" :key="region.id" :value="region.id">
+              {{ region.name }}
+            </el-radio-button>
+          </el-radio-group>
+        </div>
+        <el-button @click="refreshData" :icon="Refresh" :loading="refreshing">
+          刷新数据
+        </el-button>
       </div>
     </el-card>
 
-    <!-- 阶段切换 -->
-    <el-card class="phase-card">
-      <el-tabs v-model="currentPhase" @tab-change="handlePhaseChange">
-        <el-tab-pane label="常规赛" name="regular">
-          <template #label>
-            <span class="tab-label">
-              <el-icon><List /></el-icon>
-              常规赛
-            </span>
-          </template>
-        </el-tab-pane>
-        <el-tab-pane label="季后赛" name="playoffs" :disabled="!playoffsStarted">
-          <template #label>
-            <span class="tab-label">
-              <el-icon><Trophy /></el-icon>
-              季后赛
-              <el-tag v-if="!playoffsStarted" size="small" type="info">未开始</el-tag>
-            </span>
-          </template>
-        </el-tab-pane>
-      </el-tabs>
-    </el-card>
 
     <!-- 常规赛内容 -->
-    <div v-if="currentPhase === 'regular'" class="regular-season-content">
+    <div class="regular-season-content">
       <!-- 统计概览 -->
       <el-row :gutter="16" class="stats-row">
         <el-col :span="6">
@@ -197,6 +180,58 @@
               </el-divider>
             </div>
           </el-card>
+
+          <!-- MVP 排行榜 -->
+          <el-card class="mvp-ranking-card">
+            <template #header>
+              <div class="card-header">
+                <h3>
+                  <el-icon><Star /></el-icon>
+                  常规赛MVP排行榜
+                </h3>
+                <el-tag type="warning">MVP次数</el-tag>
+              </div>
+            </template>
+
+            <el-table :data="mvpRanking" stripe class="mvp-table" v-loading="mvpLoading">
+              <el-table-column label="排名" width="60" align="center">
+                <template #default="{ $index }">
+                  <div class="rank-badge" :class="getMvpRankClass($index + 1)">
+                    {{ $index + 1 }}
+                  </div>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="选手" min-width="100">
+                <template #default="{ row }">
+                  <div class="player-cell">
+                    <span class="player-name">{{ row.player_name }}</span>
+                    <el-tag size="small" type="info">{{ row.position }}</el-tag>
+                  </div>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="战队" width="80" align="center">
+                <template #default="{ row }">
+                  <span class="team-name">{{ row.team_name }}</span>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="MVP次数" width="90" align="center">
+                <template #default="{ row }">
+                  <span class="mvp-count">{{ row.game_mvp_count }}</span>
+                </template>
+              </el-table-column>
+
+              <el-table-column label="场均发挥" width="90" align="center">
+                <template #default="{ row }">
+                  <span class="avg-impact">{{ row.avg_impact?.toFixed(1) || '0.0' }}</span>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <el-empty v-if="mvpRanking.length === 0 && !mvpLoading" description="暂无MVP数据" />
+          </el-card>
         </el-col>
 
         <!-- 右侧：比赛列表 -->
@@ -268,223 +303,6 @@
       </el-row>
     </div>
 
-    <!-- 季后赛内容 -->
-    <div v-else-if="currentPhase === 'playoffs'" class="playoffs-content">
-      <el-card class="bracket-card">
-        <template #header>
-          <div class="card-header">
-            <h3>
-              <el-icon><Trophy /></el-icon>
-              季后赛对阵图
-            </h3>
-            <div class="header-actions">
-              <el-button
-                v-if="!playoffsCompleted"
-                type="warning"
-                size="small"
-                @click="simulatePlayoffs"
-                :loading="playoffsSimulating"
-              >
-                <el-icon><DArrowRight /></el-icon>
-                一键模拟季后赛
-              </el-button>
-            </div>
-          </div>
-        </template>
-
-        <!-- 双败淘汰赛对阵图 -->
-        <div class="bracket-wrapper">
-          <!-- 胜者组 -->
-          <div class="bracket-section winners-section">
-            <h4 class="section-title winners-title">
-              <el-icon><Top /></el-icon>
-              胜者组
-            </h4>
-            <div class="winners-bracket">
-              <!-- 胜者组第一轮 -->
-              <div class="bracket-column">
-                <div class="round-label">第一轮</div>
-                <div class="matches-column">
-                  <div
-                    v-for="match in winnersRounds[0].matches"
-                    :key="match.id"
-                    class="bracket-match winners"
-                    :class="{ completed: match.status === 'completed' }"
-                  >
-                    <div class="match-team" :class="{ winner: match.winnerId === match.teamAId }">
-                      <span class="seed">#{{ match.seedA }}</span>
-                      <span class="name">{{ match.teamA || '待定' }}</span>
-                      <span class="score" v-if="match.status === 'completed'">{{ match.scoreA }}</span>
-                    </div>
-                    <div class="match-team" :class="{ winner: match.winnerId === match.teamBId }">
-                      <span class="seed">#{{ match.seedB }}</span>
-                      <span class="name">{{ match.teamB || '待定' }}</span>
-                      <span class="score" v-if="match.status === 'completed'">{{ match.scoreB }}</span>
-                    </div>
-                    <div class="connector-right"></div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 胜者组决赛 -->
-              <div class="bracket-column">
-                <div class="round-label">决赛</div>
-                <div class="matches-column centered">
-                  <div
-                    class="bracket-match winners final"
-                    :class="{ completed: winnersRounds[1].matches[0].status === 'completed' }"
-                  >
-                    <div class="connector-left"></div>
-                    <div class="match-team" :class="{ winner: winnersRounds[1].matches[0].winnerId === winnersRounds[1].matches[0].teamAId }">
-                      <span class="name">{{ winnersRounds[1].matches[0].teamA || '待定' }}</span>
-                      <span class="score" v-if="winnersRounds[1].matches[0].status === 'completed'">{{ winnersRounds[1].matches[0].scoreA }}</span>
-                    </div>
-                    <div class="match-team" :class="{ winner: winnersRounds[1].matches[0].winnerId === winnersRounds[1].matches[0].teamBId }">
-                      <span class="name">{{ winnersRounds[1].matches[0].teamB || '待定' }}</span>
-                      <span class="score" v-if="winnersRounds[1].matches[0].status === 'completed'">{{ winnersRounds[1].matches[0].scoreB }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 败者组 -->
-          <div class="bracket-section losers-section">
-            <h4 class="section-title losers-title">
-              <el-icon><Bottom /></el-icon>
-              败者组
-            </h4>
-            <div class="losers-bracket">
-              <!-- 败者组第一轮 (5v8, 6v7) -->
-              <div class="bracket-column">
-                <div class="round-label">第一轮</div>
-                <div class="matches-column">
-                  <div
-                    v-for="match in losersRounds[0].matches"
-                    :key="match.id"
-                    class="bracket-match losers"
-                    :class="{ completed: match.status === 'completed' }"
-                  >
-                    <div class="match-team" :class="{ winner: match.winnerId === match.teamAId }">
-                      <span class="seed" v-if="'seedA' in match">#{{ match.seedA }}</span>
-                      <span class="name">{{ match.teamA || '待定' }}</span>
-                      <span class="score" v-if="match.status === 'completed'">{{ match.scoreA }}</span>
-                    </div>
-                    <div class="match-team" :class="{ winner: match.winnerId === match.teamBId }">
-                      <span class="seed" v-if="'seedB' in match">#{{ match.seedB }}</span>
-                      <span class="name">{{ match.teamB || '待定' }}</span>
-                      <span class="score" v-if="match.status === 'completed'">{{ match.scoreB }}</span>
-                    </div>
-                    <div class="connector-right"></div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 败者组第二轮 -->
-              <div class="bracket-column">
-                <div class="round-label">第二轮</div>
-                <div class="matches-column">
-                  <div
-                    v-for="match in losersRounds[1].matches"
-                    :key="match.id"
-                    class="bracket-match losers"
-                    :class="{ completed: match.status === 'completed' }"
-                  >
-                    <div class="connector-left"></div>
-                    <div class="match-team" :class="{ winner: match.winnerId === match.teamAId }">
-                      <span class="name">{{ match.teamA || '待定' }}</span>
-                      <span class="score" v-if="match.status === 'completed'">{{ match.scoreA }}</span>
-                    </div>
-                    <div class="match-team" :class="{ winner: match.winnerId === match.teamBId }">
-                      <span class="name">{{ match.teamB || '待定' }}</span>
-                      <span class="score" v-if="match.status === 'completed'">{{ match.scoreB }}</span>
-                    </div>
-                    <div class="connector-right"></div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 败者组第三轮 -->
-              <div class="bracket-column">
-                <div class="round-label">第三轮</div>
-                <div class="matches-column centered">
-                  <div
-                    class="bracket-match losers"
-                    :class="{ completed: losersRounds[2].matches[0].status === 'completed' }"
-                  >
-                    <div class="connector-left"></div>
-                    <div class="match-team" :class="{ winner: losersRounds[2].matches[0].winnerId === losersRounds[2].matches[0].teamAId }">
-                      <span class="name">{{ losersRounds[2].matches[0].teamA || '待定' }}</span>
-                      <span class="score" v-if="losersRounds[2].matches[0].status === 'completed'">{{ losersRounds[2].matches[0].scoreA }}</span>
-                    </div>
-                    <div class="match-team" :class="{ winner: losersRounds[2].matches[0].winnerId === losersRounds[2].matches[0].teamBId }">
-                      <span class="name">{{ losersRounds[2].matches[0].teamB || '待定' }}</span>
-                      <span class="score" v-if="losersRounds[2].matches[0].status === 'completed'">{{ losersRounds[2].matches[0].scoreB }}</span>
-                    </div>
-                    <div class="connector-right"></div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 败者组决赛 -->
-              <div class="bracket-column">
-                <div class="round-label">败者组决赛</div>
-                <div class="matches-column centered">
-                  <div
-                    class="bracket-match losers final"
-                    :class="{ completed: losersRounds[3].matches[0].status === 'completed' }"
-                  >
-                    <div class="connector-left"></div>
-                    <div class="match-team" :class="{ winner: losersRounds[3].matches[0].winnerId === losersRounds[3].matches[0].teamAId }">
-                      <span class="name">{{ losersRounds[3].matches[0].teamA || '待定' }}</span>
-                      <span class="score" v-if="losersRounds[3].matches[0].status === 'completed'">{{ losersRounds[3].matches[0].scoreA }}</span>
-                    </div>
-                    <div class="match-team" :class="{ winner: losersRounds[3].matches[0].winnerId === losersRounds[3].matches[0].teamBId }">
-                      <span class="name">{{ losersRounds[3].matches[0].teamB || '待定' }}</span>
-                      <span class="score" v-if="losersRounds[3].matches[0].status === 'completed'">{{ losersRounds[3].matches[0].scoreB }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 总决赛 -->
-          <div class="bracket-section finals-section">
-            <h4 class="section-title finals-title">
-              <el-icon><Trophy /></el-icon>
-              总决赛
-            </h4>
-            <div class="grand-final">
-              <div class="final-match-card" :class="{ completed: finalMatch.status === 'completed' }">
-                <div class="final-team" :class="{ champion: finalMatch.winnerId === finalMatch.teamAId }">
-                  <div class="team-source">胜者组冠军</div>
-                  <div class="team-name">{{ finalMatch.teamA || '待定' }}</div>
-                  <div class="team-score" v-if="finalMatch.status === 'completed'">{{ finalMatch.scoreA }}</div>
-                </div>
-                <div class="vs-badge">VS</div>
-                <div class="final-team" :class="{ champion: finalMatch.winnerId === finalMatch.teamBId }">
-                  <div class="team-source">败者组冠军</div>
-                  <div class="team-name">{{ finalMatch.teamB || '待定' }}</div>
-                  <div class="team-score" v-if="finalMatch.status === 'completed'">{{ finalMatch.scoreB }}</div>
-                </div>
-              </div>
-
-              <!-- 冠军展示 -->
-              <div v-if="champion" class="champion-display">
-                <div class="champion-trophy">🏆</div>
-                <div class="champion-info">
-                  <div class="champion-label">冠军</div>
-                  <div class="champion-name">{{ champion.name }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </el-card>
-    </div>
-
     <!-- 比赛详情弹窗 -->
     <MatchDetailDialog
       :visible="showMatchDetailDialog"
@@ -496,29 +314,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
   VideoPlay,
   DArrowRight,
   List,
-  Trophy,
   Medal,
   UserFilled,
   Calendar,
   TrendCharts,
-  Top,
-  Bottom,
+  Star,
+  Refresh,
 } from '@element-plus/icons-vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
-import { PowerEngine } from '@/engines/PowerEngine'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
-import { queryApi, teamApi, tournamentApi, matchApi, type Team } from '@/api/tauri'
-import type { Player, PlayerPosition } from '@/types/player'
+import { useTimeStore } from '@/stores/useTimeStore'
+import { queryApi, teamApi, tournamentApi, matchApi, statsApi, type Team, type PlayerTournamentStats } from '@/api/tauri'
 import type { MatchDetail, GameDetail } from '@/types/matchDetail'
 
 const route = useRoute()
@@ -528,19 +345,20 @@ const router = useRouter()
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
 const gameStore = useGameStore()
+const timeStore = useTimeStore()
+const { lastMessage: timeLastMessage, timeState } = storeToRefs(timeStore)
 
 // 比赛详情弹窗状态
 const showMatchDetailDialog = ref(false)
 const currentMatchDetail = ref<MatchDetail | null>(null)
 
 // 状态
-const currentPhase = ref<'regular' | 'playoffs'>('regular')
 const selectedRegion = ref(1) // 默认 LPL region_id = 1
 const matchFilter = ref('all')
 const simulating = ref(false)
 const batchSimulating = ref(false)
-const playoffsSimulating = ref(false)
 const loading = ref(false)
+const refreshing = ref(false)
 
 // 当前赛事ID
 const currentTournamentId = ref<number | null>(null)
@@ -562,6 +380,10 @@ const teamMap = ref<Map<number, Team>>(new Map())
 
 // 当前显示的积分榜数据 (从后端加载)
 const standings = ref<any[]>([])
+
+// MVP 排行榜数据
+const mvpRanking = ref<PlayerTournamentStats[]>([])
+const mvpLoading = ref(false)
 
 // 当前显示的比赛数据 (从后端加载)
 const matches = ref<any[]>([])
@@ -595,18 +417,28 @@ const loadTeams = async (regionId: number) => {
 const loadTournament = async (regionId: number) => {
   try {
     const seasonId = gameStore.gameState?.current_season || 1
+    console.log('[SummerDetail] loadTournament: regionId=', regionId, ', seasonId=', seasonId)
     const tournaments = await queryApi.getRegionTournaments(regionId, seasonId)
+    console.log('[SummerDetail] loadTournament: 获取到', tournaments.length, '个赛事')
+    tournaments.forEach(t => console.log('[SummerDetail]   -', t.name, t.tournament_type, 'matches:', t.match_count))
     // 查找夏季常规赛 (后端存储格式为 PascalCase: SummerRegular)
     const summerRegular = tournaments.find(t => t.tournament_type === 'SummerRegular')
     if (summerRegular) {
+      console.log('[SummerDetail] 找到夏季常规赛: id=', summerRegular.id, ', status=', summerRegular.status, ', matches=', summerRegular.match_count)
       currentTournamentId.value = summerRegular.id
+      const statusLower = (summerRegular.status || '').toLowerCase()
       tournament.value = {
         id: summerRegular.id.toString(),
         name: summerRegular.name,
         type: 'league',
-        status: summerRegular.status === 'InProgress' ? 'active' : summerRegular.status.toLowerCase(),
+        status: (statusLower === 'inprogress' || statusLower === 'scheduled') ? 'active' :
+                statusLower === 'completed' ? 'completed' : 'active',  // 默认为 active
         description: '夏季常规赛与季后赛',
       }
+    } else {
+      console.log('[SummerDetail] 未找到夏季常规赛!')
+      // 没找到赛事也保持 active 状态，允许用户操作
+      tournament.value.status = 'active'
     }
   } catch (error) {
     console.error('Failed to load tournament:', error)
@@ -615,9 +447,14 @@ const loadTournament = async (regionId: number) => {
 
 // 加载比赛列表
 const loadMatches = async () => {
-  if (!currentTournamentId.value) return
+  if (!currentTournamentId.value) {
+    console.log('[SummerDetail] loadMatches: 没有 currentTournamentId，跳过')
+    return
+  }
   try {
+    console.log('[SummerDetail] loadMatches: tournamentId=', currentTournamentId.value)
     const matchList = await tournamentApi.getTournamentMatches(currentTournamentId.value)
+    console.log('[SummerDetail] loadMatches: 获取到', matchList.length, '场比赛')
     matches.value = matchList.map(m => ({
       id: m.id,
       week: m.round || 1,
@@ -629,7 +466,7 @@ const loadMatches = async () => {
       awayScore: m.away_score,
       winnerId: m.winner_id,
       // 后端状态格式为 PascalCase: Completed, InProgress, Scheduled
-      status: m.status === 'Completed' ? 'completed' : m.status === 'InProgress' ? 'active' : 'upcoming',
+      status: (m.status === 'Completed' || m.status === 'COMPLETED') ? 'completed' : m.status === 'InProgress' ? 'active' : 'upcoming',
       simulating: false,
     }))
   } catch (error) {
@@ -639,9 +476,14 @@ const loadMatches = async () => {
 
 // 加载积分榜
 const loadStandings = async () => {
-  if (!currentTournamentId.value) return
+  if (!currentTournamentId.value) {
+    console.log('[SummerDetail] loadStandings: 没有 currentTournamentId，跳过')
+    return
+  }
   try {
+    console.log('[SummerDetail] loadStandings: tournamentId=', currentTournamentId.value)
     const standingList = await tournamentApi.getStandings(currentTournamentId.value)
+    console.log('[SummerDetail] loadStandings: 获取到', standingList.length, '条积分榜数据')
     standings.value = standingList.map(s => {
       const team = teamMap.value.get(s.team_id)
       return {
@@ -659,6 +501,22 @@ const loadStandings = async () => {
   }
 }
 
+// 加载 MVP 排行榜
+const loadMvpRanking = async () => {
+  if (!currentTournamentId.value) return
+  mvpLoading.value = true
+  try {
+    const ranking = await statsApi.getTournamentMvpRanking(currentTournamentId.value, 10)
+    mvpRanking.value = ranking
+    console.log('[SummerDetail] Loaded MVP ranking:', ranking.length, 'players')
+  } catch (error) {
+    console.error('Failed to load MVP ranking:', error)
+    mvpRanking.value = []
+  } finally {
+    mvpLoading.value = false
+  }
+}
+
 // 加载赛区所有数据
 const loadRegionData = async (regionId: number) => {
   loading.value = true
@@ -667,79 +525,25 @@ const loadRegionData = async (regionId: number) => {
     await loadTournament(regionId)
     await loadMatches()
     await loadStandings()
+    await loadMvpRanking()
   } finally {
     loading.value = false
   }
 }
 
-// 季后赛数据
-const playoffsStarted = ref(false)
-const playoffsCompleted = ref(false)
-const champion = ref<{ name: string } | null>(null)
-
-// 胜者组轮次 (1-4名: 1 vs 4, 2 vs 3)
-const winnersRounds = ref([
-  {
-    name: '胜者组第一轮',
-    matches: [
-      { id: 'w1', teamAId: 1, teamA: 'JDG', seedA: 1, teamBId: 4, teamB: 'WBG', seedB: 4, scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' },
-      { id: 'w2', teamAId: 2, teamA: 'BLG', seedA: 2, teamBId: 3, teamB: 'TES', seedB: 3, scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' },
-    ]
-  },
-  {
-    name: '胜者组决赛',
-    matches: [
-      { id: 'w3', teamAId: null, teamA: '', seedA: null, teamBId: null, teamB: '', seedB: null, scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' },
-    ]
+// 手动刷新数据
+const refreshData = async () => {
+  refreshing.value = true
+  try {
+    await loadRegionData(selectedRegion.value)
+    ElMessage.success('数据刷新成功')
+  } catch (error) {
+    console.error('刷新数据失败:', error)
+    ElMessage.error('刷新数据失败')
+  } finally {
+    refreshing.value = false
   }
-])
-
-// 败者组轮次 (5-8名: 5 vs 8, 6 vs 7，加上胜者组掉落的队伍)
-const losersRounds = ref([
-  {
-    name: '败者组第一轮',
-    desc: '5 vs 8, 6 vs 7',
-    matches: [
-      { id: 'l1', teamAId: 5, teamA: 'LNG', seedA: 5, teamBId: 8, teamB: 'RNG', seedB: 8, scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' },
-      { id: 'l2', teamAId: 6, teamA: 'EDG', seedA: 6, teamBId: 7, teamB: 'FPX', seedB: 7, scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' },
-    ]
-  },
-  {
-    name: '败者组第二轮',
-    desc: '败者组R1胜者 vs 胜者组R1败者',
-    matches: [
-      { id: 'l3', teamAId: null, teamA: '', seedA: null, teamBId: null, teamB: '', seedB: null, scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' },
-      { id: 'l4', teamAId: null, teamA: '', seedA: null, teamBId: null, teamB: '', seedB: null, scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' },
-    ]
-  },
-  {
-    name: '败者组第三轮',
-    desc: '败者组R2两个胜者对决',
-    matches: [
-      { id: 'l5', teamAId: null, teamA: '', teamBId: null, teamB: '', scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' },
-    ]
-  },
-  {
-    name: '败者组决赛',
-    desc: '败者组R3胜者 vs 胜者组决赛败者',
-    matches: [
-      { id: 'l6', teamAId: null, teamA: '', teamBId: null, teamB: '', scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' },
-    ]
-  }
-])
-
-// 总决赛
-const finalMatch = ref({
-  id: 'final',
-  teamAId: null,
-  teamA: '',
-  teamBId: null,
-  teamB: '',
-  scoreA: 0,
-  scoreB: 0,
-  winnerId: null,
-  status: 'upcoming'
-})
+}
 
 // 计算属性
 const totalMatches = computed(() => matches.value.length)
@@ -761,33 +565,18 @@ const goBack = () => {
 }
 
 /**
- * 生成队伍选手数据
- */
-const generateTeamPlayers = (teamId: number, teamName: string, regionName: string = 'Unknown'): Player[] => {
-  const positions: PlayerPosition[] = ['TOP', 'JUG', 'MID', 'ADC', 'SUP']
-  return positions.map((pos, idx) => ({
-    id: `${teamId}-${pos}`,
-    gameId: `Player${idx + 1}`,
-    name: `Player${idx + 1}`,
-    teamId: String(teamId),
-    teamName: teamName,
-    position: pos,
-    regionId: regionName,
-    regionName: regionName,
-    ability: 70 + Math.floor(Math.random() * 25),
-    potential: 80 + Math.floor(Math.random() * 15),
-    stability: 60 + Math.floor(Math.random() * 35),
-    condition: Math.floor(Math.random() * 11) - 5,
-    age: 18 + Math.floor(Math.random() * 10),
-    tag: Math.random() > 0.7 ? 'GENIUS' : Math.random() > 0.4 ? 'NORMAL' : 'ORDINARY'
-  } as Player))
-}
-
-/**
  * 查看比赛详情
  */
-const viewMatchDetails = (matchId: string) => {
-  const detail = matchDetailStore.getMatchDetail(matchId)
+const viewMatchDetails = async (matchId: string) => {
+  // 先尝试从内存获取
+  let detail = matchDetailStore.getMatchDetail(matchId)
+  if (detail) {
+    currentMatchDetail.value = detail
+    showMatchDetailDialog.value = true
+    return
+  }
+  // 如果内存中没有，尝试从数据库加载
+  detail = await matchDetailStore.loadMatchDetailFromDb(matchId)
   if (detail) {
     currentMatchDetail.value = detail
     showMatchDetailDialog.value = true
@@ -805,128 +594,11 @@ const handleCloseMatchDetail = () => {
 }
 
 const handleRegionChange = async (regionId: number) => {
-  // 重置季后赛状态
-  playoffsStarted.value = false
-  playoffsCompleted.value = false
-  champion.value = null
-  currentPhase.value = 'regular'
-
   // 加载新赛区数据
   await loadRegionData(regionId)
 
-  // 根据赛区更新季后赛数据
-  updatePlayoffsData()
-
   const regionName = regions.value.find(r => r.id === regionId)?.name || '未知'
   ElMessage.success(`已切换到 ${regionName} 赛区`)
-}
-
-// 更新季后赛对阵数据
-const updatePlayoffsData = () => {
-  if (standings.value.length < 8) return
-
-  // 按积分排序
-  const sortedTeams = [...standings.value].sort((a, b) => b.points - a.points)
-
-  // 更新胜者组第一轮 (1 vs 4, 2 vs 3)
-  winnersRounds.value[0].matches = [
-    {
-      id: 'w1',
-      teamAId: sortedTeams[0].id,
-      teamA: sortedTeams[0].short,
-      seedA: 1,
-      teamBId: sortedTeams[3].id,
-      teamB: sortedTeams[3].short,
-      seedB: 4,
-      scoreA: 0,
-      scoreB: 0,
-      winnerId: null,
-      status: 'upcoming'
-    },
-    {
-      id: 'w2',
-      teamAId: sortedTeams[1].id,
-      teamA: sortedTeams[1].short,
-      seedA: 2,
-      teamBId: sortedTeams[2].id,
-      teamB: sortedTeams[2].short,
-      seedB: 3,
-      scoreA: 0,
-      scoreB: 0,
-      winnerId: null,
-      status: 'upcoming'
-    }
-  ]
-
-  // 重置胜者组决赛
-  winnersRounds.value[1].matches = [
-    { id: 'w3', teamAId: null, teamA: '', seedA: null, teamBId: null, teamB: '', seedB: null, scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' }
-  ]
-
-  // 更新败者组第一轮 (5 vs 8, 6 vs 7)
-  losersRounds.value[0].matches = [
-    {
-      id: 'l1',
-      teamAId: sortedTeams[4].id,
-      teamA: sortedTeams[4].short,
-      seedA: 5,
-      teamBId: sortedTeams[7]?.id || null,
-      teamB: sortedTeams[7]?.short || '待定',
-      seedB: 8,
-      scoreA: 0,
-      scoreB: 0,
-      winnerId: null,
-      status: 'upcoming'
-    },
-    {
-      id: 'l2',
-      teamAId: sortedTeams[5].id,
-      teamA: sortedTeams[5].short,
-      seedA: 6,
-      teamBId: sortedTeams[6]?.id || null,
-      teamB: sortedTeams[6]?.short || '待定',
-      seedB: 7,
-      scoreA: 0,
-      scoreB: 0,
-      winnerId: null,
-      status: 'upcoming'
-    }
-  ]
-
-  // 重置败者组其他轮次
-  losersRounds.value[1].matches = [
-    { id: 'l3', teamAId: null, teamA: '', seedA: null, teamBId: null, teamB: '', seedB: null, scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' },
-    { id: 'l4', teamAId: null, teamA: '', seedA: null, teamBId: null, teamB: '', seedB: null, scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' }
-  ]
-  losersRounds.value[2].matches = [
-    { id: 'l5', teamAId: null, teamA: '', teamBId: null, teamB: '', scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' }
-  ]
-  losersRounds.value[3].matches = [
-    { id: 'l6', teamAId: null, teamA: '', teamBId: null, teamB: '', scoreA: 0, scoreB: 0, winnerId: null, status: 'upcoming' }
-  ]
-
-  // 重置总决赛
-  finalMatch.value = {
-    id: 'final',
-    teamAId: null,
-    teamA: '',
-    teamBId: null,
-    teamB: '',
-    scoreA: 0,
-    scoreB: 0,
-    winnerId: null,
-    status: 'upcoming'
-  }
-}
-
-const handlePhaseChange = (phase: string) => {
-  if (phase === 'playoffs' && !playoffsStarted.value) {
-    // 检查常规赛是否结束
-    const allCompleted = matches.value.every(m => m.status === 'completed')
-    if (allCompleted) {
-      playoffsStarted.value = true
-    }
-  }
 }
 
 const getRegionName = (regionId: number) => {
@@ -965,6 +637,13 @@ const getRankClass = (rank: number) => {
   return ''
 }
 
+const getMvpRankClass = (rank: number) => {
+  if (rank === 1) return 'mvp-gold'
+  if (rank === 2) return 'mvp-silver'
+  if (rank === 3) return 'mvp-bronze'
+  return ''
+}
+
 /**
  * 模拟单场比赛（点击比赛列表中的模拟按钮）
  */
@@ -983,7 +662,7 @@ const simulateSingleMatch = async (match: any) => {
 
     // 转换后端结果为 MatchDetail 格式并保存到 store
     const matchDetail = convertToMatchDetail(result, match)
-    matchDetailStore.saveMatchDetail(`summer-${match.id}`, matchDetail)
+    await matchDetailStore.saveMatchDetail(`summer-${match.id}`, matchDetail)
 
     // 记录选手表现到统计
     const regionName = getRegionName(selectedRegion.value)
@@ -996,7 +675,7 @@ const simulateSingleMatch = async (match: any) => {
           perf.position,
           perf.impactScore,
           perf.actualAbility,
-          '2024',
+          String(gameStore.currentSeason),
           regionName
         )
       })
@@ -1008,7 +687,7 @@ const simulateSingleMatch = async (match: any) => {
           perf.position,
           perf.impactScore,
           perf.actualAbility,
-          '2024',
+          String(gameStore.currentSeason),
           regionName
         )
       })
@@ -1022,8 +701,7 @@ const simulateSingleMatch = async (match: any) => {
     // 检查常规赛是否全部完成
     const allCompleted = matches.value.every(m => m.status === 'completed')
     if (allCompleted) {
-      playoffsStarted.value = true
-      ElMessage.success('常规赛全部完成！季后赛已开启')
+      ElMessage.success('常规赛全部完成！请前往赛事管理页面进入季后赛')
     } else {
       ElMessage.success(`比赛结束: ${match.homeTeam} ${result.home_score} - ${result.away_score} ${match.awayTeam}`)
     }
@@ -1055,6 +733,7 @@ const convertToMatchDetail = (result: any, match: any): MatchDetail => {
     const posMap: Record<string, string> = {
       'Top': 'TOP', 'Jungle': 'JUG', 'Mid': 'MID', 'Adc': 'ADC', 'Support': 'SUP',
       'top': 'TOP', 'jungle': 'JUG', 'mid': 'MID', 'adc': 'ADC', 'support': 'SUP',
+      'Jug': 'JUG', 'Sup': 'SUP',  // 后端 Rust 枚举格式
     }
     return posMap[pos] || pos
   }
@@ -1087,6 +766,14 @@ const convertToMatchDetail = (result: any, match: any): MatchDetail => {
           conditionBonus: conditionBonus,
           stabilityNoise: stabilityNoise,
           impactScore: Math.round((mvpScore - 3) * 10) / 10,
+          traits: p.traits,
+          activatedTraits: p.activated_traits?.map((t: any) => ({
+            type: t.trait_type,
+            name: t.name,
+            effect: t.effect,
+            value: t.value,
+            isPositive: t.is_positive
+          }))
         }
       }),
       teamBId: String(result.away_team_id),
@@ -1110,6 +797,14 @@ const convertToMatchDetail = (result: any, match: any): MatchDetail => {
           conditionBonus: conditionBonus,
           stabilityNoise: stabilityNoise,
           impactScore: Math.round((mvpScore - 3) * 10) / 10,
+          traits: p.traits,
+          activatedTraits: p.activated_traits?.map((t: any) => ({
+            type: t.trait_type,
+            name: t.name,
+            effect: t.effect,
+            value: t.value,
+            isPositive: t.is_positive
+          }))
         }
       }),
       winnerId: String(g.winner_id),
@@ -1134,9 +829,10 @@ const convertToMatchDetail = (result: any, match: any): MatchDetail => {
     finalScoreB: result.away_score,
     winnerId: String(result.winner_id),
     winnerName: result.winner_id === result.home_team_id ? (result.home_team_name || match.homeTeam) : (result.away_team_name || match.awayTeam),
-    mvpPlayerId: result.mvp?.player_id ? String(result.mvp.player_id) : undefined,
-    mvpPlayerName: result.mvp?.player_name,
-    mvpTeamId: result.mvp?.team_id ? String(result.mvp.team_id) : undefined,
+    mvpPlayerId: result.match_mvp?.player_id ? String(result.match_mvp.player_id) : undefined,
+    mvpPlayerName: result.match_mvp?.player_name,
+    mvpTeamId: result.match_mvp?.team_id ? String(result.match_mvp.team_id) : undefined,
+    mvpTotalImpact: result.match_mvp?.mvp_score,
     createdAt: new Date().toISOString(),
   }
 }
@@ -1198,9 +894,7 @@ const simulateAll = async () => {
     await loadMatches()
     await updateStandings()
 
-    // 开启季后赛
-    playoffsStarted.value = true
-    ElMessage.success('常规赛模拟完成！季后赛已开启')
+    ElMessage.success('常规赛模拟完成！请前往赛事管理页面进入季后赛')
   } catch (error) {
     console.error('Failed to simulate all matches:', error)
     ElMessage.error('模拟比赛失败')
@@ -1209,175 +903,48 @@ const simulateAll = async () => {
   }
 }
 
-const simulatePlayoffs = async () => {
-  await ElMessageBox.confirm('将自动模拟整个季后赛，是否继续？', '模拟季后赛', {
-    confirmButtonText: '开始',
-    cancelButtonText: '取消',
-    type: 'warning'
-  })
-
-  playoffsSimulating.value = true
-
-  // 辅助函数：使用PowerEngine模拟单场比赛
-  const regionName = getRegionName(selectedRegion.value)
-  const simulateMatch = (match: any, matchIdPrefix: string) => {
-    const teamAPlayers = generateTeamPlayers(match.teamAId, match.teamA, regionName)
-    const teamBPlayers = generateTeamPlayers(match.teamBId, match.teamB, regionName)
-
-    const matchDetail = PowerEngine.simulateMatch(
-      String(match.teamAId),
-      match.teamA,
-      teamAPlayers,
-      String(match.teamBId),
-      match.teamB,
-      teamBPlayers,
-      5 // BO5
-    )
-
-    match.scoreA = matchDetail.finalScoreA
-    match.scoreB = matchDetail.finalScoreB
-    match.winnerId = matchDetail.winnerId === String(match.teamAId) ? match.teamAId : match.teamBId
-    match.status = 'completed'
-
-    // 保存比赛详情
-    matchDetail.matchId = `summer-playoffs-${matchIdPrefix}`
-    matchDetail.tournamentType = 'summer-playoffs'
-    matchDetail.seasonId = String(gameStore.gameState?.current_season || 1)
-    matchDetailStore.saveMatchDetail(matchDetail.matchId, matchDetail)
-
-    // 记录选手表现
-    matchDetail.games.forEach(game => {
-      game.teamAPlayers.forEach(perf => {
-        playerStore.recordPerformance(
-        perf.playerId,
-        perf.playerName,
-        perf.teamId,
-        perf.position,
-        perf.impactScore,
-        perf.actualAbility,
-        String(gameStore.gameState?.current_season || 1),
-        regionName
-      )
-      })
-      game.teamBPlayers.forEach(perf => {
-        playerStore.recordPerformance(
-        perf.playerId,
-        perf.playerName,
-        perf.teamId,
-        perf.position,
-        perf.impactScore,
-        perf.actualAbility,
-        String(gameStore.gameState?.current_season || 1),
-        regionName
-      )
-      })
-    })
-
-    return matchDetail.winnerId === String(match.teamAId)
-  }
-
-  // 获取队伍名称
-  const getTeamName = (teamId: number | null) => {
-    const team = standings.value.find(t => t.id === teamId)
-    return team?.short || '待定'
-  }
-
-  await new Promise(resolve => setTimeout(resolve, 500))
-
-  // ========== 第一阶段：胜者组第一轮 + 败者组第一轮 ==========
-  // 胜者组第一轮：1 vs 4, 2 vs 3
-  const w1Match1 = winnersRounds.value[0].matches[0] // 1 vs 4
-  const w1Match2 = winnersRounds.value[0].matches[1] // 2 vs 3
-  simulateMatch(w1Match1, 'w1-1')
-  simulateMatch(w1Match2, 'w1-2')
-
-  // 败者组第一轮：5 vs 8, 6 vs 7
-  const l1Match1 = losersRounds.value[0].matches[0] // 5 vs 8
-  const l1Match2 = losersRounds.value[0].matches[1] // 6 vs 7
-  simulateMatch(l1Match1, 'l1-1')
-  simulateMatch(l1Match2, 'l1-2')
-
-  await new Promise(resolve => setTimeout(resolve, 500))
-
-  // ========== 第二阶段：胜者组决赛 + 败者组第二轮 ==========
-  // 胜者组决赛
-  const wfMatch = winnersRounds.value[1].matches[0]
-  wfMatch.teamAId = w1Match1.winnerId
-  wfMatch.teamA = getTeamName(w1Match1.winnerId)
-  wfMatch.teamBId = w1Match2.winnerId
-  wfMatch.teamB = getTeamName(w1Match2.winnerId)
-  simulateMatch(wfMatch, 'wf')
-
-  // 败者组第二轮：败者组R1胜者 vs 胜者组R1败者
-  const l2Match1 = losersRounds.value[1].matches[0]
-  const l2Match2 = losersRounds.value[1].matches[1]
-
-  // 败者组R1胜者 vs 胜者组R1败者1
-  l2Match1.teamAId = l1Match1.winnerId
-  l2Match1.teamA = getTeamName(l1Match1.winnerId)
-  l2Match1.teamBId = w1Match1.winnerId === w1Match1.teamAId ? w1Match1.teamBId : w1Match1.teamAId
-  l2Match1.teamB = getTeamName(l2Match1.teamBId)
-  simulateMatch(l2Match1, 'l2-1')
-
-  // 败者组R1胜者 vs 胜者组R1败者2
-  l2Match2.teamAId = l1Match2.winnerId
-  l2Match2.teamA = getTeamName(l1Match2.winnerId)
-  l2Match2.teamBId = w1Match2.winnerId === w1Match2.teamAId ? w1Match2.teamBId : w1Match2.teamAId
-  l2Match2.teamB = getTeamName(l2Match2.teamBId)
-  simulateMatch(l2Match2, 'l2-2')
-
-  await new Promise(resolve => setTimeout(resolve, 500))
-
-  // ========== 第三阶段：败者组第三轮 ==========
-  // 败者组R2两个胜者对决
-  const l3Match = losersRounds.value[2].matches[0]
-  l3Match.teamAId = l2Match1.winnerId
-  l3Match.teamA = getTeamName(l2Match1.winnerId)
-  l3Match.teamBId = l2Match2.winnerId
-  l3Match.teamB = getTeamName(l2Match2.winnerId)
-  simulateMatch(l3Match, 'l3')
-
-  await new Promise(resolve => setTimeout(resolve, 500))
-
-  // ========== 第四阶段：败者组决赛 ==========
-  // 败者组R3胜者 vs 胜者组决赛败者
-  const lfMatch = losersRounds.value[3].matches[0]
-  lfMatch.teamAId = l3Match.winnerId
-  lfMatch.teamA = getTeamName(l3Match.winnerId)
-  lfMatch.teamBId = wfMatch.winnerId === wfMatch.teamAId ? wfMatch.teamBId : wfMatch.teamAId
-  lfMatch.teamB = getTeamName(lfMatch.teamBId)
-  simulateMatch(lfMatch, 'lf')
-
-  await new Promise(resolve => setTimeout(resolve, 500))
-
-  // ========== 总决赛 ==========
-  finalMatch.value.teamAId = wfMatch.winnerId
-  finalMatch.value.teamA = getTeamName(wfMatch.winnerId)
-  finalMatch.value.teamBId = lfMatch.winnerId
-  finalMatch.value.teamB = getTeamName(lfMatch.winnerId)
-  simulateMatch(finalMatch.value, 'final')
-
-  champion.value = { name: getTeamName(finalMatch.value.winnerId) }
-  playoffsCompleted.value = true
-  playoffsSimulating.value = false
-
-  ElMessage.success(`🏆 恭喜 ${champion.value.name} 获得冠军！`)
-}
-
 const updateStandings = async () => {
   // 从后端重新加载积分榜
   await loadStandings()
 }
 
 onMounted(async () => {
+  // 先刷新时间状态，确保能获取最新的阶段信息
+  await timeStore.fetchTimeState()
+
   // 加载赛区列表
   await loadRegions()
   // 加载默认赛区数据
   if (selectedRegion.value) {
     await loadRegionData(selectedRegion.value)
-    updatePlayoffsData()
   }
 })
+
+// 监听时间状态变化，当阶段初始化后重新加载数据
+watch(
+  timeLastMessage,
+  async (newVal, oldVal) => {
+    console.log('[SummerDetail] watch lastMessage:', oldVal, '->', newVal)
+    // 检测到初始化成功消息时刷新数据
+    if (newVal && newVal.includes('成功创建') && selectedRegion.value) {
+      console.log('[SummerDetail] 检测到阶段初始化成功，重新加载数据')
+      // 等待一小段时间确保后端数据已持久化
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await loadRegionData(selectedRegion.value)
+    }
+  }
+)
+
+// 监听赛事进度变化
+watch(
+  () => timeState.value?.phase_progress?.completed_matches,
+  async (newVal, oldVal) => {
+    // 当比赛完成数变化时，刷新积分榜
+    if (newVal !== oldVal && selectedRegion.value && currentTournamentId.value) {
+      await loadStandings()
+    }
+  }
+)
 </script>
 
 <style scoped>
@@ -1431,28 +998,19 @@ onMounted(async () => {
 .region-selector {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.selector-left {
+  display: flex;
+  align-items: center;
   gap: 16px;
 }
 
 .selector-label {
   font-weight: 600;
   color: var(--text-primary, #303133);
-}
-
-/* 阶段切换 */
-.phase-card {
-  margin-bottom: 20px;
-  border-radius: 12px;
-}
-
-.phase-card :deep(.el-tabs__header) {
-  margin: 0;
-}
-
-.tab-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 /* 统计卡片 */
@@ -1660,304 +1218,7 @@ onMounted(async () => {
   justify-content: flex-end;
 }
 
-/* 季后赛对阵图 */
-.bracket-card {
-  border-radius: 12px;
-}
-
-.bracket-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-  padding: 20px 0;
-}
-
-.bracket-section {
-  background: #f5f7fa;
-  border-radius: 12px;
-  padding: 20px;
-}
-
-.section-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0 0 20px 0;
-  color: var(--text-primary, #303133);
-}
-
-.winners-title { color: #22c55e; }
-.losers-title { color: #f59e0b; }
-.finals-title { color: #8b5cf6; }
-
-/* 对阵图横向布局 */
-.winners-bracket,
-.losers-bracket {
-  display: flex;
-  align-items: flex-start;
-  gap: 60px;
-  overflow-x: auto;
-  padding: 10px 0;
-}
-
-.bracket-column {
-  display: flex;
-  flex-direction: column;
-  min-width: 180px;
-}
-
-.round-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-tertiary, #909399);
-  margin-bottom: 16px;
-  text-align: center;
-  padding: 4px 12px;
-  background: rgba(0, 0, 0, 0.05);
-  border-radius: 4px;
-}
-
-.matches-column {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.matches-column.centered {
-  justify-content: center;
-  min-height: 100%;
-}
-
-/* 比赛卡片 */
-.bracket-match {
-  position: relative;
-  background: white;
-  border-radius: 8px;
-  padding: 8px 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  border-left: 3px solid #e5e7eb;
-  min-width: 160px;
-}
-
-.bracket-match.winners {
-  border-left-color: #22c55e;
-}
-
-.bracket-match.losers {
-  border-left-color: #f59e0b;
-}
-
-.bracket-match.completed {
-  border-left-color: #3b82f6;
-}
-
-.bracket-match.final {
-  border-left-width: 4px;
-}
-
-/* 队伍显示 */
-.match-team {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 4px;
-  transition: background 0.2s;
-}
-
-.match-team.winner {
-  background: #f0fdf4;
-}
-
-.match-team .seed {
-  font-size: 11px;
-  color: var(--text-tertiary, #909399);
-  min-width: 20px;
-}
-
-.match-team .name {
-  flex: 1;
-  font-weight: 500;
-  font-size: 14px;
-}
-
-.match-team .score {
-  font-weight: 700;
-  color: var(--text-primary, #303133);
-  font-size: 14px;
-}
-
-/* 连接线 */
-.connector-right {
-  position: absolute;
-  right: -30px;
-  top: 50%;
-  width: 30px;
-  height: 2px;
-  background: #d1d5db;
-}
-
-.connector-right::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: -4px;
-  border: 5px solid transparent;
-  border-left-color: #d1d5db;
-}
-
-.connector-left {
-  position: absolute;
-  left: -30px;
-  top: 50%;
-  width: 30px;
-  height: 2px;
-  background: #d1d5db;
-}
-
-/* 胜者组特殊布局 - 让决赛居中 */
-.winners-bracket .bracket-column:last-child .matches-column {
-  margin-top: 50px;
-}
-
-/* 败者组特殊布局 - 逐渐居中 */
-.losers-bracket .bracket-column:nth-child(3) .matches-column,
-.losers-bracket .bracket-column:nth-child(4) .matches-column {
-  margin-top: 50px;
-}
-
-/* 总决赛区域 */
-.finals-section {
-  background: linear-gradient(135deg, #fef3c7, #fde68a);
-  border: 2px solid #f59e0b;
-}
-
-.grand-final {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-}
-
-.final-match-card {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 40px;
-  padding: 24px 40px;
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-}
-
-.final-match-card.completed {
-  border: 2px solid #22c55e;
-}
-
-.final-team {
-  text-align: center;
-  padding: 16px 24px;
-  background: #f9fafb;
-  border-radius: 12px;
-  min-width: 140px;
-  transition: all 0.3s;
-}
-
-.final-team.champion {
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
-  color: white;
-  transform: scale(1.05);
-  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);
-}
-
-.final-team .team-source {
-  font-size: 11px;
-  color: #909399;
-  margin-bottom: 4px;
-}
-
-.final-team.champion .team-source {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.final-team .team-name {
-  font-size: 20px;
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-
-.final-team .team-score {
-  font-size: 36px;
-  font-weight: 900;
-}
-
-.vs-badge {
-  font-size: 24px;
-  font-weight: 900;
-  color: #f59e0b;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-/* 冠军展示 */
-.champion-display {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 20px 40px;
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
-  border-radius: 12px;
-  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
-}
-
-.champion-trophy {
-  font-size: 48px;
-  animation: trophy-bounce 1s ease infinite;
-}
-
-@keyframes trophy-bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
-}
-
-.champion-info {
-  text-align: left;
-}
-
-.champion-label {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.champion-name {
-  font-size: 28px;
-  font-weight: 900;
-  color: white;
-}
-
 /* 响应式 */
-@media (max-width: 1200px) {
-  .winners-bracket,
-  .losers-bracket {
-    flex-direction: column;
-    align-items: center;
-    gap: 24px;
-  }
-
-  .connector-right,
-  .connector-left {
-    display: none;
-  }
-
-  .winners-bracket .bracket-column:last-child .matches-column,
-  .losers-bracket .bracket-column:nth-child(3) .matches-column,
-  .losers-bracket .bracket-column:nth-child(4) .matches-column {
-    margin-top: 0;
-  }
-}
-
 @media (max-width: 768px) {
   .page-header {
     flex-direction: column;
@@ -1977,11 +1238,52 @@ onMounted(async () => {
   .match-teams .team {
     justify-content: center !important;
   }
+}
 
-  .final-match-card {
-    flex-direction: column;
-    gap: 16px;
-    padding: 20px;
-  }
+/* MVP 排行榜 */
+.mvp-ranking-card {
+  border-radius: 12px;
+  margin-top: 20px;
+}
+
+.mvp-table {
+  width: 100%;
+}
+
+.player-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-name {
+  font-weight: 500;
+  color: var(--text-primary, #303133);
+}
+
+.mvp-count {
+  font-weight: 700;
+  font-size: 16px;
+  color: #f59e0b;
+}
+
+.avg-impact {
+  font-weight: 600;
+  color: #3b82f6;
+}
+
+.rank-badge.mvp-gold {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: white;
+}
+
+.rank-badge.mvp-silver {
+  background: linear-gradient(135deg, #9ca3af, #6b7280);
+  color: white;
+}
+
+.rank-badge.mvp-bronze {
+  background: linear-gradient(135deg, #f97316, #ea580c);
+  color: white;
 }
 </style>

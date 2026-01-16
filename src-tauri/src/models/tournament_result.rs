@@ -297,6 +297,9 @@ pub struct TournamentHonors {
     pub team_third: Option<super::Honor>,
     pub team_fourth: Option<super::Honor>,
     pub player_champions: Vec<super::Honor>,
+    pub player_runner_ups: Vec<super::Honor>,
+    pub player_thirds: Vec<super::Honor>,
+    pub player_fourths: Vec<super::Honor>,
     pub tournament_mvp: Option<super::Honor>,
     pub finals_mvp: Option<super::Honor>,
 }

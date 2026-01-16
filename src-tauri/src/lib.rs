@@ -7,44 +7,90 @@ pub mod services;
 use commands::{
     get_app_info, simulate_test_match,
     // 存档命令
-    init_database, create_save, get_saves, load_save, delete_save, get_current_save_id,
+    init_database, create_save, get_saves, load_save, delete_save, get_current_save_id, delete_database,
     // 队伍命令
-    get_teams_by_region, get_all_teams, get_team, get_team_roster, get_team_starters, get_player, set_starter,
-    update_player_market_value, update_all_market_values,
+    get_teams_by_region, get_all_teams, get_all_players, get_team, get_team_roster, get_team_starters, get_player, set_starter,
+    update_player_market_value, update_all_market_values, update_player,
     // 游戏命令
     get_game_state, advance_phase, get_tournament_matches, get_standings,
     simulate_next_match, simulate_all_matches,
     // 游戏流程命令
     initialize_current_phase, complete_current_phase, run_season_settlement, start_new_season,
+    fix_tournament_status,
+    // 时间推进系统命令
+    get_time_state, time_init_phase, complete_and_advance, fast_forward_to,
+    time_simulate_all, time_simulate_next, time_season_settlement, time_start_new_season,
     // 荣誉命令
     get_honor_hall, get_team_honors, get_player_honors, get_season_honors, get_tournament_honors,
     get_team_champion_count, get_player_champion_count, get_player_mvp_count,
     get_team_honor_stats, get_player_honor_stats, get_champions_by_type,
     get_all_champions, get_all_mvps,
+    // 荣誉殿堂命令
+    get_international_champions, get_champion_detail, get_player_honor_rankings,
+    get_team_honor_rankings, get_player_honor_detail, get_team_honor_detail,
+    cleanup_duplicate_honors, regenerate_tournament_honors, regenerate_all_honors,
     // 选秀命令
     generate_draft_pool, run_draft_lottery, get_draft_order, get_available_draft_players,
     make_draft_pick, ai_auto_draft,
+    // 选秀权拍卖命令
+    get_draft_pick_prices, start_draft_auction, execute_auction_round, fast_forward_auction,
+    get_auction_status, get_auction_events, finalize_auction,
     // 转会命令
     get_transfer_market, get_free_agents, list_player_for_transfer, cancel_transfer_listing,
     buy_listed_player, sign_free_agent, get_transfer_history,
     // AI 转会窗口命令
     start_transfer_window, execute_transfer_round, fast_forward_transfers,
     get_transfer_window_status, get_transfer_events,
+    // 市场分析和选手市场命令
+    get_team_transfer_plans, get_player_market_list, get_player_contract_detail,
+    // AI 转会 GM 配置命令
+    get_all_gm_profiles, get_team_gm_profile, update_team_gm_profile, batch_update_gm_profiles,
+    generate_ai_strategies, get_team_ai_strategy, get_gm_personality_types, init_ai_transfer_tables,
+    // LLM AI 命令
+    check_llm_config, configure_llm, generate_llm_strategy, clear_llm_config,
+    // 选手转会策略命令
+    generate_player_transfer_strategy, get_player_transfer_strategy, get_all_player_strategies,
+    init_player_strategy_tables,
+    // LLM 转会市场命令
+    init_llm_transfer_market, get_llm_market_state, get_all_team_market_states,
+    generate_player_intentions, generate_team_strategies_llm, generate_rule_based_team_strategies, process_renewals,
+    execute_llm_market_round, advance_market_phase, get_active_negotiations_llm, get_negotiation_detail_llm,
+    get_player_strategy_llm, get_team_strategy_llm, get_departure_candidates_llm,
+    get_llm_market_events, get_llm_market_events_for_round, reset_llm_transfer_market,
+    get_failed_teams, retry_failed_team_strategies, get_renewal_results,
+    fix_add_departure_to_free_agents,
+    // LLM 任务追踪命令
+    get_llm_task_progress, retry_failed_llm_tasks,
+    // 规则驱动转会市场命令
+    execute_rule_based_market_round,
+    // 简化版转会市场命令
+    simple_init_market, simple_get_market_state, simple_execute_market_analysis,
+    simple_execute_strategy_generation, simple_execute_renewal_window,
+    simple_execute_market_round, simple_fast_forward_market,
+    simple_get_all_players, simple_get_all_team_strategies, simple_get_team_strategy,
+    simple_get_player_transfer_info, simple_get_all_events, simple_get_events_by_round,
+    simple_reset_market, simple_execute_next_step, simple_get_free_agents,
+    simple_get_willing_to_transfer,
     // 财务命令
     get_team_finance_summary, get_all_teams_finance, get_team_transactions,
     record_transaction, get_season_finance_report, pay_team_salaries,
     distribute_league_share, get_prize_pool_info, distribute_tournament_prizes,
+    get_team_prize_details,
     // 查询命令
     get_all_regions, get_region_detail, get_season_tournaments, get_region_tournaments,
-    get_tournament_detail, get_international_tournaments, get_season_overview,
+    get_tournament_detail, get_international_tournaments, get_tournaments_by_type, get_season_overview,
     search_teams, search_players,
     // 国际赛事命令
     create_msi_tournament, create_worlds_tournament, create_masters_tournament,
     create_super_tournament, create_icp_tournament, get_tournament_bracket, advance_bracket,
     get_swiss_round_status, generate_next_swiss_round,
-    get_group_standings, generate_knockout_bracket,
+    get_group_standings, generate_knockout_bracket, complete_tournament,
+    get_msi_qualified_teams, regenerate_msi_bracket, fill_worlds_knockout_bracket,
+    cleanup_duplicate_tournaments, get_shanghai_qualified_teams, regenerate_shanghai_bracket,
+    regenerate_icp_bracket, generate_champion_prep_stage, generate_final_stage,
     // 比赛模拟命令
     simulate_match_detailed, get_player_season_stats, get_match_prediction,
+    update_match_result, update_match_teams, cancel_match,
     // 事件系统命令
     preview_season_settlement, execute_season_settlement, get_season_events,
     get_player_events, get_events_by_type, update_players_age,
@@ -52,9 +98,21 @@ use commands::{
     // 数据中心命令
     record_player_performance, batch_record_player_performance, record_championship,
     get_season_impact_ranking, get_position_ranking, get_player_stats,
-    get_team_player_stats, clear_season_stats,
+    get_team_player_stats, clear_season_stats, get_player_impact_history,
+    get_tournament_mvp_ranking, recalculate_yearly_scores, get_annual_awards_data,
+    get_player_market_value_changes,
     // 选手特性和状态命令
     get_player_traits, get_player_condition, get_player_full_detail,
+    // 年度积分命令
+    get_annual_points_ranking, get_team_points_detail, get_tournament_points, get_super_qualified_teams,
+    // 比赛详情命令
+    save_match_details, get_match_details, delete_match_details,
+    // 开发工具命令
+    dev_reassign_honors, dev_recalculate_annual_points, dev_sync_player_games_played,
+    dev_recalculate_standings, dev_check_data_consistency, dev_reset_phase,
+    dev_simulate_all_matches, dev_redistribute_prizes, dev_grant_funds,
+    dev_reset_save, dev_get_game_status, dev_check_incomplete_matches, dev_force_complete_match,
+    dev_migrate_loyalty_satisfaction, dev_recalculate_market_values, dev_fix_starters,
     // 应用状态
     AppState,
 };
@@ -85,9 +143,11 @@ pub fn run() {
             load_save,
             delete_save,
             get_current_save_id,
+            delete_database,
             // 队伍命令
             get_teams_by_region,
             get_all_teams,
+            get_all_players,
             get_team,
             get_team_roster,
             get_team_starters,
@@ -95,6 +155,7 @@ pub fn run() {
             set_starter,
             update_player_market_value,
             update_all_market_values,
+            update_player,
             // 游戏命令
             get_game_state,
             advance_phase,
@@ -107,6 +168,7 @@ pub fn run() {
             complete_current_phase,
             run_season_settlement,
             start_new_season,
+            fix_tournament_status,
             // 荣誉命令
             get_honor_hall,
             get_team_honors,
@@ -121,6 +183,16 @@ pub fn run() {
             get_champions_by_type,
             get_all_champions,
             get_all_mvps,
+            // 荣誉殿堂命令
+            get_international_champions,
+            get_champion_detail,
+            get_player_honor_rankings,
+            get_team_honor_rankings,
+            get_player_honor_detail,
+            get_team_honor_detail,
+            cleanup_duplicate_honors,
+            regenerate_tournament_honors,
+            regenerate_all_honors,
             // 选秀命令
             generate_draft_pool,
             run_draft_lottery,
@@ -128,6 +200,14 @@ pub fn run() {
             get_available_draft_players,
             make_draft_pick,
             ai_auto_draft,
+            // 选秀权拍卖命令
+            get_draft_pick_prices,
+            start_draft_auction,
+            execute_auction_round,
+            fast_forward_auction,
+            get_auction_status,
+            get_auction_events,
+            finalize_auction,
             // 转会命令
             get_transfer_market,
             get_free_agents,
@@ -142,6 +222,54 @@ pub fn run() {
             fast_forward_transfers,
             get_transfer_window_status,
             get_transfer_events,
+            // 市场分析和选手市场命令
+            get_team_transfer_plans,
+            get_player_market_list,
+            get_player_contract_detail,
+            // AI 转会 GM 配置命令
+            get_all_gm_profiles,
+            get_team_gm_profile,
+            update_team_gm_profile,
+            batch_update_gm_profiles,
+            generate_ai_strategies,
+            get_team_ai_strategy,
+            get_gm_personality_types,
+            init_ai_transfer_tables,
+            // LLM AI 命令
+            check_llm_config,
+            configure_llm,
+            generate_llm_strategy,
+            clear_llm_config,
+            // 选手转会策略命令
+            generate_player_transfer_strategy,
+            get_player_transfer_strategy,
+            get_all_player_strategies,
+            init_player_strategy_tables,
+            // LLM 转会市场命令
+            init_llm_transfer_market,
+            get_llm_market_state,
+            get_all_team_market_states,
+            generate_player_intentions,
+            generate_team_strategies_llm,
+            generate_rule_based_team_strategies,
+            process_renewals,
+            execute_llm_market_round,
+            advance_market_phase,
+            get_active_negotiations_llm,
+            get_negotiation_detail_llm,
+            get_player_strategy_llm,
+            get_team_strategy_llm,
+            get_departure_candidates_llm,
+            get_llm_market_events,
+            get_llm_market_events_for_round,
+            reset_llm_transfer_market,
+            get_failed_teams,
+            retry_failed_team_strategies,
+            get_renewal_results,
+            fix_add_departure_to_free_agents,
+            // LLM 任务追踪命令
+            get_llm_task_progress,
+            retry_failed_llm_tasks,
             // 财务命令
             get_team_finance_summary,
             get_all_teams_finance,
@@ -152,6 +280,7 @@ pub fn run() {
             distribute_league_share,
             get_prize_pool_info,
             distribute_tournament_prizes,
+            get_team_prize_details,
             // 查询命令
             get_all_regions,
             get_region_detail,
@@ -159,6 +288,7 @@ pub fn run() {
             get_region_tournaments,
             get_tournament_detail,
             get_international_tournaments,
+            get_tournaments_by_type,
             get_season_overview,
             search_teams,
             search_players,
@@ -174,10 +304,23 @@ pub fn run() {
             generate_next_swiss_round,
             get_group_standings,
             generate_knockout_bracket,
+            complete_tournament,
+            get_msi_qualified_teams,
+            regenerate_msi_bracket,
+            fill_worlds_knockout_bracket,
+            cleanup_duplicate_tournaments,
+            get_shanghai_qualified_teams,
+            regenerate_shanghai_bracket,
+            regenerate_icp_bracket,
+            generate_champion_prep_stage,
+            generate_final_stage,
             // 比赛模拟命令
             simulate_match_detailed,
             get_player_season_stats,
             get_match_prediction,
+            update_match_result,
+            update_match_teams,
+            cancel_match,
             // 事件系统命令
             preview_season_settlement,
             execute_season_settlement,
@@ -196,10 +339,69 @@ pub fn run() {
             get_player_stats,
             get_team_player_stats,
             clear_season_stats,
+            get_player_impact_history,
+            get_tournament_mvp_ranking,
+            recalculate_yearly_scores,
+            get_player_market_value_changes,
             // 选手特性和状态命令
             get_player_traits,
             get_player_condition,
             get_player_full_detail,
+            // 时间推进系统命令
+            get_time_state,
+            time_init_phase,
+            complete_and_advance,
+            fast_forward_to,
+            time_simulate_all,
+            time_simulate_next,
+            time_season_settlement,
+            time_start_new_season,
+            // 年度积分命令
+            get_annual_points_ranking,
+            get_team_points_detail,
+            get_tournament_points,
+            get_super_qualified_teams,
+            // 年度颁奖命令
+            get_annual_awards_data,
+            // 比赛详情持久化命令
+            save_match_details,
+            get_match_details,
+            delete_match_details,
+            // 开发工具命令
+            dev_reassign_honors,
+            dev_recalculate_annual_points,
+            dev_sync_player_games_played,
+            dev_recalculate_standings,
+            dev_check_data_consistency,
+            dev_reset_phase,
+            dev_simulate_all_matches,
+            dev_redistribute_prizes,
+            dev_grant_funds,
+            dev_reset_save,
+            dev_get_game_status,
+            dev_check_incomplete_matches,
+            dev_force_complete_match,
+            dev_migrate_loyalty_satisfaction,
+            dev_recalculate_market_values,
+            dev_fix_starters,
+            // 简化版转会市场命令
+            simple_init_market,
+            simple_get_market_state,
+            simple_execute_market_analysis,
+            simple_execute_strategy_generation,
+            simple_execute_renewal_window,
+            simple_execute_market_round,
+            simple_fast_forward_market,
+            simple_get_all_players,
+            simple_get_all_team_strategies,
+            simple_get_team_strategy,
+            simple_get_player_transfer_info,
+            simple_get_all_events,
+            simple_get_events_by_round,
+            simple_reset_market,
+            simple_execute_next_step,
+            simple_get_free_agents,
+            simple_get_willing_to_transfer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

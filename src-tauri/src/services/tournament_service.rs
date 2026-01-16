@@ -333,7 +333,7 @@ impl TournamentService {
     // ==================== 世界赛 (瑞士轮+淘汰赛) ====================
 
     /// 生成世界赛对阵
-    /// - 小组赛：8队BO1瑞士轮，决出4队晋级
+    /// - 小组赛：8队BO3瑞士轮，决出4队晋级
     /// - 淘汰赛：8队BO5单淘汰 + 季军赛
     pub fn generate_worlds_bracket(
         &self,
@@ -354,7 +354,7 @@ impl TournamentService {
                 (i + 1) as u32,
                 group_teams[i * 2].id,
                 group_teams[i * 2 + 1].id,
-                MatchFormat::Bo1,
+                MatchFormat::Bo3,
             ));
         }
 
@@ -490,7 +490,7 @@ impl TournamentService {
         matches.push(self.create_match(
             &mut match_id,
             tournament_id,
-            "PROMOTION",
+            "CHALLENGER_PROMOTION",
             1,
             0, 0, // 待定
             MatchFormat::Bo5,
@@ -498,7 +498,7 @@ impl TournamentService {
         matches.push(self.create_match(
             &mut match_id,
             tournament_id,
-            "PROMOTION",
+            "CHALLENGER_PROMOTION",
             2,
             0, 0,
             MatchFormat::Bo5,
@@ -639,21 +639,45 @@ impl TournamentService {
         }
 
         // 赛区对抗决赛阶段（根据徽章数量确定对阵）
-        // 半决赛
+        // 半决赛 - 4场BO5对决（一号种子vs一号种子，二号种子vs二号种子...）
+        for seed in 1..=4 {
+            matches.push(self.create_match(
+                &mut match_id,
+                tournament_id,
+                &format!("ICP_SEMI_{}", seed),
+                seed as u32,
+                0, 0,
+                MatchFormat::Bo5,
+            ));
+        }
+
+        // 决赛 - 4场BO5对决
+        for seed in 1..=4 {
+            matches.push(self.create_match(
+                &mut match_id,
+                tournament_id,
+                &format!("ICP_FINAL_{}", seed),
+                seed as u32,
+                0, 0,
+                MatchFormat::Bo5,
+            ));
+        }
+
+        // 加赛（2:2平局时使用）- 一号种子BO5
+        // 半决赛加赛
         matches.push(self.create_match(
             &mut match_id,
             tournament_id,
-            "ICP_SEMI",
+            "ICP_SEMI_TIEBREAKER",
             1,
             0, 0,
             MatchFormat::Bo5,
         ));
-
-        // 决赛
+        // 决赛加赛
         matches.push(self.create_match(
             &mut match_id,
             tournament_id,
-            "ICP_FINAL",
+            "ICP_FINAL_TIEBREAKER",
             1,
             0, 0,
             MatchFormat::Bo5,

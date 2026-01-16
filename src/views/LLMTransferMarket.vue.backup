@@ -1,0 +1,3552 @@
+<template>
+  <div class="llm-transfer-market">
+    <!-- 页面标题 -->
+    <div class="page-header">
+      <div>
+        <h1>LLM 转会市场</h1>
+        <p>{{ currentSeason }} 赛季 - {{ currentPhaseName }}</p>
+      </div>
+      <div class="header-actions">
+        <el-button text @click="showGuide = !showGuide">
+          <el-icon><QuestionFilled /></el-icon>
+          {{ showGuide ? '收起说明' : '使用说明' }}
+        </el-button>
+        <el-tag :type="phaseTagType" size="large" effect="dark">
+          {{ currentPhaseName }}
+        </el-tag>
+      </div>
+    </div>
+
+    <!-- 使用说明 -->
+    <el-collapse-transition>
+      <el-card v-if="showGuide" class="guide-card">
+        <template #header>
+          <div class="guide-header">
+            <el-icon><InfoFilled /></el-icon>
+            <span>LLM 深度集成转会市场系统说明</span>
+          </div>
+        </template>
+        <div class="guide-content">
+          <el-row :gutter="24">
+            <el-col :span="12">
+              <h4>系统特点</h4>
+              <ul>
+                <li><strong>AI Agent 化</strong>：每个选手和球队都是独立的 AI 决策单元</li>
+                <li><strong>多轮博弈</strong>：模拟真实谈判（报价 → 反馈 → 调整 → 成交）</li>
+                <li><strong>连锁反应</strong>：一笔签约会影响整个市场格局</li>
+                <li><strong>思路可见</strong>：完整展示 AI 的分析步骤和决策过程</li>
+                <li><strong>数据驱动</strong>：基于赛季表现、荣誉、积分等真实数据</li>
+              </ul>
+
+              <h4>使用流程</h4>
+              <ol>
+                <li><strong>初始化市场</strong> - 处理合同到期和退役选手</li>
+                <li><strong>生成选手意愿</strong> - AI 分析每个选手的离队倾向</li>
+                <li><strong>生成球队策略</strong> - AI 为球队制定引援计划</li>
+                <li><strong>执行转会轮次</strong> - 多轮谈判直到市场稳定</li>
+              </ol>
+            </el-col>
+            <el-col :span="12">
+              <h4>市场阶段说明</h4>
+              <el-timeline>
+                <el-timeline-item type="primary">
+                  <strong>初始化</strong> - 处理合同到期、退役选手，建立市场初始状态
+                </el-timeline-item>
+                <el-timeline-item type="primary">
+                  <strong>意愿生成</strong> - LLM 分析选手满意度、忠诚度、表现等，决定离队意愿
+                </el-timeline-item>
+                <el-timeline-item type="primary">
+                  <strong>策略生成</strong> - LLM 为球队分析阵容需求，生成引援目标
+                </el-timeline-item>
+                <el-timeline-item type="warning">
+                  <strong>首轮报价</strong> - 球队向目标选手发出报价
+                </el-timeline-item>
+                <el-timeline-item type="warning">
+                  <strong>谈判博弈</strong> - 多轮谈判，调整报价，选手做出选择
+                </el-timeline-item>
+                <el-timeline-item type="danger">
+                  <strong>转会轮次</strong> - 向有合同的选手发起挖人，需支付转会费
+                </el-timeline-item>
+                <el-timeline-item type="success">
+                  <strong>收尾完成</strong> - 补全阵容，处理剩余自由球员
+                </el-timeline-item>
+              </el-timeline>
+
+              <el-alert type="info" :closable="false" show-icon>
+                <template #title>
+                  提示：点击「执行下一轮」逐步推进，或「快进完成」一键完成所有轮次
+                </template>
+              </el-alert>
+            </el-col>
+          </el-row>
+        </div>
+      </el-card>
+    </el-collapse-transition>
+
+    <!-- 阶段进度 -->
+    <el-card class="phase-card">
+      <div class="phase-header">
+        <span class="phase-title">市场阶段</span>
+        <span class="phase-text">{{ currentPhaseDescription }}</span>
+      </div>
+      <el-steps :active="currentPhaseIndex" finish-status="success" simple>
+        <el-step
+          v-for="phase in phases"
+          :key="phase.key"
+          :title="phase.name"
+        />
+      </el-steps>
+    </el-card>
+
+    <!-- 统计概览 -->
+    <el-row :gutter="16" class="stats-row">
+      <el-col :span="6">
+        <el-card class="stat-card">
+          <div class="stat-content">
+            <div class="stat-icon blue">
+              <el-icon :size="24"><User /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-number">{{ marketState?.free_agents_count ?? 0 }}</div>
+              <div class="stat-label">自由球员</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card class="stat-card">
+          <div class="stat-content">
+            <div class="stat-icon orange">
+              <el-icon :size="24"><Message /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-number">{{ marketState?.active_negotiations_count ?? 0 }}</div>
+              <div class="stat-label">进行中谈判</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card class="stat-card">
+          <div class="stat-content">
+            <div class="stat-icon green">
+              <el-icon :size="24"><CircleCheck /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-number">{{ marketState?.completed_transfers_count ?? 0 }}</div>
+              <div class="stat-label">已完成转会</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :span="6">
+        <el-card class="stat-card">
+          <div class="stat-content">
+            <div class="stat-icon purple">
+              <el-icon :size="24"><TrendCharts /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-number">{{ marketState?.progress_percentage ?? 0 }}%</div>
+              <div class="stat-label">整体进度</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <!-- 操作按钮 -->
+    <div class="action-bar">
+      <!-- 规则引擎模式切换 -->
+      <div v-if="isMarketInitialized && !isMarketComplete" style="margin-bottom: 16px;">
+        <el-alert type="info" :closable="false">
+          <template #title>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span>
+                <el-icon><Setting /></el-icon>
+                执行模式
+              </span>
+              <el-switch
+                v-model="useRuleEngine"
+                active-text="规则引擎（快速）"
+                inactive-text="LLM引擎（慢）"
+                size="large"
+                style="margin-left: 20px;"
+              />
+            </div>
+          </template>
+          <div v-if="useRuleEngine" style="margin-top: 8px;">
+            ⚡ <strong>规则引擎模式</strong>：参考NBA 2K设计，纯规则驱动，每轮<500ms，效率提升360-600倍，无Token消耗
+          </div>
+          <div v-else style="margin-top: 8px;">
+            🤖 <strong>LLM引擎模式</strong>：AI驱动决策，每轮20-30分钟，消耗Token，但有详细思考过程
+          </div>
+        </el-alert>
+      </div>
+
+      <template v-if="!isMarketInitialized">
+        <el-button type="primary" size="large" :loading="isLoading" @click="handleInitMarket">
+          <el-icon><Plus /></el-icon>
+          初始化转会市场
+        </el-button>
+      </template>
+
+      <template v-else-if="canGenerateIntentions">
+        <el-button type="primary" size="large" :loading="isGeneratingIntentions" @click="handleGenerateIntentions">
+          <el-icon><UserFilled /></el-icon>
+          生成选手意愿
+        </el-button>
+      </template>
+
+      <template v-else-if="canGenerateStrategies">
+        <el-button type="primary" size="large" :loading="isGeneratingStrategies" @click="handleGenerateStrategies">
+          <el-icon><TrendCharts /></el-icon>
+          生成球队策略
+        </el-button>
+      </template>
+
+      <template v-else-if="canProcessRenewals">
+        <el-button type="primary" size="large" :loading="isProcessingRenewals" @click="handleProcessRenewals">
+          <el-icon><DocumentChecked /></el-icon>
+          处理续约
+        </el-button>
+      </template>
+
+      <template v-else-if="canAdvancePhase">
+        <el-button type="primary" size="large" :loading="isLoading" @click="handleAdvancePhase">
+          <el-icon><ArrowRight /></el-icon>
+          推进到下一阶段
+        </el-button>
+      </template>
+
+      <template v-else-if="canExecuteRound">
+        <el-button type="primary" size="large" :loading="isExecutingRound" @click="handleExecuteRound">
+          <el-icon><CaretRight /></el-icon>
+          {{ currentPhase === 'TRANSFER_ROUNDS'
+            ? `执行挖人轮次 (${marketState?.transfer_round ?? 0}/${marketState?.max_transfer_rounds ?? 3})`
+            : `执行下一轮 (${marketState?.current_round ?? 0}/${marketState?.max_rounds ?? 8})`
+          }}
+        </el-button>
+        <el-button type="warning" size="large" :loading="isExecutingRound" @click="handleFastForward">
+          <el-icon><DArrowRight /></el-icon>
+          快进完成
+        </el-button>
+      </template>
+
+      <template v-else-if="isMarketComplete">
+        <el-tag type="success" size="large" effect="dark">
+          <el-icon><CircleCheck /></el-icon>
+          转会已完成
+        </el-tag>
+      </template>
+
+      <el-button v-if="isMarketInitialized" @click="handleRefresh" :loading="isLoading">
+        <el-icon><Refresh /></el-icon>
+        刷新状态
+      </el-button>
+
+      <el-button v-if="isMarketInitialized" type="danger" plain @click="handleResetMarket" :loading="isLoading">
+        <el-icon><Delete /></el-icon>
+        重置市场
+      </el-button>
+
+      <el-button @click="router.push('/transfer')">
+        <el-icon><Back /></el-icon>
+        返回
+      </el-button>
+    </div>
+
+    <!-- 生成进度 -->
+    <el-card v-if="generationProgress" class="progress-card">
+      <div class="progress-header">
+        <span class="progress-title">{{ progressTitle }}</span>
+        <span class="progress-text">{{ generationProgress.current }} / {{ generationProgress.total }}</span>
+      </div>
+      <el-progress
+        :percentage="generationProgress.percentage"
+        :stroke-width="12"
+        :status="generationProgress.is_completed ? 'success' : undefined"
+      />
+      <div v-if="generationProgress.current_item" class="progress-item">
+        正在处理: {{ generationProgress.current_item }}
+      </div>
+    </el-card>
+
+    <!-- 最近执行结果 -->
+    <el-card v-if="lastRoundResult" class="round-result-card">
+      <div class="round-result-header">
+        <div class="round-badge">第 {{ lastRoundResult.round }} 轮</div>
+        <div class="round-phase">{{ getPhaseDisplayName(lastRoundResult.phase) }}</div>
+      </div>
+      <div class="round-result-content">
+        {{ lastRoundResult.summary }}
+      </div>
+      <div class="round-stats">
+        <div class="round-stat">
+          <span class="stat-value">{{ lastRoundResult.new_negotiations }}</span>
+          <span class="stat-label">新增谈判</span>
+        </div>
+        <div class="round-stat">
+          <span class="stat-value">{{ lastRoundResult.completed_signings }}</span>
+          <span class="stat-label">完成签约</span>
+        </div>
+        <div v-if="lastRoundResult.phase_changed" class="round-stat phase-changed">
+          <span class="stat-value">阶段切换</span>
+          <span class="stat-label">→ {{ getPhaseDisplayName(lastRoundResult.new_phase) }}</span>
+        </div>
+      </div>
+    </el-card>
+
+    <!-- 续约处理结果 -->
+    <el-card v-if="renewalResult" class="renewal-result-card">
+      <div class="renewal-result-header">
+        <div class="renewal-badge">续约处理完成</div>
+        <div class="renewal-stats-inline">
+          <span class="stat-success">{{ renewalResult.successful_renewals }} 人续约成功</span>
+          <span class="stat-separator">|</span>
+          <span class="stat-warning">{{ renewalResult.team_rejections }} 人被球队放弃</span>
+          <span class="stat-separator">|</span>
+          <span class="stat-danger">{{ renewalResult.player_rejections }} 人拒绝续约</span>
+        </div>
+      </div>
+      <div v-if="renewalResult.decisions && renewalResult.decisions.length > 0" class="renewal-decisions-list">
+        <div
+          v-for="decision in renewalResult.decisions.slice(0, 5)"
+          :key="decision.player_id"
+          class="renewal-decision-item"
+          :class="{
+            'success': decision.renewal_successful,
+            'team-reject': !decision.renewal_successful && !decision.team_wants_renewal,
+            'player-reject': !decision.renewal_successful && decision.team_wants_renewal && !decision.player_accepts,
+          }"
+        >
+          <div class="decision-main">
+            <span class="player-name">{{ decision.player_name }}</span>
+            <span class="team-name">{{ decision.team_name }}</span>
+          </div>
+          <div class="decision-result">
+            <el-tag v-if="decision.renewal_successful" type="success" size="small">
+              续约成功 ({{ decision.final_salary }}万/{{ decision.final_years }}年)
+            </el-tag>
+            <el-tag v-else-if="!decision.team_wants_renewal" type="warning" size="small">
+              球队放弃
+            </el-tag>
+            <el-tag v-else type="danger" size="small">
+              拒绝续约
+            </el-tag>
+          </div>
+          <div class="decision-summary">{{ decision.summary }}</div>
+        </div>
+        <div v-if="renewalResult.decisions.length > 5" class="more-hint">
+          还有 {{ renewalResult.decisions.length - 5 }} 条记录...
+        </div>
+      </div>
+    </el-card>
+
+    <!-- 主要内容区域 - Tabs -->
+    <el-tabs v-model="activeTab" class="content-tabs">
+      <!-- 离队候选人 -->
+      <el-tab-pane label="离队候选人" name="departures">
+        <div class="tab-toolbar">
+          <el-button @click="loadDepartureCandidates" :loading="isLoading" size="small">
+            <el-icon><Refresh /></el-icon>
+            刷新
+          </el-button>
+          <span class="count-badge">共 {{ departureCandidates.length }} 人</span>
+        </div>
+        <el-empty v-if="departureCandidates.length === 0" description="暂无离队候选人" />
+        <div v-else class="departure-list">
+          <div
+            v-for="candidate in departureCandidates"
+            :key="candidate.player_id"
+            class="departure-card"
+            :class="{ 'expanded': expandedPlayerId === candidate.player_id }"
+            @click="handleTogglePlayerExpand(candidate.player_id)"
+          >
+            <div class="departure-card-main">
+              <div class="player-avatar" :class="getPositionClass(candidate.position)">
+                {{ candidate.position }}
+              </div>
+              <div class="player-info">
+                <div class="player-name">{{ candidate.player_name }}</div>
+                <div class="player-meta">
+                  {{ candidate.team_name }} · {{ candidate.age }}岁 · 能力 {{ candidate.ability }}
+                </div>
+              </div>
+              <div class="departure-reason">
+                <div class="departure-tags">
+                  <el-tag type="danger" size="small">
+                    <el-icon><Warning /></el-icon>
+                    想离队
+                  </el-tag>
+                  <el-tag type="info" size="small">
+                    决策置信度 {{ candidate.decision_confidence }}%
+                  </el-tag>
+                </div>
+                <div class="reason-text">{{ candidate.leave_reasoning }}</div>
+              </div>
+              <div class="expected-salary">
+                <span class="salary-value">{{ formatSalary(candidate.expected_salary) }}</span>
+                <span class="salary-label">期望薪资</span>
+              </div>
+              <div class="expand-icon">
+                <el-icon :class="{ 'rotate': expandedPlayerId === candidate.player_id }">
+                  <ArrowDown />
+                </el-icon>
+              </div>
+            </div>
+            <!-- 展开的分析详情 -->
+            <el-collapse-transition>
+              <div v-if="expandedPlayerId === candidate.player_id" class="analysis-detail">
+                <div v-if="loadingStrategyId === candidate.player_id" class="loading-analysis">
+                  <el-icon class="is-loading"><Loading /></el-icon>
+                  加载分析数据...
+                </div>
+                <div v-else-if="currentPlayerStrategy" class="analysis-content-wrapper">
+                  <!-- 顶部：LLM/Mock 标识 + 离队理由 -->
+                  <div class="analysis-header">
+                    <el-tag v-if="!currentPlayerStrategy.is_mock" type="success" effect="dark" class="source-badge llm">
+                      🤖 LLM 生成
+                    </el-tag>
+                    <el-tag v-else type="info" effect="plain" class="source-badge mock">
+                      📋 规则生成
+                    </el-tag>
+                    <div v-if="currentPlayerStrategy.leave_reasoning" class="leave-reasoning-box">
+                      <strong>离队分析：</strong>{{ currentPlayerStrategy.leave_reasoning }}
+                    </div>
+                  </div>
+
+                  <!-- 主体内容区 -->
+                  <el-row :gutter="16" class="analysis-content">
+                    <!-- 左侧：合同期望 -->
+                    <el-col :span="8">
+                      <div class="analysis-card">
+                        <div class="card-header">
+                          <el-icon><Money /></el-icon>
+                          <span>合同期望</span>
+                        </div>
+                        <div class="contract-expectations">
+                          <div class="expectation-item">
+                            <span class="label">期望薪资</span>
+                            <span class="value highlight">{{ formatSalary(currentPlayerStrategy.expected_salary) }}/年</span>
+                          </div>
+                          <div class="expectation-item">
+                            <span class="label">最低接受</span>
+                            <span class="value">{{ formatSalary(currentPlayerStrategy.expected_min_salary) }}/年</span>
+                          </div>
+                          <div class="expectation-item">
+                            <span class="label">期望年限</span>
+                            <span class="value">{{ currentPlayerStrategy.expected_years }} 年</span>
+                          </div>
+                          <div class="expectation-item">
+                            <span class="label">首发要求</span>
+                            <span class="value" :class="{ 'require-yes': currentPlayerStrategy.requires_starter }">
+                              {{ currentPlayerStrategy.requires_starter ? '是' : '否' }}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </el-col>
+
+                    <!-- 中间：偏好球队 -->
+                    <el-col :span="8">
+                      <div class="analysis-card">
+                        <div class="card-header">
+                          <el-icon><Star /></el-icon>
+                          <span>偏好球队 ({{ currentPlayerStrategy.preferred_teams?.length || 0 }})</span>
+                        </div>
+                        <div v-if="currentPlayerStrategy.preferred_teams && currentPlayerStrategy.preferred_teams.length > 0" class="preferred-teams">
+                          <div
+                            v-for="(team, index) in currentPlayerStrategy.preferred_teams.slice(0, 5)"
+                            :key="team.team_id"
+                            class="preferred-team"
+                          >
+                            <span class="team-rank">#{{ index + 1 }}</span>
+                            <span class="team-name">{{ team.team_name }}</span>
+                            <el-tag size="small" type="warning">{{ team.attractiveness_score }}</el-tag>
+                          </div>
+                        </div>
+                        <div v-else class="empty-state">暂无偏好球队</div>
+                      </div>
+                    </el-col>
+
+                    <!-- 右侧：AI 分析步骤 -->
+                    <el-col :span="8">
+                      <div class="analysis-card">
+                        <div class="card-header">
+                          <el-icon><DataAnalysis /></el-icon>
+                          <span>决策分析</span>
+                        </div>
+                        <div v-if="currentPlayerStrategy.analysis_steps && currentPlayerStrategy.analysis_steps.length > 0" class="analysis-steps">
+                          <div
+                            v-for="(step, index) in currentPlayerStrategy.analysis_steps"
+                            :key="index"
+                            class="analysis-step"
+                          >
+                            <div class="step-header">
+                              <span class="step-number">{{ index + 1 }}</span>
+                              <span class="step-name">{{ step.step_name }}</span>
+                            </div>
+                            <div class="step-result">{{ step.result }}</div>
+                          </div>
+                        </div>
+                        <div v-else class="empty-state">
+                          规则生成，无详细分析
+                        </div>
+                      </div>
+                    </el-col>
+                  </el-row>
+                </div>
+              </div>
+            </el-collapse-transition>
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- 谈判列表 -->
+      <el-tab-pane label="进行中谈判" name="negotiations">
+        <div class="tab-toolbar">
+          <el-button @click="loadNegotiations" :loading="isLoading" size="small">
+            <el-icon><Refresh /></el-icon>
+            刷新
+          </el-button>
+          <span class="count-badge">共 {{ negotiations.length }} 个</span>
+        </div>
+        <el-empty v-if="negotiations.length === 0" description="暂无进行中的谈判" />
+        <el-table v-else :data="negotiations" stripe style="width: 100%">
+          <el-table-column prop="player_name" label="选手" width="120">
+            <template #default="{ row }">
+              <div class="player-cell">
+                <span class="position-tag" :class="getPositionClass(row.player_position)">
+                  {{ row.player_position }}
+                </span>
+                <span class="name">{{ row.player_name }}</span>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="player_ability" label="能力" width="70" align="center">
+            <template #default="{ row }">
+              <span :class="getAbilityClass(row.player_ability)">{{ row.player_ability }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="from_team_name" label="原球队" width="120" />
+          <el-table-column prop="status_name" label="状态" width="80">
+            <template #default="{ row }">
+              <el-tag :type="getStatusTagType(row.status)" size="small">
+                {{ row.status_name }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="offers_count" label="报价数" width="80" align="center" />
+          <el-table-column prop="competing_teams_count" label="竞争球队" width="90" align="center" />
+          <el-table-column prop="highest_offer" label="最高报价" width="100">
+            <template #default="{ row }">
+              {{ row.highest_offer ? formatSalary(row.highest_offer) : '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="final_team_name" label="签约球队" width="120">
+            <template #default="{ row }">
+              <el-tag v-if="row.final_team_name" type="success" size="small">
+                {{ row.final_team_name }}
+              </el-tag>
+              <span v-else class="text-muted">-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="100" fixed="right">
+            <template #default="{ row }">
+              <el-button size="small" text type="primary" @click="handleViewNegotiation(row.id)">
+                详情
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- 续约结果 -->
+      <el-tab-pane label="续约结果" name="renewals">
+        <div class="tab-toolbar">
+          <span class="count-badge">
+            共 {{ renewalResult?.decisions?.length ?? 0 }} 条续约记录
+          </span>
+          <template v-if="renewalResult">
+            <el-tag type="success" size="small">{{ renewalResult.successful_renewals }} 人续约成功</el-tag>
+            <el-tag type="warning" size="small">{{ renewalResult.team_rejections }} 人被球队放弃</el-tag>
+            <el-tag type="danger" size="small">{{ renewalResult.player_rejections }} 人拒绝续约</el-tag>
+          </template>
+        </div>
+        <el-empty v-if="!renewalResult || renewalResult.decisions.length === 0" description="暂无续约记录" />
+        <div v-else class="renewals-list">
+          <div
+            v-for="decision in renewalResult.decisions"
+            :key="decision.player_id"
+            class="renewal-card"
+            :class="{
+              'success': decision.renewal_successful,
+              'team-reject': !decision.renewal_successful && !decision.team_wants_renewal,
+              'player-reject': !decision.renewal_successful && decision.team_wants_renewal && !decision.player_accepts,
+              'expanded': expandedRenewalId === decision.player_id,
+            }"
+            @click="handleToggleRenewalExpand(decision.player_id)"
+          >
+            <!-- 卡片主体 -->
+            <div class="renewal-card-main">
+              <div class="renewal-status-icon">
+                <el-icon v-if="decision.renewal_successful" color="#67c23a"><CircleCheck /></el-icon>
+                <el-icon v-else-if="!decision.team_wants_renewal" color="#e6a23c"><RemoveFilled /></el-icon>
+                <el-icon v-else color="#f56c6c"><CloseBold /></el-icon>
+              </div>
+              <div class="renewal-player-info">
+                <div class="renewal-player-name">
+                  <el-icon class="name-icon player"><User /></el-icon>
+                  {{ decision.player_name }}
+                </div>
+                <div class="renewal-team-name">
+                  <el-icon class="name-icon team"><OfficeBuilding /></el-icon>
+                  {{ decision.team_name }}
+                </div>
+              </div>
+              <div class="renewal-result-tag">
+                <el-tag v-if="decision.renewal_successful" type="success" effect="dark">
+                  续约成功
+                </el-tag>
+                <el-tag v-else-if="!decision.team_wants_renewal" type="warning" effect="dark">
+                  球队放弃
+                </el-tag>
+                <el-tag v-else type="danger" effect="dark">
+                  选手拒绝
+                </el-tag>
+              </div>
+              <div v-if="decision.renewal_successful" class="renewal-contract">
+                <span class="contract-value">{{ formatSalary(decision.final_salary ?? 0) }}/年</span>
+                <span class="contract-years">{{ decision.final_years }}年</span>
+              </div>
+              <div v-else class="renewal-offer">
+                <span class="offer-label">报价:</span>
+                <span class="offer-value">{{ formatSalary(decision.offered_salary) }}/年 · {{ decision.offered_years }}年</span>
+              </div>
+              <div class="renewal-expand-icon">
+                <el-icon :class="{ 'rotate': expandedRenewalId === decision.player_id }">
+                  <ArrowDown />
+                </el-icon>
+              </div>
+            </div>
+            <!-- 展开的详情区域 -->
+            <el-collapse-transition>
+              <div v-if="expandedRenewalId === decision.player_id" class="renewal-detail">
+                <!-- 顶部信息栏 -->
+                <div class="detail-header">
+                  <!-- 合同信息 -->
+                  <div class="contract-info-card">
+                    <div class="info-title">
+                      <el-icon><DocumentChecked /></el-icon>
+                      {{ decision.renewal_successful ? '新合同' : '报价条件' }}
+                    </div>
+                    <div class="info-content">
+                      <div class="info-item">
+                        <span class="label">薪资</span>
+                        <span class="value salary">{{ formatSalary(decision.renewal_successful ? (decision.final_salary ?? 0) : decision.offered_salary) }}/年</span>
+                      </div>
+                      <div class="info-item">
+                        <span class="label">年限</span>
+                        <span class="value">{{ decision.renewal_successful ? decision.final_years : decision.offered_years }}年</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 结果状态 -->
+                  <div class="result-status-card" :class="{
+                    'success': decision.renewal_successful,
+                    'team-reject': !decision.renewal_successful && !decision.team_wants_renewal,
+                    'player-reject': !decision.renewal_successful && decision.team_wants_renewal
+                  }">
+                    <div class="status-icon">
+                      <el-icon v-if="decision.renewal_successful"><CircleCheck /></el-icon>
+                      <el-icon v-else-if="!decision.team_wants_renewal"><RemoveFilled /></el-icon>
+                      <el-icon v-else><CloseBold /></el-icon>
+                    </div>
+                    <div class="status-text">
+                      <template v-if="decision.renewal_successful">续约成功</template>
+                      <template v-else-if="!decision.team_wants_renewal">球队放弃</template>
+                      <template v-else>选手拒绝</template>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 摘要 -->
+                <div class="summary-card">
+                  <div class="summary-icon">
+                    <el-icon><ChatDotRound /></el-icon>
+                  </div>
+                  <div class="summary-text">{{ decision.summary }}</div>
+                </div>
+
+                <!-- 拒绝原因（如果有） -->
+                <div v-if="!decision.renewal_successful" class="rejection-card" :class="{
+                  'team-reject': !decision.team_wants_renewal,
+                  'player-reject': decision.team_wants_renewal
+                }">
+                  <div class="rejection-header">
+                    <el-icon><Warning /></el-icon>
+                    <span v-if="!decision.team_wants_renewal">球队放弃原因</span>
+                    <span v-else>选手拒绝原因</span>
+                  </div>
+                  <div class="rejection-content">
+                    {{ !decision.team_wants_renewal ? decision.team_rejection_reason : decision.player_rejection_reason }}
+                  </div>
+                </div>
+
+                <!-- AI 分析过程 -->
+                <div class="analysis-section">
+                  <div class="section-title">
+                    <el-icon><DataAnalysis /></el-icon>
+                    AI 分析过程
+                  </div>
+                  <div class="analysis-grid">
+                    <!-- 球队视角 -->
+                    <div class="analysis-card team-side">
+                      <div class="card-header">
+                        <el-icon><OfficeBuilding /></el-icon>
+                        <span>球队视角</span>
+                        <el-tag size="small" :type="decision.team_wants_renewal ? 'success' : 'danger'">
+                          {{ decision.team_wants_renewal ? '愿意续约' : '放弃续约' }}
+                        </el-tag>
+                      </div>
+                      <div v-if="decision.team_analysis && decision.team_analysis.length > 0" class="steps-container">
+                        <div v-for="(step, idx) in decision.team_analysis" :key="'t-'+idx" class="step-item">
+                          <div class="step-num">{{ idx + 1 }}</div>
+                          <div class="step-content">
+                            <div class="step-title">{{ step.step_name }}</div>
+                            <div v-if="step.data_used" class="step-data">{{ step.data_used }}</div>
+                            <div class="step-result">{{ step.result }}</div>
+                            <el-tag v-if="step.impact" :type="getImpactTagType(step.impact)" size="small" class="step-tag">
+                              {{ step.impact }}
+                            </el-tag>
+                          </div>
+                        </div>
+                      </div>
+                      <div v-else class="no-data">暂无分析数据</div>
+                    </div>
+
+                    <!-- 选手视角 -->
+                    <div class="analysis-card player-side">
+                      <div class="card-header">
+                        <el-icon><User /></el-icon>
+                        <span>选手视角</span>
+                        <el-tag size="small" :type="decision.player_accepts ? 'success' : 'danger'">
+                          {{ decision.player_accepts ? '接受续约' : '拒绝续约' }}
+                        </el-tag>
+                      </div>
+                      <div v-if="decision.player_analysis && decision.player_analysis.length > 0" class="steps-container">
+                        <div v-for="(step, idx) in decision.player_analysis" :key="'p-'+idx" class="step-item">
+                          <div class="step-num">{{ idx + 1 }}</div>
+                          <div class="step-content">
+                            <div class="step-title">{{ step.step_name }}</div>
+                            <div v-if="step.data_used" class="step-data">{{ step.data_used }}</div>
+                            <div class="step-result">{{ step.result }}</div>
+                            <el-tag v-if="step.impact" :type="getImpactTagType(step.impact)" size="small" class="step-tag">
+                              {{ step.impact }}
+                            </el-tag>
+                          </div>
+                        </div>
+                      </div>
+                      <div v-else class="no-data">暂无分析数据</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </el-collapse-transition>
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- 市场事件 -->
+      <el-tab-pane label="市场动态" name="events">
+        <div class="tab-toolbar">
+          <el-button @click="loadEvents" :loading="isLoading" size="small">
+            <el-icon><Refresh /></el-icon>
+            刷新
+          </el-button>
+          <el-radio-group v-model="eventFilter" size="small">
+            <el-radio-button value="all">全部</el-radio-button>
+            <el-radio-button value="signing">签约</el-radio-button>
+            <el-radio-button value="thinking">思考过程</el-radio-button>
+            <el-radio-button value="transfer">转会请求</el-radio-button>
+          </el-radio-group>
+          <span class="count-badge">共 {{ filteredEvents.length }} 条</span>
+        </div>
+        <el-empty v-if="filteredEvents.length === 0" description="暂无市场动态" />
+        <div v-else class="events-list">
+          <div
+            v-for="event in filteredEvents"
+            :key="event.id"
+            class="event-card"
+            :class="[getEventClass(event.event_type), { 'clickable': isThinkingEvent(event.event_type) }]"
+            @click="handleEventClick(event)"
+          >
+            <div class="event-icon" :class="getEventClass(event.event_type)">
+              <el-icon v-if="event.event_type === 'SIGNING_COMPLETED'"><CircleCheck /></el-icon>
+              <el-icon v-else-if="event.event_type === 'TRANSFER_REQUESTED'"><Message /></el-icon>
+              <el-icon v-else-if="event.event_type === 'OFFER_ACCEPTED'"><Check /></el-icon>
+              <el-icon v-else-if="event.event_type === 'OFFER_REJECTED'"><Close /></el-icon>
+              <el-icon v-else-if="event.event_type === 'TEAM_THINKING'"><Cpu /></el-icon>
+              <el-icon v-else-if="event.event_type === 'PLAYER_THINKING'"><User /></el-icon>
+              <el-icon v-else-if="event.event_type === 'OFFER_MADE'"><Position /></el-icon>
+              <el-icon v-else><Bell /></el-icon>
+            </div>
+            <div class="event-content">
+              <div class="event-title">
+                {{ event.title }}
+                <el-tag v-if="isThinkingEvent(event.event_type)" type="info" size="small" class="thinking-tag">
+                  点击查看详情
+                </el-tag>
+              </div>
+              <div class="event-desc" :class="{ 'truncated': isThinkingEvent(event.event_type) }">
+                {{ isThinkingEvent(event.event_type) ? truncateText(event.description, 100) : event.description }}
+              </div>
+              <div class="event-meta">
+                <span class="event-round">第{{ event.round }}轮</span>
+                <span class="event-phase">{{ getPhaseDisplayName(event.phase) }}</span>
+                <span v-if="event.player_name" class="event-player">{{ event.player_name }}</span>
+                <span v-if="event.team_name" class="event-team">{{ event.team_name }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- 球队状态 -->
+      <el-tab-pane label="球队状态" name="teams">
+        <div class="tab-toolbar">
+          <el-button @click="loadTeamStates" :loading="isLoading" size="small">
+            <el-icon><Refresh /></el-icon>
+            刷新
+          </el-button>
+          <span class="count-badge">共 {{ teamStates.length }} 支球队</span>
+        </div>
+        <el-empty v-if="teamStates.length === 0" description="暂无球队数据" />
+        <el-table v-else :data="teamStates" stripe style="width: 100%">
+          <el-table-column prop="team_name" label="球队" width="150" />
+          <el-table-column prop="remaining_budget" label="剩余预算" width="120">
+            <template #default="{ row }">
+              {{ formatSalary(row.remaining_budget) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="spent_amount" label="已花费" width="120">
+            <template #default="{ row }">
+              {{ formatSalary(row.spent_amount) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="roster_count" label="阵容人数" width="100" align="center">
+            <template #default="{ row }">
+              <span :class="{ 'roster-warning': row.roster_count < row.min_roster_size }">
+                {{ row.roster_count }}/{{ row.min_roster_size }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="pending_negotiations" label="待定谈判" width="100" align="center" />
+          <el-table-column prop="completed_signings" label="已签约" width="90" align="center" />
+          <el-table-column prop="departed_players" label="已离队" width="90" align="center" />
+          <el-table-column prop="strategy_generated" label="策略" width="80" align="center">
+            <template #default="{ row }">
+              <el-icon v-if="row.strategy_generated" color="#67c23a"><CircleCheck /></el-icon>
+              <el-icon v-else color="#909399"><Clock /></el-icon>
+            </template>
+          </el-table-column>
+          <el-table-column prop="needs_emergency_signing" label="紧急补员" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.needs_emergency_signing" type="danger" size="small">需要</el-tag>
+              <span v-else class="text-muted">-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="100" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                size="small"
+                text
+                type="primary"
+                :disabled="!row.strategy_generated"
+                @click="handleViewTeamStrategy(row.team_id)"
+              >
+                查看策略
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- 球队策略 -->
+      <el-tab-pane label="球队策略" name="strategies">
+        <div class="tab-toolbar">
+          <span class="count-badge">已生成 {{ generatedStrategiesCount }} 支球队策略</span>
+        </div>
+        <el-empty v-if="!currentTeamStrategy" description="点击球队状态 Tab 中的「查看策略」按钮来查看详情" />
+        <div v-else class="team-strategy-detail">
+          <div class="strategy-header">
+            <div class="team-info">
+              <h3>{{ currentTeamStrategy.team_name || `球队 #${currentTeamStrategy.team_id}` }}</h3>
+              <el-tag :type="getStrategyTagType(currentTeamStrategy.overall_strategy)" size="large">
+                {{ currentTeamStrategy.overall_strategy }}
+              </el-tag>
+              <!-- LLM/Mock 标识 -->
+              <el-tag v-if="!currentTeamStrategy.is_mock" type="success" effect="dark" class="source-badge llm">
+                🤖 LLM 生成
+              </el-tag>
+              <el-tag v-else type="info" effect="plain" class="source-badge mock">
+                📋 规则生成
+              </el-tag>
+            </div>
+            <div class="strategy-description">
+              {{ currentTeamStrategy.strategy_description }}
+            </div>
+          </div>
+
+          <el-row :gutter="20" class="strategy-content">
+            <!-- 引援目标 -->
+            <el-col :span="12">
+              <div class="strategy-section">
+                <h4>
+                  <el-icon><Plus /></el-icon>
+                  引援目标 ({{ currentTeamStrategy.targets?.length || 0 }})
+                </h4>
+                <div v-if="currentTeamStrategy.targets && currentTeamStrategy.targets.length > 0" class="targets-list">
+                  <div
+                    v-for="target in currentTeamStrategy.targets"
+                    :key="target.player_id"
+                    class="target-item"
+                  >
+                    <div class="target-main">
+                      <span class="position-tag" :class="getPositionClass(target.position)">
+                        {{ target.position }}
+                      </span>
+                      <span class="player-name">{{ target.player_name }}</span>
+                      <span class="ability">能力 {{ target.ability }}</span>
+                    </div>
+                    <div class="target-details">
+                      <el-tag type="warning" size="small">优先度 {{ target.priority }}</el-tag>
+                      <span class="budget">预算 {{ formatSalary(target.max_offer) }}</span>
+                    </div>
+                    <div v-if="target.reasoning" class="target-reasoning">
+                      {{ target.reasoning }}
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="empty-list">暂无引援目标</div>
+              </div>
+            </el-col>
+
+            <!-- 出售名单 -->
+            <el-col :span="12">
+              <div class="strategy-section">
+                <h4>
+                  <el-icon><Minus /></el-icon>
+                  出售名单 ({{ currentTeamStrategy.willing_to_sell?.length || 0 }})
+                </h4>
+                <div v-if="currentTeamStrategy.willing_to_sell && currentTeamStrategy.willing_to_sell.length > 0" class="sell-list">
+                  <div
+                    v-for="player in currentTeamStrategy.willing_to_sell"
+                    :key="player.player_id"
+                    class="sell-item"
+                  >
+                    <div class="sell-main">
+                      <span class="position-tag" :class="getPositionClass(player.position)">
+                        {{ player.position }}
+                      </span>
+                      <span class="player-name">{{ player.player_name }}</span>
+                      <span class="ability">能力 {{ player.ability }}</span>
+                    </div>
+                    <div class="sell-details">
+                      <span class="price">底价 {{ formatSalary(player.min_price) }}</span>
+                      <el-tag size="small">紧迫度 {{ player.urgency }}</el-tag>
+                    </div>
+                    <div v-if="player.reasoning" class="sell-reasoning">
+                      {{ player.reasoning }}
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="empty-list">暂无出售计划</div>
+              </div>
+            </el-col>
+          </el-row>
+
+          <!-- 预算分配 -->
+          <div class="budget-section">
+            <h4>
+              <el-icon><Money /></el-icon>
+              预算分配
+            </h4>
+            <div class="budget-grid">
+              <div class="budget-item">
+                <span class="label">总预算</span>
+                <span class="value">{{ formatSalary(currentTeamStrategy.budget_allocation?.total_budget || 0) }}</span>
+              </div>
+              <div class="budget-item">
+                <span class="label">转会费预算</span>
+                <span class="value">{{ formatSalary(currentTeamStrategy.budget_allocation?.transfer_spend || 0) }}</span>
+              </div>
+              <div class="budget-item">
+                <span class="label">薪资预算</span>
+                <span class="value">{{ formatSalary(currentTeamStrategy.budget_allocation?.salary_spend || 0) }}</span>
+              </div>
+              <div class="budget-item">
+                <span class="label">储备金</span>
+                <span class="value">{{ formatSalary(currentTeamStrategy.budget_allocation?.reserve || 0) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI 分析步骤 -->
+          <div v-if="currentTeamStrategy.analysis_steps && currentTeamStrategy.analysis_steps.length > 0" class="analysis-section team-analysis">
+            <h4>
+              <el-icon><DataAnalysis /></el-icon>
+              AI 分析过程
+            </h4>
+            <div class="analysis-steps">
+              <div
+                v-for="(step, index) in currentTeamStrategy.analysis_steps"
+                :key="index"
+                class="analysis-step"
+              >
+                <div class="step-header">
+                  <span class="step-number">{{ index + 1 }}</span>
+                  <span class="step-name">{{ step.step_name }}</span>
+                  <el-tag :type="getStepImpactType(step.impact)" size="small">
+                    {{ step.impact }}
+                  </el-tag>
+                </div>
+                <div class="step-detail">
+                  <div v-if="step.data_used" class="step-row">
+                    <span class="step-label">数据:</span>
+                    <span class="step-value">{{ step.data_used }}</span>
+                  </div>
+                  <div v-if="step.threshold" class="step-row">
+                    <span class="step-label">阈值:</span>
+                    <span class="step-value">{{ step.threshold }}</span>
+                  </div>
+                  <div class="step-row">
+                    <span class="step-label">结论:</span>
+                    <span class="step-value result">{{ step.result }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 策略原因 -->
+          <div v-if="currentTeamStrategy.reasoning" class="reasoning-section">
+            <h4>
+              <el-icon><ChatDotRound /></el-icon>
+              策略说明
+            </h4>
+            <div class="reasoning-text">
+              {{ currentTeamStrategy.reasoning }}
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
+
+    <!-- 谈判详情弹窗 -->
+    <el-dialog
+      v-model="showNegotiationDialog"
+      title="谈判详情"
+      width="800px"
+      destroy-on-close
+    >
+      <div v-if="currentNegotiation" class="negotiation-detail">
+        <!-- 选手信息 -->
+        <div class="detail-header">
+          <div class="player-avatar large" :class="getPositionClass(currentNegotiation.negotiation.player_position)">
+            {{ currentNegotiation.negotiation.player_position }}
+          </div>
+          <div class="player-info">
+            <div class="player-name large">{{ currentNegotiation.negotiation.player_name }}</div>
+            <div class="player-meta">
+              能力 {{ currentNegotiation.negotiation.player_ability }} ·
+              {{ currentNegotiation.negotiation.from_team_name || '自由球员' }}
+            </div>
+          </div>
+          <el-tag :type="getStatusTagType(currentNegotiation.negotiation.status)" size="large">
+            {{ currentNegotiation.negotiation.status }}
+          </el-tag>
+        </div>
+
+        <!-- 报价列表 -->
+        <div class="offers-section">
+          <h4>报价历史</h4>
+          <div
+            v-for="teamHistory in currentNegotiation.offers_by_team"
+            :key="teamHistory.team_id"
+            class="team-offer-history"
+          >
+            <div class="team-header">
+              <span class="team-name">{{ teamHistory.team_name }}</span>
+              <el-tag v-if="teamHistory.is_leading" type="success" size="small">领先</el-tag>
+            </div>
+            <div
+              v-for="offer in teamHistory.offers"
+              :key="offer.id"
+              class="offer-item"
+            >
+              <div class="offer-round">第{{ offer.round }}轮</div>
+              <div class="offer-content">
+                <span class="salary">{{ formatSalary(offer.salary_offer) }}/年</span>
+                <span class="years">{{ offer.contract_years }}年</span>
+                <el-tag v-if="offer.guarantee_starter" type="warning" size="small">首发保证</el-tag>
+              </div>
+              <el-tag :type="getOfferStatusTagType(offer.status)" size="small">
+                {{ offer.status }}
+              </el-tag>
+            </div>
+          </div>
+        </div>
+
+        <!-- 时间线 -->
+        <div class="timeline-section">
+          <h4>谈判时间线</h4>
+          <el-timeline>
+            <el-timeline-item
+              v-for="event in currentNegotiation.timeline"
+              :key="event.timestamp"
+              :type="getTimelineItemType(event.event_type)"
+            >
+              <div class="timeline-content">
+                <div class="timeline-title">{{ event.description }}</div>
+                <div v-if="event.details" class="timeline-details">{{ event.details }}</div>
+              </div>
+            </el-timeline-item>
+          </el-timeline>
+        </div>
+      </div>
+    </el-dialog>
+
+    <!-- 思考过程详情弹窗 -->
+    <el-dialog
+      v-model="thinkingDialogVisible"
+      :title="thinkingDialogTitle"
+      width="700px"
+      class="thinking-dialog"
+    >
+      <div v-if="selectedThinkingEvent" class="thinking-content">
+        <div class="thinking-header">
+          <el-tag v-if="selectedThinkingEvent.event_type === 'TEAM_THINKING'" type="primary" effect="dark">
+            🏢 战队分析
+          </el-tag>
+          <el-tag v-else type="success" effect="dark">
+            🎮 选手考虑
+          </el-tag>
+          <span class="thinking-round">第 {{ selectedThinkingEvent.round }} 轮</span>
+        </div>
+
+        <div class="thinking-info">
+          <div v-if="selectedThinkingEvent.player_name" class="info-item">
+            <span class="label">选手:</span>
+            <span class="value">{{ selectedThinkingEvent.player_name }}</span>
+          </div>
+          <div v-if="selectedThinkingEvent.team_name" class="info-item">
+            <span class="label">战队:</span>
+            <span class="value">{{ selectedThinkingEvent.team_name }}</span>
+          </div>
+        </div>
+
+        <div class="thinking-body" :class="{
+          'team-thinking': selectedThinkingEvent.event_type === 'TEAM_THINKING',
+          'player-thinking': selectedThinkingEvent.event_type === 'PLAYER_THINKING'
+        }">
+          <div class="thinking-title">💭 思考过程</div>
+          <pre class="thinking-text">{{ selectedThinkingEvent.description }}</pre>
+        </div>
+      </div>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  User, Message, CircleCheck, TrendCharts, Plus, UserFilled,
+  CaretRight, DArrowRight, Refresh, Back, Bell, Check, Close, Clock,
+  QuestionFilled, InfoFilled, ArrowDown, ArrowRight, Warning, Loading, DataAnalysis,
+  Star, Money, Minus, ChatDotRound, Delete, DocumentChecked, RemoveFilled, CloseBold, OfficeBuilding,
+  Cpu, Position, Setting,
+} from '@element-plus/icons-vue'
+import { useLLMMarketStore, PHASE_NAMES } from '@/stores/useLLMMarketStore'
+import { useGameStore } from '@/stores/useGameStore'
+import { llmMarketApi } from '@/api/tauri'
+import type { RoundExecutionResult, MarketPhase, PlayerTransferStrategy, AITransferStrategy } from '@/api/tauri'
+
+const router = useRouter()
+const llmMarketStore = useLLMMarketStore()
+const gameStore = useGameStore()
+
+// Store 状态
+const {
+  marketState,
+  teamStates,
+  negotiations,
+  currentNegotiation,
+  departureCandidates,
+  events,
+  isLoading,
+  isGeneratingIntentions,
+  isGeneratingStrategies,
+  isProcessingRenewals,
+  isExecutingRound,
+  useRuleEngine,  // 规则引擎模式开关
+  generationProgress,
+  renewalResult,
+  // error is available but not currently used
+  isMarketInitialized,
+  currentPhase,
+  currentPhaseName,
+  currentPhaseDescription,
+  canGenerateIntentions,
+  canGenerateStrategies,
+  canProcessRenewals,
+  canExecuteRound,
+  canAdvancePhase,
+  isMarketComplete,
+} = storeToRefs(llmMarketStore)
+
+const { currentSeason } = storeToRefs(gameStore)
+
+// 本地状态
+const activeTab = ref('departures')
+const eventFilter = ref('all')
+const lastRoundResult = ref<RoundExecutionResult | null>(null)
+const showNegotiationDialog = ref(false)
+const showGuide = ref(true)  // 默认显示使用说明
+
+// 选手策略展开状态
+const expandedPlayerId = ref<number | null>(null)
+const loadingStrategyId = ref<number | null>(null)
+const currentPlayerStrategy = ref<PlayerTransferStrategy | null>(null)
+
+// 球队策略状态
+const currentTeamStrategy = ref<AITransferStrategy | null>(null)
+
+// 续约详情展开状态
+const expandedRenewalId = ref<number | null>(null)
+
+// 思考过程弹窗状态
+const thinkingDialogVisible = ref(false)
+const selectedThinkingEvent = ref<any>(null)
+
+// 思考弹窗标题
+const thinkingDialogTitle = computed(() => {
+  if (!selectedThinkingEvent.value) return '思考过程'
+  const event = selectedThinkingEvent.value
+  if (event.event_type === 'TEAM_THINKING') {
+    return `🏢 ${event.team_name || '战队'} 的分析过程`
+  } else {
+    return `🎮 ${event.player_name || '选手'} 的思考过程`
+  }
+})
+
+// 阶段列表
+const phases = [
+  { key: 'INTENTION_GENERATION', name: '选手意愿' },
+  { key: 'STRATEGY_GENERATION', name: '战队策略' },
+  { key: 'RENEWAL_PROCESSING', name: '续约处理' },
+  { key: 'FREE_MARKET', name: '自由市场' },
+  { key: 'TRANSFER_ROUNDS', name: '挖角转会' },
+  { key: 'COMPLETED', name: '完成' },
+]
+
+// 计算属性
+const currentPhaseIndex = computed(() => {
+  const index = phases.findIndex(p => p.key === currentPhase.value)
+  return index >= 0 ? index : 0
+})
+
+const phaseTagType = computed(() => {
+  if (isMarketComplete.value) return 'success'
+  if (currentPhaseIndex.value >= 5) return 'warning'
+  return 'primary'
+})
+
+const progressTitle = computed(() => {
+  if (generationProgress.value?.task_type === 'player_intentions') {
+    return '生成选手意愿'
+  }
+  if (generationProgress.value?.task_type === 'team_strategies') {
+    return '生成球队策略'
+  }
+  if (generationProgress.value?.task_type === 'renewals') {
+    return '处理续约'
+  }
+  return '处理中'
+})
+
+const filteredEvents = computed(() => {
+  let filtered = [...events.value]
+  if (eventFilter.value === 'signing') {
+    filtered = filtered.filter(e =>
+      e.event_type === 'SIGNING_COMPLETED' ||
+      e.event_type === 'OFFER_ACCEPTED'
+    )
+  } else if (eventFilter.value === 'transfer') {
+    filtered = filtered.filter(e => e.event_type === 'TRANSFER_REQUESTED')
+  } else if (eventFilter.value === 'thinking') {
+    filtered = filtered.filter(e =>
+      e.event_type === 'TEAM_THINKING' ||
+      e.event_type === 'PLAYER_THINKING'
+    )
+  }
+  return filtered.reverse()
+})
+
+// 已生成策略的球队数量
+const generatedStrategiesCount = computed(() => {
+  return teamStates.value.filter(ts => ts.strategy_generated).length
+})
+
+// 初始化
+onMounted(async () => {
+  try {
+    await gameStore.refreshGameState()
+    await llmMarketStore.loadMarketState()
+    if (isMarketInitialized.value) {
+      await loadDepartureCandidates()
+      await loadNegotiations()
+      await loadEvents()
+      await loadTeamStates()
+    }
+  } catch (e) {
+    // 市场未初始化是正常情况
+    console.log('Market not initialized yet')
+  }
+})
+
+// 操作方法
+const handleInitMarket = async () => {
+  try {
+    await llmMarketStore.initMarket()
+    ElMessage.success('转会市场初始化成功')
+  } catch (e) {
+    ElMessage.error('初始化失败: ' + (e as Error).message)
+  }
+}
+
+const handleGenerateIntentions = async () => {
+  try {
+    await llmMarketStore.generateIntentions()
+    await loadDepartureCandidates()
+    ElMessage.success('选手意愿生成完成')
+  } catch (e) {
+    ElMessage.error('生成失败: ' + (e as Error).message)
+  }
+}
+
+const handleGenerateStrategies = async () => {
+  try {
+    await llmMarketStore.generateStrategies()
+    await loadTeamStates()
+    ElMessage.success('球队策略生成完成')
+  } catch (e) {
+    ElMessage.error('生成失败: ' + (e as Error).message)
+  }
+}
+
+const handleProcessRenewals = async () => {
+  try {
+    const result = await llmMarketStore.processRenewals()
+    if (result) {
+      const msg = `续约处理完成：${result.successful_renewals} 人续约成功，${result.team_rejections} 人被球队放弃，${result.player_rejections} 人拒绝续约`
+      ElMessage.success(msg)
+    }
+    await loadDepartureCandidates()
+    await loadEvents()
+  } catch (e) {
+    ElMessage.error('续约处理失败: ' + (e as Error).message)
+  }
+}
+
+const handleAdvancePhase = async () => {
+  try {
+    await llmMarketStore.advancePhase()
+    await loadDepartureCandidates()
+    await loadNegotiations()
+    await loadEvents()
+    await loadTeamStates()
+    ElMessage.success(`已推进到: ${currentPhaseName.value}`)
+  } catch (e) {
+    ElMessage.error('推进阶段失败: ' + (e as Error).message)
+  }
+}
+
+const handleExecuteRound = async () => {
+  try {
+    const result = await llmMarketStore.executeRound()
+    if (result) {
+      lastRoundResult.value = result
+      await loadNegotiations()
+      await loadEvents()
+      ElMessage.success(`第 ${result.round} 轮执行完成`)
+    }
+  } catch (e) {
+    ElMessage.error('执行失败: ' + (e as Error).message)
+  }
+}
+
+const handleFastForward = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '将快速完成所有剩余轮次。是否继续？',
+      '快进完成',
+      { type: 'warning' }
+    )
+
+    while (canExecuteRound.value) {
+      await llmMarketStore.executeRound()
+    }
+
+    await loadNegotiations()
+    await loadEvents()
+    await loadTeamStates()
+    ElMessage.success('转会市场已完成')
+  } catch (e) {
+    if (e !== 'cancel') {
+      ElMessage.error('执行失败: ' + (e as Error).message)
+    }
+  }
+}
+
+const handleRefresh = async () => {
+  try {
+    await llmMarketStore.loadMarketState()
+    await loadDepartureCandidates()
+    await loadNegotiations()
+    await loadEvents()
+    await loadTeamStates()
+  } catch (e) {
+    ElMessage.error('刷新失败')
+  }
+}
+
+const handleResetMarket = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '将清除所有转会市场数据（选手意愿、球队策略、谈判记录）并重新开始。是否继续？',
+      '重置转会市场',
+      { type: 'warning', confirmButtonText: '确认重置', cancelButtonText: '取消' }
+    )
+
+    await llmMarketStore.resetMarket()
+    // 清理本地状态
+    lastRoundResult.value = null
+    expandedPlayerId.value = null
+    currentPlayerStrategy.value = null
+    currentTeamStrategy.value = null
+    ElMessage.success('转会市场已重置，可重新初始化')
+  } catch (e) {
+    if (e !== 'cancel') {
+      ElMessage.error('重置失败: ' + (e as Error).message)
+    }
+  }
+}
+
+const loadDepartureCandidates = async () => {
+  await llmMarketStore.loadDepartureCandidates()
+}
+
+const loadNegotiations = async () => {
+  await llmMarketStore.loadNegotiations()
+}
+
+const loadEvents = async () => {
+  await llmMarketStore.loadEvents()
+}
+
+const loadTeamStates = async () => {
+  await llmMarketStore.loadTeamStates()
+}
+
+const handleViewNegotiation = async (id: number) => {
+  try {
+    await llmMarketStore.loadNegotiationDetail(id)
+    showNegotiationDialog.value = true
+  } catch (e) {
+    ElMessage.error('加载谈判详情失败')
+  }
+}
+
+// 切换选手策略展开状态
+const handleTogglePlayerExpand = async (playerId: number) => {
+  if (expandedPlayerId.value === playerId) {
+    // 收起
+    expandedPlayerId.value = null
+    currentPlayerStrategy.value = null
+  } else {
+    // 展开并加载数据
+    expandedPlayerId.value = playerId
+    loadingStrategyId.value = playerId
+    currentPlayerStrategy.value = null
+
+    try {
+      const strategy = await llmMarketApi.getPlayerStrategy(playerId)
+      if (strategy) {
+        currentPlayerStrategy.value = strategy
+      }
+    } catch (e) {
+      console.error('Failed to load player strategy:', e)
+      ElMessage.error('加载选手策略失败')
+    } finally {
+      loadingStrategyId.value = null
+    }
+  }
+}
+
+// 查看球队策略
+const handleViewTeamStrategy = async (teamId: number) => {
+  try {
+    const strategy = await llmMarketApi.getTeamStrategy(teamId)
+    if (strategy) {
+      currentTeamStrategy.value = strategy
+      activeTab.value = 'strategies'
+    } else {
+      ElMessage.warning('该球队暂无策略数据')
+    }
+  } catch (e) {
+    console.error('Failed to load team strategy:', e)
+    ElMessage.error('加载球队策略失败')
+  }
+}
+
+// 切换续约详情展开状态
+const handleToggleRenewalExpand = (playerId: number) => {
+  if (expandedRenewalId.value === playerId) {
+    expandedRenewalId.value = null
+  } else {
+    expandedRenewalId.value = playerId
+  }
+}
+
+// 获取 impact 标签类型
+const getImpactTagType = (impact: string): string => {
+  if (impact.includes('正面') || impact.includes('积极') || impact.includes('满意') || impact.includes('愿意') || impact.includes('+')) {
+    return 'success'
+  }
+  if (impact.includes('负面') || impact.includes('消极') || impact.includes('不满') || impact.includes('拒绝') || impact.includes('-')) {
+    return 'danger'
+  }
+  if (impact.includes('中性') || impact.includes('中立') || impact.includes('无')) {
+    return 'info'
+  }
+  return 'warning'
+}
+
+// 获取策略类型的标签颜色
+const getStrategyTagType = (strategy: string): string => {
+  const types: Record<string, string> = {
+    'AggressiveBuy': 'danger',
+    'StarHunting': 'warning',
+    'YouthDevelopment': 'success',
+    'Balanced': 'primary',
+    'Passive': 'info',
+    'MustSell': 'warning',
+    'ForceClear': 'danger',
+    'FullRebuild': 'info',
+  }
+  return types[strategy] || 'info'
+}
+
+// 获取分析步骤影响类型的标签颜色
+const getStepImpactType = (impact: string): string => {
+  if (impact.includes('正面') || impact.includes('增加') || impact.includes('+')) return 'success'
+  if (impact.includes('负面') || impact.includes('减少') || impact.includes('-')) return 'danger'
+  if (impact.includes('中性') || impact.includes('无')) return 'info'
+  return 'warning'
+}
+
+// 辅助函数
+const getPhaseDisplayName = (phase: MarketPhase | undefined): string => {
+  if (!phase) return ''
+  return PHASE_NAMES[phase] || phase
+}
+
+const getPositionClass = (position: string | null | undefined): string => {
+  if (!position) return 'unknown'
+  const pos = position.toLowerCase()
+  if (pos === 'top') return 'top'
+  if (pos === 'jug' || pos === 'jungle') return 'jungle'
+  if (pos === 'mid') return 'mid'
+  if (pos === 'adc' || pos === 'bot') return 'adc'
+  if (pos === 'sup' || pos === 'support') return 'support'
+  return 'unknown'
+}
+
+const getAbilityClass = (ability: number): string => {
+  if (ability >= 90) return 'ability-legendary'
+  if (ability >= 80) return 'ability-elite'
+  if (ability >= 70) return 'ability-good'
+  return 'ability-normal'
+}
+
+const getStatusTagType = (status: string): string => {
+  const types: Record<string, string> = {
+    'OPEN': 'primary',
+    'ACCEPTED': 'success',
+    'REJECTED': 'danger',
+    'EXPIRED': 'info',
+    'WITHDRAWN': 'warning',
+  }
+  return types[status] || 'info'
+}
+
+const getOfferStatusTagType = (status: string): string => {
+  const types: Record<string, string> = {
+    'PENDING': 'warning',
+    'ACCEPTED': 'success',
+    'REJECTED': 'danger',
+    'COUNTERED': 'primary',
+    'WITHDRAWN': 'info',
+    'EXPIRED': 'info',
+  }
+  return types[status] || 'info'
+}
+
+const getEventClass = (eventType: string): string => {
+  if (eventType === 'SIGNING_COMPLETED') return 'event-signing'
+  if (eventType === 'TRANSFER_REQUESTED') return 'event-transfer'
+  if (eventType === 'OFFER_ACCEPTED') return 'event-accepted'
+  if (eventType === 'OFFER_REJECTED') return 'event-rejected'
+  if (eventType === 'TEAM_THINKING' || eventType === 'PLAYER_THINKING') return 'event-thinking'
+  return 'event-default'
+}
+
+const getTimelineItemType = (eventType: string): string => {
+  if (eventType === 'ACCEPTED') return 'success'
+  if (eventType === 'REJECTED') return 'danger'
+  if (eventType === 'OFFER_RECEIVED') return 'primary'
+  return 'info'
+}
+
+const formatSalary = (value: number): string => {
+  // 智能处理薪资单位问题：
+  // 后端约定薪资单位为"万"，但 LLM 可能返回"元"
+  // 如果数值 >= 100000，很可能是元为单位（如 1250000 表示 125万）
+  // 转换为万后再格式化
+  let valueInWan = value
+  if (value >= 100000) {
+    // 可能是元为单位，转换为万
+    valueInWan = value / 10000
+  }
+
+  if (valueInWan >= 10000) return `${(valueInWan / 10000).toFixed(1)}亿`
+  if (valueInWan >= 1) return `${Math.round(valueInWan)}万`
+  return `${valueInWan}万`
+}
+
+// ==================== 思考过程相关函数 ====================
+
+// 判断是否为思考类事件
+const isThinkingEvent = (eventType: string): boolean => {
+  return eventType === 'TEAM_THINKING' || eventType === 'PLAYER_THINKING'
+}
+
+// 截断文本
+const truncateText = (text: string, maxLength: number): string => {
+  if (!text || text.length <= maxLength) return text
+  return text.substring(0, maxLength) + '...'
+}
+
+// 点击事件卡片
+const handleEventClick = (event: any) => {
+  if (isThinkingEvent(event.event_type)) {
+    selectedThinkingEvent.value = event
+    thinkingDialogVisible.value = true
+  }
+}
+</script>
+
+<style scoped>
+.llm-transfer-market {
+  padding: 0;
+}
+
+/* 页面标题 */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.page-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #303133;
+  margin: 0 0 8px 0;
+}
+
+.page-header p {
+  font-size: 14px;
+  color: #909399;
+  margin: 0;
+}
+
+/* 使用说明卡片 */
+.guide-card {
+  margin-bottom: 20px;
+  border-radius: 12px;
+  border-left: 4px solid #409eff;
+  background: linear-gradient(135deg, #f0f7ff, #f5f7fa);
+}
+
+.guide-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #409eff;
+}
+
+.guide-content {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.8;
+}
+
+.guide-content h4 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.guide-content ul,
+.guide-content ol {
+  padding-left: 20px;
+  margin: 0 0 20px 0;
+}
+
+.guide-content li {
+  margin-bottom: 8px;
+}
+
+.guide-content :deep(.el-timeline) {
+  padding-left: 0;
+}
+
+.guide-content :deep(.el-timeline-item__content) {
+  font-size: 13px;
+}
+
+.guide-content :deep(.el-alert) {
+  margin-top: 16px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* 阶段卡片 */
+.phase-card {
+  margin-bottom: 20px;
+  border-radius: 12px;
+}
+
+.phase-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.phase-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.phase-text {
+  font-size: 13px;
+  color: #606266;
+}
+
+/* 统计卡片 */
+.stats-row {
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.stat-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.stat-icon.blue { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.stat-icon.green { background: linear-gradient(135deg, #22c55e, #16a34a); }
+.stat-icon.orange { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.stat-icon.purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+
+.stat-info { flex: 1; }
+
+.stat-number {
+  font-size: 24px;
+  font-weight: 700;
+  color: #303133;
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: #909399;
+  margin-top: 4px;
+}
+
+/* 操作按钮 */
+.action-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+/* 进度卡片 */
+.progress-card {
+  margin-bottom: 20px;
+  border-radius: 12px;
+  border-left: 4px solid #409eff;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.progress-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.progress-text {
+  font-size: 14px;
+  color: #606266;
+}
+
+.progress-item {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #606266;
+}
+
+/* 轮次结果卡片 */
+.round-result-card {
+  margin-bottom: 20px;
+  border-radius: 12px;
+  border-left: 4px solid #67c23a;
+  background: linear-gradient(135deg, #f0f9eb, #f4f4f5);
+}
+
+.round-result-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.round-badge {
+  padding: 4px 12px;
+  background: #67c23a;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+.round-phase {
+  font-size: 14px;
+  color: #606266;
+}
+
+.round-result-content {
+  font-size: 14px;
+  color: #606266;
+  margin-bottom: 16px;
+}
+
+.round-stats {
+  display: flex;
+  gap: 24px;
+}
+
+/* 续约结果卡片 */
+.renewal-result-card {
+  margin-bottom: 20px;
+  border-radius: 12px;
+  border-left: 4px solid #409eff;
+  background: linear-gradient(135deg, #f0f7ff, #f5f7fa);
+}
+
+.renewal-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.renewal-badge {
+  padding: 4px 12px;
+  background: #409eff;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+.renewal-stats-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.stat-success { color: #67c23a; font-weight: 600; }
+.stat-warning { color: #e6a23c; font-weight: 600; }
+.stat-danger { color: #f56c6c; font-weight: 600; }
+.stat-separator { color: #dcdfe6; }
+
+.renewal-decisions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.renewal-decision-item {
+  background: white;
+  border-radius: 8px;
+  padding: 12px;
+  border-left: 3px solid #409eff;
+}
+
+.renewal-decision-item.success {
+  border-left-color: #67c23a;
+}
+
+.renewal-decision-item.team-reject {
+  border-left-color: #e6a23c;
+}
+
+.renewal-decision-item.player-reject {
+  border-left-color: #f56c6c;
+}
+
+.decision-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.decision-main .player-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.decision-main .team-name {
+  font-size: 13px;
+  color: #909399;
+}
+
+.decision-result {
+  margin-bottom: 6px;
+}
+
+.decision-summary {
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.5;
+}
+
+.more-hint {
+  text-align: center;
+  font-size: 12px;
+  color: #909399;
+  padding: 8px;
+}
+
+.round-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.round-stat .stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #67c23a;
+}
+
+.round-stat .stat-label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.round-stat.phase-changed .stat-value {
+  font-size: 14px;
+  color: #f59e0b;
+}
+
+/* Tabs */
+.content-tabs {
+  margin-bottom: 20px;
+}
+
+.tab-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.count-badge {
+  font-size: 13px;
+  color: #909399;
+  margin-left: auto;
+}
+
+/* 离队候选人 */
+.departure-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.departure-card {
+  background: white;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.departure-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.departure-card.expanded {
+  border-color: #409eff;
+  box-shadow: 0 4px 16px rgba(64, 158, 255, 0.15);
+}
+
+.departure-card-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+}
+
+.departure-tags {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.expand-icon {
+  color: #909399;
+  transition: transform 0.3s ease;
+}
+
+.expand-icon .rotate {
+  transform: rotate(180deg);
+}
+
+/* 分析详情展开区域 */
+.analysis-detail {
+  padding: 0 16px 16px;
+  border-top: 1px solid #ebeef5;
+  margin-top: 0;
+}
+
+.loading-analysis {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: #909399;
+}
+
+/* 新的分析内容布局 */
+.analysis-content-wrapper {
+  padding-top: 16px;
+}
+
+.analysis-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.leave-reasoning-box {
+  flex: 1;
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.6;
+  padding: 8px 12px;
+  background: #fdf6ec;
+  border-radius: 6px;
+  border-left: 3px solid #e6a23c;
+}
+
+.leave-reasoning-box strong {
+  color: #e6a23c;
+}
+
+.analysis-content {
+  margin: 0 -8px;
+}
+
+.analysis-card {
+  background: #f8f9fa;
+  border-radius: 10px;
+  padding: 16px;
+  height: 100%;
+  min-height: 200px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.card-header .el-icon {
+  color: #409eff;
+}
+
+/* LLM/Mock 标识 */
+.source-badge {
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.source-badge.llm {
+  background: linear-gradient(135deg, #67c23a, #529b2e);
+  border-color: #67c23a;
+}
+
+.source-badge.mock {
+  background: #f5f7fa;
+  border-color: #dcdfe6;
+  color: #909399;
+}
+
+/* 合同期望 */
+.contract-expectations {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.expectation-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: white;
+  border-radius: 6px;
+}
+
+.expectation-item .label {
+  font-size: 13px;
+  color: #606266;
+}
+
+.expectation-item .value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.expectation-item .value.highlight {
+  color: #409eff;
+  font-size: 15px;
+}
+
+.expectation-item .value.require-yes {
+  color: #e6a23c;
+}
+
+/* 偏好球队 */
+.preferred-teams {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preferred-team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: white;
+  border-radius: 6px;
+}
+
+.team-rank {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f59e0b;
+  width: 24px;
+}
+
+.preferred-team .team-name {
+  flex: 1;
+  font-size: 13px;
+  color: #303133;
+}
+
+/* 分析步骤 */
+.analysis-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analysis-step {
+  background: white;
+  border-radius: 6px;
+  padding: 10px;
+  border-left: 3px solid #409eff;
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.step-number {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #409eff;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.step-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.step-result {
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.4;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 20px;
+  color: #909399;
+  font-size: 13px;
+}
+
+/* 旧的样式保留供球队策略使用 */
+.analysis-section {
+  background: #f5f7fa;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.analysis-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+/* 分析步骤 */
+.analysis-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.analysis-step {
+  background: white;
+  border-radius: 6px;
+  padding: 10px;
+  border-left: 3px solid #409eff;
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.step-number {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #409eff;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.step-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  flex: 1;
+}
+
+.step-detail {
+  font-size: 12px;
+  color: #606266;
+}
+
+.step-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.step-label {
+  color: #909399;
+  flex-shrink: 0;
+}
+
+.step-value {
+  color: #606266;
+}
+
+.step-value.result {
+  font-weight: 500;
+  color: #303133;
+}
+
+.no-steps, .no-teams {
+  text-align: center;
+  padding: 16px;
+  color: #909399;
+  font-size: 13px;
+}
+
+/* 偏好球队 */
+.preferred-teams {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preferred-team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: white;
+  border-radius: 6px;
+}
+
+.team-rank {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f59e0b;
+  width: 24px;
+}
+
+.preferred-team .team-name {
+  flex: 1;
+  font-size: 13px;
+  color: #303133;
+}
+
+.preference-reasoning {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.5;
+  padding: 8px;
+  background: white;
+  border-radius: 6px;
+}
+
+/* 合同期望 */
+.contract-expectations {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.expectation-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  background: white;
+  border-radius: 6px;
+}
+
+.expectation-item .label {
+  font-size: 13px;
+  color: #606266;
+}
+
+.expectation-item .value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #409eff;
+}
+
+.player-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.player-avatar.large {
+  width: 64px;
+  height: 64px;
+  font-size: 14px;
+}
+
+.player-avatar.top { background: linear-gradient(135deg, #ef4444, #dc2626); }
+.player-avatar.jungle { background: linear-gradient(135deg, #22c55e, #16a34a); }
+.player-avatar.mid { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.player-avatar.adc { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.player-avatar.support { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+.player-avatar.unknown { background: linear-gradient(135deg, #9ca3af, #6b7280); }
+
+.player-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.player-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.player-name.large {
+  font-size: 18px;
+}
+
+.player-meta {
+  font-size: 13px;
+  color: #909399;
+  margin-top: 2px;
+}
+
+.departure-reason {
+  flex: 2;
+}
+
+.reason-text {
+  font-size: 13px;
+  color: #606266;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.expected-salary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.salary-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #409eff;
+}
+
+.salary-label {
+  font-size: 12px;
+  color: #909399;
+}
+
+/* 表格样式 */
+.player-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.position-tag {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+}
+
+.position-tag.top { background: #ef4444; }
+.position-tag.jungle { background: #22c55e; }
+.position-tag.mid { background: #3b82f6; }
+.position-tag.adc { background: #f59e0b; }
+.position-tag.support { background: #8b5cf6; }
+.position-tag.unknown { background: #9ca3af; }
+
+.ability-legendary { color: #ef4444; font-weight: 700; }
+.ability-elite { color: #f59e0b; font-weight: 700; }
+.ability-good { color: #3b82f6; font-weight: 600; }
+.ability-normal { color: #22c55e; }
+
+.roster-warning { color: #f56c6c; font-weight: 600; }
+.text-muted { color: #c0c4cc; }
+
+/* 事件列表 */
+.events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.event-card {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: white;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  border-left: 4px solid #409eff;
+}
+
+.event-card.event-signing { border-left-color: #67c23a; }
+.event-card.event-transfer { border-left-color: #f59e0b; }
+.event-card.event-accepted { border-left-color: #67c23a; }
+.event-card.event-rejected { border-left-color: #f56c6c; }
+
+.event-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+  background: #409eff;
+}
+
+.event-icon.event-signing { background: #67c23a; }
+.event-icon.event-transfer { background: #f59e0b; }
+.event-icon.event-accepted { background: #67c23a; }
+.event-icon.event-rejected { background: #f56c6c; }
+
+.event-content {
+  flex: 1;
+}
+
+.event-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 4px;
+}
+
+.event-desc {
+  font-size: 13px;
+  color: #606266;
+  margin-bottom: 8px;
+}
+
+.event-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #909399;
+}
+
+/* 谈判详情弹窗 */
+.negotiation-detail {
+  padding: 0 8px;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #ebeef5;
+  margin-bottom: 20px;
+}
+
+.offers-section h4,
+.timeline-section h4 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0 0 16px 0;
+}
+
+.team-offer-history {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.team-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.team-header .team-name {
+  font-weight: 600;
+  color: #303133;
+}
+
+.offer-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.offer-item:last-child {
+  border-bottom: none;
+}
+
+.offer-round {
+  font-size: 12px;
+  color: #909399;
+  width: 50px;
+}
+
+.offer-content {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.offer-content .salary {
+  font-weight: 600;
+  color: #409eff;
+}
+
+.offer-content .years {
+  color: #606266;
+}
+
+.timeline-section {
+  margin-top: 20px;
+}
+
+.timeline-content .timeline-title {
+  font-size: 14px;
+  color: #303133;
+}
+
+.timeline-content .timeline-details {
+  font-size: 13px;
+  color: #606266;
+  margin-top: 4px;
+}
+
+/* 球队策略详情 */
+.team-strategy-detail {
+  padding: 0;
+}
+
+.strategy-header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.strategy-header .team-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.strategy-header .team-info h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #303133;
+  margin: 0;
+}
+
+.strategy-description {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.6;
+}
+
+.strategy-content {
+  margin-bottom: 24px;
+}
+
+.strategy-section {
+  background: #f5f7fa;
+  border-radius: 10px;
+  padding: 16px;
+  height: 100%;
+}
+
+.strategy-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0 0 16px 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.targets-list,
+.sell-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.target-item,
+.sell-item {
+  background: white;
+  border-radius: 8px;
+  padding: 12px;
+  border-left: 3px solid #409eff;
+}
+
+.sell-item {
+  border-left-color: #f56c6c;
+}
+
+.target-main,
+.sell-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.target-main .player-name,
+.sell-main .player-name {
+  font-weight: 600;
+  color: #303133;
+  flex: 1;
+}
+
+.target-main .ability,
+.sell-main .ability {
+  font-size: 13px;
+  color: #909399;
+}
+
+.target-details,
+.sell-details {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.target-details .budget,
+.sell-details .price {
+  font-size: 13px;
+  color: #409eff;
+  font-weight: 500;
+}
+
+.target-reasoning,
+.sell-reasoning {
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.5;
+  padding-top: 8px;
+  border-top: 1px dashed #ebeef5;
+}
+
+.empty-list {
+  text-align: center;
+  padding: 24px;
+  color: #909399;
+  font-size: 13px;
+}
+
+/* 预算分配 */
+.budget-section {
+  background: #f5f7fa;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.budget-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0 0 16px 0;
+}
+
+.budget-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.budget-item {
+  background: white;
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.budget-item .label {
+  display: block;
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 4px;
+}
+
+.budget-item .value {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  color: #409eff;
+}
+
+/* 球队分析步骤 */
+.team-analysis {
+  background: #f5f7fa;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.team-analysis h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0 0 16px 0;
+}
+
+/* 策略说明 */
+.reasoning-section {
+  background: linear-gradient(135deg, #f0f7ff, #f5f7fa);
+  border-radius: 10px;
+  padding: 16px;
+  border-left: 4px solid #409eff;
+}
+
+.reasoning-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #409eff;
+  margin: 0 0 12px 0;
+}
+
+.reasoning-text {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.8;
+}
+
+/* ==================== 续约结果 Tab 样式 ==================== */
+
+.renewals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.renewal-card {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #ebeef5;
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.renewal-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.renewal-card.success {
+  border-left: 4px solid #67c23a;
+}
+
+.renewal-card.team-reject {
+  border-left: 4px solid #e6a23c;
+}
+
+.renewal-card.player-reject {
+  border-left: 4px solid #f56c6c;
+}
+
+.renewal-card.expanded {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+}
+
+.renewal-card-main {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  cursor: pointer;
+  gap: 16px;
+}
+
+.renewal-card-main:hover {
+  background: #fafafa;
+}
+
+.renewal-status-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.renewal-status-icon.success {
+  background: linear-gradient(135deg, #67c23a, #85ce61);
+  color: white;
+}
+
+.renewal-status-icon.team-reject {
+  background: linear-gradient(135deg, #e6a23c, #f0b050);
+  color: white;
+}
+
+.renewal-status-icon.player-reject {
+  background: linear-gradient(135deg, #f56c6c, #f78989);
+  color: white;
+}
+
+.renewal-player-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.renewal-player-info .renewal-player-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.renewal-player-info .renewal-team-name {
+  font-size: 13px;
+  color: #606266;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.renewal-player-info .name-icon {
+  font-size: 14px;
+}
+
+.renewal-player-info .name-icon.player {
+  color: #409eff;
+}
+
+.renewal-player-info .name-icon.team {
+  color: #e6a23c;
+}
+
+.renewal-result-tag {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.renewal-result-tag.success {
+  background: #f0f9eb;
+  color: #67c23a;
+}
+
+.renewal-result-tag.team-reject {
+  background: #fdf6ec;
+  color: #e6a23c;
+}
+
+.renewal-result-tag.player-reject {
+  background: #fef0f0;
+  color: #f56c6c;
+}
+
+.renewal-contract-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #606266;
+  font-size: 13px;
+}
+
+.renewal-contract-preview .contract-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.renewal-contract-preview .value {
+  font-weight: 600;
+  color: #409eff;
+}
+
+.renewal-expand-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #f5f7fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #909399;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.renewal-expand-btn.expanded {
+  background: #409eff;
+  color: white;
+  transform: rotate(90deg);
+}
+
+/* 续约详情展开区域 */
+.renewal-detail {
+  padding: 20px;
+  background: linear-gradient(to bottom, #f8f9fc, #ffffff);
+  border-top: 1px solid #ebeef5;
+}
+
+/* 详情顶部信息栏 */
+.detail-header {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.contract-info-card {
+  flex: 1;
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid #e4e7ed;
+}
+
+.contract-info-card .info-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #606266;
+  margin-bottom: 12px;
+}
+
+.contract-info-card .info-content {
+  display: flex;
+  gap: 24px;
+}
+
+.contract-info-card .info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.contract-info-card .info-item .label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.contract-info-card .info-item .value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #303133;
+}
+
+.contract-info-card .info-item .value.salary {
+  color: #409eff;
+}
+
+.result-status-card {
+  width: 120px;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.result-status-card.success {
+  background: linear-gradient(135deg, #f0f9eb, #e1f3d8);
+  border: 1px solid #b3e19d;
+}
+
+.result-status-card.team-reject {
+  background: linear-gradient(135deg, #fdf6ec, #faecd8);
+  border: 1px solid #f3d19e;
+}
+
+.result-status-card.player-reject {
+  background: linear-gradient(135deg, #fef0f0, #fde2e2);
+  border: 1px solid #fab6b6;
+}
+
+.result-status-card .status-icon {
+  font-size: 28px;
+}
+
+.result-status-card.success .status-icon { color: #67c23a; }
+.result-status-card.team-reject .status-icon { color: #e6a23c; }
+.result-status-card.player-reject .status-icon { color: #f56c6c; }
+
+.result-status-card .status-text {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.result-status-card.success .status-text { color: #67c23a; }
+.result-status-card.team-reject .status-text { color: #e6a23c; }
+.result-status-card.player-reject .status-text { color: #f56c6c; }
+
+/* 摘要卡片 */
+.summary-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: linear-gradient(135deg, #ecf5ff, #f5f7fa);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border-left: 4px solid #409eff;
+}
+
+.summary-card .summary-icon {
+  color: #409eff;
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.summary-card .summary-text {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.6;
+}
+
+/* 拒绝原因卡片 */
+.rejection-card {
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.rejection-card.team-reject {
+  background: linear-gradient(135deg, #fdf6ec, #fff8e6);
+  border-left: 4px solid #e6a23c;
+}
+
+.rejection-card.player-reject {
+  background: linear-gradient(135deg, #fef0f0, #fff5f5);
+  border-left: 4px solid #f56c6c;
+}
+
+.rejection-card .rejection-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.rejection-card.team-reject .rejection-header { color: #e6a23c; }
+.rejection-card.player-reject .rejection-header { color: #f56c6c; }
+
+.rejection-card .rejection-content {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.6;
+  padding-left: 28px;
+}
+
+/* AI 分析部分 */
+.analysis-section {
+  margin-top: 8px;
+}
+
+.analysis-section .section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 16px;
+}
+
+.analysis-section .section-title .el-icon {
+  color: #409eff;
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.analysis-card {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e4e7ed;
+  overflow: hidden;
+}
+
+.analysis-card .card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  background: #f5f7fa;
+  border-bottom: 1px solid #e4e7ed;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.analysis-card.team-side .card-header .el-icon { color: #e6a23c; }
+.analysis-card.player-side .card-header .el-icon { color: #409eff; }
+
+.analysis-card .card-header span {
+  flex: 1;
+}
+
+.steps-container {
+  padding: 12px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.step-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  background: #fafbfc;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.step-item:last-child {
+  margin-bottom: 0;
+}
+
+.step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #409eff;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.analysis-card.team-side .step-num { background: #e6a23c; }
+.analysis-card.player-side .step-num { background: #409eff; }
+
+.step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.step-content .step-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 6px;
+}
+
+.step-content .step-data {
+  font-size: 12px;
+  color: #909399;
+  background: white;
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  border: 1px solid #ebeef5;
+}
+
+.step-content .step-result {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.step-content .step-tag {
+  margin-top: 4px;
+}
+
+.no-data {
+  padding: 32px;
+  text-align: center;
+  color: #909399;
+  font-size: 13px;
+}
+
+/* 响应式 */
+@media (max-width: 900px) {
+  .analysis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-header {
+    flex-direction: column;
+  }
+
+  .result-status-card {
+    width: 100%;
+    flex-direction: row;
+    justify-content: center;
+  }
+}
+
+/* 空状态 */
+.renewals-empty {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.renewals-empty .el-icon {
+  font-size: 48px;
+  color: #c0c4cc;
+  margin-bottom: 16px;
+}
+
+.renewals-empty p {
+  color: #909399;
+  font-size: 14px;
+  margin: 0;
+}
+
+/* 响应式适配 */
+@media (max-width: 768px) {
+  .renewal-analysis-row {
+    grid-template-columns: 1fr;
+  }
+
+  .renewal-card-main {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .renewal-contract-preview {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+/* ==================== 思考过程相关样式 ==================== */
+
+/* 可点击的事件卡片 */
+.event-card.clickable {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.event-card.clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  border-color: #409eff;
+}
+
+/* 思考类事件特殊样式 */
+.event-card.event-thinking {
+  border-left-color: #8b5cf6;
+  background: linear-gradient(to right, #f5f3ff, white);
+}
+
+.event-icon.event-thinking {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+}
+
+.thinking-tag {
+  margin-left: 8px;
+  font-size: 11px;
+}
+
+.event-desc.truncated {
+  max-height: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* 思考弹窗样式 */
+.thinking-dialog :deep(.el-dialog__body) {
+  padding: 16px 24px 24px;
+}
+
+.thinking-content {
+  padding: 0;
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.thinking-round {
+  font-size: 13px;
+  color: #909399;
+}
+
+.thinking-info {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.thinking-info .info-item {
+  display: flex;
+  gap: 8px;
+}
+
+.thinking-info .label {
+  color: #909399;
+  font-size: 13px;
+}
+
+.thinking-info .value {
+  color: #303133;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.thinking-body {
+  background: linear-gradient(135deg, #f0f7ff, #f5f7fa);
+  border-radius: 12px;
+  padding: 16px;
+  border-left: 4px solid #409eff;
+}
+
+.thinking-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 12px;
+}
+
+.thinking-text {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  font-family: inherit;
+  background: white;
+  padding: 16px;
+  border-radius: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* 战队思考和选手思考的不同主题 */
+.thinking-body.team-thinking {
+  border-left-color: #e6a23c;
+  background: linear-gradient(135deg, #fdf6ec, #fef8f0);
+}
+
+.thinking-body.player-thinking {
+  border-left-color: #409eff;
+  background: linear-gradient(135deg, #ecf5ff, #f0f7ff);
+}
+</style>

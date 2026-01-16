@@ -25,12 +25,6 @@
           <span>当前阶段：{{ currentPhaseDisplay }}</span>
         </div>
       </div>
-      <div class="season-actions">
-        <el-button type="primary" @click="handleAdvancePhase" :loading="isLoading">
-          <el-icon><Right /></el-icon>
-          推进阶段
-        </el-button>
-      </div>
     </div>
 
     <!-- 欢迎区域 -->
@@ -144,9 +138,8 @@
 import { onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { ElMessage } from 'element-plus'
 import {
-  Trophy, Medal, Sort, Stamp, Clock, Right,
+  Trophy, Medal, Sort, Stamp, Clock,
   FolderRemove, Setting
 } from '@element-plus/icons-vue'
 import { useGameStore } from '@/stores/useGameStore'
@@ -160,8 +153,7 @@ const teamStore = useTeamStoreTauri()
 const {
   hasSaveLoaded,
   currentSeason,
-  currentPhaseDisplay,
-  isLoading
+  currentPhaseDisplay
 } = storeToRefs(gameStore)
 
 const { regions } = storeToRefs(teamStore)
@@ -189,15 +181,6 @@ const displayRegions = computed(() => {
 // 方法
 const goToRegion = (regionCode: string) => {
   router.push(`/teams?region=${regionCode.toLowerCase()}`)
-}
-
-const handleAdvancePhase = async () => {
-  try {
-    await gameStore.advancePhase()
-    ElMessage.success(`已推进到: ${currentPhaseDisplay.value}`)
-  } catch (e) {
-    ElMessage.error('推进阶段失败')
-  }
 }
 
 const getRegionName = (code: string) => {
@@ -275,7 +258,7 @@ onMounted(async () => {
 /* 赛季状态栏 */
 .season-status-bar {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   padding: 16px 24px;
   background: rgba(255, 255, 255, 0.95);
@@ -327,12 +310,6 @@ onMounted(async () => {
 
 .current-phase .el-icon {
   font-size: 16px;
-}
-
-.season-actions {
-  display: flex;
-  align-items: center;
-  gap: 16px;
 }
 
 /* 基础布局 */

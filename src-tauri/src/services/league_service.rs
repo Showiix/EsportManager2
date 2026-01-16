@@ -176,8 +176,9 @@ impl LeagueService {
         standings
     }
 
-    /// 生成季后赛对阵 (双败BO5)
+    /// 生成季后赛初始对阵 (双败BO5)
     /// 前8名进入季后赛：1-4名进胜者组，5-8名进败者组
+    /// 只生成第一轮的4场比赛，后续比赛通过 advance_playoff_bracket 动态生成
     pub fn generate_playoff_bracket(
         &self,
         tournament_id: u64,
@@ -228,65 +229,181 @@ impl LeagueService {
             top8[6].team_id,
         ));
 
-        // 胜者组决赛：胜者组R1胜者对决
-        matches.push(self.create_playoff_match(
-            &mut match_id,
-            tournament_id,
-            "WINNERS_FINAL",
-            1,
-            0, // 待定
-            0, // 待定
-        ));
-
-        // 败者组第二轮：败者组R1胜者 vs 胜者组R1败者
-        matches.push(self.create_playoff_match(
-            &mut match_id,
-            tournament_id,
-            "LOSERS_R2",
-            1,
-            0, // 待定
-            0, // 待定
-        ));
-        matches.push(self.create_playoff_match(
-            &mut match_id,
-            tournament_id,
-            "LOSERS_R2",
-            2,
-            0, // 待定
-            0, // 待定
-        ));
-
-        // 败者组第三轮：败者组R2胜者对决
-        matches.push(self.create_playoff_match(
-            &mut match_id,
-            tournament_id,
-            "LOSERS_R3",
-            1,
-            0, // 待定
-            0, // 待定
-        ));
-
-        // 败者组决赛：胜者组决赛败者 vs 败者组R3胜者
-        matches.push(self.create_playoff_match(
-            &mut match_id,
-            tournament_id,
-            "LOSERS_FINAL",
-            1,
-            0, // 待定
-            0, // 待定
-        ));
-
-        // 总决赛：胜者组冠军 vs 败者组决赛胜者
-        matches.push(self.create_playoff_match(
-            &mut match_id,
-            tournament_id,
-            "GRAND_FINAL",
-            1,
-            0, // 待定
-            0, // 待定
-        ));
+        // 后续比赛通过 advance_playoff_bracket 动态生成
 
         matches
+    }
+
+    /// 根据已完成的比赛推进季后赛对阵
+    /// 返回新生成的比赛列表
+    pub fn advance_playoff_bracket(
+        &self,
+        tournament_id: u64,
+        completed_matches: &[Match],
+    ) -> Vec<Match> {
+        let mut new_matches = Vec::new();
+        let mut match_id = 2000u64; // 后续比赛ID从2000开始
+
+        // 获取各阶段的已完成比赛
+        let winners_r1: Vec<_> = completed_matches
+            .iter()
+            .filter(|m| m.stage == "WINNERS_R1" && m.winner_id.is_some())
+            .collect();
+        let losers_r1: Vec<_> = completed_matches
+            .iter()
+            .filter(|m| m.stage == "LOSERS_R1" && m.winner_id.is_some())
+            .collect();
+        let winners_final: Vec<_> = completed_matches
+            .iter()
+            .filter(|m| m.stage == "WINNERS_FINAL" && m.winner_id.is_some())
+            .collect();
+        let losers_r2: Vec<_> = completed_matches
+            .iter()
+            .filter(|m| m.stage == "LOSERS_R2" && m.winner_id.is_some())
+            .collect();
+        let losers_r3: Vec<_> = completed_matches
+            .iter()
+            .filter(|m| m.stage == "LOSERS_R3" && m.winner_id.is_some())
+            .collect();
+        let losers_final: Vec<_> = completed_matches
+            .iter()
+            .filter(|m| m.stage == "LOSERS_FINAL" && m.winner_id.is_some())
+            .collect();
+
+        // 检查是否已存在各阶段比赛
+        let has_winners_final = completed_matches.iter().any(|m| m.stage == "WINNERS_FINAL");
+        let has_losers_r2 = completed_matches.iter().any(|m| m.stage == "LOSERS_R2");
+        let has_losers_r3 = completed_matches.iter().any(|m| m.stage == "LOSERS_R3");
+        let has_losers_final = completed_matches.iter().any(|m| m.stage == "LOSERS_FINAL");
+        let has_grand_final = completed_matches.iter().any(|m| m.stage == "GRAND_FINAL");
+
+        println!("[advance_playoff_bracket] winners_r1={}, losers_r1={}", winners_r1.len(), losers_r1.len());
+        println!("[advance_playoff_bracket] has_winners_final={}, has_losers_r2={}", has_winners_final, has_losers_r2);
+
+        // 1. 胜者组R1完成 -> 生成胜者组决赛
+        if winners_r1.len() == 2 && !has_winners_final {
+            println!("[advance_playoff_bracket] 条件满足: 生成WINNERS_FINAL");
+            let winner1 = winners_r1.iter().find(|m| m.match_order == Some(1)).unwrap();
+            let winner2 = winners_r1.iter().find(|m| m.match_order == Some(2)).unwrap();
+
+            new_matches.push(self.create_playoff_match(
+                &mut match_id,
+                tournament_id,
+                "WINNERS_FINAL",
+                1,
+                winner1.winner_id.unwrap(),
+                winner2.winner_id.unwrap(),
+            ));
+        }
+
+        // 2. 胜者组R1 + 败者组R1完成 -> 生成败者组R2
+        if winners_r1.len() == 2 && losers_r1.len() == 2 && !has_losers_r2 {
+            // 败者组R2规则：败者组R1胜者 vs 胜者组R1败者
+            let winners_r1_m1 = winners_r1.iter().find(|m| m.match_order == Some(1)).unwrap();
+            let winners_r1_m2 = winners_r1.iter().find(|m| m.match_order == Some(2)).unwrap();
+            let losers_r1_m1 = losers_r1.iter().find(|m| m.match_order == Some(1)).unwrap();
+            let losers_r1_m2 = losers_r1.iter().find(|m| m.match_order == Some(2)).unwrap();
+
+            // 获取胜者组R1的败者
+            let winners_r1_loser1 = if winners_r1_m1.winner_id.unwrap() == winners_r1_m1.home_team_id {
+                winners_r1_m1.away_team_id
+            } else {
+                winners_r1_m1.home_team_id
+            };
+            let winners_r1_loser2 = if winners_r1_m2.winner_id.unwrap() == winners_r1_m2.home_team_id {
+                winners_r1_m2.away_team_id
+            } else {
+                winners_r1_m2.home_team_id
+            };
+
+            // 败者组R2-1：败者组R1-1胜者 vs 胜者组R1-2败者
+            new_matches.push(self.create_playoff_match(
+                &mut match_id,
+                tournament_id,
+                "LOSERS_R2",
+                1,
+                losers_r1_m1.winner_id.unwrap(),
+                winners_r1_loser2,
+            ));
+
+            // 败者组R2-2：败者组R1-2胜者 vs 胜者组R1-1败者
+            new_matches.push(self.create_playoff_match(
+                &mut match_id,
+                tournament_id,
+                "LOSERS_R2",
+                2,
+                losers_r1_m2.winner_id.unwrap(),
+                winners_r1_loser1,
+            ));
+        }
+
+        // 3. 败者组R2完成 -> 生成败者组R3
+        if losers_r2.len() == 2 && !has_losers_r3 {
+            let loser_r2_m1 = losers_r2.iter().find(|m| m.match_order == Some(1)).unwrap();
+            let loser_r2_m2 = losers_r2.iter().find(|m| m.match_order == Some(2)).unwrap();
+
+            new_matches.push(self.create_playoff_match(
+                &mut match_id,
+                tournament_id,
+                "LOSERS_R3",
+                1,
+                loser_r2_m1.winner_id.unwrap(),
+                loser_r2_m2.winner_id.unwrap(),
+            ));
+        }
+
+        // 4. 胜者组决赛 + 败者组R3完成 -> 生成败者组决赛
+        if winners_final.len() == 1 && losers_r3.len() == 1 && !has_losers_final {
+            let wf = winners_final[0];
+            let lr3 = losers_r3[0];
+
+            // 胜者组决赛败者
+            let wf_loser = if wf.winner_id.unwrap() == wf.home_team_id {
+                wf.away_team_id
+            } else {
+                wf.home_team_id
+            };
+
+            new_matches.push(self.create_playoff_match(
+                &mut match_id,
+                tournament_id,
+                "LOSERS_FINAL",
+                1,
+                wf_loser,
+                lr3.winner_id.unwrap(),
+            ));
+        }
+
+        // 5. 胜者组决赛 + 败者组决赛完成 -> 生成总决赛
+        if winners_final.len() == 1 && losers_final.len() == 1 && !has_grand_final {
+            let wf = winners_final[0];
+            let lf = losers_final[0];
+
+            new_matches.push(self.create_playoff_match(
+                &mut match_id,
+                tournament_id,
+                "GRAND_FINAL",
+                1,
+                wf.winner_id.unwrap(),
+                lf.winner_id.unwrap(),
+            ));
+        }
+
+        new_matches
+    }
+
+    /// 获取季后赛阶段顺序（用于排序）
+    pub fn get_playoff_stage_order(stage: &str) -> u32 {
+        match stage {
+            "WINNERS_R1" => 1,
+            "LOSERS_R1" => 2,
+            "WINNERS_FINAL" => 3,
+            "LOSERS_R2" => 4,
+            "LOSERS_R3" => 5,
+            "LOSERS_FINAL" => 6,
+            "GRAND_FINAL" => 7,
+            _ => 100,
+        }
     }
 
     fn create_playoff_match(

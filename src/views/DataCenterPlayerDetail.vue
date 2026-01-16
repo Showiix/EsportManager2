@@ -78,72 +78,156 @@
       </el-card>
     </div>
 
-    <!-- 发挥波动图 -->
+    <!-- 选手状态卡片 -->
+    <el-card class="status-card" v-if="playerFullDetail">
+      <template #header>
+        <div class="status-header">
+          <span class="status-title">
+            <el-icon><User /></el-icon>
+            选手状态
+          </span>
+        </div>
+      </template>
+
+      <div class="status-content">
+        <!-- 满意度 -->
+        <div class="status-item">
+          <div class="status-label">
+            <span class="label-text">满意度</span>
+            <span class="status-value" :class="getSatisfactionClass(playerFullDetail.player.satisfaction)">
+              {{ playerFullDetail.player.satisfaction }}
+            </span>
+          </div>
+          <el-progress
+            :percentage="playerFullDetail.player.satisfaction"
+            :stroke-width="8"
+            :color="getSatisfactionColor(playerFullDetail.player.satisfaction)"
+            :show-text="false"
+          />
+          <div class="status-desc">{{ getSatisfactionDesc(playerFullDetail.player.satisfaction) }}</div>
+        </div>
+
+        <!-- 忠诚度 -->
+        <div class="status-item">
+          <div class="status-label">
+            <span class="label-text">忠诚度</span>
+            <span class="status-value">{{ playerFullDetail.player.loyalty }}</span>
+            <el-tag
+              size="small"
+              :type="getLoyaltyTagType(playerFullDetail.player.loyalty)"
+              effect="plain"
+            >
+              {{ getLoyaltyTypeName(playerFullDetail.player.loyalty) }}
+            </el-tag>
+          </div>
+          <el-progress
+            :percentage="playerFullDetail.player.loyalty"
+            :stroke-width="8"
+            :color="getLoyaltyColor(playerFullDetail.player.loyalty)"
+            :show-text="false"
+          />
+          <div class="status-desc">{{ getLoyaltyDesc(playerFullDetail.player.loyalty) }}</div>
+        </div>
+
+        <!-- 离队意愿警告 -->
+        <el-alert
+          v-if="playerFullDetail.player.satisfaction < 40"
+          type="warning"
+          :title="playerFullDetail.player.satisfaction < 30 ? '该选手可能想要离队' : '该选手满意度较低'"
+          :description="'满意度过低可能导致选手在转会窗口主动申请离队'"
+          :closable="false"
+          show-icon
+          class="departure-alert"
+        />
+      </div>
+    </el-card>
+
+    <!-- 影响力走势图 -->
     <el-card class="chart-card" v-if="playerStats">
       <template #header>
         <div class="card-header">
-          <span class="card-title">发挥波动</span>
-          <div class="chart-legend">
+          <span class="card-title">影响力走势</span>
+          <div class="chart-legend" v-if="performanceData.length > 0">
             <span class="legend-item">
               <span class="legend-dot avg"></span>
-              平均线 {{ (playerStats.avgImpact || 0).toFixed(1) }}
+              平均影响力 {{ (playerStats.avgImpact || 0).toFixed(1) }}
             </span>
           </div>
         </div>
       </template>
       <div class="chart-container">
-        <v-chart class="chart" :option="chartOption" autoresize />
+        <v-chart v-if="performanceData.length > 0" class="chart" :option="chartOption" autoresize />
+        <el-empty v-else description="暂无比赛数据" :image-size="100" />
       </div>
     </el-card>
 
-    <!-- 发挥区间 -->
-    <el-card class="range-card" v-if="playerStats">
-      <template #header>
-        <span class="card-title">发挥区间</span>
-      </template>
-      <div class="range-stats">
-        <div class="range-item best">
-          <div class="range-label">最高发挥</div>
-          <div class="range-value">{{ (playerStats.bestPerformance || 0).toFixed(1) }}</div>
+    <!-- 数据分析图表 -->
+    <div class="charts-row" v-if="playerStats && performanceData.length > 0">
+      <!-- 影响力分布 -->
+      <el-card class="distribution-card">
+        <template #header>
+          <span class="card-title">影响力分布</span>
+        </template>
+        <div class="chart-container small">
+          <v-chart class="chart" :option="distributionChartOption" autoresize />
         </div>
-        <div class="range-item worst">
-          <div class="range-label">最低发挥</div>
-          <div class="range-value">{{ (playerStats.worstPerformance || 0).toFixed(1) }}</div>
-        </div>
-        <div class="range-item variance">
-          <div class="range-label">波动范围</div>
-          <div class="range-value">
-            {{ ((playerStats.bestPerformance || 0) - (playerStats.worstPerformance || 0)).toFixed(1) }}
-          </div>
-        </div>
-      </div>
+      </el-card>
 
-      <!-- 发挥区间可视化 -->
-      <div class="range-visualization">
-        <div class="range-bar">
-          <div
-            class="range-fill"
-            :style="{
-              left: `${getBarPosition(playerStats.worstPerformance || 0)}%`,
-              width: `${getBarWidth(playerStats.worstPerformance || 0, playerStats.bestPerformance || 0)}%`
-            }"
-          ></div>
-          <div
-            class="avg-marker"
-            :style="{ left: `${getBarPosition(playerStats.avgImpact || 0)}%` }"
-          >
-            <span class="avg-tooltip">平均</span>
+      <!-- 稳定性仪表盘 -->
+      <el-card class="gauge-card">
+        <template #header>
+          <span class="card-title">稳定性评分</span>
+        </template>
+        <div class="chart-container small">
+          <v-chart class="chart" :option="gaugeChartOption" autoresize />
+        </div>
+      </el-card>
+
+      <!-- 表现统计 -->
+      <el-card class="summary-card">
+        <template #header>
+          <span class="card-title">表现统计</span>
+        </template>
+        <div class="summary-stats">
+          <div class="summary-item">
+            <div class="summary-icon positive">
+              <el-icon><Top /></el-icon>
+            </div>
+            <div class="summary-content">
+              <div class="summary-value">{{ positiveGames }}</div>
+              <div class="summary-label">正向表现</div>
+            </div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-icon negative">
+              <el-icon><Bottom /></el-icon>
+            </div>
+            <div class="summary-content">
+              <div class="summary-value">{{ negativeGames }}</div>
+              <div class="summary-label">负向表现</div>
+            </div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-icon highlight">
+              <el-icon><StarFilled /></el-icon>
+            </div>
+            <div class="summary-content">
+              <div class="summary-value">{{ highlightGames }}</div>
+              <div class="summary-label">亮眼表现 (10+)</div>
+            </div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-icon rate">
+              <el-icon><Promotion /></el-icon>
+            </div>
+            <div class="summary-content">
+              <div class="summary-value">{{ positiveRate }}%</div>
+              <div class="summary-label">正向率</div>
+            </div>
           </div>
         </div>
-        <div class="range-labels">
-          <span>60</span>
-          <span>70</span>
-          <span>80</span>
-          <span>90</span>
-          <span>100</span>
-        </div>
-      </div>
-    </el-card>
+      </el-card>
+    </div>
 
     <!-- 无数据提示 -->
     <el-empty v-if="!playerStats" description="暂无该选手数据" />
@@ -153,30 +237,36 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, VideoCamera, TrendCharts, Aim, Star } from '@element-plus/icons-vue'
+import { ArrowLeft, VideoCamera, TrendCharts, Aim, Star, Top, Bottom, StarFilled, Promotion, User } from '@element-plus/icons-vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart } from 'echarts/charts'
+import { LineChart, BarChart, GaugeChart } from 'echarts/charts'
 import {
   TitleComponent,
   TooltipComponent,
   GridComponent,
-  MarkLineComponent
+  MarkLineComponent,
+  LegendComponent
 } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
-import type { PlayerPosition } from '@/types/player'
+import { teamApi, statsApi, playerApi } from '@/api/tauri'
+import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
+import type { PlayerFullDetail } from '@/api/tauri'
 import { POSITION_NAMES } from '@/types/player'
 
 // 注册 ECharts 组件
 use([
   CanvasRenderer,
   LineChart,
+  BarChart,
+  GaugeChart,
   TitleComponent,
   TooltipComponent,
   GridComponent,
-  MarkLineComponent
+  MarkLineComponent,
+  LegendComponent
 ])
 
 const route = useRoute()
@@ -184,10 +274,17 @@ const router = useRouter()
 const playerStore = usePlayerStore()
 const gameStore = useGameStore()
 
+// 本地战队映射表
+const teamsMap = ref<Map<number, string>>(new Map())
+
 // 状态
 const selectedSeason = ref('S1')
 const playerId = computed(() => route.params.playerId as string)
 const playerRankValue = ref<number | null>(null)
+const playerStatsData = ref<PlayerSeasonStats | null>(null)
+const loading = ref(false)
+const impactHistory = ref<number[]>([])  // 真实影响力历史数据
+const playerFullDetail = ref<PlayerFullDetail | null>(null)  // 选手完整详情（含满意度/忠诚度）
 
 // 赛季列表
 const seasons = computed(() => {
@@ -199,53 +296,69 @@ const seasons = computed(() => {
   return list
 })
 
-// 获取选手统计数据
-const playerStats = computed(() => {
-  void playerStore.updateTrigger
-  return playerStore.getPlayerSeasonStats(playerId.value, selectedSeason.value)
-})
+// 获取选手统计数据（从数据库获取）
+const playerStats = computed(() => playerStatsData.value)
 
-// 异步获取选手排名
-const fetchPlayerRank = async () => {
+// 异步获取选手数据
+const fetchPlayerStats = async () => {
+  loading.value = true
+  const playerIdNum = Number(playerId.value)
+
   try {
-    const rankings = await playerStore.getSeasonImpactRanking(selectedSeason.value, 100)
-    const index = rankings.findIndex(r => r.playerId === playerId.value)
-    playerRankValue.value = index >= 0 ? index + 1 : null
+    // 从数据库获取排行榜数据，然后找到当前选手
+    const rankings = await playerStore.getSeasonImpactRanking(selectedSeason.value, 500)
+    const found = rankings.find(r => Number(r.playerId) === playerIdNum)
+    playerStatsData.value = found || null
+
+    // 同时更新排名
+    if (found) {
+      const index = rankings.findIndex(r => Number(r.playerId) === playerIdNum)
+      playerRankValue.value = index >= 0 ? index + 1 : null
+    } else {
+      playerRankValue.value = null
+    }
   } catch (error) {
-    console.error('获取排名失败:', error)
+    console.error('获取选手统计数据失败:', error)
+    playerStatsData.value = null
     playerRankValue.value = null
   }
+
+  // 单独获取影响力历史数据（不影响主数据显示）
+  try {
+    const seasonNum = Number(selectedSeason.value.replace('S', ''))
+    console.log('[DataCenterPlayerDetail] Fetching impact history for player:', playerIdNum, 'season:', seasonNum)
+    const history = await statsApi.getPlayerImpactHistory(playerIdNum, seasonNum)
+    console.log('[DataCenterPlayerDetail] Impact history result:', history)
+    impactHistory.value = history || []
+  } catch (error) {
+    console.error('[DataCenterPlayerDetail] 获取影响力历史数据失败:', error)
+    impactHistory.value = []
+  }
+
+  // 获取选手完整详情（含满意度/忠诚度）
+  try {
+    const detail = await playerApi.getPlayerFullDetail(playerIdNum)
+    playerFullDetail.value = detail
+    console.log('[DataCenterPlayerDetail] Player full detail:', detail)
+  } catch (error) {
+    console.error('[DataCenterPlayerDetail] 获取选手完整详情失败:', error)
+    playerFullDetail.value = null
+  }
+
+  loading.value = false
 }
 
 // 获取选手排名
 const playerRank = computed(() => playerRankValue.value)
 
-// 模拟发挥数据（因为当前没有存储每场比赛的具体数据）
+// 使用真实的影响力历史数据
 const performanceData = computed(() => {
-  if (!playerStats.value) return []
-
-  const count = playerStats.value.gamesPlayed || 0
-  const avg = playerStats.value.avgImpact || 0
-  const best = playerStats.value.bestPerformance || avg + 5
-  const worst = playerStats.value.worstPerformance || avg - 5
-
-  // 生成模拟的发挥波动数据
-  const data: number[] = []
-  for (let i = 0; i < count; i++) {
-    // 在最差和最好之间生成随机值，偏向平均值
-    const variance = (best - worst) / 2
-    const random = (Math.random() - 0.5) * 2 * variance
-    const value = avg + random
-    data.push(Math.round(value * 10) / 10)
+  // 如果有真实数据，直接使用
+  if (impactHistory.value && impactHistory.value.length > 0) {
+    return impactHistory.value.map(v => Math.round(v * 10) / 10)
   }
-
-  // 确保包含最高和最低值
-  if (data.length > 0) {
-    data[Math.floor(Math.random() * data.length)] = best
-    data[Math.floor(Math.random() * data.length)] = worst
-  }
-
-  return data
+  // 没有真实数据时返回空数组
+  return []
 })
 
 // ECharts 配置
@@ -258,7 +371,7 @@ const chartOption = computed(() => {
       trigger: 'axis',
       formatter: (params: any) => {
         const value = params[0]?.value || 0
-        return `第 ${params[0]?.dataIndex + 1} 场<br/>发挥值: <b>${value}</b>`
+        return `第 ${params[0]?.dataIndex + 1} 场<br/>影响力: <b>${value}</b>`
       }
     },
     grid: {
@@ -281,10 +394,11 @@ const chartOption = computed(() => {
     },
     yAxis: {
       type: 'value',
-      min: 60,
-      max: 100,
+      min: -30,
+      max: 30,
       axisLabel: {
-        color: '#9ca3af'
+        color: '#9ca3af',
+        formatter: (value: number) => value > 0 ? `+${value}` : `${value}`
       },
       splitLine: {
         lineStyle: { color: '#f3f4f6' }
@@ -292,7 +406,7 @@ const chartOption = computed(() => {
     },
     series: [
       {
-        name: '发挥值',
+        name: '影响力',
         type: 'line',
         smooth: true,
         symbol: 'circle',
@@ -332,7 +446,7 @@ const chartOption = computed(() => {
             {
               yAxis: avg,
               label: {
-                formatter: `平均 ${avg.toFixed(1)}`,
+                formatter: `平均 ${avg >= 0 ? '+' : ''}${avg.toFixed(1)}`,
                 position: 'end',
                 color: '#f59e0b'
               }
@@ -341,6 +455,121 @@ const chartOption = computed(() => {
         }
       }
     ]
+  }
+})
+
+// 表现统计
+const positiveGames = computed(() => performanceData.value.filter(v => v > 0).length)
+const negativeGames = computed(() => performanceData.value.filter(v => v < 0).length)
+const highlightGames = computed(() => performanceData.value.filter(v => v >= 10).length)
+const positiveRate = computed(() => {
+  const total = performanceData.value.length
+  if (total === 0) return 0
+  return Math.round((positiveGames.value / total) * 100)
+})
+
+// 影响力分布图配置
+const distributionChartOption = computed(() => {
+  const data = performanceData.value
+  // 分组统计：<-10, -10~-5, -5~0, 0~5, 5~10, >10
+  const ranges = [
+    { label: '<-10', min: -Infinity, max: -10, color: '#ef4444' },
+    { label: '-10~-5', min: -10, max: -5, color: '#f97316' },
+    { label: '-5~0', min: -5, max: 0, color: '#fbbf24' },
+    { label: '0~5', min: 0, max: 5, color: '#a3e635' },
+    { label: '5~10', min: 5, max: 10, color: '#22c55e' },
+    { label: '>10', min: 10, max: Infinity, color: '#10b981' }
+  ]
+
+  const counts = ranges.map(r => ({
+    name: r.label,
+    value: data.filter(v => v >= r.min && v < r.max).length,
+    itemStyle: { color: r.color }
+  }))
+
+  return {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params: any) => `${params[0].name}<br/>场次: <b>${params[0].value}</b>`
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '8%',
+      top: '8%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      data: ranges.map(r => r.label),
+      axisLabel: { color: '#6b7280', fontSize: 11 },
+      axisLine: { lineStyle: { color: '#e5e7eb' } }
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#9ca3af' },
+      splitLine: { lineStyle: { color: '#f3f4f6' } }
+    },
+    series: [{
+      type: 'bar',
+      data: counts,
+      barWidth: '60%',
+      itemStyle: { borderRadius: [4, 4, 0, 0] }
+    }]
+  }
+})
+
+// 稳定性仪表盘配置
+const gaugeChartOption = computed(() => {
+  const consistency = playerStats.value?.consistencyScore || 0
+  // 稳定性越高越好，范围 0-100
+  const normalizedValue = Math.min(100, Math.max(0, consistency))
+
+  return {
+    series: [{
+      type: 'gauge',
+      startAngle: 200,
+      endAngle: -20,
+      min: 0,
+      max: 100,
+      splitNumber: 5,
+      itemStyle: {
+        color: {
+          type: 'linear',
+          x: 0, y: 0, x2: 1, y2: 0,
+          colorStops: [
+            { offset: 0, color: '#ef4444' },
+            { offset: 0.5, color: '#f59e0b' },
+            { offset: 1, color: '#22c55e' }
+          ]
+        }
+      },
+      progress: {
+        show: true,
+        width: 20
+      },
+      pointer: { show: false },
+      axisLine: {
+        lineStyle: { width: 20, color: [[1, '#e5e7eb']] }
+      },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      axisLabel: { show: false },
+      title: {
+        offsetCenter: [0, '20%'],
+        fontSize: 14,
+        color: '#6b7280'
+      },
+      detail: {
+        offsetCenter: [0, '-10%'],
+        fontSize: 32,
+        fontWeight: 'bold',
+        color: normalizedValue >= 70 ? '#22c55e' : normalizedValue >= 40 ? '#f59e0b' : '#ef4444',
+        formatter: (value: number) => value.toFixed(0)
+      },
+      data: [{ value: normalizedValue, name: '稳定性' }]
+    }]
   }
 })
 
@@ -366,8 +595,8 @@ const getPositionTagType = (position: string) => {
 
 const getTeamName = (teamId: string | number | null): string => {
   if (!teamId) return '-'
-  const idStr = String(teamId)
-  return idStr.split('-')[0] || idStr
+  const numId = Number(teamId)
+  return teamsMap.value.get(numId) || String(teamId)
 }
 
 const formatImpact = (value: number | null | undefined): string => {
@@ -392,33 +621,95 @@ const getRankClass = (rank: number): string => {
   return ''
 }
 
-const getBarPosition = (value: number): number => {
-  // 60-100 映射到 0-100%
-  return ((value - 60) / 40) * 100
+// 满意度相关
+const getSatisfactionColor = (satisfaction: number): string => {
+  if (satisfaction >= 70) return '#22c55e'
+  if (satisfaction >= 50) return '#f59e0b'
+  if (satisfaction >= 30) return '#f97316'
+  return '#ef4444'
 }
 
-const getBarWidth = (min: number, max: number): number => {
-  return ((max - min) / 40) * 100
+const getSatisfactionClass = (satisfaction: number): string => {
+  if (satisfaction >= 70) return 'satisfaction-high'
+  if (satisfaction >= 50) return 'satisfaction-medium'
+  if (satisfaction >= 30) return 'satisfaction-low'
+  return 'satisfaction-danger'
+}
+
+const getSatisfactionDesc = (satisfaction: number): string => {
+  if (satisfaction >= 80) return '非常满意，对球队忠心耿耿'
+  if (satisfaction >= 60) return '比较满意，愿意继续效力'
+  if (satisfaction >= 40) return '一般，可能考虑其他机会'
+  if (satisfaction >= 30) return '不太满意，有离队倾向'
+  return '非常不满，很可能申请转会'
+}
+
+// 忠诚度相关
+const getLoyaltyColor = (loyalty: number): string => {
+  if (loyalty >= 80) return '#8b5cf6'
+  if (loyalty >= 60) return '#3b82f6'
+  if (loyalty >= 40) return '#22c55e'
+  if (loyalty >= 20) return '#f59e0b'
+  return '#ef4444'
+}
+
+const getLoyaltyTypeName = (loyalty: number): string => {
+  if (loyalty >= 80) return '忠心耿耿'
+  if (loyalty >= 60) return '忠诚'
+  if (loyalty >= 40) return '中立'
+  if (loyalty >= 20) return '机会主义'
+  return '雇佣兵'
+}
+
+const getLoyaltyTagType = (loyalty: number): string => {
+  if (loyalty >= 80) return 'success'
+  if (loyalty >= 60) return 'primary'
+  if (loyalty >= 40) return 'info'
+  if (loyalty >= 20) return 'warning'
+  return 'danger'
+}
+
+const getLoyaltyDesc = (loyalty: number): string => {
+  if (loyalty >= 80) return '对球队有深厚感情，很难被挖走'
+  if (loyalty >= 60) return '对球队有归属感，不轻易离开'
+  if (loyalty >= 40) return '职业态度，会考虑各种机会'
+  if (loyalty >= 20) return '容易被高薪吸引，可能主动寻求转会'
+  return '纯粹看重报酬，随时可能离开'
 }
 
 // 初始化
-onMounted(() => {
-  // 从 URL 参数获取赛季
+onMounted(async () => {
+  // 从 URL 参数获取赛季（支持 S1 和 1 两种格式）
   const seasonParam = route.query.season as string
   if (seasonParam) {
-    selectedSeason.value = seasonParam
+    // 统一转换为 S1 格式
+    selectedSeason.value = seasonParam.startsWith('S') ? seasonParam : `S${seasonParam}`
   }
-  playerStore.loadFromStorage()
-  fetchPlayerRank()
+
+  // 加载战队数据（用于显示战队名称）
+  try {
+    if (teamsMap.value.size === 0) {
+      const teams = await teamApi.getAllTeams()
+      teams.forEach(t => {
+        teamsMap.value.set(t.id, t.short_name || t.name)
+      })
+    }
+  } catch (e) {
+    console.warn('加载战队数据失败:', e)
+  }
+
+  // 加载选手数据
+  await fetchPlayerStats()
 })
 
 // 监听赛季变化
-watch(selectedSeason, () => {
+watch(selectedSeason, async () => {
   // 更新 URL
   router.replace({
     query: { ...route.query, season: selectedSeason.value }
   })
-  fetchPlayerRank()
+  // 重新获取选手数据
+  await fetchPlayerStats()
 })
 </script>
 
@@ -543,6 +834,74 @@ watch(selectedSeason, () => {
     }
   }
 
+  // 选手状态卡片
+  .status-card {
+    margin-bottom: 24px;
+    border-radius: 12px;
+
+    :deep(.el-card__header) {
+      padding: 16px 20px;
+      background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+      border-bottom: 1px solid #bae6fd;
+    }
+
+    .status-header {
+      .status-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        color: #0369a1;
+      }
+    }
+
+    .status-content {
+      padding: 8px 0;
+    }
+
+    .status-item {
+      margin-bottom: 20px;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+
+      .status-label {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 8px;
+
+        .label-text {
+          font-size: 14px;
+          font-weight: 500;
+          color: #374151;
+        }
+
+        .status-value {
+          font-size: 18px;
+          font-weight: 700;
+
+          &.satisfaction-high { color: #22c55e; }
+          &.satisfaction-medium { color: #f59e0b; }
+          &.satisfaction-low { color: #f97316; }
+          &.satisfaction-danger { color: #ef4444; }
+        }
+      }
+
+      .status-desc {
+        margin-top: 6px;
+        font-size: 12px;
+        color: #6b7280;
+      }
+    }
+
+    .departure-alert {
+      margin-top: 16px;
+    }
+  }
+
   .chart-card {
     margin-bottom: 24px;
 
@@ -586,85 +945,105 @@ watch(selectedSeason, () => {
     }
   }
 
-  .range-card {
+  // 数据分析图表行
+  .charts-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+
     .card-title {
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 600;
       color: #1f2937;
     }
 
-    .range-stats {
-      display: flex;
-      gap: 48px;
-      margin-bottom: 32px;
+    .chart-container.small {
+      height: 200px;
 
-      .range-item {
-        text-align: center;
-
-        .range-label {
-          font-size: 14px;
-          color: #6b7280;
-          margin-bottom: 8px;
-        }
-
-        .range-value {
-          font-size: 32px;
-          font-weight: 700;
-        }
-
-        &.best .range-value { color: #10b981; }
-        &.worst .range-value { color: #ef4444; }
-        &.variance .range-value { color: #6b7280; }
+      .chart {
+        width: 100%;
+        height: 100%;
       }
     }
+  }
 
-    .range-visualization {
-      .range-bar {
-        position: relative;
-        height: 24px;
-        background: #f3f4f6;
-        border-radius: 12px;
-        overflow: visible;
+  .distribution-card,
+  .gauge-card {
+    :deep(.el-card__header) {
+      padding: 12px 16px;
+      border-bottom: 1px solid #f3f4f6;
+    }
 
-        .range-fill {
-          position: absolute;
-          top: 0;
-          height: 100%;
-          background: linear-gradient(90deg, #ef4444, #f59e0b, #10b981);
-          border-radius: 12px;
-        }
+    :deep(.el-card__body) {
+      padding: 16px;
+    }
+  }
 
-        .avg-marker {
-          position: absolute;
-          top: -8px;
-          width: 4px;
-          height: 40px;
-          background: #f59e0b;
-          border-radius: 2px;
-          transform: translateX(-50%);
+  .summary-card {
+    :deep(.el-card__header) {
+      padding: 12px 16px;
+      border-bottom: 1px solid #f3f4f6;
+    }
 
-          .avg-tooltip {
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #f59e0b;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            white-space: nowrap;
-            margin-bottom: 4px;
-          }
-        }
+    :deep(.el-card__body) {
+      padding: 16px;
+    }
+
+    .summary-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .summary-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: #f9fafb;
+      border-radius: 8px;
+
+      .summary-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        color: white;
+
+        &.positive { background: linear-gradient(135deg, #22c55e, #16a34a); }
+        &.negative { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        &.highlight { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        &.rate { background: linear-gradient(135deg, #3b82f6, #2563eb); }
       }
 
-      .range-labels {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 8px;
-        font-size: 12px;
-        color: #9ca3af;
+      .summary-content {
+        .summary-value {
+          font-size: 20px;
+          font-weight: 700;
+          color: #1f2937;
+        }
+
+        .summary-label {
+          font-size: 12px;
+          color: #6b7280;
+          margin-top: 2px;
+        }
+      }
+    }
+  }
+}
+
+@media (max-width: 1200px) {
+  .player-detail {
+    .charts-row {
+      grid-template-columns: 1fr 1fr;
+
+      .summary-card {
+        grid-column: span 2;
       }
     }
   }
@@ -674,6 +1053,14 @@ watch(selectedSeason, () => {
   .player-detail {
     .stats-cards {
       grid-template-columns: repeat(2, 1fr);
+    }
+
+    .charts-row {
+      grid-template-columns: 1fr;
+
+      .summary-card {
+        grid-column: span 1;
+      }
     }
   }
 }

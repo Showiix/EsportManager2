@@ -39,64 +39,85 @@
         <el-menu
           :default-active="activeMenu"
           class="sidebar-menu"
-          router
           unique-opened
+          @select="handleMenuSelect"
         >
-          <el-menu-item index="/">
+          <el-menu-item index="/" :disabled="isMenuDisabled('/')">
             <el-icon><House /></el-icon>
             <span>首页仪表板</span>
           </el-menu-item>
 
-          <el-sub-menu index="teams">
+          <el-menu-item index="/time" :disabled="isMenuDisabled('/time')">
+            <el-icon><Clock /></el-icon>
+            <span>时间控制</span>
+          </el-menu-item>
+
+          <el-sub-menu index="teams" :disabled="isMenuDisabled('/teams')">
             <template #title>
               <el-icon><UserFilled /></el-icon>
               <span>战队管理</span>
             </template>
-            <el-menu-item index="/teams">战队列表</el-menu-item>
-            <el-menu-item index="/players">选手中心</el-menu-item>
+            <el-menu-item index="/teams" :disabled="isMenuDisabled('/teams')">战队列表</el-menu-item>
+            <el-menu-item index="/players" :disabled="isMenuDisabled('/players')">选手中心</el-menu-item>
           </el-sub-menu>
 
-          <el-sub-menu index="competitions">
+          <el-sub-menu index="competitions" :disabled="isMenuDisabled('/tournaments')">
             <template #title>
               <el-icon><Trophy /></el-icon>
               <span>赛事管理</span>
             </template>
-            <el-menu-item index="/tournaments">赛事总览</el-menu-item>
+            <el-menu-item index="/tournaments" :disabled="isMenuDisabled('/tournaments')">赛事总览</el-menu-item>
           </el-sub-menu>
 
-          <el-sub-menu index="draft">
+          <el-sub-menu index="draft" :disabled="isMenuDisabled('/draft')">
             <template #title>
               <el-icon><Stamp /></el-icon>
               <span>选秀系统</span>
             </template>
-            <el-menu-item index="/draft">选秀总览</el-menu-item>
-            <el-menu-item index="/draft/lpl">🇨🇳 LPL 选秀</el-menu-item>
-            <el-menu-item index="/draft/lck">🇰🇷 LCK 选秀</el-menu-item>
-            <el-menu-item index="/draft/lec">🇪🇺 LEC 选秀</el-menu-item>
-            <el-menu-item index="/draft/lcs">🇺🇸 LCS 选秀</el-menu-item>
+            <el-menu-item index="/draft" :disabled="isMenuDisabled('/draft')">选秀总览</el-menu-item>
+            <el-menu-item index="/draft/lpl" :disabled="isMenuDisabled('/draft/lpl')">🇨🇳 LPL 选秀</el-menu-item>
+            <el-menu-item index="/draft/lck" :disabled="isMenuDisabled('/draft/lck')">🇰🇷 LCK 选秀</el-menu-item>
+            <el-menu-item index="/draft/lec" :disabled="isMenuDisabled('/draft/lec')">🇪🇺 LEC 选秀</el-menu-item>
+            <el-menu-item index="/draft/lcs" :disabled="isMenuDisabled('/draft/lcs')">🇺🇸 LCS 选秀</el-menu-item>
           </el-sub-menu>
 
-          <el-menu-item index="/transfer">
-            <el-icon><Sort /></el-icon>
-            <span>转会市场</span>
-          </el-menu-item>
+          <el-sub-menu index="transfer-menu" :disabled="isMenuDisabled('/transfer')">
+            <template #title>
+              <el-icon><Sort /></el-icon>
+              <span>转会市场</span>
+            </template>
+            <el-menu-item index="/transfer" :disabled="isMenuDisabled('/transfer')">📊 市场分析</el-menu-item>
+            <el-menu-item index="/transfer/gm-config" :disabled="isMenuDisabled('/transfer/gm-config')">🤖 AI GM配置</el-menu-item>
+            <el-menu-item index="/transfer/player-market" :disabled="isMenuDisabled('/transfer/player-market')">👤 选手市场</el-menu-item>
+            <el-menu-item index="/transfer/llm-market" :disabled="isMenuDisabled('/transfer/llm-market')">🤖 LLM 转会市场</el-menu-item>
+          </el-sub-menu>
 
-          <el-menu-item index="/rankings">
+          <el-menu-item index="/rankings" :disabled="isMenuDisabled('/rankings')">
             <el-icon><Medal /></el-icon>
             <span>积分排名</span>
           </el-menu-item>
 
-          <el-menu-item index="/data-center">
+          <el-menu-item index="/finance" :disabled="isMenuDisabled('/finance')">
+            <el-icon><Wallet /></el-icon>
+            <span>财政中心</span>
+          </el-menu-item>
+
+          <el-menu-item index="/data-center" :disabled="isMenuDisabled('/data-center')">
             <el-icon><DataLine /></el-icon>
             <span>数据中心</span>
           </el-menu-item>
 
-          <el-menu-item index="/annual-top">
+          <el-menu-item index="/annual-top" :disabled="isMenuDisabled('/annual-top')">
             <el-icon><Star /></el-icon>
             <span>IM年度评选</span>
           </el-menu-item>
 
-          <el-menu-item index="/honors">
+          <el-menu-item index="/annual-awards" :disabled="isMenuDisabled('/annual-awards')">
+            <el-icon><GoldMedal /></el-icon>
+            <span>年度颁奖典礼</span>
+          </el-menu-item>
+
+          <el-menu-item index="/honors" :disabled="isMenuDisabled('/honors')">
             <el-icon><Trophy /></el-icon>
             <span>荣誉殿堂</span>
           </el-menu-item>
@@ -104,6 +125,11 @@
           <el-menu-item index="/settings">
             <el-icon><Setting /></el-icon>
             <span>系统设置</span>
+          </el-menu-item>
+
+          <el-menu-item index="/dev-tools">
+            <el-icon><Tools /></el-icon>
+            <span>开发工具</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -134,7 +160,8 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import {
   House,
   UserFilled,
@@ -147,9 +174,16 @@ import {
   FolderOpened,
   DataLine,
   Star,
+  Clock,
+  Wallet,
+  Tools,
+  GoldMedal,
 } from '@element-plus/icons-vue'
+import { useGameStore } from '@/stores/useGameStore'
 
 const route = useRoute()
+const router = useRouter()
+const gameStore = useGameStore()
 
 const currentSeason = ref('S1')
 const currentPhase = ref('春季赛常规赛')
@@ -157,22 +191,41 @@ const currentPhase = ref('春季赛常规赛')
 // 当前激活的菜单项
 const activeMenu = computed(() => route.path)
 
+// 检查菜单项是否应该禁用
+const isMenuDisabled = (path: string) => {
+  if (path === '/settings' || path === '/dev-tools') return false
+  return !gameStore.hasSaveLoaded
+}
+
+// 处理菜单选择
+const handleMenuSelect = (index: string) => {
+  if (isMenuDisabled(index)) {
+    ElMessage.warning('请先在设置页面创建或加载存档')
+    return
+  }
+  router.push(index)
+}
+
 // 面包屑导航
 const breadcrumbs = computed(() => {
   const pathSegments = route.path.split('/').filter(Boolean)
   const crumbs = [{ path: '/', title: '首页' }]
 
   const menuMap: Record<string, string> = {
+    time: '时间控制',
     teams: '战队管理',
     players: '选手中心',
     tournaments: '赛事管理',
     draft: '选秀系统',
     transfer: '转会市场',
     rankings: '积分排名',
+    finance: '财政中心',
     'data-center': '数据中心',
     'annual-top': 'IM年度评选',
+    'annual-awards': '年度颁奖典礼',
     honors: '荣誉殿堂',
     settings: '系统设置',
+    'dev-tools': '开发工具',
     lpl: 'LPL 中国赛区',
     lck: 'LCK 韩国赛区',
     lec: 'LEC 欧洲赛区',

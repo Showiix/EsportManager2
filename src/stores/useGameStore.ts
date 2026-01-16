@@ -5,6 +5,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { saveApi, type SaveInfo, type GameState } from '@/api/tauri'
+import { usePlayerStore } from './usePlayerStore'
+import { useMatchDetailStore } from './useMatchDetailStore'
 
 export const useGameStore = defineStore('game', () => {
   // ========================================
@@ -43,7 +45,7 @@ export const useGameStore = defineStore('game', () => {
   const currentPhase = computed(() => gameState.value?.current_phase ?? 'SpringRegular')
 
   // 阶段显示名称
-  const currentPhaseDisplay = computed(() => gameState.value?.phase_display ?? '春季赛常规赛')
+  const currentPhaseDisplay = computed(() => gameState.value?.phase_name ?? '春季赛常规赛')
 
   // ========================================
   // Actions
@@ -65,6 +67,30 @@ export const useGameStore = defineStore('game', () => {
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to initialize database'
       console.error('Failed to initialize database:', e)
+      throw e
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 删除数据库（开发调试用）
+   */
+  const deleteDatabase = async () => {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      await saveApi.deleteDatabase()
+      // 清除所有状态
+      isInitialized.value = false
+      saves.value = []
+      currentSave.value = null
+      gameState.value = null
+      console.log('Database deleted successfully')
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to delete database'
+      console.error('Failed to delete database:', e)
       throw e
     } finally {
       isLoading.value = false
@@ -128,6 +154,13 @@ export const useGameStore = defineStore('game', () => {
     error.value = null
 
     try {
+      // 清除旧存档的缓存数据
+      const playerStore = usePlayerStore()
+      const matchDetailStore = useMatchDetailStore()
+      playerStore.clearAll()
+      matchDetailStore.clearAll()
+      console.log('已清除旧存档的缓存数据')
+
       currentSave.value = await saveApi.loadSave(saveId)
       console.log(`Loaded save: ${currentSave.value.name}`)
 
@@ -197,7 +230,7 @@ export const useGameStore = defineStore('game', () => {
 
     try {
       gameState.value = await saveApi.advancePhase()
-      console.log(`Advanced to phase: ${gameState.value.phase_display}`)
+      console.log(`Advanced to phase: ${gameState.value.phase_name}`)
       return gameState.value
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to advance phase'
@@ -253,6 +286,7 @@ export const useGameStore = defineStore('game', () => {
 
     // Actions
     initDatabase,
+    deleteDatabase,
     loadSaves,
     createSave,
     loadSave,

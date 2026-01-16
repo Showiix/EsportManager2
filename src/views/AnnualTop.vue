@@ -8,16 +8,26 @@
           <p class="banner-subtitle">{{ selectedSeason }} 赛季 年度最佳选手 TOP 20</p>
           <div class="scoring-rule">
             <el-tag type="warning" effect="dark" size="large">
-              评选标准: 平均影响力(70%) + 冠军加成(30%)
+              评选标准: 影响力(40%) + 出场(30%) + 冠军(30%)
             </el-tag>
           </div>
           <div class="scoring-detail">
             <span>国际赛冠军 +3分</span>
             <span class="divider">|</span>
             <span>赛区冠军 +1分</span>
+            <span class="divider">|</span>
+            <span>每10场 +1分</span>
           </div>
         </div>
         <div class="header-actions">
+          <el-button
+            type="primary"
+            :icon="Refresh"
+            :loading="recalculating"
+            @click="recalculateScores"
+          >
+            刷新排名
+          </el-button>
           <el-select v-model="selectedSeason" placeholder="选择赛季" style="width: 100px">
             <el-option v-for="s in seasons" :key="s.value" :label="s.label" :value="s.value" />
           </el-select>
@@ -41,6 +51,10 @@
           <div class="score-item">
             <span class="label">影响力</span>
             <span class="value">{{ (topThree[1].avgImpact || 0).toFixed(1) }}</span>
+          </div>
+          <div class="score-item">
+            <span class="label">出场</span>
+            <span class="value games">{{ topThree[1].gamesPlayed || 0 }}场</span>
           </div>
           <div class="score-item">
             <span class="label">冠军加成</span>
@@ -80,6 +94,10 @@
             <span class="value">{{ (topThree[0].avgImpact || 0).toFixed(1) }}</span>
           </div>
           <div class="score-item">
+            <span class="label">出场</span>
+            <span class="value games">{{ topThree[0].gamesPlayed || 0 }}场</span>
+          </div>
+          <div class="score-item">
             <span class="label">冠军加成</span>
             <span class="value bonus">+{{ (topThree[0].championBonus || 0).toFixed(1) }}</span>
           </div>
@@ -112,6 +130,10 @@
           <div class="score-item">
             <span class="label">影响力</span>
             <span class="value">{{ (topThree[2].avgImpact || 0).toFixed(1) }}</span>
+          </div>
+          <div class="score-item">
+            <span class="label">出场</span>
+            <span class="value games">{{ topThree[2].gamesPlayed || 0 }}场</span>
           </div>
           <div class="score-item">
             <span class="label">冠军加成</span>
@@ -168,6 +190,12 @@
         <el-table-column prop="avgImpact" label="影响力" width="90" align="center">
           <template #default="{ row }">
             {{ (row.avgImpact || 0).toFixed(1) }}
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="gamesPlayed" label="出场" width="80" align="center">
+          <template #default="{ row }">
+            <span class="games-value">{{ row.gamesPlayed || 0 }}场</span>
           </template>
         </el-table-column>
 
@@ -253,8 +281,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { Refresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
+import { teamApi, statsApi } from '@/api/tauri'
 import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
 
@@ -262,10 +293,14 @@ const router = useRouter()
 const playerStore = usePlayerStore()
 const gameStore = useGameStore()
 
+// 本地战队映射表
+const teamsMap = ref<Map<number, string>>(new Map())
+
 // 状态
 const selectedSeason = ref('S1')
 const rankings = ref<PlayerSeasonStats[]>([])
 const loading = ref(false)
+const recalculating = ref(false)
 
 // 赛季列表
 const seasons = computed(() => {
@@ -281,6 +316,13 @@ const seasons = computed(() => {
 const fetchRankings = async () => {
   loading.value = true
   try {
+    // 先加载战队数据
+    if (teamsMap.value.size === 0) {
+      const teams = await teamApi.getAllTeams()
+      teams.forEach(t => {
+        teamsMap.value.set(t.id, t.short_name || t.name)
+      })
+    }
     rankings.value = await playerStore.getSeasonImpactRanking(selectedSeason.value, 20)
   } catch (error) {
     console.error('获取排行数据失败:', error)
@@ -356,8 +398,8 @@ const getPositionTagType = (position: string) => {
 
 const getTeamName = (teamId: string | number | null): string => {
   if (!teamId) return '-'
-  const idStr = String(teamId)
-  return idStr.split('-')[0] || idStr
+  const numId = Number(teamId)
+  return teamsMap.value.get(numId) || String(teamId)
 }
 
 // 初始化
@@ -365,6 +407,23 @@ onMounted(() => {
   playerStore.loadFromStorage()
   fetchRankings()
 })
+
+// 重新计算年度得分
+const recalculateScores = async () => {
+  recalculating.value = true
+  try {
+    const seasonNum = Number(selectedSeason.value.replace('S', ''))
+    const count = await statsApi.recalculateYearlyScores(seasonNum)
+    ElMessage.success(`已重新计算 ${count} 名选手的年度得分`)
+    // 刷新排名数据
+    await fetchRankings()
+  } catch (error) {
+    console.error('重新计算失败:', error)
+    ElMessage.error('重新计算失败')
+  } finally {
+    recalculating.value = false
+  }
+}
 
 // 监听赛季变化
 watch(selectedSeason, () => {

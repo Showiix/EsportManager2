@@ -1,15 +1,15 @@
 use crate::db::{
-    EventRepository, MatchRepository, PlayerRepository, SaveRepository,
+    EventRepository, HonorRepository, MatchRepository, PlayerRepository, PlayerStatsRepository, PointsRepository, SaveRepository,
     StandingRepository, TeamRepository, TournamentRepository,
 };
-use crate::engines::EventEngine;
+use crate::engines::{EventEngine, FinancialEngine, PointsCalculationEngine};
 use crate::models::{
-    EventType, GameEvent, LeagueStanding, SeasonPhase, Tournament, TournamentStatus,
+    EventType, GameEvent, HonorType, LeagueStanding, SeasonPhase, Tournament, TournamentStatus,
     TournamentType, GameTimeState, PhaseStatus, PhaseProgress, TournamentProgress,
     SeasonProgress, PhaseInfo, TimeAction, FastForwardTarget, FastForwardResult,
     CompleteAndAdvanceResult, HonorInfo,
 };
-use crate::services::{LeagueService, HonorService};
+use crate::services::{LeagueService, HonorService, TournamentService};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Row, Sqlite};
 
@@ -18,6 +18,7 @@ pub struct GameFlowService {
     league_service: LeagueService,
     event_engine: EventEngine,
     honor_service: HonorService,
+    tournament_service: TournamentService,
 }
 
 /// 阶段初始化结果
@@ -73,6 +74,7 @@ impl Default for GameFlowService {
             league_service: LeagueService::new(),
             event_engine: EventEngine::new(),
             honor_service: HonorService::new(),
+            tournament_service: TournamentService::new(),
         }
     }
 }
@@ -90,6 +92,48 @@ impl GameFlowService {
         season_id: u64,
         phase: SeasonPhase,
     ) -> Result<PhaseInitResult, String> {
+        // 检查该阶段的赛事是否已经存在
+        if let Some(tournament_type) = phase_to_tournament_type(phase) {
+            let existing = self.get_phase_tournaments(pool, save_id, season_id, tournament_type).await?;
+            println!("[initialize_phase] 阶段 {:?}, 已存在赛事数: {}", phase, existing.len());
+            if !existing.is_empty() {
+                // 检查是否【所有】赛事都有比赛
+                // 只有所有赛事都有比赛时才跳过，否则继续初始化（为没有比赛的赛事生成比赛）
+                let mut all_have_matches = true;
+                let mut total_matches = 0i64;
+                for tournament in &existing {
+                    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
+                        .bind(tournament.id as i64)
+                        .fetch_one(pool)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    println!("[initialize_phase] 赛事 {} (id={}) 比赛数: {}", tournament.name, tournament.id, count.0);
+                    total_matches += count.0;
+                    if count.0 == 0 {
+                        all_have_matches = false;
+                        // 不要 break，继续统计总数
+                    }
+                }
+                println!("[initialize_phase] all_have_matches={}, total_matches={}", all_have_matches, total_matches);
+
+                if all_have_matches && total_matches > 0 {
+                    println!("[initialize_phase] 所有赛事都有比赛，跳过初始化");
+                    return Ok(PhaseInitResult {
+                        phase: format!("{:?}", phase),
+                        tournaments_created: existing.iter().map(|t| TournamentCreated {
+                            id: t.id,
+                            name: t.name.clone(),
+                            tournament_type: format!("{:?}", t.tournament_type),
+                            region: t.region_id.map(|r| get_region_name(r).to_string()),
+                        }).collect(),
+                        message: format!("阶段 {:?} 的赛事已存在，跳过初始化", phase),
+                    });
+                }
+                println!("[initialize_phase] 有赛事没有比赛，继续初始化");
+                // 有赛事没有比赛，继续生成比赛
+            }
+        }
+
         let mut tournaments_created = Vec::new();
 
         match phase {
@@ -160,83 +204,319 @@ impl GameFlowService {
 
             // 春季季后赛 - 为4个赛区各创建季后赛
             SeasonPhase::SpringPlayoffs => {
-                for region_id in 1..=4 {
+                // 先获取已存在的季后赛赛事
+                let existing_playoffs = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "SpringPlayoffs"
+                ).await.map_err(|e| e.to_string())?;
+                println!("[SpringPlayoffs] 已存在的季后赛数量: {}", existing_playoffs.len());
+
+                // 从常规赛获取实际的 region_id
+                let regular_tournaments = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "SpringRegular"
+                ).await.map_err(|e| e.to_string())?;
+                println!("[SpringPlayoffs] 常规赛数量: {}", regular_tournaments.len());
+
+                for regular_tournament in &regular_tournaments {
+                    let region_id = match regular_tournament.region_id {
+                        Some(id) => id,
+                        None => continue,
+                    };
                     let region_name = get_region_name(region_id);
-                    let tournament = Tournament {
-                        id: 0,
-                        save_id: save_id.to_string(),
-                        season_id,
-                        tournament_type: TournamentType::SpringPlayoffs,
-                        name: format!("S{} {} 春季季后赛", season_id, region_name),
-                        region_id: Some(region_id),
-                        status: TournamentStatus::Upcoming,
-                        current_stage: None,
-                        current_round: None,
+                    println!("[SpringPlayoffs] 处理赛区: {} (region_id={})", region_name, region_id);
+
+                    // 检查该赛区的季后赛是否已存在
+                    let existing = existing_playoffs.iter()
+                        .find(|t| t.region_id == Some(region_id));
+
+                    let id = if let Some(t) = existing {
+                        println!("[SpringPlayoffs] {} 季后赛已存在, id={}", region_name, t.id);
+                        t.id
+                    } else {
+                        // 创建新赛事
+                        println!("[SpringPlayoffs] {} 季后赛不存在，创建新赛事", region_name);
+                        let tournament = Tournament {
+                            id: 0,
+                            save_id: save_id.to_string(),
+                            season_id,
+                            tournament_type: TournamentType::SpringPlayoffs,
+                            name: format!("S{} {} 春季季后赛", season_id, region_name),
+                            region_id: Some(region_id),
+                            status: TournamentStatus::Upcoming,
+                            current_stage: None,
+                            current_round: None,
+                        };
+                        TournamentRepository::create(pool, save_id, &tournament)
+                            .await
+                            .map_err(|e| e.to_string())?
                     };
 
-                    let id = TournamentRepository::create(pool, save_id, &tournament)
+                    // 检查是否已有比赛
+                    let match_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
+                        .bind(id as i64)
+                        .fetch_one(pool)
                         .await
                         .map_err(|e| e.to_string())?;
+                    println!("[SpringPlayoffs] {} 季后赛 id={} 已有比赛数: {}", region_name, id, match_count.0);
 
-                    // 从春季常规赛积分榜获取前8名队伍
-                    // TODO: 实现季后赛对阵生成
+                    if match_count.0 == 0 {
+                        // 获取常规赛积分榜
+                        let standings = StandingRepository::get_by_tournament(pool, regular_tournament.id)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        println!("[SpringPlayoffs] {} 常规赛积分榜队伍数: {}", region_name, standings.len());
+
+                        if standings.len() >= 8 {
+                            // 生成季后赛对阵
+                            let matches = self.league_service.generate_playoff_bracket(id, &standings);
+                            println!("[SpringPlayoffs] {} 生成比赛数: {}", region_name, matches.len());
+                            if !matches.is_empty() {
+                                MatchRepository::create_batch(pool, save_id, &matches)
+                                    .await
+                                    .map_err(|e| e.to_string())?;
+                                println!("[SpringPlayoffs] {} 比赛已创建", region_name);
+                            }
+                        } else {
+                            println!("[SpringPlayoffs] {} 积分榜队伍不足8支，跳过", region_name);
+                        }
+                    } else {
+                        println!("[SpringPlayoffs] {} 已有比赛，跳过生成", region_name);
+                    }
 
                     tournaments_created.push(TournamentCreated {
                         id,
-                        name: tournament.name,
+                        name: format!("S{} {} 春季季后赛", season_id, region_name),
                         tournament_type: format!("{:?}", TournamentType::SpringPlayoffs),
                         region: Some(region_name.to_string()),
                     });
                 }
             }
 
-            // MSI - 创建全球性赛事
+            // MSI - 创建全球性赛事并自动生成对阵
             SeasonPhase::Msi => {
-                let tournament = Tournament {
-                    id: 0,
-                    save_id: save_id.to_string(),
-                    season_id,
-                    tournament_type: TournamentType::Msi,
-                    name: format!("S{} MSI季中赛", season_id),
-                    region_id: None,
-                    status: TournamentStatus::Upcoming,
-                    current_stage: None,
-                    current_round: None,
+                // 检查是否已存在MSI赛事（避免重复创建）
+                let existing_msi = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "Msi"
+                ).await.map_err(|e| e.to_string())?;
+
+                let id = if let Some(existing) = existing_msi.into_iter().find(|t| t.status == TournamentStatus::Upcoming) {
+                    println!("[MSI Init] 使用已存在的MSI赛事: id={}, name={}", existing.id, existing.name);
+                    existing.id
+                } else {
+                    // 创建新的MSI赛事
+                    let tournament = Tournament {
+                        id: 0,
+                        save_id: save_id.to_string(),
+                        season_id,
+                        tournament_type: TournamentType::Msi,
+                        name: format!("S{} MSI季中赛", season_id),
+                        region_id: None,
+                        status: TournamentStatus::Upcoming,
+                        current_stage: None,
+                        current_round: None,
+                    };
+
+                    let new_id = TournamentRepository::create(pool, save_id, &tournament)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    println!("[MSI Init] 创建新MSI赛事: id={}", new_id);
+                    new_id
                 };
 
-                let id = TournamentRepository::create(pool, save_id, &tournament)
+                // 检查是否已有比赛（避免重复生成）
+                let existing_matches = MatchRepository::get_by_tournament(pool, id)
                     .await
                     .map_err(|e| e.to_string())?;
 
-                tournaments_created.push(TournamentCreated {
-                    id,
-                    name: tournament.name,
-                    tournament_type: format!("{:?}", TournamentType::Msi),
-                    region: None,
-                });
+                if existing_matches.len() > 0 {
+                    println!("[MSI Init] MSI赛事已有 {} 场比赛，跳过生成", existing_matches.len());
+                    tournaments_created.push(TournamentCreated {
+                        id,
+                        name: format!("S{} MSI季中赛", season_id),
+                        tournament_type: format!("{:?}", TournamentType::Msi),
+                        region: None,
+                    });
+                } else {
+                    // 从春季季后赛获取各赛区的冠亚季军
+                    let mut legendary_teams = Vec::new();  // 冠军队伍
+                    let mut challenger_teams = Vec::new(); // 亚军队伍
+                    let mut qualifier_teams = Vec::new();  // 季军队伍
+
+                    // 直接获取所有春季季后赛，不依赖固定的 region_id
+                    let all_playoffs = TournamentRepository::get_by_season_and_type(
+                        pool, save_id, season_id, "SpringPlayoffs"
+                    ).await.map_err(|e| e.to_string())?;
+
+                    println!("[MSI Init] 找到 {} 个春季季后赛赛事", all_playoffs.len());
+                    for playoff in &all_playoffs {
+                        println!("[MSI Init] 季后赛: id={}, name={}, status={:?}",
+                            playoff.id, playoff.name, playoff.status);
+                    }
+
+                    for playoff_tournament in all_playoffs {
+                        // 获取该季后赛的最终排名
+                        let results = self.get_playoffs_top3(pool, playoff_tournament.id).await?;
+
+                        if results.len() >= 3 {
+                            legendary_teams.push(results[0].clone());  // 冠军
+                            challenger_teams.push(results[1].clone()); // 亚军
+                            qualifier_teams.push(results[2].clone());  // 季军
+                            println!("[MSI] 从赛事 {} 获取到前3名队伍", playoff_tournament.name);
+                        } else {
+                            println!("[MSI] 赛事 {} 结果不足3支队伍: {}", playoff_tournament.name, results.len());
+                        }
+                    }
+
+                    // 如果所有队伍都已就位，生成MSI对阵
+                    if legendary_teams.len() == 4 && challenger_teams.len() == 4 && qualifier_teams.len() == 4 {
+                        let matches = self.tournament_service.generate_msi_bracket(
+                            id,
+                            &legendary_teams,
+                            &challenger_teams,
+                            &qualifier_teams,
+                        );
+
+                        MatchRepository::create_batch(pool, save_id, &matches)
+                            .await
+                            .map_err(|e| e.to_string())?;
+
+                        println!("[initialize_phase] MSI 生成了 {} 场比赛", matches.len());
+                    } else {
+                        println!("[initialize_phase] MSI 队伍不足: legendary={}, challenger={}, qualifier={}",
+                            legendary_teams.len(), challenger_teams.len(), qualifier_teams.len());
+                    }
+
+                    tournaments_created.push(TournamentCreated {
+                        id,
+                        name: format!("S{} MSI季中赛", season_id),
+                        tournament_type: format!("{:?}", TournamentType::Msi),
+                        region: None,
+                    });
+                }
             }
 
             // 马德里大师赛
             SeasonPhase::MadridMasters => {
-                let tournament = Tournament {
-                    id: 0,
-                    save_id: save_id.to_string(),
-                    season_id,
-                    tournament_type: TournamentType::MadridMasters,
-                    name: format!("S{} 马德里大师赛", season_id),
-                    region_id: None,
-                    status: TournamentStatus::Upcoming,
-                    current_stage: None,
-                    current_round: None,
+                // 先检查是否已存在
+                let existing = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "MadridMasters"
+                ).await.map_err(|e| e.to_string())?;
+
+                let id = if let Some(t) = existing.first() {
+                    println!("[MadridMasters] 使用已存在的赛事: id={}", t.id);
+                    t.id
+                } else {
+                    // 创建新赛事
+                    let tournament = Tournament {
+                        id: 0,
+                        save_id: save_id.to_string(),
+                        season_id,
+                        tournament_type: TournamentType::MadridMasters,
+                        name: format!("S{} 马德里大师赛", season_id),
+                        region_id: None,
+                        status: TournamentStatus::Upcoming,
+                        current_stage: None,
+                        current_round: None,
+                    };
+
+                    TournamentRepository::create(pool, save_id, &tournament)
+                        .await
+                        .map_err(|e| e.to_string())?
                 };
 
-                let id = TournamentRepository::create(pool, save_id, &tournament)
+                // 检查是否已有比赛
+                let match_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
+                    .bind(id as i64)
+                    .fetch_one(pool)
                     .await
                     .map_err(|e| e.to_string())?;
 
+                if match_count.0 == 0 {
+                    // 获取参赛队伍：各赛区春季常规赛前8名 (共32队)
+                    let mut teams = Vec::new();
+
+                    // 从各赛区春季常规赛获取前8名
+                    let regular_tournaments = TournamentRepository::get_by_season_and_type(
+                        pool, save_id, season_id, "SpringRegular"
+                    ).await.map_err(|e| e.to_string())?;
+
+                    println!("[MadridMasters] 找到 {} 个春季常规赛", regular_tournaments.len());
+
+                    for regular in regular_tournaments {
+                        // 获取常规赛积分榜（按排名排序）
+                        let standings = StandingRepository::get_by_tournament(pool, regular.id)
+                            .await
+                            .map_err(|e| e.to_string())?;
+
+                        println!("[MadridMasters] 赛区 {:?} 积分榜有 {} 支队伍", regular.region_id, standings.len());
+
+                        // 取前8名
+                        for standing in standings.iter().take(8) {
+                            if let Ok(team) = TeamRepository::get_by_id(pool, standing.team_id).await {
+                                if !teams.iter().any(|t: &crate::models::Team| t.id == team.id) {
+                                    teams.push(team);
+                                }
+                            }
+                        }
+                    }
+
+                    println!("[MadridMasters] 找到 {} 支参赛队伍", teams.len());
+
+                    // 如果队伍不足32支，用各赛区其他队伍填充
+                    if teams.len() < 32 {
+                        for region_id in 1..=4 {
+                            let region_teams = TeamRepository::get_by_region(pool, save_id, region_id)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            for team in region_teams {
+                                if teams.len() >= 32 {
+                                    break;
+                                }
+                                if !teams.iter().any(|t| t.id == team.id) {
+                                    teams.push(team);
+                                }
+                            }
+                        }
+                    }
+
+                    if teams.len() >= 32 {
+                        let matches = self.tournament_service.generate_masters_bracket(id, &teams[..32]);
+                        println!("[MadridMasters] 生成 {} 场比赛", matches.len());
+                        if !matches.is_empty() {
+                            MatchRepository::create_batch(pool, save_id, &matches)
+                                .await
+                                .map_err(|e| e.to_string())?;
+
+                            // 初始化积分榜（小组赛阶段需要）
+                            let standings: Vec<LeagueStanding> = teams[..32]
+                                .iter()
+                                .map(|team| LeagueStanding {
+                                    id: 0,
+                                    tournament_id: id,
+                                    team_id: team.id,
+                                    rank: None,
+                                    matches_played: 0,
+                                    wins: 0,
+                                    losses: 0,
+                                    points: 0,
+                                    games_won: 0,
+                                    games_lost: 0,
+                                    game_diff: 0,
+                                })
+                                .collect();
+
+                            StandingRepository::upsert_batch(pool, save_id, &standings)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            println!("[MadridMasters] 初始化 {} 支队伍的积分榜", standings.len());
+                        }
+                    } else {
+                        println!("[MadridMasters] 队伍不足32支 (只有{}支)，跳过比赛生成", teams.len());
+                    }
+                }
+
                 tournaments_created.push(TournamentCreated {
                     id,
-                    name: tournament.name,
+                    name: format!("S{} 马德里大师赛", season_id),
                     tournament_type: format!("{:?}", TournamentType::MadridMasters),
                     region: None,
                 });
@@ -244,62 +524,105 @@ impl GameFlowService {
 
             // 夏季常规赛
             SeasonPhase::SummerRegular => {
-                for region_id in 1..=4 {
+                // 先获取已存在的夏季常规赛赛事
+                let existing_summer = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "SummerRegular"
+                ).await.map_err(|e| e.to_string())?;
+                println!("[SummerRegular] 已存在的夏季常规赛数量: {}", existing_summer.len());
+
+                // 从春季常规赛获取实际的 region_id（与 SpringPlayoffs 相同的逻辑）
+                let spring_regular_tournaments = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "SpringRegular"
+                ).await.map_err(|e| e.to_string())?;
+                println!("[SummerRegular] 春季常规赛数量: {}", spring_regular_tournaments.len());
+
+                for spring_tournament in &spring_regular_tournaments {
+                    let region_id = match spring_tournament.region_id {
+                        Some(id) => id,
+                        None => continue,
+                    };
                     let region_name = get_region_name(region_id);
-                    let tournament = Tournament {
-                        id: 0,
-                        save_id: save_id.to_string(),
-                        season_id,
-                        tournament_type: TournamentType::SummerRegular,
-                        name: format!("S{} {} 夏季赛", season_id, region_name),
-                        region_id: Some(region_id),
-                        status: TournamentStatus::Upcoming,
-                        current_stage: None,
-                        current_round: None,
+                    println!("[SummerRegular] 处理赛区: {} (region_id={})", region_name, region_id);
+
+                    // 检查该赛区的夏季常规赛是否已存在
+                    let existing = existing_summer.iter()
+                        .find(|t| t.region_id == Some(region_id));
+
+                    let id = if let Some(t) = existing {
+                        println!("[SummerRegular] {} 夏季赛已存在, id={}", region_name, t.id);
+                        t.id
+                    } else {
+                        // 创建新赛事
+                        println!("[SummerRegular] {} 夏季赛不存在，创建新赛事", region_name);
+                        let tournament = Tournament {
+                            id: 0,
+                            save_id: save_id.to_string(),
+                            season_id,
+                            tournament_type: TournamentType::SummerRegular,
+                            name: format!("S{} {} 夏季赛", season_id, region_name),
+                            region_id: Some(region_id),
+                            status: TournamentStatus::Upcoming,
+                            current_stage: None,
+                            current_round: None,
+                        };
+
+                        TournamentRepository::create(pool, save_id, &tournament)
+                            .await
+                            .map_err(|e| e.to_string())?
                     };
 
-                    let id = TournamentRepository::create(pool, save_id, &tournament)
+                    // 检查是否已有比赛
+                    let match_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
+                        .bind(id as i64)
+                        .fetch_one(pool)
                         .await
                         .map_err(|e| e.to_string())?;
+                    println!("[SummerRegular] {} 夏季赛 id={} 已有比赛数: {}", region_name, id, match_count.0);
 
-                    // 生成赛程
-                    let teams = TeamRepository::get_by_region(pool, save_id, region_id)
-                        .await
-                        .map_err(|e| e.to_string())?;
-
-                    if teams.len() >= 8 {
-                        let matches = self
-                            .league_service
-                            .generate_regular_schedule(id, &teams);
-                        MatchRepository::create_batch(pool, save_id, &matches)
+                    if match_count.0 == 0 {
+                        // 生成赛程
+                        let teams = TeamRepository::get_by_region(pool, save_id, region_id)
                             .await
                             .map_err(|e| e.to_string())?;
 
-                        let standings: Vec<LeagueStanding> = teams
-                            .iter()
-                            .map(|team| LeagueStanding {
-                                id: 0,
-                                tournament_id: id,
-                                team_id: team.id,
-                                rank: None,
-                                matches_played: 0,
-                                wins: 0,
-                                losses: 0,
-                                points: 0,
-                                games_won: 0,
-                                games_lost: 0,
-                                game_diff: 0,
-                            })
-                            .collect();
+                        if teams.len() >= 8 {
+                            let matches = self
+                                .league_service
+                                .generate_regular_schedule(id, &teams);
+                            println!("[SummerRegular] {} 生成比赛数: {}", region_name, matches.len());
+                            MatchRepository::create_batch(pool, save_id, &matches)
+                                .await
+                                .map_err(|e| e.to_string())?;
 
-                        StandingRepository::upsert_batch(pool, save_id, &standings)
-                            .await
-                            .map_err(|e| e.to_string())?;
+                            let standings: Vec<LeagueStanding> = teams
+                                .iter()
+                                .map(|team| LeagueStanding {
+                                    id: 0,
+                                    tournament_id: id,
+                                    team_id: team.id,
+                                    rank: None,
+                                    matches_played: 0,
+                                    wins: 0,
+                                    losses: 0,
+                                    points: 0,
+                                    games_won: 0,
+                                    games_lost: 0,
+                                    game_diff: 0,
+                                })
+                                .collect();
+
+                            StandingRepository::upsert_batch(pool, save_id, &standings)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            println!("[SummerRegular] {} 初始化 {} 支队伍的积分榜", region_name, standings.len());
+                        }
+                    } else {
+                        println!("[SummerRegular] {} 已有比赛，跳过生成", region_name);
                     }
 
                     tournaments_created.push(TournamentCreated {
                         id,
-                        name: tournament.name,
+                        name: format!("S{} {} 夏季赛", season_id, region_name),
                         tournament_type: format!("{:?}", TournamentType::SummerRegular),
                         region: Some(region_name.to_string()),
                     });
@@ -308,54 +631,202 @@ impl GameFlowService {
 
             // 夏季季后赛
             SeasonPhase::SummerPlayoffs => {
-                for region_id in 1..=4 {
+                // 先获取已存在的季后赛赛事
+                let existing_playoffs = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "SummerPlayoffs"
+                ).await.map_err(|e| e.to_string())?;
+
+                // 从常规赛获取实际的 region_id
+                let regular_tournaments = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "SummerRegular"
+                ).await.map_err(|e| e.to_string())?;
+
+                for regular_tournament in &regular_tournaments {
+                    let region_id = match regular_tournament.region_id {
+                        Some(id) => id,
+                        None => continue,
+                    };
                     let region_name = get_region_name(region_id);
-                    let tournament = Tournament {
-                        id: 0,
-                        save_id: save_id.to_string(),
-                        season_id,
-                        tournament_type: TournamentType::SummerPlayoffs,
-                        name: format!("S{} {} 夏季季后赛", season_id, region_name),
-                        region_id: Some(region_id),
-                        status: TournamentStatus::Upcoming,
-                        current_stage: None,
-                        current_round: None,
+
+                    // 检查该赛区的季后赛是否已存在
+                    let existing = existing_playoffs.iter()
+                        .find(|t| t.region_id == Some(region_id));
+
+                    let id = if let Some(t) = existing {
+                        t.id
+                    } else {
+                        // 创建新赛事
+                        let tournament = Tournament {
+                            id: 0,
+                            save_id: save_id.to_string(),
+                            season_id,
+                            tournament_type: TournamentType::SummerPlayoffs,
+                            name: format!("S{} {} 夏季季后赛", season_id, region_name),
+                            region_id: Some(region_id),
+                            status: TournamentStatus::Upcoming,
+                            current_stage: None,
+                            current_round: None,
+                        };
+                        TournamentRepository::create(pool, save_id, &tournament)
+                            .await
+                            .map_err(|e| e.to_string())?
                     };
 
-                    let id = TournamentRepository::create(pool, save_id, &tournament)
+                    // 检查是否已有比赛
+                    let match_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
+                        .bind(id as i64)
+                        .fetch_one(pool)
                         .await
                         .map_err(|e| e.to_string())?;
 
+                    if match_count.0 == 0 {
+                        // 获取常规赛积分榜
+                        let standings = StandingRepository::get_by_tournament(pool, regular_tournament.id)
+                            .await
+                            .map_err(|e| e.to_string())?;
+
+                        if standings.len() >= 8 {
+                            // 生成季后赛对阵
+                            let matches = self.league_service.generate_playoff_bracket(id, &standings);
+                            if !matches.is_empty() {
+                                MatchRepository::create_batch(pool, save_id, &matches)
+                                    .await
+                                    .map_err(|e| e.to_string())?;
+                            }
+                        }
+                    }
+
                     tournaments_created.push(TournamentCreated {
                         id,
-                        name: tournament.name,
+                        name: format!("S{} {} 夏季季后赛", season_id, region_name),
                         tournament_type: format!("{:?}", TournamentType::SummerPlayoffs),
                         region: Some(region_name.to_string()),
                     });
                 }
             }
 
-            // Claude洲际赛
+            // Claude洲际赛 (类似马德里大师赛：32队分组+东西半区淘汰)
             SeasonPhase::ClaudeIntercontinental => {
-                let tournament = Tournament {
-                    id: 0,
-                    save_id: save_id.to_string(),
-                    season_id,
-                    tournament_type: TournamentType::ClaudeIntercontinental,
-                    name: format!("S{} Claude洲际赛", season_id),
-                    region_id: None,
-                    status: TournamentStatus::Upcoming,
-                    current_stage: None,
-                    current_round: None,
+                // 先检查是否已存在
+                let existing = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "ClaudeIntercontinental"
+                ).await.map_err(|e| e.to_string())?;
+
+                let id = if let Some(existing_tournament) = existing.first() {
+                    println!("[ClaudeIntercontinental] 赛事已存在, id={}", existing_tournament.id);
+                    existing_tournament.id
+                } else {
+                    let tournament = Tournament {
+                        id: 0,
+                        save_id: save_id.to_string(),
+                        season_id,
+                        tournament_type: TournamentType::ClaudeIntercontinental,
+                        name: format!("S{} Claude洲际赛", season_id),
+                        region_id: None,
+                        status: TournamentStatus::Upcoming,
+                        current_stage: None,
+                        current_round: None,
+                    };
+
+                    TournamentRepository::create(pool, save_id, &tournament)
+                        .await
+                        .map_err(|e| e.to_string())?
                 };
 
-                let id = TournamentRepository::create(pool, save_id, &tournament)
+                // 检查是否已有比赛
+                let match_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
+                    .bind(id as i64)
+                    .fetch_one(pool)
                     .await
                     .map_err(|e| e.to_string())?;
 
+                if match_count.0 == 0 {
+                    // 获取参赛队伍：各赛区夏季常规赛前8名 (共32队)
+                    let mut teams = Vec::new();
+
+                    // 从各赛区夏季常规赛获取前8名
+                    let regular_tournaments = TournamentRepository::get_by_season_and_type(
+                        pool, save_id, season_id, "SummerRegular"
+                    ).await.map_err(|e| e.to_string())?;
+
+                    println!("[ClaudeIntercontinental] 找到 {} 个夏季常规赛", regular_tournaments.len());
+
+                    for regular in regular_tournaments {
+                        // 获取常规赛积分榜（按排名排序）
+                        let standings = StandingRepository::get_by_tournament(pool, regular.id)
+                            .await
+                            .map_err(|e| e.to_string())?;
+
+                        println!("[ClaudeIntercontinental] 赛区 {:?} 积分榜有 {} 支队伍", regular.region_id, standings.len());
+
+                        // 取前8名
+                        for standing in standings.iter().take(8) {
+                            if let Ok(team) = TeamRepository::get_by_id(pool, standing.team_id).await {
+                                if !teams.iter().any(|t: &crate::models::Team| t.id == team.id) {
+                                    teams.push(team);
+                                }
+                            }
+                        }
+                    }
+
+                    println!("[ClaudeIntercontinental] 找到 {} 支参赛队伍", teams.len());
+
+                    // 如果队伍不足32支，用各赛区其他队伍填充
+                    if teams.len() < 32 {
+                        for region_id in 1..=4 {
+                            let region_teams = TeamRepository::get_by_region(pool, save_id, region_id)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            for team in region_teams {
+                                if teams.len() >= 32 {
+                                    break;
+                                }
+                                if !teams.iter().any(|t| t.id == team.id) {
+                                    teams.push(team);
+                                }
+                            }
+                        }
+                    }
+
+                    if teams.len() >= 32 {
+                        let matches = self.tournament_service.generate_masters_bracket(id, &teams[..32]);
+                        println!("[ClaudeIntercontinental] 生成 {} 场比赛", matches.len());
+                        if !matches.is_empty() {
+                            MatchRepository::create_batch(pool, save_id, &matches)
+                                .await
+                                .map_err(|e| e.to_string())?;
+
+                            // 初始化积分榜（小组赛阶段需要）
+                            let standings: Vec<LeagueStanding> = teams[..32]
+                                .iter()
+                                .map(|team| LeagueStanding {
+                                    id: 0,
+                                    tournament_id: id,
+                                    team_id: team.id,
+                                    rank: None,
+                                    matches_played: 0,
+                                    wins: 0,
+                                    losses: 0,
+                                    points: 0,
+                                    games_won: 0,
+                                    games_lost: 0,
+                                    game_diff: 0,
+                                })
+                                .collect();
+
+                            StandingRepository::upsert_batch(pool, save_id, &standings)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            println!("[ClaudeIntercontinental] 初始化 {} 支队伍的积分榜", standings.len());
+                        }
+                    } else {
+                        println!("[ClaudeIntercontinental] 队伍不足32支 (只有{}支)，跳过比赛生成", teams.len());
+                    }
+                }
+
                 tournaments_created.push(TournamentCreated {
                     id,
-                    name: tournament.name,
+                    name: format!("S{} Claude洲际赛", season_id),
                     tournament_type: format!("{:?}", TournamentType::ClaudeIntercontinental),
                     region: None,
                 });
@@ -363,107 +834,542 @@ impl GameFlowService {
 
             // 世界赛
             SeasonPhase::WorldChampionship => {
-                let tournament = Tournament {
-                    id: 0,
-                    save_id: save_id.to_string(),
-                    season_id,
-                    tournament_type: TournamentType::WorldChampionship,
-                    name: format!("S{} 世界赛", season_id),
-                    region_id: None,
-                    status: TournamentStatus::Upcoming,
-                    current_stage: None,
-                    current_round: None,
+                // 先检查是否已存在
+                let existing = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "WorldChampionship"
+                ).await.map_err(|e| e.to_string())?;
+
+                let id = if let Some(existing_tournament) = existing.first() {
+                    println!("[WorldChampionship] 赛事已存在, id={}", existing_tournament.id);
+                    existing_tournament.id
+                } else {
+                    let tournament = Tournament {
+                        id: 0,
+                        save_id: save_id.to_string(),
+                        season_id,
+                        tournament_type: TournamentType::WorldChampionship,
+                        name: format!("S{} 世界赛", season_id),
+                        region_id: None,
+                        status: TournamentStatus::Upcoming,
+                        current_stage: None,
+                        current_round: None,
+                    };
+
+                    TournamentRepository::create(pool, save_id, &tournament)
+                        .await
+                        .map_err(|e| e.to_string())?
                 };
 
-                let id = TournamentRepository::create(pool, save_id, &tournament)
+                // 检查是否已有比赛
+                let match_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
+                    .bind(id as i64)
+                    .fetch_one(pool)
                     .await
                     .map_err(|e| e.to_string())?;
 
+                if match_count.0 == 0 {
+                    // 获取参赛队伍：各赛区夏季季后赛冠军(4队)直接进淘汰赛，亚军+季军(8队)进瑞士轮
+                    let mut direct_teams = Vec::new();  // 冠军队伍 - 直接进淘汰赛
+                    let mut swiss_teams = Vec::new();   // 亚军+季军队伍 - 进瑞士轮
+
+                    // 从各赛区夏季季后赛获取排名
+                    let playoffs_tournaments = TournamentRepository::get_by_season_and_type(
+                        pool, save_id, season_id, "SummerPlayoffs"
+                    ).await.map_err(|e| e.to_string())?;
+
+                    println!("[WorldChampionship] 找到 {} 个夏季季后赛", playoffs_tournaments.len());
+
+                    for playoffs in playoffs_tournaments {
+                        // 获取季后赛最终排名（从荣誉记录获取）
+                        // 冠军
+                        let champion_row = sqlx::query(
+                            "SELECT team_id FROM honors WHERE tournament_id = ? AND honor_type = 'TEAM_CHAMPION'"
+                        )
+                        .bind(playoffs.id as i64)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                        if let Some(row) = champion_row {
+                            let team_id: i64 = row.get("team_id");
+                            if let Ok(team) = TeamRepository::get_by_id(pool, team_id as u64).await {
+                                if !direct_teams.iter().any(|t: &crate::models::Team| t.id == team.id) {
+                                    direct_teams.push(team);
+                                    println!("[WorldChampionship] 赛区 {:?} 冠军: team_id={}", playoffs.region_id, team_id);
+                                }
+                            }
+                        }
+
+                        // 亚军
+                        let runner_up_row = sqlx::query(
+                            "SELECT team_id FROM honors WHERE tournament_id = ? AND honor_type = 'TEAM_RUNNER_UP'"
+                        )
+                        .bind(playoffs.id as i64)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                        if let Some(row) = runner_up_row {
+                            let team_id: i64 = row.get("team_id");
+                            if let Ok(team) = TeamRepository::get_by_id(pool, team_id as u64).await {
+                                if !swiss_teams.iter().any(|t: &crate::models::Team| t.id == team.id) {
+                                    swiss_teams.push(team);
+                                    println!("[WorldChampionship] 赛区 {:?} 亚军: team_id={}", playoffs.region_id, team_id);
+                                }
+                            }
+                        }
+
+                        // 季军
+                        let third_row = sqlx::query(
+                            "SELECT team_id FROM honors WHERE tournament_id = ? AND honor_type = 'TEAM_THIRD'"
+                        )
+                        .bind(playoffs.id as i64)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                        if let Some(row) = third_row {
+                            let team_id: i64 = row.get("team_id");
+                            if let Ok(team) = TeamRepository::get_by_id(pool, team_id as u64).await {
+                                if !swiss_teams.iter().any(|t: &crate::models::Team| t.id == team.id) {
+                                    swiss_teams.push(team);
+                                    println!("[WorldChampionship] 赛区 {:?} 季军: team_id={}", playoffs.region_id, team_id);
+                                }
+                            }
+                        }
+                    }
+
+                    println!("[WorldChampionship] 冠军队伍: {} 支, 瑞士轮队伍: {} 支", direct_teams.len(), swiss_teams.len());
+
+                    // 如果队伍不足，从夏季常规赛积分榜补充
+                    if direct_teams.len() < 4 || swiss_teams.len() < 8 {
+                        println!("[WorldChampionship] 队伍不足，从常规赛积分榜补充");
+                        let regular_tournaments = TournamentRepository::get_by_season_and_type(
+                            pool, save_id, season_id, "SummerRegular"
+                        ).await.map_err(|e| e.to_string())?;
+
+                        for regular in regular_tournaments {
+                            let standings = StandingRepository::get_by_tournament(pool, regular.id)
+                                .await
+                                .map_err(|e| e.to_string())?;
+
+                            for (idx, standing) in standings.iter().enumerate() {
+                                if let Ok(team) = TeamRepository::get_by_id(pool, standing.team_id).await {
+                                    // 前1名补充到直接晋级
+                                    if idx == 0 && direct_teams.len() < 4 {
+                                        if !direct_teams.iter().any(|t| t.id == team.id) && !swiss_teams.iter().any(|t| t.id == team.id) {
+                                            direct_teams.push(team);
+                                            continue;
+                                        }
+                                    }
+                                    // 2-3名补充到瑞士轮
+                                    if idx < 3 && swiss_teams.len() < 8 {
+                                        if !direct_teams.iter().any(|t| t.id == team.id) && !swiss_teams.iter().any(|t| t.id == team.id) {
+                                            swiss_teams.push(team.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    println!("[WorldChampionship] 最终: 冠军队伍 {} 支, 瑞士轮队伍 {} 支", direct_teams.len(), swiss_teams.len());
+
+                    if direct_teams.len() >= 4 && swiss_teams.len() >= 8 {
+                        let matches = self.tournament_service.generate_worlds_bracket(
+                            id,
+                            &direct_teams[..4],
+                            &swiss_teams[..8]
+                        );
+                        println!("[WorldChampionship] 生成 {} 场比赛", matches.len());
+                        if !matches.is_empty() {
+                            MatchRepository::create_batch(pool, save_id, &matches)
+                                .await
+                                .map_err(|e| e.to_string())?;
+
+                            // 初始化积分榜（瑞士轮阶段需要）
+                            let mut all_teams = swiss_teams.clone();
+                            all_teams.extend(direct_teams.clone());
+                            let standings: Vec<LeagueStanding> = all_teams
+                                .iter()
+                                .map(|team| LeagueStanding {
+                                    id: 0,
+                                    tournament_id: id,
+                                    team_id: team.id,
+                                    rank: None,
+                                    matches_played: 0,
+                                    wins: 0,
+                                    losses: 0,
+                                    points: 0,
+                                    games_won: 0,
+                                    games_lost: 0,
+                                    game_diff: 0,
+                                })
+                                .collect();
+                            StandingRepository::upsert_batch(pool, save_id, &standings)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            println!("[WorldChampionship] 初始化 {} 支队伍的积分榜", standings.len());
+                        }
+                    } else {
+                        println!("[WorldChampionship] 队伍不足，无法生成比赛: direct={}, swiss={}", direct_teams.len(), swiss_teams.len());
+                    }
+                }
+
                 tournaments_created.push(TournamentCreated {
                     id,
-                    name: tournament.name,
+                    name: format!("S{} 世界赛", season_id),
                     tournament_type: format!("{:?}", TournamentType::WorldChampionship),
                     region: None,
                 });
             }
 
-            // 上海大师赛
+            // 上海大师赛 - 与MSI相同的双败淘汰赛制，参赛队伍来自夏季季后赛
             SeasonPhase::ShanghaiMasters => {
-                let tournament = Tournament {
-                    id: 0,
-                    save_id: save_id.to_string(),
-                    season_id,
-                    tournament_type: TournamentType::ShanghaiMasters,
-                    name: format!("S{} 上海大师赛", season_id),
-                    region_id: None,
-                    status: TournamentStatus::Upcoming,
-                    current_stage: None,
-                    current_round: None,
+                // 检查是否已存在上海大师赛赛事（避免重复创建）
+                let existing_shanghai = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "ShanghaiMasters"
+                ).await.map_err(|e| e.to_string())?;
+
+                // 清理重复的上海大师赛赛事 (保留第一个有效的，删除其他的)
+                let valid_tournaments: Vec<_> = existing_shanghai.into_iter()
+                    .filter(|t| t.status == TournamentStatus::Upcoming || t.status == TournamentStatus::InProgress)
+                    .collect();
+
+                // 获取第一个有效赛事的ID（如果存在）
+                let first_valid_id = valid_tournaments.first().map(|t| t.id);
+
+                // 如果有多个，删除多余的
+                if valid_tournaments.len() > 1 {
+                    println!("[ShanghaiMasters Init] 发现 {} 个重复的上海大师赛，清理中...", valid_tournaments.len());
+                    // 保留第一个，删除其他
+                    for extra_tournament in valid_tournaments.iter().skip(1) {
+                        println!("[ShanghaiMasters Init] 删除重复赛事: id={}", extra_tournament.id);
+                        // 先删除比赛
+                        sqlx::query("DELETE FROM matches WHERE tournament_id = ?")
+                            .bind(extra_tournament.id as i64)
+                            .execute(pool)
+                            .await
+                            .ok();
+                        // 删除赛事
+                        sqlx::query("DELETE FROM tournaments WHERE id = ?")
+                            .bind(extra_tournament.id as i64)
+                            .execute(pool)
+                            .await
+                            .ok();
+                    }
+                }
+
+                let id = if let Some(existing_id) = first_valid_id {
+                    println!("[ShanghaiMasters Init] 使用已存在的上海大师赛赛事: id={}", existing_id);
+                    existing_id
+                } else {
+                    // 创建新的上海大师赛赛事
+                    let tournament = Tournament {
+                        id: 0,
+                        save_id: save_id.to_string(),
+                        season_id,
+                        tournament_type: TournamentType::ShanghaiMasters,
+                        name: format!("S{} 上海大师赛", season_id),
+                        region_id: None,
+                        status: TournamentStatus::Upcoming,
+                        current_stage: None,
+                        current_round: None,
+                    };
+
+                    let new_id = TournamentRepository::create(pool, save_id, &tournament)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    println!("[ShanghaiMasters Init] 创建新上海大师赛赛事: id={}", new_id);
+                    new_id
                 };
 
-                let id = TournamentRepository::create(pool, save_id, &tournament)
+                // 检查是否已有比赛（避免重复生成）
+                let existing_matches = MatchRepository::get_by_tournament(pool, id)
                     .await
                     .map_err(|e| e.to_string())?;
 
-                tournaments_created.push(TournamentCreated {
-                    id,
-                    name: tournament.name,
-                    tournament_type: format!("{:?}", TournamentType::ShanghaiMasters),
-                    region: None,
-                });
+                if existing_matches.len() > 0 {
+                    println!("[ShanghaiMasters Init] 上海大师赛已有 {} 场比赛，跳过生成", existing_matches.len());
+                    tournaments_created.push(TournamentCreated {
+                        id,
+                        name: format!("S{} 上海大师赛", season_id),
+                        tournament_type: format!("{:?}", TournamentType::ShanghaiMasters),
+                        region: None,
+                    });
+                } else {
+                    // 从夏季季后赛获取各赛区的冠亚季军
+                    let mut legendary_teams = Vec::new();  // 冠军队伍
+                    let mut challenger_teams = Vec::new(); // 亚军队伍
+                    let mut qualifier_teams = Vec::new();  // 季军队伍
+
+                    // 获取所有夏季季后赛
+                    let all_playoffs = TournamentRepository::get_by_season_and_type(
+                        pool, save_id, season_id, "SummerPlayoffs"
+                    ).await.map_err(|e| e.to_string())?;
+
+                    println!("[ShanghaiMasters Init] 找到 {} 个夏季季后赛赛事", all_playoffs.len());
+                    for playoff in &all_playoffs {
+                        println!("[ShanghaiMasters Init] 季后赛: id={}, name={}, status={:?}",
+                            playoff.id, playoff.name, playoff.status);
+                    }
+
+                    for playoff_tournament in all_playoffs {
+                        // 获取该季后赛的最终排名
+                        let results = self.get_playoffs_top3(pool, playoff_tournament.id).await?;
+
+                        if results.len() >= 3 {
+                            legendary_teams.push(results[0].clone());  // 冠军
+                            challenger_teams.push(results[1].clone()); // 亚军
+                            qualifier_teams.push(results[2].clone());  // 季军
+                            println!("[ShanghaiMasters] 从赛事 {} 获取到前3名队伍", playoff_tournament.name);
+                        } else {
+                            println!("[ShanghaiMasters] 赛事 {} 结果不足3支队伍: {}", playoff_tournament.name, results.len());
+                        }
+                    }
+
+                    // 如果所有队伍都已就位，生成上海大师赛对阵（与MSI相同格式）
+                    if legendary_teams.len() == 4 && challenger_teams.len() == 4 && qualifier_teams.len() == 4 {
+                        let matches = self.tournament_service.generate_msi_bracket(
+                            id,
+                            &legendary_teams,
+                            &challenger_teams,
+                            &qualifier_teams,
+                        );
+
+                        if !matches.is_empty() {
+                            MatchRepository::create_batch(pool, save_id, &matches)
+                                .await
+                                .map_err(|e| e.to_string())?;
+
+                            // 更新赛事状态为进行中
+                            TournamentRepository::update_status(pool, id, TournamentStatus::InProgress)
+                                .await
+                                .map_err(|e| e.to_string())?;
+
+                            println!("[ShanghaiMasters] 成功生成 {} 场比赛并更新状态为进行中", matches.len());
+                        }
+                    } else {
+                        println!("[ShanghaiMasters] 队伍不足: legendary={}, challenger={}, qualifier={}",
+                            legendary_teams.len(), challenger_teams.len(), qualifier_teams.len());
+                    }
+
+                    tournaments_created.push(TournamentCreated {
+                        id,
+                        name: format!("S{} 上海大师赛", season_id),
+                        tournament_type: format!("{:?}", TournamentType::ShanghaiMasters),
+                        region: None,
+                    });
+                }
             }
 
             // ICP洲际对抗赛
             SeasonPhase::IcpIntercontinental => {
-                let tournament = Tournament {
-                    id: 0,
-                    save_id: save_id.to_string(),
-                    season_id,
-                    tournament_type: TournamentType::IcpIntercontinental,
-                    name: format!("S{} ICP洲际对抗赛", season_id),
-                    region_id: None,
-                    status: TournamentStatus::Upcoming,
-                    current_stage: None,
-                    current_round: None,
+                // 检查是否已存在ICP赛事
+                let existing = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "IcpIntercontinental"
+                ).await.map_err(|e| e.to_string())?;
+
+                let id = if let Some(t) = existing.first() {
+                    println!("[ICP Init] 找到已存在的ICP赛事: id={}", t.id);
+                    t.id
+                } else {
+                    let tournament = Tournament {
+                        id: 0,
+                        save_id: save_id.to_string(),
+                        season_id,
+                        tournament_type: TournamentType::IcpIntercontinental,
+                        name: format!("S{} ICP洲际对抗赛", season_id),
+                        region_id: None,
+                        status: TournamentStatus::Upcoming,
+                        current_stage: None,
+                        current_round: None,
+                    };
+
+                    let new_id = TournamentRepository::create(pool, save_id, &tournament)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    println!("[ICP Init] 创建新ICP赛事: id={}", new_id);
+                    new_id
                 };
 
-                let id = TournamentRepository::create(pool, save_id, &tournament)
+                // 检查是否已有比赛（避免重复生成）
+                let existing_matches = MatchRepository::get_by_tournament(pool, id)
                     .await
                     .map_err(|e| e.to_string())?;
 
-                tournaments_created.push(TournamentCreated {
-                    id,
-                    name: tournament.name,
-                    tournament_type: format!("{:?}", TournamentType::IcpIntercontinental),
-                    region: None,
-                });
+                if existing_matches.len() > 0 {
+                    println!("[ICP Init] ICP赛事已有 {} 场比赛，跳过生成", existing_matches.len());
+                    tournaments_created.push(TournamentCreated {
+                        id,
+                        name: format!("S{} ICP洲际对抗赛", season_id),
+                        tournament_type: format!("{:?}", TournamentType::IcpIntercontinental),
+                        region: None,
+                    });
+                } else {
+                    // 从夏季季后赛获取各赛区的前4名
+                    let mut region_teams: Vec<Vec<crate::models::Team>> = Vec::new();
+
+                    // 获取所有夏季季后赛
+                    let all_playoffs = TournamentRepository::get_by_season_and_type(
+                        pool, save_id, season_id, "SummerPlayoffs"
+                    ).await.map_err(|e| e.to_string())?;
+
+                    println!("[ICP Init] 找到 {} 个夏季季后赛赛事", all_playoffs.len());
+
+                    for playoff_tournament in all_playoffs {
+                        // 获取该季后赛的前4名
+                        let results = self.get_playoffs_top4(pool, playoff_tournament.id).await?;
+
+                        if results.len() >= 4 {
+                            region_teams.push(results);
+                            println!("[ICP Init] 从赛事 {} 获取到前4名队伍", playoff_tournament.name);
+                        } else {
+                            println!("[ICP Init] 赛事 {} 结果不足4支队伍: {}", playoff_tournament.name, results.len());
+                        }
+                    }
+
+                    // 如果所有4个赛区的前4名都已就位，生成ICP对阵
+                    if region_teams.len() == 4 {
+                        let matches = self.tournament_service.generate_icp_bracket(
+                            id,
+                            region_teams,
+                        );
+
+                        if !matches.is_empty() {
+                            MatchRepository::create_batch(pool, save_id, &matches)
+                                .await
+                                .map_err(|e| e.to_string())?;
+
+                            // 更新赛事状态为进行中
+                            TournamentRepository::update_status(pool, id, TournamentStatus::InProgress)
+                                .await
+                                .map_err(|e| e.to_string())?;
+
+                            println!("[ICP Init] 成功生成 {} 场比赛并更新状态为进行中", matches.len());
+                        }
+                    } else {
+                        println!("[ICP Init] 赛区队伍不足: 需要4个赛区各4队，当前有 {} 个赛区数据", region_teams.len());
+                    }
+
+                    tournaments_created.push(TournamentCreated {
+                        id,
+                        name: format!("S{} ICP洲际对抗赛", season_id),
+                        tournament_type: format!("{:?}", TournamentType::IcpIntercontinental),
+                        region: None,
+                    });
+                }
             }
 
             // Super洲际邀请赛
             SeasonPhase::SuperIntercontinental => {
-                let tournament = Tournament {
-                    id: 0,
-                    save_id: save_id.to_string(),
-                    season_id,
-                    tournament_type: TournamentType::SuperIntercontinental,
-                    name: format!("S{} Super洲际邀请赛", season_id),
-                    region_id: None,
-                    status: TournamentStatus::Upcoming,
-                    current_stage: None,
-                    current_round: None,
+                // 检查是否已存在Super赛事
+                let existing = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "SuperIntercontinental"
+                ).await.map_err(|e| e.to_string())?;
+
+                let id = if let Some(t) = existing.first() {
+                    println!("[Super Init] 找到已存在的Super赛事: id={}", t.id);
+                    t.id
+                } else {
+                    let tournament = Tournament {
+                        id: 0,
+                        save_id: save_id.to_string(),
+                        season_id,
+                        tournament_type: TournamentType::SuperIntercontinental,
+                        name: format!("S{} Super洲际邀请赛", season_id),
+                        region_id: None,
+                        status: TournamentStatus::Upcoming,
+                        current_stage: None,
+                        current_round: None,
+                    };
+
+                    let new_id = TournamentRepository::create(pool, save_id, &tournament)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    println!("[Super Init] 创建新Super赛事: id={}", new_id);
+                    new_id
                 };
 
-                let id = TournamentRepository::create(pool, save_id, &tournament)
+                // 检查是否已有比赛（避免重复生成）
+                let existing_matches = MatchRepository::get_by_tournament(pool, id)
                     .await
                     .map_err(|e| e.to_string())?;
 
-                tournaments_created.push(TournamentCreated {
-                    id,
-                    name: tournament.name,
-                    tournament_type: format!("{:?}", TournamentType::SuperIntercontinental),
-                    region: None,
-                });
+                if existing_matches.len() > 0 {
+                    println!("[Super Init] Super赛事已有 {} 场比赛，跳过生成", existing_matches.len());
+                    tournaments_created.push(TournamentCreated {
+                        id,
+                        name: format!("S{} Super洲际邀请赛", season_id),
+                        tournament_type: format!("{:?}", TournamentType::SuperIntercontinental),
+                        region: None,
+                    });
+                } else {
+                    // 从年度积分获取Top16队伍
+                    let rankings = PointsRepository::get_season_rankings(pool, save_id, season_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    println!("[Super Init] 年度积分排名队伍数: {}", rankings.len());
+
+                    if rankings.len() >= 16 {
+                        // 获取队伍信息
+                        let mut legendary_teams = Vec::new();
+                        let mut challenger_teams = Vec::new();
+                        let mut fighter_teams = Vec::new();
+
+                        for (idx, ranking) in rankings.iter().take(16).enumerate() {
+                            if let Ok(team) = TeamRepository::get_by_id(pool, ranking.team_id).await {
+                                match idx {
+                                    0..=3 => legendary_teams.push(team),    // 1-4名: 传奇组
+                                    4..=7 => challenger_teams.push(team),   // 5-8名: 挑战者组
+                                    8..=15 => fighter_teams.push(team),     // 9-16名: Fighter组
+                                    _ => {}
+                                }
+                            }
+                        }
+
+                        println!("[Super Init] 传奇组: {} 队, 挑战者组: {} 队, Fighter组: {} 队",
+                            legendary_teams.len(), challenger_teams.len(), fighter_teams.len());
+
+                        if legendary_teams.len() == 4 && challenger_teams.len() == 4 && fighter_teams.len() == 8 {
+                            let matches = self.tournament_service.generate_super_bracket(
+                                id,
+                                &legendary_teams,
+                                &challenger_teams,
+                                &fighter_teams,
+                            );
+
+                            if !matches.is_empty() {
+                                MatchRepository::create_batch(pool, save_id, &matches)
+                                    .await
+                                    .map_err(|e| e.to_string())?;
+
+                                // 更新赛事状态为进行中
+                                TournamentRepository::update_status(pool, id, TournamentStatus::InProgress)
+                                    .await
+                                    .map_err(|e| e.to_string())?;
+
+                                println!("[Super Init] 成功生成 {} 场比赛并更新状态为进行中", matches.len());
+                            }
+                        } else {
+                            println!("[Super Init] 队伍数量不足: 传奇组需4队，挑战者组需4队，Fighter组需8队");
+                        }
+                    } else {
+                        println!("[Super Init] 年度积分排名不足16队: 当前 {} 队", rankings.len());
+                    }
+
+                    tournaments_created.push(TournamentCreated {
+                        id,
+                        name: format!("S{} Super洲际邀请赛", season_id),
+                        tournament_type: format!("{:?}", TournamentType::SuperIntercontinental),
+                        region: None,
+                    });
+                }
             }
+
+            // 年度颁奖典礼 - 不创建赛事，仅显示页面
+            SeasonPhase::AnnualAwards => {}
 
             // 转会期 - 不创建赛事
             SeasonPhase::TransferWindow => {}
@@ -500,7 +1406,7 @@ impl GameFlowService {
         phase: SeasonPhase,
     ) -> Result<bool, String> {
         match phase {
-            SeasonPhase::TransferWindow | SeasonPhase::Draft | SeasonPhase::SeasonEnd => {
+            SeasonPhase::AnnualAwards | SeasonPhase::TransferWindow | SeasonPhase::Draft | SeasonPhase::SeasonEnd => {
                 // 这些阶段需要手动确认完成
                 Ok(false)
             }
@@ -527,6 +1433,7 @@ impl GameFlowService {
         season_id: u64,
         phase: SeasonPhase,
     ) -> Result<PhaseCompleteResult, String> {
+        println!("[complete_phase] 开始处理阶段: {:?}, season_id={}", phase, season_id);
         let mut honors_awarded = Vec::new();
 
         // 根据阶段颁发荣誉
@@ -537,10 +1444,13 @@ impl GameFlowService {
                 if let Some(t_type) = tournament_type {
                     // 获取该阶段的所有赛事
                     let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
+                    println!("[complete_phase] 找到 {} 个常规赛赛事", tournaments.len());
 
                     for tournament in tournaments {
+                        println!("[complete_phase] 处理常规赛荣誉: tournament_id={}", tournament.id);
                         match self.honor_service.process_regular_season_honors(pool, save_id, tournament.id).await {
                             Ok(honors) => {
+                                println!("[complete_phase] 常规赛荣誉处理成功，获得 {} 个荣誉", honors.len());
                                 for honor in honors {
                                     honors_awarded.push(HonorAwarded {
                                         honor_type: format!("{:?}", honor.honor_type),
@@ -570,65 +1480,353 @@ impl GameFlowService {
             | SeasonPhase::IcpIntercontinental
             | SeasonPhase::SuperIntercontinental => {
                 let tournament_type = phase_to_tournament_type(phase);
+                println!("[complete_phase] 处理季后赛/国际赛事: {:?}, tournament_type={:?}", phase, tournament_type);
                 if let Some(t_type) = tournament_type {
                     let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
+                    println!("[complete_phase] 找到 {} 个赛事", tournaments.len());
 
-                    for tournament in tournaments {
+                    for tournament in &tournaments {
+                        println!("[complete_phase] 处理赛事荣誉: id={}, name={}", tournament.id, tournament.name);
                         match self.honor_service.process_tournament_completion(pool, save_id, tournament.id).await {
-                            Ok(tournament_honors) => {
-                                // 收集战队荣誉
-                                if let Some(ref honor) = tournament_honors.team_champion {
-                                    honors_awarded.push(HonorAwarded {
-                                        honor_type: "冠军".to_string(),
-                                        recipient_name: honor.team_name.clone().unwrap_or_default(),
-                                        tournament_name: honor.tournament_name.clone(),
-                                    });
-                                }
-                                if let Some(ref honor) = tournament_honors.team_runner_up {
-                                    honors_awarded.push(HonorAwarded {
-                                        honor_type: "亚军".to_string(),
-                                        recipient_name: honor.team_name.clone().unwrap_or_default(),
-                                        tournament_name: honor.tournament_name.clone(),
-                                    });
-                                }
-                                if let Some(ref honor) = tournament_honors.team_third {
-                                    honors_awarded.push(HonorAwarded {
-                                        honor_type: "季军".to_string(),
-                                        recipient_name: honor.team_name.clone().unwrap_or_default(),
-                                        tournament_name: honor.tournament_name.clone(),
-                                    });
-                                }
-                                if let Some(ref honor) = tournament_honors.team_fourth {
-                                    honors_awarded.push(HonorAwarded {
-                                        honor_type: "殿军".to_string(),
-                                        recipient_name: honor.team_name.clone().unwrap_or_default(),
-                                        tournament_name: honor.tournament_name.clone(),
-                                    });
-                                }
-                                // 收集MVP荣誉
-                                if let Some(ref honor) = tournament_honors.tournament_mvp {
-                                    honors_awarded.push(HonorAwarded {
-                                        honor_type: "赛事MVP".to_string(),
-                                        recipient_name: honor.player_name.clone().unwrap_or_default(),
-                                        tournament_name: honor.tournament_name.clone(),
-                                    });
-                                }
-                                if let Some(ref honor) = tournament_honors.finals_mvp {
-                                    honors_awarded.push(HonorAwarded {
-                                        honor_type: "决赛MVP".to_string(),
-                                        recipient_name: honor.player_name.clone().unwrap_or_default(),
-                                        tournament_name: honor.tournament_name.clone(),
-                                    });
+                            Ok(_) => {
+                                // 从数据库查询该赛事的所有荣誉（支持ICP等多队伍同名次的赛事）
+                                match HonorRepository::get_by_tournament(pool, save_id, tournament.id).await {
+                                    Ok(all_honors) => {
+                                        println!("[complete_phase] 从数据库获取到 {} 个荣誉", all_honors.len());
+                                        // 只收集战队荣誉和MVP用于显示（选手荣誉太多）
+                                        for honor in all_honors {
+                                            match honor.honor_type {
+                                                // 战队荣誉
+                                                HonorType::TeamChampion => {
+                                                    honors_awarded.push(HonorAwarded {
+                                                        honor_type: "冠军".to_string(),
+                                                        recipient_name: honor.team_name.clone().unwrap_or_default(),
+                                                        tournament_name: honor.tournament_name.clone(),
+                                                    });
+                                                }
+                                                HonorType::TeamRunnerUp => {
+                                                    honors_awarded.push(HonorAwarded {
+                                                        honor_type: "亚军".to_string(),
+                                                        recipient_name: honor.team_name.clone().unwrap_or_default(),
+                                                        tournament_name: honor.tournament_name.clone(),
+                                                    });
+                                                }
+                                                HonorType::TeamThird => {
+                                                    honors_awarded.push(HonorAwarded {
+                                                        honor_type: "季军".to_string(),
+                                                        recipient_name: honor.team_name.clone().unwrap_or_default(),
+                                                        tournament_name: honor.tournament_name.clone(),
+                                                    });
+                                                }
+                                                HonorType::TeamFourth => {
+                                                    honors_awarded.push(HonorAwarded {
+                                                        honor_type: "殿军".to_string(),
+                                                        recipient_name: honor.team_name.clone().unwrap_or_default(),
+                                                        tournament_name: honor.tournament_name.clone(),
+                                                    });
+                                                }
+                                                // MVP荣誉
+                                                HonorType::TournamentMvp => {
+                                                    honors_awarded.push(HonorAwarded {
+                                                        honor_type: "赛事MVP".to_string(),
+                                                        recipient_name: honor.player_name.clone().unwrap_or_default(),
+                                                        tournament_name: honor.tournament_name.clone(),
+                                                    });
+                                                }
+                                                HonorType::FinalsMvp => {
+                                                    honors_awarded.push(HonorAwarded {
+                                                        honor_type: "决赛MVP".to_string(),
+                                                        recipient_name: honor.player_name.clone().unwrap_or_default(),
+                                                        tournament_name: honor.tournament_name.clone(),
+                                                    });
+                                                }
+                                                // 其他荣誉类型（选手荣誉等）不显示
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        println!("[complete_phase] 获取荣誉列表失败: {}", e);
+                                    }
                                 }
                             }
                             Err(e) => {
-                                eprintln!("Failed to process tournament honors for tournament {}: {}", tournament.id, e);
+                                println!("[complete_phase] 荣誉处理失败: tournament_id={}, error={}", tournament.id, e);
                             }
                         }
                     }
                 }
             }
+
+            // 年度颁奖典礼 - 颁发年度荣誉
+            SeasonPhase::AnnualAwards => {
+                println!("[complete_phase] 处理年度颁奖典礼");
+
+                // 获取年度Top20选手并颁发荣誉
+                let top20 = self.get_annual_top20(pool, save_id, season_id).await?;
+                println!("[complete_phase] 获取到 {} 位Top20选手", top20.len());
+
+                for (idx, player) in top20.iter().enumerate() {
+                    // 第一名同时获得年度MVP
+                    if idx == 0 {
+                        let mvp_honor = crate::models::Honor::new_player_honor(
+                            save_id,
+                            HonorType::AnnualMvp,
+                            season_id,
+                            None, // 年度颁奖没有具体赛事
+                            "年度颁奖典礼",
+                            "ANNUAL",
+                            player.team_id,
+                            &player.team_name,
+                            player.player_id,
+                            &player.player_name,
+                            &player.position,
+                            None,
+                        );
+                        if let Err(e) = HonorRepository::create(pool, save_id, &mvp_honor).await {
+                            eprintln!("Failed to create annual MVP honor: {}", e);
+                        } else {
+                            honors_awarded.push(HonorAwarded {
+                                honor_type: "年度MVP".to_string(),
+                                recipient_name: player.player_name.clone(),
+                                tournament_name: "年度颁奖典礼".to_string(),
+                            });
+                        }
+                    }
+
+                    // Top20荣誉 - 在tournament_name中记录具体排名
+                    let rank = idx + 1;
+                    let top20_honor = crate::models::Honor::new_player_honor(
+                        save_id,
+                        HonorType::AnnualTop20,
+                        season_id,
+                        None,
+                        &format!("年度Top{}", rank),
+                        "ANNUAL",
+                        player.team_id,
+                        &player.team_name,
+                        player.player_id,
+                        &player.player_name,
+                        &player.position,
+                        None,
+                    );
+                    if let Err(e) = HonorRepository::create(pool, save_id, &top20_honor).await {
+                        eprintln!("Failed to create annual top20 honor for player {}: {}", player.player_id, e);
+                    } else {
+                        honors_awarded.push(HonorAwarded {
+                            honor_type: format!("年度Top{}", idx + 1),
+                            recipient_name: player.player_name.clone(),
+                            tournament_name: "年度颁奖典礼".to_string(),
+                        });
+                    }
+
+                    // 更新选手身价（Top20选手身价提升）
+                    let value_bonus = match idx {
+                        0 => 1.5,      // MVP +50%
+                        1..=4 => 1.3,  // Top2-5 +30%
+                        5..=9 => 1.2,  // Top6-10 +20%
+                        _ => 1.1,      // Top11-20 +10%
+                    };
+                    let reason = format!("年度Top{}", idx + 1);
+                    let _ = self.update_player_market_value(pool, save_id, season_id, player.player_id, value_bonus, &reason).await;
+                }
+
+                // 获取各位置最佳选手并颁发荣誉
+                let all_pro = self.get_annual_all_pro(pool, save_id, season_id).await?;
+                println!("[complete_phase] 获取到 {} 位最佳阵容选手", all_pro.len());
+
+                for player in &all_pro {
+                    let honor_type = match player.position.to_uppercase().as_str() {
+                        "TOP" => HonorType::AnnualBestTop,
+                        "JUG" => HonorType::AnnualBestJungle,
+                        "MID" => HonorType::AnnualBestMid,
+                        "ADC" => HonorType::AnnualBestAdc,
+                        "SUP" => HonorType::AnnualBestSupport,
+                        _ => continue,
+                    };
+
+                    let honor_name = match player.position.to_uppercase().as_str() {
+                        "TOP" => "年度最佳上单",
+                        "JUG" => "年度最佳打野",
+                        "MID" => "年度最佳中单",
+                        "ADC" => "年度最佳ADC",
+                        "SUP" => "年度最佳辅助",
+                        _ => continue,
+                    };
+
+                    let position_honor = crate::models::Honor::new_player_honor(
+                        save_id,
+                        honor_type,
+                        season_id,
+                        None,
+                        "年度颁奖典礼",
+                        "ANNUAL",
+                        player.team_id,
+                        &player.team_name,
+                        player.player_id,
+                        &player.player_name,
+                        &player.position,
+                        None,
+                    );
+                    if let Err(e) = HonorRepository::create(pool, save_id, &position_honor).await {
+                        eprintln!("Failed to create annual best position honor: {}", e);
+                    } else {
+                        honors_awarded.push(HonorAwarded {
+                            honor_type: honor_name.to_string(),
+                            recipient_name: player.player_name.clone(),
+                            tournament_name: "年度颁奖典礼".to_string(),
+                        });
+                    }
+
+                    // 最佳阵容选手身价提升20%
+                    let _ = self.update_player_market_value(pool, save_id, season_id, player.player_id, 1.2, honor_name).await;
+                }
+
+                // 获取年度最佳新秀
+                if let Ok(Some(rookie)) = self.get_annual_rookie(pool, save_id, season_id).await {
+                    println!("[complete_phase] 年度最佳新秀: {}", rookie.player_name);
+
+                    let rookie_honor = crate::models::Honor::new_player_honor(
+                        save_id,
+                        HonorType::AnnualRookie,
+                        season_id,
+                        None,
+                        "年度颁奖典礼",
+                        "ANNUAL",
+                        rookie.team_id,
+                        &rookie.team_name,
+                        rookie.player_id,
+                        &rookie.player_name,
+                        &rookie.position,
+                        None,
+                    );
+                    if let Err(e) = HonorRepository::create(pool, save_id, &rookie_honor).await {
+                        eprintln!("Failed to create annual rookie honor: {}", e);
+                    } else {
+                        honors_awarded.push(HonorAwarded {
+                            honor_type: "年度最佳新秀".to_string(),
+                            recipient_name: rookie.player_name.clone(),
+                            tournament_name: "年度颁奖典礼".to_string(),
+                        });
+                    }
+
+                    // 最佳新秀身价提升30%
+                    let _ = self.update_player_market_value(pool, save_id, season_id, rookie.player_id, 1.3, "年度最佳新秀").await;
+                }
+            }
+
             _ => {}
+        }
+
+        println!("[complete_phase] 荣誉处理完成，共 {} 个荣誉", honors_awarded.len());
+
+        // 年度颁奖典礼后重算所有选手身价（考虑累积荣誉）
+        if phase == SeasonPhase::AnnualAwards {
+            println!("[complete_phase] 开始年度身价重算...");
+            match self.recalculate_all_market_values(pool, save_id, season_id).await {
+                Ok(count) => println!("[complete_phase] 年度身价重算完成，共更新 {} 名选手", count),
+                Err(e) => eprintln!("[complete_phase] 年度身价重算失败: {}", e),
+            }
+        }
+
+        // 颁发年度积分（季后赛和国际赛事，Super赛除外）
+        // Super赛是年度积分的奖励，不颁发积分
+        match phase {
+            SeasonPhase::SpringPlayoffs
+            | SeasonPhase::SummerPlayoffs
+            | SeasonPhase::Msi
+            | SeasonPhase::MadridMasters
+            | SeasonPhase::ClaudeIntercontinental
+            | SeasonPhase::WorldChampionship
+            | SeasonPhase::ShanghaiMasters
+            | SeasonPhase::IcpIntercontinental => {
+                println!("[complete_phase] 颁发年度积分: {:?}", phase);
+                let tournament_type = phase_to_tournament_type(phase);
+                if let Some(t_type) = tournament_type {
+                    let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
+                    for tournament in &tournaments {
+                        println!("[complete_phase] 为赛事 {} 颁发年度积分", tournament.id);
+                        match self.award_tournament_points(pool, save_id, season_id, tournament.id, t_type).await {
+                            Ok(awarded) => println!("[complete_phase] 积分颁发成功: {:?}", awarded),
+                            Err(e) => println!("[complete_phase] 积分颁发失败: {}", e),
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        // 发放赛事奖金（季后赛和国际赛事）
+        match phase {
+            SeasonPhase::SpringPlayoffs
+            | SeasonPhase::SummerPlayoffs
+            | SeasonPhase::Msi
+            | SeasonPhase::MadridMasters
+            | SeasonPhase::ClaudeIntercontinental
+            | SeasonPhase::WorldChampionship
+            | SeasonPhase::ShanghaiMasters
+            | SeasonPhase::IcpIntercontinental
+            | SeasonPhase::SuperIntercontinental => {
+                println!("[complete_phase] 发放赛事奖金: {:?}", phase);
+                let tournament_type = phase_to_tournament_type(phase);
+                if let Some(t_type) = tournament_type {
+                    let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
+                    for tournament in &tournaments {
+                        println!("[complete_phase] 为赛事 {} 发放奖金", tournament.id);
+                        match self.distribute_tournament_prizes(pool, save_id, season_id, tournament.id, t_type).await {
+                            Ok(distributed) => println!("[complete_phase] 奖金发放成功: {:?}", distributed),
+                            Err(e) => println!("[complete_phase] 奖金发放失败: {}", e),
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        // 更新冠军选手的统计数据（增加冠军次数）
+        match phase {
+            SeasonPhase::SpringPlayoffs
+            | SeasonPhase::SummerPlayoffs
+            | SeasonPhase::Msi
+            | SeasonPhase::MadridMasters
+            | SeasonPhase::ClaudeIntercontinental
+            | SeasonPhase::WorldChampionship
+            | SeasonPhase::ShanghaiMasters
+            | SeasonPhase::IcpIntercontinental
+            | SeasonPhase::SuperIntercontinental => {
+                let tournament_type = phase_to_tournament_type(phase);
+                if let Some(t_type) = tournament_type {
+                    let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
+                    let is_international = matches!(t_type,
+                        TournamentType::Msi |
+                        TournamentType::MadridMasters |
+                        TournamentType::ClaudeIntercontinental |
+                        TournamentType::WorldChampionship |
+                        TournamentType::ShanghaiMasters |
+                        TournamentType::IcpIntercontinental |
+                        TournamentType::SuperIntercontinental
+                    );
+                    for tournament in tournaments {
+                        if let Err(e) = self.update_champion_player_stats(pool, save_id, season_id, tournament.id, t_type, is_international).await {
+                            eprintln!("Failed to update champion stats for tournament {}: {}", tournament.id, e);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        // 更新赛事状态为已完成
+        let tournament_type = phase_to_tournament_type(phase);
+        if let Some(t_type) = tournament_type {
+            let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
+            for tournament in &tournaments {
+                let _ = sqlx::query("UPDATE tournaments SET status = 'Completed' WHERE id = ?")
+                    .bind(tournament.id as i64)
+                    .execute(pool)
+                    .await;
+                println!("[complete_phase] 更新赛事 {} (id={}) 状态为 Completed", tournament.name, tournament.id);
+            }
         }
 
         // 获取下一阶段
@@ -689,6 +1887,1104 @@ impl GameFlowService {
                 current_round: None,
             }
         }).collect())
+    }
+
+    /// 获取季后赛前3名队伍（冠亚季军）
+    async fn get_playoffs_top3(
+        &self,
+        pool: &Pool<Sqlite>,
+        tournament_id: u64,
+    ) -> Result<Vec<crate::models::Team>, String> {
+        use crate::models::Team;
+        let mut results: Vec<Team> = Vec::new();
+
+        // 获取总决赛（GRAND_FINAL）
+        let grand_final = sqlx::query(
+            "SELECT * FROM matches WHERE tournament_id = ? AND stage = 'GRAND_FINAL' AND UPPER(status) = 'COMPLETED'"
+        )
+        .bind(tournament_id as i64)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let (champion_id, runner_up_id) = if let Some(gf) = grand_final {
+            let winner_id = gf.get::<Option<i64>, _>("winner_id");
+            let home_id = gf.get::<i64, _>("home_team_id") as u64;
+            let away_id = gf.get::<i64, _>("away_team_id") as u64;
+
+            if let Some(winner) = winner_id {
+                let winner = winner as u64;
+                let loser = if winner == home_id { away_id } else { home_id };
+                (Some(winner), Some(loser))
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
+        // 获取败者组决赛失败者（季军）
+        let losers_final = sqlx::query(
+            "SELECT * FROM matches WHERE tournament_id = ? AND stage = 'LOSERS_FINAL' AND UPPER(status) = 'COMPLETED'"
+        )
+        .bind(tournament_id as i64)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let third_id = if let Some(lf) = losers_final {
+            let winner_id = lf.get::<Option<i64>, _>("winner_id");
+            let home_id = lf.get::<i64, _>("home_team_id") as u64;
+            let away_id = lf.get::<i64, _>("away_team_id") as u64;
+
+            if let Some(winner) = winner_id {
+                let winner = winner as u64;
+                let loser = if winner == home_id { away_id } else { home_id };
+                Some(loser)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // 加载队伍详情
+        if let Some(cid) = champion_id {
+            if let Ok(team) = TeamRepository::get_by_id(pool, cid).await {
+                results.push(team);
+            }
+        }
+        if let Some(rid) = runner_up_id {
+            if let Ok(team) = TeamRepository::get_by_id(pool, rid).await {
+                results.push(team);
+            }
+        }
+        if let Some(tid) = third_id {
+            if let Ok(team) = TeamRepository::get_by_id(pool, tid).await {
+                results.push(team);
+            }
+        }
+
+        println!("[get_playoffs_top3] tournament_id={}, found {} teams", tournament_id, results.len());
+        Ok(results)
+    }
+
+    /// 获取季后赛前4名队伍 (用于ICP洲际赛)
+    async fn get_playoffs_top4(
+        &self,
+        pool: &Pool<Sqlite>,
+        tournament_id: u64,
+    ) -> Result<Vec<crate::models::Team>, String> {
+        use crate::models::Team;
+        let mut results: Vec<Team> = Vec::new();
+
+        println!("[get_playoffs_top4] 开始获取 tournament_id={} 的前4名", tournament_id);
+
+        // 获取总决赛（GRAND_FINAL）
+        let grand_final = sqlx::query(
+            "SELECT * FROM matches WHERE tournament_id = ? AND stage = 'GRAND_FINAL' AND UPPER(status) = 'COMPLETED'"
+        )
+        .bind(tournament_id as i64)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let (champion_id, runner_up_id) = if let Some(gf) = grand_final {
+            let winner_id = gf.get::<Option<i64>, _>("winner_id");
+            let home_id = gf.get::<i64, _>("home_team_id") as u64;
+            let away_id = gf.get::<i64, _>("away_team_id") as u64;
+
+            if let Some(winner) = winner_id {
+                let winner = winner as u64;
+                let loser = if winner == home_id { away_id } else { home_id };
+                println!("[get_playoffs_top4] GRAND_FINAL: champion={}, runner_up={}", winner, loser);
+                (Some(winner), Some(loser))
+            } else {
+                println!("[get_playoffs_top4] GRAND_FINAL 存在但无 winner_id");
+                (None, None)
+            }
+        } else {
+            println!("[get_playoffs_top4] 未找到 GRAND_FINAL");
+            (None, None)
+        };
+
+        // 获取败者组决赛失败者（季军）
+        let losers_final = sqlx::query(
+            "SELECT * FROM matches WHERE tournament_id = ? AND stage = 'LOSERS_FINAL' AND UPPER(status) = 'COMPLETED'"
+        )
+        .bind(tournament_id as i64)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let third_id = if let Some(lf) = losers_final {
+            let winner_id = lf.get::<Option<i64>, _>("winner_id");
+            let home_id = lf.get::<i64, _>("home_team_id") as u64;
+            let away_id = lf.get::<i64, _>("away_team_id") as u64;
+
+            if let Some(winner) = winner_id {
+                let winner = winner as u64;
+                let loser = if winner == home_id { away_id } else { home_id };
+                println!("[get_playoffs_top4] LOSERS_FINAL: third={}", loser);
+                Some(loser)
+            } else {
+                println!("[get_playoffs_top4] LOSERS_FINAL 存在但无 winner_id");
+                None
+            }
+        } else {
+            println!("[get_playoffs_top4] 未找到 LOSERS_FINAL");
+            None
+        };
+
+        // 获取败者组R3失败者（殿军/第4名）
+        // 注意：季后赛的败者组结构是 R1 -> R2 -> R3(1场) -> FINAL
+        // LOSERS_R3 只有1场比赛，败者是第4名
+        let losers_r3 = sqlx::query(
+            "SELECT * FROM matches WHERE tournament_id = ? AND stage = 'LOSERS_R3' AND UPPER(status) = 'COMPLETED'"
+        )
+        .bind(tournament_id as i64)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let fourth_id = if let Some(lr3) = losers_r3 {
+            let winner_id = lr3.get::<Option<i64>, _>("winner_id");
+            let home_id = lr3.get::<i64, _>("home_team_id") as u64;
+            let away_id = lr3.get::<i64, _>("away_team_id") as u64;
+
+            if let Some(winner) = winner_id {
+                let winner = winner as u64;
+                let loser = if winner == home_id { away_id } else { home_id };
+                println!("[get_playoffs_top4] LOSERS_R3: fourth={}", loser);
+                Some(loser)
+            } else {
+                println!("[get_playoffs_top4] LOSERS_R3 存在但无 winner_id");
+                None
+            }
+        } else {
+            println!("[get_playoffs_top4] 未找到 LOSERS_R3");
+            None
+        };
+
+        // 加载队伍详情（按排名顺序）
+        if let Some(cid) = champion_id {
+            if let Ok(team) = TeamRepository::get_by_id(pool, cid).await {
+                results.push(team);
+            }
+        }
+        if let Some(rid) = runner_up_id {
+            if let Ok(team) = TeamRepository::get_by_id(pool, rid).await {
+                results.push(team);
+            }
+        }
+        if let Some(tid) = third_id {
+            if let Ok(team) = TeamRepository::get_by_id(pool, tid).await {
+                results.push(team);
+            }
+        }
+        if let Some(fid) = fourth_id {
+            if let Ok(team) = TeamRepository::get_by_id(pool, fid).await {
+                results.push(team);
+            }
+        }
+
+        println!("[get_playoffs_top4] tournament_id={}, found {} teams", tournament_id, results.len());
+        Ok(results)
+    }
+
+    /// 颁发赛事年度积分
+    async fn award_tournament_points(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+        tournament_id: u64,
+        tournament_type: TournamentType,
+    ) -> Result<Vec<(u64, u32)>, String> {
+        let points_engine = PointsCalculationEngine::new();
+        let mut awarded: Vec<(u64, u32)> = Vec::new();
+
+        // 根据赛事类型获取排名结果
+        let results = self.get_tournament_final_results(pool, save_id, tournament_id, tournament_type).await?;
+
+        for (team_id, position) in &results {
+            let points = points_engine.get_points(tournament_type, position);
+            if points > 0 {
+                // 保存积分明细（带去重检查）
+                let (_, is_new) = PointsRepository::add_points_detail(
+                    pool,
+                    save_id,
+                    season_id,
+                    *team_id,
+                    tournament_id,
+                    points,
+                    position_to_rank(position),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // 只有新记录才更新队伍的年度积分
+                if is_new {
+                    let mut team = TeamRepository::get_by_id(pool, *team_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    team.annual_points += points;
+                    TeamRepository::update(pool, &team)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    awarded.push((*team_id, points));
+                    println!("Awarded {} points to team {} for position {} in tournament {}",
+                        points, team_id, position, tournament_id);
+                } else {
+                    println!("Skipped duplicate points for team {} in tournament {}", team_id, tournament_id);
+                }
+            }
+        }
+
+        Ok(awarded)
+    }
+
+    /// 发放赛事奖金
+    async fn distribute_tournament_prizes(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+        tournament_id: u64,
+        tournament_type: TournamentType,
+    ) -> Result<Vec<(u64, u64)>, String> {
+        let financial_engine = FinancialEngine::new();
+        let mut distributed: Vec<(u64, u64)> = Vec::new();
+
+        // 获取赛事排名结果
+        let results = self.get_tournament_final_results(pool, save_id, tournament_id, tournament_type).await?;
+
+        for (team_id, position) in &results {
+            let prize = financial_engine.calculate_prize_money(tournament_type, position);
+            if prize > 0 {
+                // 确定交易类型描述
+                let transaction_type = if tournament_type.is_regional() {
+                    "PlayoffBonus"
+                } else {
+                    "InternationalBonus"
+                };
+
+                let description = format!("{:?} - {} 奖金", tournament_type, position);
+
+                // 记录财务交易
+                sqlx::query(
+                    r#"
+                    INSERT INTO financial_transactions (
+                        save_id, team_id, season_id, transaction_type, amount, description
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    "#
+                )
+                .bind(save_id)
+                .bind(*team_id as i64)
+                .bind(season_id as i64)
+                .bind(transaction_type)
+                .bind(prize as i64)
+                .bind(&description)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("Failed to record prize transaction: {}", e))?;
+
+                // 更新队伍余额
+                sqlx::query("UPDATE teams SET balance = balance + ? WHERE id = ?")
+                    .bind(prize as i64)
+                    .bind(*team_id as i64)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| format!("Failed to update team balance: {}", e))?;
+
+                distributed.push((*team_id, prize));
+                println!("[distribute_tournament_prizes] Awarded {} prize to team {} for position {} in tournament {}",
+                    prize, team_id, position, tournament_id);
+            }
+        }
+
+        println!("[distribute_tournament_prizes] Total {} prizes distributed for tournament {}", distributed.len(), tournament_id);
+        Ok(distributed)
+    }
+
+    /// 更新冠军队伍选手的统计数据（增加冠军次数）
+    async fn update_champion_player_stats(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+        tournament_id: u64,
+        tournament_type: TournamentType,
+        is_international: bool,
+    ) -> Result<(), String> {
+        // 获取赛事排名结果
+        let results = self.get_tournament_final_results(pool, save_id, tournament_id, tournament_type).await?;
+
+        // 找到冠军队伍
+        let champion_team_id = results.iter()
+            .find(|(_, pos)| pos == "CHAMPION")
+            .map(|(team_id, _)| *team_id);
+
+        if let Some(team_id) = champion_team_id {
+            println!("[update_champion_player_stats] Updating stats for champion team {} in tournament {}", team_id, tournament_id);
+
+            // 获取队伍的所有选手（从 players 表）
+            let players = sqlx::query(
+                r#"
+                SELECT id, game_id, position FROM players
+                WHERE save_id = ? AND team_id = ? AND status = 'Active'
+                "#
+            )
+            .bind(save_id)
+            .bind(team_id as i64)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("Failed to get team players: {}", e))?;
+
+            // 更新每个选手的冠军统计
+            for player_row in &players {
+                let player_id: i64 = player_row.get("id");
+                let player_name: String = player_row.get("game_id");
+                let position: String = player_row.get("position");
+
+                // 获取或创建选手的赛季统计
+                let mut stats = PlayerStatsRepository::get_or_create(
+                    pool,
+                    save_id,
+                    player_id,
+                    &player_name,
+                    season_id as i64,
+                    Some(team_id as i64),
+                    None,  // region_id
+                    &position
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // 更新冠军次数
+                if is_international {
+                    stats.international_titles += 1;
+                    println!("[update_champion_player_stats] Player {} now has {} international titles", player_id, stats.international_titles);
+                } else {
+                    stats.regional_titles += 1;
+                    println!("[update_champion_player_stats] Player {} now has {} regional titles", player_id, stats.regional_titles);
+                }
+
+                // 重新计算冠军加成和年度Top得分（综合三要素：影响力40% + 出场30% + 冠军30%）
+                stats.champion_bonus = (stats.international_titles * 3 + stats.regional_titles) as f64;
+                let games_bonus = stats.games_played as f64 / 10.0;
+                stats.yearly_top_score = stats.avg_impact * 0.4 + games_bonus * 0.3 + stats.champion_bonus * 0.3;
+
+                // 保存更新
+                PlayerStatsRepository::update(pool, &stats)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+
+            println!("[update_champion_player_stats] Successfully updated champion stats for tournament {}", tournament_id);
+        } else {
+            println!("[update_champion_player_stats] No champion found for tournament {}", tournament_id);
+        }
+
+        Ok(())
+    }
+
+    /// 获取赛事最终排名结果
+    async fn get_tournament_final_results(
+        &self,
+        pool: &Pool<Sqlite>,
+        _save_id: &str,
+        tournament_id: u64,
+        tournament_type: TournamentType,
+    ) -> Result<Vec<(u64, String)>, String> {
+        let mut results: Vec<(u64, String)> = Vec::new();
+
+        match tournament_type {
+            // 季后赛：从双败淘汰赛结果获取排名
+            // 使用的 stage: WINNERS_R1, LOSERS_R1, WINNERS_FINAL, LOSERS_R2, LOSERS_R3, LOSERS_FINAL, GRAND_FINAL
+            TournamentType::SpringPlayoffs | TournamentType::SummerPlayoffs => {
+                // 获取总决赛 (GRAND_FINAL)
+                let grand_final = sqlx::query(
+                    r#"
+                    SELECT * FROM matches
+                    WHERE tournament_id = ? AND stage = 'GRAND_FINAL' AND UPPER(status) = 'COMPLETED'
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                if let Some(final_match) = grand_final {
+                    let winner_id = final_match.get::<Option<i64>, _>("winner_id");
+                    let home_id = final_match.get::<i64, _>("home_team_id") as u64;
+                    let away_id = final_match.get::<i64, _>("away_team_id") as u64;
+
+                    if let Some(winner) = winner_id {
+                        let winner = winner as u64;
+                        let runner_up = if winner == home_id { away_id } else { home_id };
+                        results.push((winner, "CHAMPION".to_string()));
+                        results.push((runner_up, "RUNNER_UP".to_string()));
+                        println!("[get_tournament_final_results] GRAND_FINAL: champion={}, runner_up={}", winner, runner_up);
+                    }
+                } else {
+                    println!("[get_tournament_final_results] No GRAND_FINAL match found for tournament {}", tournament_id);
+                }
+
+                // 获取败者组决赛失败者（季军）
+                let losers_final = sqlx::query(
+                    r#"
+                    SELECT * FROM matches
+                    WHERE tournament_id = ? AND stage = 'LOSERS_FINAL' AND UPPER(status) = 'COMPLETED'
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                if let Some(lf_match) = losers_final {
+                    let winner_id = lf_match.get::<Option<i64>, _>("winner_id");
+                    let home_id = lf_match.get::<i64, _>("home_team_id") as u64;
+                    let away_id = lf_match.get::<i64, _>("away_team_id") as u64;
+
+                    if let Some(winner) = winner_id {
+                        // 败者组决赛的败者是季军
+                        let third = if winner as u64 == home_id { away_id } else { home_id };
+                        results.push((third, "THIRD".to_string()));
+                        println!("[get_tournament_final_results] LOSERS_FINAL loser (third): {}", third);
+                    }
+                }
+
+                // 获取败者组第三轮失败者（殿军）
+                let losers_r3 = sqlx::query(
+                    r#"
+                    SELECT * FROM matches
+                    WHERE tournament_id = ? AND stage = 'LOSERS_R3' AND UPPER(status) = 'COMPLETED'
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                if let Some(lr3_match) = losers_r3 {
+                    let winner_id = lr3_match.get::<Option<i64>, _>("winner_id");
+                    let home_id = lr3_match.get::<i64, _>("home_team_id") as u64;
+                    let away_id = lr3_match.get::<i64, _>("away_team_id") as u64;
+
+                    if let Some(winner) = winner_id {
+                        // 败者组R3的败者是殿军
+                        let fourth = if winner as u64 == home_id { away_id } else { home_id };
+                        results.push((fourth, "FOURTH".to_string()));
+                        println!("[get_tournament_final_results] LOSERS_R3 loser (fourth): {}", fourth);
+                    }
+                }
+
+                // 获取败者组第二轮失败者（5-6名）
+                let losers_r2 = sqlx::query(
+                    r#"
+                    SELECT * FROM matches
+                    WHERE tournament_id = ? AND stage = 'LOSERS_R2' AND UPPER(status) = 'COMPLETED'
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                for lr2_match in losers_r2 {
+                    let winner_id = lr2_match.get::<Option<i64>, _>("winner_id");
+                    let home_id = lr2_match.get::<i64, _>("home_team_id") as u64;
+                    let away_id = lr2_match.get::<i64, _>("away_team_id") as u64;
+
+                    if let Some(winner) = winner_id {
+                        let loser = if winner as u64 == home_id { away_id } else { home_id };
+                        results.push((loser, "5TH_8TH".to_string()));
+                        println!("[get_tournament_final_results] LOSERS_R2 loser (5th-8th): {}", loser);
+                    }
+                }
+
+                // 获取败者组第一轮失败者（7-8名）
+                let losers_r1 = sqlx::query(
+                    r#"
+                    SELECT * FROM matches
+                    WHERE tournament_id = ? AND stage = 'LOSERS_R1' AND UPPER(status) = 'COMPLETED'
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                for lr1_match in losers_r1 {
+                    let winner_id = lr1_match.get::<Option<i64>, _>("winner_id");
+                    let home_id = lr1_match.get::<i64, _>("home_team_id") as u64;
+                    let away_id = lr1_match.get::<i64, _>("away_team_id") as u64;
+
+                    if let Some(winner) = winner_id {
+                        let loser = if winner as u64 == home_id { away_id } else { home_id };
+                        results.push((loser, "5TH_8TH".to_string()));
+                        println!("[get_tournament_final_results] LOSERS_R1 loser (5th-8th): {}", loser);
+                    }
+                }
+
+                println!("[get_tournament_final_results] Total results for tournament {}: {:?}", tournament_id, results);
+            }
+
+            // MSI - 双败赛制，需要单独处理
+            TournamentType::Msi => {
+                // 获取总决赛 (GRAND_FINAL)
+                let grand_final = sqlx::query(
+                    r#"
+                    SELECT * FROM matches
+                    WHERE tournament_id = ? AND stage = 'GRAND_FINAL' AND UPPER(status) = 'COMPLETED'
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                if let Some(final_match) = grand_final {
+                    let winner_id = final_match.get::<Option<i64>, _>("winner_id");
+                    let home_id = final_match.get::<i64, _>("home_team_id") as u64;
+                    let away_id = final_match.get::<i64, _>("away_team_id") as u64;
+
+                    if let Some(winner) = winner_id {
+                        let winner = winner as u64;
+                        let runner_up = if winner == home_id { away_id } else { home_id };
+                        results.push((winner, "CHAMPION".to_string()));
+                        results.push((runner_up, "RUNNER_UP".to_string()));
+                        println!("[MSI] GRAND_FINAL: champion={}, runner_up={}", winner, runner_up);
+                    }
+                }
+
+                // 获取败者组决赛失败者（季军）
+                let losers_final = sqlx::query(
+                    r#"
+                    SELECT * FROM matches
+                    WHERE tournament_id = ? AND stage = 'LOSERS_FINAL' AND UPPER(status) = 'COMPLETED'
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                if let Some(lf_match) = losers_final {
+                    let winner_id = lf_match.get::<Option<i64>, _>("winner_id");
+                    let home_id = lf_match.get::<i64, _>("home_team_id") as u64;
+                    let away_id = lf_match.get::<i64, _>("away_team_id") as u64;
+
+                    if let Some(winner) = winner_id {
+                        let third = if winner as u64 == home_id { away_id } else { home_id };
+                        results.push((third, "THIRD".to_string()));
+                        println!("[MSI] LOSERS_FINAL loser (third): {}", third);
+                    }
+                }
+
+                // 获取 LOSERS_R4 失败者（殿军）- MSI的败者组R4只有1场
+                let losers_r4 = sqlx::query(
+                    r#"
+                    SELECT * FROM matches
+                    WHERE tournament_id = ? AND stage = 'LOSERS_R4' AND UPPER(status) = 'COMPLETED'
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                if let Some(lr4_match) = losers_r4 {
+                    let winner_id = lr4_match.get::<Option<i64>, _>("winner_id");
+                    let home_id = lr4_match.get::<i64, _>("home_team_id") as u64;
+                    let away_id = lr4_match.get::<i64, _>("away_team_id") as u64;
+
+                    if let Some(winner) = winner_id {
+                        let fourth = if winner as u64 == home_id { away_id } else { home_id };
+                        results.push((fourth, "FOURTH".to_string()));
+                        println!("[MSI] LOSERS_R4 loser (fourth): {}", fourth);
+                    }
+                }
+
+                // 获取 LOSERS_R3 失败者（5-6名）
+                let losers_r3 = sqlx::query(
+                    r#"
+                    SELECT * FROM matches
+                    WHERE tournament_id = ? AND stage = 'LOSERS_R3' AND UPPER(status) = 'COMPLETED'
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                for lr3_match in losers_r3 {
+                    let winner_id = lr3_match.get::<Option<i64>, _>("winner_id");
+                    let home_id = lr3_match.get::<i64, _>("home_team_id") as u64;
+                    let away_id = lr3_match.get::<i64, _>("away_team_id") as u64;
+
+                    if let Some(winner) = winner_id {
+                        let loser = if winner as u64 == home_id { away_id } else { home_id };
+                        results.push((loser, "LOSERS_R2".to_string())); // 积分配置中是 LOSERS_R2
+                        println!("[MSI] LOSERS_R3 loser: {}", loser);
+                    }
+                }
+
+                // 获取 LOSERS_R2 失败者（7-8名）
+                let losers_r2 = sqlx::query(
+                    r#"
+                    SELECT * FROM matches
+                    WHERE tournament_id = ? AND stage = 'LOSERS_R2' AND UPPER(status) = 'COMPLETED'
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                for lr2_match in losers_r2 {
+                    let winner_id = lr2_match.get::<Option<i64>, _>("winner_id");
+                    let home_id = lr2_match.get::<i64, _>("home_team_id") as u64;
+                    let away_id = lr2_match.get::<i64, _>("away_team_id") as u64;
+
+                    if let Some(winner) = winner_id {
+                        let loser = if winner as u64 == home_id { away_id } else { home_id };
+                        results.push((loser, "LOSERS_R1".to_string())); // 积分配置中是 LOSERS_R1
+                        println!("[MSI] LOSERS_R2 loser: {}", loser);
+                    }
+                }
+
+                println!("[MSI] Total results: {:?}", results);
+            }
+
+            // 马德里大师赛/Claude洲际赛 (32队分组+东西半区淘汰)
+            TournamentType::MadridMasters | TournamentType::ClaudeIntercontinental => {
+                let all_matches = sqlx::query(
+                    r#"
+                    SELECT * FROM matches
+                    WHERE tournament_id = ? AND UPPER(status) = 'COMPLETED'
+                    ORDER BY stage DESC, match_order
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // 找到总决赛 (GRAND_FINAL)
+                for m in &all_matches {
+                    let stage: String = m.get("stage");
+                    if stage == "GRAND_FINAL" {
+                        let winner_id = m.get::<Option<i64>, _>("winner_id");
+                        let home_id = m.get::<i64, _>("home_team_id") as u64;
+                        let away_id = m.get::<i64, _>("away_team_id") as u64;
+
+                        if let Some(winner) = winner_id {
+                            let winner = winner as u64;
+                            let runner_up = if winner == home_id { away_id } else { home_id };
+                            results.push((winner, "CHAMPION".to_string()));
+                            results.push((runner_up, "RUNNER_UP".to_string()));
+                            println!("[MadridMasters] GRAND_FINAL: champion={}, runner_up={}", winner, runner_up);
+                        }
+                        break;
+                    }
+                }
+
+                // 找到季军赛 (THIRD_PLACE) - 获取季军和殿军
+                for m in &all_matches {
+                    let stage: String = m.get("stage");
+                    if stage == "THIRD_PLACE" {
+                        let winner_id = m.get::<Option<i64>, _>("winner_id");
+                        let home_id = m.get::<i64, _>("home_team_id") as u64;
+                        let away_id = m.get::<i64, _>("away_team_id") as u64;
+
+                        if let Some(winner) = winner_id {
+                            let winner = winner as u64;
+                            let loser = if winner == home_id { away_id } else { home_id };
+                            results.push((winner, "THIRD".to_string()));
+                            results.push((loser, "FOURTH".to_string()));
+                            println!("[MadridMasters] THIRD_PLACE: third={}, fourth={}", winner, loser);
+                        }
+                        break;
+                    }
+                }
+
+                // 东西半区半决赛失败者 (EAST_SEMI, WEST_SEMI) -> SEMI_LOSER
+                for m in &all_matches {
+                    let stage: String = m.get("stage");
+                    if stage == "EAST_SEMI" || stage == "WEST_SEMI" {
+                        let winner_id = m.get::<Option<i64>, _>("winner_id");
+                        let home_id = m.get::<i64, _>("home_team_id") as u64;
+                        let away_id = m.get::<i64, _>("away_team_id") as u64;
+
+                        if let Some(winner) = winner_id {
+                            let loser = if winner as u64 == home_id { away_id } else { home_id };
+                            results.push((loser, "SEMI_LOSER".to_string()));
+                            println!("[MadridMasters] {} loser (SEMI_LOSER): {}", stage, loser);
+                        }
+                    }
+                }
+
+                // 东西半区第一轮失败者 (EAST_R1, WEST_R1) -> QUARTER_LOSER
+                for m in &all_matches {
+                    let stage: String = m.get("stage");
+                    if stage == "EAST_R1" || stage == "WEST_R1" {
+                        let winner_id = m.get::<Option<i64>, _>("winner_id");
+                        let home_id = m.get::<i64, _>("home_team_id") as u64;
+                        let away_id = m.get::<i64, _>("away_team_id") as u64;
+
+                        if let Some(winner) = winner_id {
+                            let loser = if winner as u64 == home_id { away_id } else { home_id };
+                            results.push((loser, "QUARTER_LOSER".to_string()));
+                            println!("[MadridMasters] {} loser (QUARTER_LOSER): {}", stage, loser);
+                        }
+                    }
+                }
+
+                println!("[MadridMasters] Total results: {:?}", results);
+            }
+
+            // 其他国际赛事 (标准淘汰赛制)
+            TournamentType::WorldChampionship
+            | TournamentType::ShanghaiMasters => {
+                // 获取淘汰赛阶段的比赛结果
+                let knockout_matches = sqlx::query(
+                    r#"
+                    SELECT * FROM matches
+                    WHERE tournament_id = ? AND UPPER(status) = 'COMPLETED'
+                    ORDER BY stage DESC, match_order
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // 找到决赛
+                for m in &knockout_matches {
+                    let stage: String = m.get("stage");
+                    if stage == "FINALS" || stage == "GRAND_FINALS" || stage == "GRAND_FINAL" {
+                        let winner_id = m.get::<Option<i64>, _>("winner_id");
+                        let home_id = m.get::<i64, _>("home_team_id") as u64;
+                        let away_id = m.get::<i64, _>("away_team_id") as u64;
+
+                        if let Some(winner) = winner_id {
+                            let winner = winner as u64;
+                            let runner_up = if winner == home_id { away_id } else { home_id };
+                            results.push((winner, "CHAMPION".to_string()));
+                            results.push((runner_up, "RUNNER_UP".to_string()));
+                        }
+                        break;
+                    }
+                }
+
+                // 找半决赛失败者
+                let mut semi_losers: Vec<u64> = Vec::new();
+                for m in &knockout_matches {
+                    let stage: String = m.get("stage");
+                    if stage == "SEMI_FINALS" {
+                        let winner_id = m.get::<Option<i64>, _>("winner_id");
+                        let home_id = m.get::<i64, _>("home_team_id") as u64;
+                        let away_id = m.get::<i64, _>("away_team_id") as u64;
+
+                        if let Some(winner) = winner_id {
+                            let loser = if winner as u64 == home_id { away_id } else { home_id };
+                            semi_losers.push(loser);
+                        }
+                    }
+                }
+
+                if semi_losers.len() >= 2 {
+                    results.push((semi_losers[0], "THIRD".to_string()));
+                    results.push((semi_losers[1], "FOURTH".to_string()));
+                } else if semi_losers.len() == 1 {
+                    results.push((semi_losers[0], "THIRD".to_string()));
+                }
+
+                // 八强失败者
+                for m in &knockout_matches {
+                    let stage: String = m.get("stage");
+                    if stage == "QUARTER_FINALS" {
+                        let winner_id = m.get::<Option<i64>, _>("winner_id");
+                        let home_id = m.get::<i64, _>("home_team_id") as u64;
+                        let away_id = m.get::<i64, _>("away_team_id") as u64;
+
+                        if let Some(winner) = winner_id {
+                            let loser = if winner as u64 == home_id { away_id } else { home_id };
+                            results.push((loser, "QUARTER_FINAL".to_string()));
+                        }
+                    }
+                }
+            }
+
+            // ICP洲际对抗赛 - 按赛区排名分配积分
+            TournamentType::IcpIntercontinental => {
+                // 1. 获取所有参赛队伍及其赛区
+                let team_rows = sqlx::query(
+                    r#"
+                    SELECT DISTINCT t.id as team_id, t.region_id
+                    FROM matches m
+                    JOIN teams t ON t.id = m.home_team_id OR t.id = m.away_team_id
+                    WHERE m.tournament_id = ?
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // 收集所有参赛队伍ID
+                let mut participant_team_ids: std::collections::HashSet<u64> = std::collections::HashSet::new();
+                let mut team_region_map: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
+
+                for row in &team_rows {
+                    let team_id: i64 = row.get("team_id");
+                    let region_id: i64 = row.get("region_id");
+                    participant_team_ids.insert(team_id as u64);
+                    team_region_map.insert(team_id as u64, region_id as u64);
+                }
+
+                // 2. 从决赛和半决赛结果确定赛区排名
+                let final_matches = sqlx::query(
+                    r#"
+                    SELECT m.stage, m.home_team_id, m.away_team_id, m.winner_id,
+                           ht.region_id as home_region_id, at.region_id as away_region_id
+                    FROM matches m
+                    LEFT JOIN teams ht ON m.home_team_id = ht.id
+                    LEFT JOIN teams at ON m.away_team_id = at.id
+                    WHERE m.tournament_id = ? AND (m.stage LIKE 'ICP_FINAL%' OR m.stage LIKE 'ICP_SEMI%')
+                    AND UPPER(m.status) = 'COMPLETED' AND m.stage NOT LIKE '%TIEBREAKER%'
+                    ORDER BY m.stage
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // 统计决赛和半决赛的胜场
+                let mut final_wins: std::collections::HashMap<u64, i32> = std::collections::HashMap::new();
+                let mut semi_wins: std::collections::HashMap<u64, i32> = std::collections::HashMap::new();
+                let mut final_regions: (Option<u64>, Option<u64>) = (None, None);
+                let mut semi_regions: Vec<u64> = Vec::new();
+
+                for row in &final_matches {
+                    let stage: String = row.get("stage");
+                    let winner_id: Option<i64> = row.get("winner_id");
+                    let home_region_id: Option<i64> = row.get("home_region_id");
+                    let away_region_id: Option<i64> = row.get("away_region_id");
+
+                    if let (Some(winner), Some(home_region), Some(away_region)) = (winner_id, home_region_id, away_region_id) {
+                        let home_team_id: Option<i64> = row.get("home_team_id");
+                        let winner_region = if home_team_id == Some(winner) {
+                            home_region as u64
+                        } else {
+                            away_region as u64
+                        };
+
+                        if stage.starts_with("ICP_FINAL") {
+                            *final_wins.entry(winner_region).or_insert(0) += 1;
+                            final_regions = (Some(home_region as u64), Some(away_region as u64));
+                        } else if stage.starts_with("ICP_SEMI") {
+                            *semi_wins.entry(winner_region).or_insert(0) += 1;
+                            if !semi_regions.contains(&(home_region as u64)) {
+                                semi_regions.push(home_region as u64);
+                            }
+                            if !semi_regions.contains(&(away_region as u64)) {
+                                semi_regions.push(away_region as u64);
+                            }
+                        }
+                    }
+                }
+
+                // 确定赛区排名
+                let (champion_region, runner_up_region) = {
+                    let mut sorted: Vec<_> = final_wins.iter().collect();
+                    sorted.sort_by(|a, b| b.1.cmp(a.1));
+
+                    if sorted.len() >= 2 {
+                        (*sorted[0].0, *sorted[1].0)
+                    } else if sorted.len() == 1 {
+                        if let (Some(r1), Some(r2)) = final_regions {
+                            if *sorted[0].0 == r1 { (r1, r2) } else { (r2, r1) }
+                        } else {
+                            println!("[ICP Points] 无法确定冠亚军赛区");
+                            return Ok(results);
+                        }
+                    } else {
+                        println!("[ICP Points] 没有决赛结果");
+                        return Ok(results);
+                    }
+                };
+
+                // 第三、第四赛区是半决赛中未进入决赛的赛区
+                let (third_region, fourth_region) = {
+                    let losers: Vec<u64> = semi_regions.iter()
+                        .filter(|&&r| r != champion_region && r != runner_up_region)
+                        .copied()
+                        .collect();
+
+                    if losers.len() >= 2 {
+                        // 根据半决赛胜场数排名
+                        let r1_wins = semi_wins.get(&losers[0]).copied().unwrap_or(0);
+                        let r2_wins = semi_wins.get(&losers[1]).copied().unwrap_or(0);
+                        if r1_wins >= r2_wins {
+                            (losers[0], losers[1])
+                        } else {
+                            (losers[1], losers[0])
+                        }
+                    } else if losers.len() == 1 {
+                        (losers[0], 0)
+                    } else {
+                        (0, 0)
+                    }
+                };
+
+                println!("[ICP Points] 赛区排名: 冠军={}, 亚军={}, 季军={}, 殿军={}",
+                    champion_region, runner_up_region, third_region, fourth_region);
+
+                // 3. 获取每个赛区的所有队伍
+                let all_region_teams = sqlx::query(
+                    r#"
+                    SELECT t.id as team_id, t.region_id
+                    FROM teams t
+                    WHERE t.region_id IN (?, ?, ?, ?)
+                    "#
+                )
+                .bind(champion_region as i64)
+                .bind(runner_up_region as i64)
+                .bind(third_region as i64)
+                .bind(fourth_region as i64)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // 按赛区分组
+                let mut region_teams: std::collections::HashMap<u64, Vec<u64>> = std::collections::HashMap::new();
+                for row in &all_region_teams {
+                    let team_id: i64 = row.get("team_id");
+                    let region_id: i64 = row.get("region_id");
+                    region_teams.entry(region_id as u64).or_default().push(team_id as u64);
+                }
+
+                // 4. 为每个队伍分配积分
+                // 冠军赛区
+                if let Some(teams) = region_teams.get(&champion_region) {
+                    for &team_id in teams {
+                        let position = if participant_team_ids.contains(&team_id) {
+                            "FIRST_PARTICIPANT"
+                        } else {
+                            "FIRST_NON_PARTICIPANT"
+                        };
+                        results.push((team_id, position.to_string()));
+                    }
+                }
+
+                // 亚军赛区
+                if let Some(teams) = region_teams.get(&runner_up_region) {
+                    for &team_id in teams {
+                        let position = if participant_team_ids.contains(&team_id) {
+                            "SECOND_PARTICIPANT"
+                        } else {
+                            "SECOND_NON_PARTICIPANT"
+                        };
+                        results.push((team_id, position.to_string()));
+                    }
+                }
+
+                // 季军赛区
+                if third_region > 0 {
+                    if let Some(teams) = region_teams.get(&third_region) {
+                        for &team_id in teams {
+                            let position = if participant_team_ids.contains(&team_id) {
+                                "THIRD_PARTICIPANT"
+                            } else {
+                                "THIRD_NON_PARTICIPANT"
+                            };
+                            results.push((team_id, position.to_string()));
+                        }
+                    }
+                }
+
+                // 殿军赛区
+                if fourth_region > 0 {
+                    if let Some(teams) = region_teams.get(&fourth_region) {
+                        for &team_id in teams {
+                            let position = if participant_team_ids.contains(&team_id) {
+                                "FOURTH_PARTICIPANT"
+                            } else {
+                                "FOURTH_NON_PARTICIPANT"
+                            };
+                            results.push((team_id, position.to_string()));
+                        }
+                    }
+                }
+
+                println!("[ICP Points] 共 {} 个队伍需要颁发积分", results.len());
+            }
+
+            // Super洲际邀请赛
+            TournamentType::SuperIntercontinental => {
+                // Super赛的积分配置更复杂，需要追踪每个队伍的淘汰阶段
+                let all_matches = sqlx::query(
+                    r#"
+                    SELECT * FROM matches
+                    WHERE tournament_id = ? AND status = 'COMPLETED'
+                    ORDER BY stage, match_order
+                    "#
+                )
+                .bind(tournament_id as i64)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // 决赛
+                for m in &all_matches {
+                    let stage: String = m.get("stage");
+                    if stage == "GRAND_FINALS" || stage == "FINALS" {
+                        let winner_id = m.get::<Option<i64>, _>("winner_id");
+                        let home_id = m.get::<i64, _>("home_team_id") as u64;
+                        let away_id = m.get::<i64, _>("away_team_id") as u64;
+
+                        if let Some(winner) = winner_id {
+                            let winner = winner as u64;
+                            let runner_up = if winner == home_id { away_id } else { home_id };
+                            results.push((winner, "CHAMPION".to_string()));
+                            results.push((runner_up, "RUNNER_UP".to_string()));
+                        }
+                        break;
+                    }
+                }
+
+                // 半决赛失败者
+                let mut semi_losers: Vec<u64> = Vec::new();
+                for m in &all_matches {
+                    let stage: String = m.get("stage");
+                    if stage == "SEMI_FINALS" {
+                        let winner_id = m.get::<Option<i64>, _>("winner_id");
+                        let home_id = m.get::<i64, _>("home_team_id") as u64;
+                        let away_id = m.get::<i64, _>("away_team_id") as u64;
+
+                        if let Some(winner) = winner_id {
+                            let loser = if winner as u64 == home_id { away_id } else { home_id };
+                            semi_losers.push(loser);
+                        }
+                    }
+                }
+
+                if semi_losers.len() >= 2 {
+                    results.push((semi_losers[0], "THIRD".to_string()));
+                    results.push((semi_losers[1], "FOURTH".to_string()));
+                }
+            }
+
+            _ => {}
+        }
+
+        Ok(results)
     }
 
     /// 执行赛季结算
@@ -862,8 +3158,7 @@ impl GameFlowService {
             .map_err(|e| e.to_string())?;
 
         for mut team in teams {
-            // 将年度积分转移到跨年积分（半衰期）
-            team.cross_year_points = team.cross_year_points / 2 + team.annual_points / 2;
+            // 清空年度积分（新赛季从0开始）
             team.annual_points = 0;
 
             TeamRepository::update(pool, &team)
@@ -918,7 +3213,7 @@ impl GameFlowService {
             save_id: save_id.to_string(),
             current_season,
             current_phase,
-            phase_display_name: current_phase.name().to_string(),
+            phase_display_name: get_phase_display_name(&current_phase).to_string(),
             phase_status,
             phase_progress,
             season_progress,
@@ -946,12 +3241,13 @@ impl GameFlowService {
             let mut completed_matches = 0u32;
 
             for tournament in tournaments {
-                // 查询比赛数量
+                // 查询比赛数量（兼容 'COMPLETED' 和 'Completed' 两种状态格式）
+                // CANCELLED 的比赛也算作已完成（不需要进行的比赛）
                 let counts = sqlx::query(
                     r#"
                     SELECT
                         COUNT(*) as total,
-                        SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as completed
+                        SUM(CASE WHEN UPPER(status) IN ('COMPLETED', 'CANCELLED') THEN 1 ELSE 0 END) as completed
                     FROM matches
                     WHERE tournament_id = ?
                     "#
@@ -1022,6 +3318,7 @@ impl GameFlowService {
             SeasonPhase::ShanghaiMasters,
             SeasonPhase::IcpIntercontinental,
             SeasonPhase::SuperIntercontinental,
+            SeasonPhase::AnnualAwards,
             SeasonPhase::TransferWindow,
             SeasonPhase::Draft,
             SeasonPhase::SeasonEnd,
@@ -1041,7 +3338,7 @@ impl GameFlowService {
 
             PhaseInfo {
                 phase: format!("{:?}", phase),
-                display_name: phase.name().to_string(),
+                display_name: get_phase_display_name(&phase).to_string(),
                 status: status.to_string(),
                 index: i as u32,
             }
@@ -1243,51 +3540,649 @@ impl GameFlowService {
         })
     }
 
-    /// 模拟当前阶段的所有比赛（简化版，实际应调用比赛模拟引擎）
+    /// 模拟当前阶段的所有比赛
     async fn simulate_all_phase_matches(
         &self,
         pool: &Pool<Sqlite>,
         save_id: &str,
         phase: SeasonPhase,
     ) -> Result<u32, String> {
-        // 获取当前阶段所有未完成的比赛
         let tournament_type = phase_to_tournament_type(phase);
 
         if tournament_type.is_none() {
             return Ok(0);
         }
 
-        // 将所有未完成比赛标记为已完成（简化处理，实际应该调用比赛模拟引擎）
-        let result = sqlx::query(
+        let t_type = tournament_type.unwrap();
+        let save = SaveRepository::get_by_id(pool, save_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let tournaments = TournamentRepository::get_by_season_and_type(
+            pool, save_id, save.current_season as u64, &format!("{:?}", t_type)
+        ).await.map_err(|e| e.to_string())?;
+
+        // 检查是否是季后赛阶段
+        let is_playoff = matches!(phase, SeasonPhase::SpringPlayoffs | SeasonPhase::SummerPlayoffs);
+
+        if is_playoff {
+            // 季后赛：逐场模拟以确保正确生成后续对阵
+            let mut simulated_count = 0u32;
+
+            loop {
+                let mut found_pending = false;
+
+                for tournament in &tournaments {
+                    let pending = MatchRepository::get_pending(pool, save_id, tournament.id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    if pending.is_empty() {
+                        continue;
+                    }
+
+                    found_pending = true;
+                    let match_info = &pending[0];
+
+                    // 获取队伍并模拟比赛
+                    let home_team = TeamRepository::get_by_id(pool, match_info.home_team_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    let away_team = TeamRepository::get_by_id(pool, match_info.away_team_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    let result = self.league_service.simulate_match(
+                        match_info,
+                        home_team.power_rating,
+                        away_team.power_rating,
+                    );
+
+                    // 更新比赛结果
+                    MatchRepository::update_result(
+                        pool,
+                        match_info.id,
+                        result.home_score as u32,
+                        result.away_score as u32,
+                        result.winner_id,
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                    simulated_count += 1;
+
+                    // 检查并生成下一轮对阵
+                    let all_matches = MatchRepository::get_by_tournament(pool, tournament.id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    let new_matches =
+                        self.league_service.advance_playoff_bracket(tournament.id, &all_matches);
+
+                    if !new_matches.is_empty() {
+                        println!(
+                            "[simulate_all_phase_matches] 季后赛生成 {} 场新比赛",
+                            new_matches.len()
+                        );
+                        MatchRepository::create_batch(pool, save_id, &new_matches)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+
+                    break; // 每次只模拟一场，然后重新检查
+                }
+
+                if !found_pending {
+                    break;
+                }
+            }
+
+            Ok(simulated_count)
+        } else {
+            // 非季后赛：批量模拟
+            let mut simulated_count = 0u32;
+
+            for tournament in &tournaments {
+                let pending = MatchRepository::get_pending(pool, save_id, tournament.id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                for match_info in &pending {
+                    let home_team = TeamRepository::get_by_id(pool, match_info.home_team_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    let away_team = TeamRepository::get_by_id(pool, match_info.away_team_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    let result = self.league_service.simulate_match(
+                        match_info,
+                        home_team.power_rating,
+                        away_team.power_rating,
+                    );
+
+                    MatchRepository::update_result(
+                        pool,
+                        match_info.id,
+                        result.home_score as u32,
+                        result.away_score as u32,
+                        result.winner_id,
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                    simulated_count += 1;
+                }
+            }
+
+            Ok(simulated_count)
+        }
+    }
+}
+
+// ===== 年度颁奖典礼辅助结构和方法 =====
+
+/// 年度选手信息结构
+struct AnnualPlayerInfo {
+    player_id: u64,
+    player_name: String,
+    team_id: u64,
+    team_name: String,
+    position: String,
+    #[allow(dead_code)]
+    yearly_score: f64,
+}
+
+impl GameFlowService {
+    /// 获取年度Top20选手
+    async fn get_annual_top20(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+    ) -> Result<Vec<AnnualPlayerInfo>, String> {
+        let rows = sqlx::query(
             r#"
-            UPDATE matches
-            SET status = 'COMPLETED',
-                home_score = CASE WHEN home_score IS NULL THEN 2 ELSE home_score END,
-                away_score = CASE WHEN away_score IS NULL THEN 1 ELSE away_score END
-            WHERE tournament_id IN (
-                SELECT id FROM tournaments
-                WHERE save_id = ? AND tournament_type = ?
-            )
-            AND status != 'COMPLETED'
+            SELECT
+                pss.player_id,
+                pss.player_name,
+                pss.team_id,
+                COALESCE(t.name, '未知') as team_name,
+                pss.position,
+                pss.yearly_top_score
+            FROM player_season_stats pss
+            LEFT JOIN teams t ON pss.team_id = t.id
+            WHERE pss.save_id = ? AND pss.season_id = ? AND pss.games_played >= 10
+            ORDER BY pss.yearly_top_score DESC
+            LIMIT 20
             "#
         )
         .bind(save_id)
-        .bind(format!("{:?}", tournament_type.unwrap()))
+        .bind(season_id as i64)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to get top20: {}", e))?;
+
+        Ok(rows.iter().map(|row| AnnualPlayerInfo {
+            player_id: row.get::<i64, _>("player_id") as u64,
+            player_name: row.get::<String, _>("player_name"),
+            team_id: row.get::<Option<i64>, _>("team_id").unwrap_or(0) as u64,
+            team_name: row.get::<String, _>("team_name"),
+            position: row.get::<String, _>("position"),
+            yearly_score: row.get::<f64, _>("yearly_top_score"),
+        }).collect())
+    }
+
+    /// 获取年度最佳阵容（各位置第一）
+    async fn get_annual_all_pro(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+    ) -> Result<Vec<AnnualPlayerInfo>, String> {
+        let positions = vec!["TOP", "JUG", "MID", "ADC", "SUP"];
+        let mut all_pro = Vec::new();
+
+        for position in positions {
+            let row = sqlx::query(
+                r#"
+                SELECT
+                    pss.player_id,
+                    pss.player_name,
+                    pss.team_id,
+                    COALESCE(t.name, '未知') as team_name,
+                    pss.position,
+                    pss.yearly_top_score
+                FROM player_season_stats pss
+                LEFT JOIN teams t ON pss.team_id = t.id
+                WHERE pss.save_id = ? AND pss.season_id = ? AND pss.position = ? AND pss.games_played >= 10
+                ORDER BY pss.yearly_top_score DESC
+                LIMIT 1
+                "#
+            )
+            .bind(save_id)
+            .bind(season_id as i64)
+            .bind(position)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| format!("Failed to get best {}: {}", position, e))?;
+
+            if let Some(row) = row {
+                all_pro.push(AnnualPlayerInfo {
+                    player_id: row.get::<i64, _>("player_id") as u64,
+                    player_name: row.get::<String, _>("player_name"),
+                    team_id: row.get::<Option<i64>, _>("team_id").unwrap_or(0) as u64,
+                    team_name: row.get::<String, _>("team_name"),
+                    position: row.get::<String, _>("position"),
+                    yearly_score: row.get::<f64, _>("yearly_top_score"),
+                });
+            }
+        }
+
+        Ok(all_pro)
+    }
+
+    /// 获取年度最佳新秀（20岁及以下）
+    async fn get_annual_rookie(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+    ) -> Result<Option<AnnualPlayerInfo>, String> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                pss.player_id,
+                pss.player_name,
+                pss.team_id,
+                COALESCE(t.name, '未知') as team_name,
+                pss.position,
+                pss.yearly_top_score
+            FROM player_season_stats pss
+            JOIN players p ON pss.player_id = p.id
+            LEFT JOIN teams t ON pss.team_id = t.id
+            WHERE pss.save_id = ? AND pss.season_id = ? AND p.age <= 20 AND pss.games_played >= 10
+            ORDER BY pss.yearly_top_score DESC
+            LIMIT 1
+            "#
+        )
+        .bind(save_id)
+        .bind(season_id as i64)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("Failed to get rookie of the year: {}", e))?;
+
+        Ok(row.map(|r| AnnualPlayerInfo {
+            player_id: r.get::<i64, _>("player_id") as u64,
+            player_name: r.get::<String, _>("player_name"),
+            team_id: r.get::<Option<i64>, _>("team_id").unwrap_or(0) as u64,
+            team_name: r.get::<String, _>("team_name"),
+            position: r.get::<String, _>("position"),
+            yearly_score: r.get::<f64, _>("yearly_top_score"),
+        }))
+    }
+
+    /// 更新选手身价并记录变化
+    async fn update_player_market_value(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+        player_id: u64,
+        multiplier: f64,
+        reason: &str,
+    ) -> Result<(), String> {
+        // 获取当前身价和选手名称
+        let row = sqlx::query(
+            "SELECT game_id, market_value FROM players WHERE id = ?"
+        )
+        .bind(player_id as i64)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("Failed to get player: {}", e))?;
+
+        let (player_name, old_value): (String, i64) = match row {
+            Some(r) => (r.get("game_id"), r.get("market_value")),
+            None => return Ok(()), // 选手不存在，跳过
+        };
+
+        let new_value = (old_value as f64 * multiplier) as i64;
+        let change_amount = new_value - old_value;
+        let change_percent = (multiplier - 1.0) * 100.0;
+
+        // 更新身价
+        sqlx::query(
+            "UPDATE players SET market_value = ? WHERE id = ?"
+        )
+        .bind(new_value)
+        .bind(player_id as i64)
         .execute(pool)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("Failed to update player market value: {}", e))?;
 
-        Ok(result.rows_affected() as u32)
+        // 记录变化
+        sqlx::query(
+            r#"
+            INSERT INTO market_value_changes (save_id, season_id, player_id, player_name, old_value, new_value, change_amount, change_percent, reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#
+        )
+        .bind(save_id)
+        .bind(season_id as i64)
+        .bind(player_id as i64)
+        .bind(&player_name)
+        .bind(old_value)
+        .bind(new_value)
+        .bind(change_amount)
+        .bind(change_percent)
+        .bind(reason)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to record market value change: {}", e))?;
+
+        println!("[update_player_market_value] {} 身价 {} -> {} (+{:.0}%, {})",
+            player_name, old_value, new_value, change_percent, reason);
+        Ok(())
+    }
+
+    /// 计算选手的荣誉系数（基于累积的所有荣誉）
+    async fn calculate_honor_factor(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        player_id: u64,
+    ) -> Result<f64, String> {
+        // 查询选手所有荣誉
+        let rows = sqlx::query(
+            r#"
+            SELECT honor_type, tournament_type, tournament_name
+            FROM honors
+            WHERE save_id = ? AND player_id = ?
+            "#
+        )
+        .bind(save_id)
+        .bind(player_id as i64)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to get player honors: {}", e))?;
+
+        let mut honor_bonus = 0.0;
+
+        for row in rows {
+            let honor_type: String = row.get("honor_type");
+            let tournament_type: String = row.get::<Option<String>, _>("tournament_type").unwrap_or_default();
+            let tournament_name: String = row.get::<Option<String>, _>("tournament_name").unwrap_or_default();
+
+            // 根据荣誉类型计算加成
+            let bonus = match honor_type.as_str() {
+                // 团队荣誉 - 冠军
+                "PLAYER_CHAMPION" | "TEAM_CHAMPION" => {
+                    // 世界赛/MSI/大师赛 冠军更值钱
+                    if tournament_type.contains("World") || tournament_type.contains("Msi")
+                       || tournament_name.contains("世界赛") || tournament_name.contains("MSI") {
+                        0.40  // 国际大赛冠军
+                    } else if tournament_name.contains("大师赛") || tournament_name.contains("Masters") {
+                        0.30  // 大师赛冠军
+                    } else if tournament_name.contains("洲际") {
+                        0.25  // 洲际赛冠军
+                    } else {
+                        0.20  // 赛区冠军
+                    }
+                }
+                // 团队荣誉 - 亚军
+                "PLAYER_RUNNER_UP" | "TEAM_RUNNER_UP" => {
+                    if tournament_type.contains("World") || tournament_name.contains("世界赛") {
+                        0.20  // 世界赛亚军
+                    } else {
+                        0.10  // 其他亚军
+                    }
+                }
+                // 团队荣誉 - 季军/殿军
+                "PLAYER_THIRD_PLACE" | "TEAM_THIRD_PLACE" => 0.06,
+                "PLAYER_FOURTH_PLACE" | "TEAM_FOURTH_PLACE" => 0.04,
+
+                // 个人荣誉 - MVP
+                "TOURNAMENT_MVP" | "FINALS_MVP" => {
+                    if tournament_name.contains("世界赛") || tournament_name.contains("World") {
+                        0.25  // 世界赛MVP
+                    } else {
+                        0.15  // 其他赛事MVP
+                    }
+                }
+                "REGULAR_SEASON_MVP" => 0.12,
+                "PLAYOFF_FMVP" => 0.15,
+
+                // 年度荣誉
+                "ANNUAL_MVP" => 0.35,
+                "ANNUAL_TOP20" => {
+                    // 从 tournament_name 提取排名 (年度Top1, 年度Top5, etc.)
+                    if tournament_name.contains("Top1") && !tournament_name.contains("Top1") {
+                        0.20
+                    } else if tournament_name.contains("Top") {
+                        let rank = tournament_name
+                            .chars()
+                            .filter(|c| c.is_ascii_digit())
+                            .collect::<String>()
+                            .parse::<u32>()
+                            .unwrap_or(20);
+                        if rank <= 3 { 0.18 }
+                        else if rank <= 5 { 0.15 }
+                        else if rank <= 10 { 0.10 }
+                        else { 0.05 }
+                    } else {
+                        0.08
+                    }
+                }
+                "ANNUAL_BEST_TOP" | "ANNUAL_BEST_JUNGLE" | "ANNUAL_BEST_MID"
+                | "ANNUAL_BEST_ADC" | "ANNUAL_BEST_SUPPORT" => 0.15,
+                "ANNUAL_ROOKIE" => 0.12,
+
+                // 常规赛第一
+                "REGULAR_SEASON_FIRST" => 0.08,
+
+                _ => 0.0,
+            };
+
+            honor_bonus += bonus;
+        }
+
+        // 荣誉系数 = 1.0 + 累积加成，上限4.0
+        let honor_factor: f64 = (1.0_f64 + honor_bonus).min(4.0);
+        Ok(honor_factor)
+    }
+
+    /// 获取赛区身价系数
+    fn get_region_market_factor(region_code: &str) -> f64 {
+        match region_code.to_uppercase().as_str() {
+            "LPL" => 1.3,   // LPL 市场最大
+            "LCK" => 1.2,   // LCK 次之
+            "LEC" => 1.0,   // LEC 基准
+            "LCS" => 0.9,   // LCS 略低
+            _ => 0.8,
+        }
+    }
+
+    /// 计算选手基础身价（从属性计算，不含荣誉）
+    fn calculate_base_market_value(ability: u8, potential: u8, age: u8, tag: &str, position: &str) -> u64 {
+        // 能力值系数
+        let multiplier: u64 = match ability {
+            95..=100 => 50,
+            90..=94 => 35,
+            85..=89 => 20,
+            80..=84 => 12,
+            75..=79 => 7,
+            70..=74 => 4,
+            60..=69 => 2,
+            _ => 1,
+        };
+
+        let base = ability as u64 * multiplier;
+
+        // 年龄系数
+        let age_factor = match age {
+            17..=19 => 1.5,
+            20..=22 => 1.3,
+            23..=25 => 1.0,
+            26..=27 => 0.85,
+            28..=29 => 0.7,
+            _ => 0.5,
+        };
+
+        // 潜力系数
+        let diff = potential.saturating_sub(ability);
+        let potential_factor = if diff > 10 { 1.25 } else if diff >= 5 { 1.1 } else { 1.0 };
+
+        // 天赋系数
+        let tag_factor = match tag.to_uppercase().as_str() {
+            "GENIUS" => 1.2,
+            "NORMAL" => 1.0,
+            _ => 0.9,
+        };
+
+        // 位置系数
+        let position_factor = match position.to_uppercase().as_str() {
+            "MID" => 1.2,
+            "ADC" => 1.15,
+            "JUG" | "JUNGLE" => 1.1,
+            "TOP" => 1.0,
+            "SUP" | "SUPPORT" => 0.9,
+            _ => 1.0,
+        };
+
+        // 返回万元
+        (base as f64 * age_factor * potential_factor * tag_factor * position_factor) as u64
+    }
+
+    /// 完整重算单个选手身价（基础 × 荣誉 × 赛区）
+    async fn recalculate_player_market_value_full(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+        player_id: u64,
+    ) -> Result<(), String> {
+        // 获取选手信息
+        let row = sqlx::query(
+            r#"
+            SELECT p.game_id, p.ability, p.potential, p.age, p.tag, p.position,
+                   p.market_value, p.calculated_market_value,
+                   r.short_name as region_code
+            FROM players p
+            LEFT JOIN teams t ON p.team_id = t.id
+            LEFT JOIN regions r ON t.region_id = r.id
+            WHERE p.id = ?
+            "#
+        )
+        .bind(player_id as i64)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("Failed to get player: {}", e))?;
+
+        let row = match row {
+            Some(r) => r,
+            None => return Ok(()),
+        };
+
+        let player_name: String = row.get("game_id");
+        let ability: i64 = row.get("ability");
+        let potential: i64 = row.get("potential");
+        let age: i64 = row.get("age");
+        let tag: String = row.get("tag");
+        let position: String = row.get("position");
+        let _base_value_db: i64 = row.get("market_value"); // 基础身价（保持不变）
+        let old_calculated: i64 = row.get("calculated_market_value"); // 之前计算的身价
+        let region_code: String = row.get::<Option<String>, _>("region_code").unwrap_or_else(|| "LPL".to_string());
+
+        // 计算基础身价
+        let base_value = Self::calculate_base_market_value(
+            ability as u8, potential as u8, age as u8, &tag, &position
+        );
+
+        // 计算荣誉系数
+        let honor_factor = self.calculate_honor_factor(pool, save_id, player_id).await?;
+
+        // 赛区系数
+        let region_factor = Self::get_region_market_factor(&region_code);
+
+        // 最终身价（基础 × 荣誉 × 赛区）
+        let new_value = ((base_value as f64) * honor_factor * region_factor) as i64;
+
+        if new_value != old_calculated {
+            // 更新计算后的身价（不覆盖基础身价）
+            sqlx::query("UPDATE players SET calculated_market_value = ? WHERE id = ?")
+                .bind(new_value)
+                .bind(player_id as i64)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("Failed to update market value: {}", e))?;
+
+            // 记录变化
+            let change_amount = new_value - old_calculated;
+            let change_percent = if old_calculated > 0 {
+                ((new_value as f64 / old_calculated as f64) - 1.0) * 100.0
+            } else {
+                100.0
+            };
+
+            sqlx::query(
+                r#"INSERT INTO market_value_changes
+                   (save_id, season_id, player_id, player_name, old_value, new_value, change_amount, change_percent, reason)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"#
+            )
+            .bind(save_id)
+            .bind(season_id as i64)
+            .bind(player_id as i64)
+            .bind(&player_name)
+            .bind(old_calculated)
+            .bind(new_value)
+            .bind(change_amount)
+            .bind(change_percent)
+            .bind("年度身价重算")
+            .execute(pool)
+            .await
+            .ok(); // 忽略记录失败
+
+            println!("[recalculate_market_value] {} 身价重算: {} -> {} (荣誉×{:.2}, 赛区×{:.2})",
+                player_name, old_calculated / 10000, new_value / 10000, honor_factor, region_factor);
+        }
+
+        Ok(())
+    }
+
+    /// 年度结束时重算所有选手身价
+    pub async fn recalculate_all_market_values(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+    ) -> Result<u32, String> {
+        // 获取所有活跃选手
+        let rows = sqlx::query("SELECT id FROM players WHERE save_id = ? AND status = 'Active'")
+            .bind(save_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("Failed to get players: {}", e))?;
+
+        let mut count = 0u32;
+        for row in rows {
+            let player_id: i64 = row.get("id");
+            self.recalculate_player_market_value_full(pool, save_id, season_id, player_id as u64).await?;
+            count += 1;
+        }
+
+        println!("[recalculate_all_market_values] 完成 {} 名选手身价重算", count);
+        Ok(count)
     }
 }
 
 /// 获取赛区名称
 fn get_region_name(region_id: u64) -> &'static str {
-    match region_id {
-        1 => "LPL",
-        2 => "LCK",
-        3 => "LEC",
-        4 => "LCS",
+    // region_id 可能是 1-4, 5-8, 或 9-12（取决于数据库初始化）
+    match region_id % 4 {
+        1 => "LPL",  // 1, 5, 9, 13...
+        2 => "LCK",  // 2, 6, 10, 14...
+        3 => "LEC",  // 3, 7, 11, 15...
+        0 => "LCS",  // 4, 8, 12, 16...
         _ => "Unknown",
     }
 }
@@ -1306,6 +4201,7 @@ fn get_phase_display_name(phase: &SeasonPhase) -> &'static str {
         SeasonPhase::ShanghaiMasters => "上海大师赛",
         SeasonPhase::IcpIntercontinental => "ICP洲际对抗赛",
         SeasonPhase::SuperIntercontinental => "Super洲际邀请赛",
+        SeasonPhase::AnnualAwards => "年度颁奖典礼",
         SeasonPhase::TransferWindow => "转会期",
         SeasonPhase::Draft => "选秀大会",
         SeasonPhase::SeasonEnd => "赛季结算",
@@ -1340,11 +4236,11 @@ fn parse_tournament_status_local(s: &str) -> TournamentStatus {
     }
 }
 
-/// 判断是否为非赛事阶段（转会期、选秀、赛季结束）
+/// 判断是否为非赛事阶段（年度颁奖、转会期、选秀、赛季结束）
 fn is_non_tournament_phase(phase: SeasonPhase) -> bool {
     matches!(
         phase,
-        SeasonPhase::TransferWindow | SeasonPhase::Draft | SeasonPhase::SeasonEnd
+        SeasonPhase::AnnualAwards | SeasonPhase::TransferWindow | SeasonPhase::Draft | SeasonPhase::SeasonEnd
     )
 }
 
@@ -1362,6 +4258,7 @@ fn is_before_phase(current: SeasonPhase, target: SeasonPhase) -> bool {
         SeasonPhase::ShanghaiMasters,
         SeasonPhase::IcpIntercontinental,
         SeasonPhase::SuperIntercontinental,
+        SeasonPhase::AnnualAwards,
         SeasonPhase::TransferWindow,
         SeasonPhase::Draft,
         SeasonPhase::SeasonEnd,
@@ -1373,6 +4270,23 @@ fn is_before_phase(current: SeasonPhase, target: SeasonPhase) -> bool {
     match (current_idx, target_idx) {
         (Some(c), Some(t)) => c < t,
         _ => false,
+    }
+}
+
+/// 位置转排名数字
+fn position_to_rank(position: &str) -> Option<u32> {
+    match position {
+        "CHAMPION" => Some(1),
+        "RUNNER_UP" => Some(2),
+        "THIRD" => Some(3),
+        "FOURTH" => Some(4),
+        "5TH_8TH" | "QUARTER_FINAL" => Some(5),
+        // ICP积分位置
+        "FIRST_PARTICIPANT" | "FIRST_NON_PARTICIPANT" => Some(1),
+        "SECOND_PARTICIPANT" | "SECOND_NON_PARTICIPANT" => Some(2),
+        "THIRD_PARTICIPANT" | "THIRD_NON_PARTICIPANT" => Some(3),
+        "FOURTH_PARTICIPANT" | "FOURTH_NON_PARTICIPANT" => Some(4),
+        _ => None,
     }
 }
 

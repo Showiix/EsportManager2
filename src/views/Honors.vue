@@ -15,6 +15,34 @@
       </div>
     </div>
 
+    <!-- 荣誉殿堂导航入口 -->
+    <div class="hall-navigation">
+      <el-card class="nav-card international" @click="$router.push('/international-hall')">
+        <div class="nav-content">
+          <div class="nav-icon">🏆</div>
+          <div class="nav-info">
+            <h3>国际荣誉殿堂</h3>
+            <p>记录所有国际赛事的冠军荣耀</p>
+          </div>
+          <div class="nav-arrow">→</div>
+        </div>
+      </el-card>
+      <div class="sub-nav">
+        <el-card class="sub-nav-card" @click="$router.push('/player-honor-rankings')">
+          <div class="sub-nav-content">
+            <span class="sub-icon">👤</span>
+            <span>选手荣誉榜</span>
+          </div>
+        </el-card>
+        <el-card class="sub-nav-card" @click="$router.push('/team-honor-rankings')">
+          <div class="sub-nav-content">
+            <span class="sub-icon">🏠</span>
+            <span>战队荣誉榜</span>
+          </div>
+        </el-card>
+      </div>
+    </div>
+
     <!-- 统计概览 -->
     <el-row :gutter="16" class="stats-row">
       <el-col :span="6">
@@ -118,16 +146,21 @@
 
             <!-- 冠军信息 -->
             <div class="champion-info">
-              <div class="champion-label">冠军</div>
+              <div class="champion-label">{{ tournament.isIcp ? '最强赛区' : '冠军' }}</div>
               <div class="champion-team">
                 <div class="team-avatar" :class="tournament.champion.region.toLowerCase()">
                   {{ tournament.champion.short }}
                 </div>
                 <div class="team-details">
                   <div class="team-name">{{ tournament.champion.name }}</div>
-                  <el-tag :type="getRegionTagType(tournament.champion.region)" size="small">
-                    {{ tournament.champion.region }}
-                  </el-tag>
+                  <div class="team-meta">
+                    <el-tag :type="getRegionTagType(tournament.champion.region)" size="small">
+                      {{ tournament.champion.region }}
+                    </el-tag>
+                    <span v-if="tournament.champion.teamCount" class="team-count">
+                      {{ tournament.champion.teamCount }}支队伍
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -219,11 +252,11 @@
 
         <!-- 前四名展示 -->
         <div class="placements">
-          <!-- 冠军 -->
+          <!-- 冠军/最强赛区 -->
           <div class="placement-item champion">
             <div class="placement-rank">
               <span class="rank-icon">🏆</span>
-              <span class="rank-text">冠军</span>
+              <span class="rank-text">{{ selectedTournament.isIcp ? '最强赛区' : '冠军' }}</span>
             </div>
             <div class="placement-team">
               <div class="team-avatar large" :class="selectedTournament.champion.region.toLowerCase()">
@@ -231,9 +264,14 @@
               </div>
               <div class="team-details">
                 <div class="team-name">{{ selectedTournament.champion.name }}</div>
-                <el-tag :type="getRegionTagType(selectedTournament.champion.region)" size="small">
-                  {{ selectedTournament.champion.region }}
-                </el-tag>
+                <div class="team-meta-row">
+                  <el-tag :type="getRegionTagType(selectedTournament.champion.region)" size="small">
+                    {{ selectedTournament.champion.region }}
+                  </el-tag>
+                  <span v-if="selectedTournament.champion.teamCount" class="team-count-badge">
+                    {{ selectedTournament.champion.teamCount }}支队伍
+                  </span>
+                </div>
               </div>
             </div>
             <div v-if="selectedTournament.mvp" class="mvp-info">
@@ -242,11 +280,11 @@
             </div>
           </div>
 
-          <!-- 亚军 -->
+          <!-- 亚军/第二赛区 -->
           <div class="placement-item runner-up">
             <div class="placement-rank">
               <span class="rank-icon">🥈</span>
-              <span class="rank-text">亚军</span>
+              <span class="rank-text">{{ selectedTournament.isIcp ? '第二赛区' : '亚军' }}</span>
             </div>
             <div class="placement-team">
               <div class="team-avatar" :class="selectedTournament.runnerUp.region.toLowerCase()">
@@ -254,18 +292,23 @@
               </div>
               <div class="team-details">
                 <div class="team-name">{{ selectedTournament.runnerUp.name }}</div>
-                <el-tag :type="getRegionTagType(selectedTournament.runnerUp.region)" size="small">
-                  {{ selectedTournament.runnerUp.region }}
-                </el-tag>
+                <div class="team-meta-row">
+                  <el-tag :type="getRegionTagType(selectedTournament.runnerUp.region)" size="small">
+                    {{ selectedTournament.runnerUp.region }}
+                  </el-tag>
+                  <span v-if="selectedTournament.runnerUp.teamCount" class="team-count-badge">
+                    {{ selectedTournament.runnerUp.teamCount }}支队伍
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- 季军 -->
+          <!-- 季军/第三赛区 -->
           <div class="placement-item third">
             <div class="placement-rank">
               <span class="rank-icon">🥉</span>
-              <span class="rank-text">季军</span>
+              <span class="rank-text">{{ selectedTournament.isIcp ? '第三赛区' : '季军' }}</span>
             </div>
             <div class="placement-team">
               <div class="team-avatar" :class="selectedTournament.third.region.toLowerCase()">
@@ -273,18 +316,23 @@
               </div>
               <div class="team-details">
                 <div class="team-name">{{ selectedTournament.third.name }}</div>
-                <el-tag :type="getRegionTagType(selectedTournament.third.region)" size="small">
-                  {{ selectedTournament.third.region }}
-                </el-tag>
+                <div class="team-meta-row">
+                  <el-tag :type="getRegionTagType(selectedTournament.third.region)" size="small">
+                    {{ selectedTournament.third.region }}
+                  </el-tag>
+                  <span v-if="selectedTournament.third.teamCount" class="team-count-badge">
+                    {{ selectedTournament.third.teamCount }}支队伍
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- 殿军 -->
+          <!-- 殿军/第四赛区 -->
           <div class="placement-item fourth">
             <div class="placement-rank">
               <span class="rank-icon">4</span>
-              <span class="rank-text">殿军</span>
+              <span class="rank-text">{{ selectedTournament.isIcp ? '第四赛区' : '殿军' }}</span>
             </div>
             <div class="placement-team">
               <div class="team-avatar" :class="selectedTournament.fourth.region.toLowerCase()">
@@ -292,9 +340,14 @@
               </div>
               <div class="team-details">
                 <div class="team-name">{{ selectedTournament.fourth.name }}</div>
-                <el-tag :type="getRegionTagType(selectedTournament.fourth.region)" size="small">
-                  {{ selectedTournament.fourth.region }}
-                </el-tag>
+                <div class="team-meta-row">
+                  <el-tag :type="getRegionTagType(selectedTournament.fourth.region)" size="small">
+                    {{ selectedTournament.fourth.region }}
+                  </el-tag>
+                  <span v-if="selectedTournament.fourth.teamCount" class="team-count-badge">
+                    {{ selectedTournament.fourth.teamCount }}支队伍
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -319,6 +372,8 @@ interface TeamInfo {
   name: string
   short: string
   region: string
+  isRegionBattle?: boolean  // 是否是赛区对抗赛（ICP）
+  teamCount?: number        // 赛区队伍数量
 }
 
 interface Tournament {
@@ -326,6 +381,7 @@ interface Tournament {
   name: string
   season: string
   type: 'international' | 'league'
+  isIcp: boolean            // 是否是ICP赛区对抗赛
   champion: TeamInfo
   runnerUp: TeamInfo
   third: TeamInfo
@@ -398,10 +454,10 @@ async function loadHonors() {
 
     // 按赛事ID分组荣誉记录
     const tournamentHonorsMap = new Map<number, {
-      champion?: any
-      runnerUp?: any
-      third?: any
-      fourth?: any
+      champions: any[]      // 可能有多个冠军队伍（ICP赛区对抗赛）
+      runnerUps: any[]
+      thirds: any[]
+      fourths: any[]
       mvp?: string
       tournamentName: string
       tournamentType: string
@@ -413,6 +469,10 @@ async function loadHonors() {
       const tournamentId = honor.tournament_id
       if (!tournamentHonorsMap.has(tournamentId)) {
         tournamentHonorsMap.set(tournamentId, {
+          champions: [],
+          runnerUps: [],
+          thirds: [],
+          fourths: [],
           tournamentName: honor.tournament_name,
           tournamentType: honor.tournament_type,
           seasonId: honor.season_id,
@@ -423,13 +483,13 @@ async function loadHonors() {
       const teamInfo = getTeamInfo(honor.team_id, honor.team_name)
 
       if (honor.honor_type === 'TEAM_CHAMPION') {
-        entry.champion = teamInfo
+        entry.champions.push(teamInfo)
       } else if (honor.honor_type === 'TEAM_RUNNER_UP') {
-        entry.runnerUp = teamInfo
+        entry.runnerUps.push(teamInfo)
       } else if (honor.honor_type === 'TEAM_THIRD') {
-        entry.third = teamInfo
+        entry.thirds.push(teamInfo)
       } else if (honor.honor_type === 'TEAM_FOURTH') {
-        entry.fourth = teamInfo
+        entry.fourths.push(teamInfo)
       }
     })
 
@@ -444,17 +504,36 @@ async function loadHonors() {
     // 转换为Tournament数组
     const tournamentList: Tournament[] = []
     tournamentHonorsMap.forEach((data, id) => {
-      if (data.champion) {
-        const defaultTeam = { name: '未知', short: '?', region: 'LPL' }
+      if (data.champions.length > 0) {
+        const defaultTeam: TeamInfo = { name: '未知', short: '?', region: 'LPL' }
+        const isIcp = isIcpType(data.tournamentType)
+
+        // 对于ICP赛区对抗赛，聚合同赛区的队伍显示赛区名
+        const getPlacementInfo = (teams: TeamInfo[]): TeamInfo => {
+          if (teams.length === 0) return defaultTeam
+          if (isIcp && teams.length > 1) {
+            const region = teams[0].region
+            return {
+              name: `${region}赛区`,
+              short: region,
+              region: region,
+              isRegionBattle: true,
+              teamCount: teams.length,
+            }
+          }
+          return teams[0]
+        }
+
         tournamentList.push({
           id,
           name: data.tournamentName,
           season: `S${data.seasonId}`,
           type: isInternationalType(data.tournamentType) ? 'international' : 'league',
-          champion: data.champion,
-          runnerUp: data.runnerUp || defaultTeam,
-          third: data.third || defaultTeam,
-          fourth: data.fourth || defaultTeam,
+          isIcp,
+          champion: getPlacementInfo(data.champions),
+          runnerUp: getPlacementInfo(data.runnerUps),
+          third: getPlacementInfo(data.thirds),
+          fourth: getPlacementInfo(data.fourths),
           mvp: data.mvp,
         })
       }
@@ -520,9 +599,35 @@ function getTeamInfo(teamId: number | undefined, teamName: string | undefined): 
 }
 
 // 判断是否是国际赛事
+// 注意：后端存储格式是 PascalCase（如 MadridMasters），需要处理多种格式
 function isInternationalType(tournamentType: string): boolean {
-  const internationalTypes = ['msi', 'worlds', 'madrid_masters', 'shanghai_masters', 'super']
-  return internationalTypes.includes(tournamentType.toLowerCase())
+  const type = tournamentType.toLowerCase()
+  // 国际赛事类型列表（支持多种格式）
+  const internationalTypes = [
+    'msi',
+    'worlds',
+    'worldchampionship',
+    'world_championship',
+    'madridmasters',
+    'madrid_masters',
+    'shanghaimasters',
+    'shanghai_masters',
+    'super',
+    'superintercontinental',
+    'super_intercontinental',
+    'claudeintercontinental',
+    'claude_intercontinental',
+    'icpintercontinental',
+    'icp_intercontinental',
+  ]
+  return internationalTypes.includes(type)
+}
+
+// 判断是否是ICP赛区对抗赛（赛区vs赛区的特殊赛制）
+function isIcpType(tournamentType: string): boolean {
+  const type = tournamentType.toLowerCase()
+  // 只有 IcpIntercontinental 是赛区对抗赛，其他洲际赛（Claude、Super）不是
+  return type === 'icpintercontinental' || type === 'icp_intercontinental'
 }
 
 // 计算属性
@@ -815,6 +920,33 @@ const getRankClass = (rank: number) => {
   margin-bottom: 4px;
 }
 
+.team-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-count {
+  font-size: 12px;
+  color: var(--text-secondary, #606266);
+  font-weight: 500;
+}
+
+.team-count-badge {
+  font-size: 11px;
+  color: #8b5cf6;
+  font-weight: 600;
+  background: rgba(139, 92, 246, 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
 .click-hint {
   display: flex;
   align-items: center;
@@ -994,6 +1126,112 @@ const getRankClass = (rank: number) => {
 
 .mvp-info .el-icon {
   color: #f59e0b;
+}
+
+/* 荣誉殿堂导航入口 */
+.hall-navigation {
+  margin-bottom: 24px;
+}
+
+.nav-card {
+  cursor: pointer;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  transition: all 0.3s ease;
+  margin-bottom: 16px;
+}
+
+.nav-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.nav-card.international {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border-color: #ffd700;
+}
+
+.nav-card.international:hover {
+  border-color: #ffed4a;
+  box-shadow: 0 8px 24px rgba(255, 215, 0, 0.2);
+}
+
+.nav-card :deep(.el-card__body) {
+  padding: 20px 24px;
+}
+
+.nav-content {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.nav-icon {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.nav-info {
+  flex: 1;
+}
+
+.nav-info h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffd700;
+  margin: 0 0 6px 0;
+}
+
+.nav-info p {
+  font-size: 13px;
+  color: #b8860b;
+  margin: 0;
+}
+
+.nav-arrow {
+  font-size: 24px;
+  color: #ffd700;
+  transition: transform 0.3s ease;
+}
+
+.nav-card:hover .nav-arrow {
+  transform: translateX(4px);
+}
+
+.sub-nav {
+  display: flex;
+  gap: 16px;
+}
+
+.sub-nav-card {
+  flex: 1;
+  cursor: pointer;
+  border-radius: 10px;
+  border: 1px solid #ebeef5;
+  transition: all 0.3s ease;
+}
+
+.sub-nav-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  border-color: #667eea;
+}
+
+.sub-nav-card :deep(.el-card__body) {
+  padding: 16px 20px;
+}
+
+.sub-nav-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary, #303133);
+}
+
+.sub-icon {
+  font-size: 22px;
 }
 
 /* 响应式 */

@@ -209,7 +209,7 @@ export const useDraftStoreTauri = defineStore('draftTauri', () => {
       draftPicks.value.push(pick)
       currentPick.value++
 
-      console.log(`Pick ${pick.pick_number}: ${pick.team_name} selected ${pick.player.name}`)
+      console.log(`Pick ${pick.pick_number}: ${pick.team_name} selected ${pick.player.tag}`)
       return pick
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to make draft pick'
