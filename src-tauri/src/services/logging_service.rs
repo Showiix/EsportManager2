@@ -10,7 +10,7 @@ use tracing_subscriber::{
     fmt::{self, format::FmtSpan},
     layer::SubscriberExt,
     util::SubscriberInitExt,
-    EnvFilter,
+    EnvFilter, Layer,
 };
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
@@ -125,13 +125,11 @@ fn init_logging_inner(config: &LoggingConfig) -> anyhow::Result<()> {
     if config.enable_console && config.enable_file {
         // 控制台 + 文件
         let console_layer = create_console_layer();
-        let (file_layer, error_layer, frontend_layer) = create_file_layers(config)?;
+        let file_layers = create_file_layers(config)?;
 
         subscriber
             .with(console_layer)
-            .with(file_layer)
-            .with(error_layer)
-            .with(frontend_layer)
+            .with(file_layers)
             .init();
     } else if config.enable_console {
         // 仅控制台
@@ -139,11 +137,9 @@ fn init_logging_inner(config: &LoggingConfig) -> anyhow::Result<()> {
         subscriber.with(console_layer).init();
     } else if config.enable_file {
         // 仅文件
-        let (file_layer, error_layer, frontend_layer) = create_file_layers(config)?;
+        let file_layers = create_file_layers(config)?;
         subscriber
-            .with(file_layer)
-            .with(error_layer)
-            .with(frontend_layer)
+            .with(file_layers)
             .init();
     } else {
         // 无输出
@@ -167,16 +163,12 @@ where
         .pretty()
 }
 
-/// 创建文件日志层
+/// 创建文件日志层（返回组合后的单一层）
 fn create_file_layers<S>(
     config: &LoggingConfig,
-) -> anyhow::Result<(
-    impl tracing_subscriber::Layer<S>,
-    impl tracing_subscriber::Layer<S>,
-    impl tracing_subscriber::Layer<S>,
-)>
+) -> anyhow::Result<Box<dyn Layer<S> + Send + Sync + 'static>>
 where
-    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a> + Send + Sync,
 {
     // 应用日志 (按天滚动)
     let app_file = RollingFileAppender::new(
@@ -200,35 +192,7 @@ where
             .boxed()
     };
 
-    // 错误日志 (单独文件，按天滚动)
-    let error_file = RollingFileAppender::new(
-        Rotation::DAILY,
-        &config.log_dir,
-        "error.log",
-    );
-
-    let error_layer = fmt::layer()
-        .with_writer(error_file)
-        .with_target(true)
-        .with_ansi(false)
-        .with_filter(tracing_subscriber::filter::LevelFilter::WARN);
-
-    // 前端日志 (单独文件，按天滚动)
-    let frontend_file = RollingFileAppender::new(
-        Rotation::DAILY,
-        &config.log_dir,
-        "frontend.log",
-    );
-
-    let frontend_layer = fmt::layer()
-        .with_writer(frontend_file)
-        .with_target(true)
-        .with_ansi(false)
-        .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
-            metadata.target().starts_with("frontend::")
-        }));
-
-    Ok((file_layer, error_layer, frontend_layer))
+    Ok(file_layer)
 }
 
 /// 获取日志目录路径

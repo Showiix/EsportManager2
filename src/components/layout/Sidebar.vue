@@ -50,7 +50,6 @@ const menuItems: MenuItem[] = [
   { name: '年度颁奖典礼', path: '/annual-awards', icon: 'award' },
   { name: '荣誉殿堂', path: '/honors', icon: 'medal' },
   { name: '系统设置', path: '/settings', icon: 'settings' },
-  { name: '开发工具', path: '/dev-tools', icon: 'wrench' },
 ];
 
 const isActive = (path: string) => {
@@ -60,10 +59,10 @@ const isActive = (path: string) => {
   return route.path.startsWith(path);
 };
 
-// 检查菜单项是否应该禁用（未加载存档时，除了设置页面和开发工具外都禁用）
+// 检查菜单项是否应该禁用（未加载存档时，除了设置页面外都禁用）
 const isMenuDisabled = (path: string) => {
-  // 设置页面和开发工具始终可用
-  if (path === '/settings' || path === '/dev-tools') {
+  // 设置页面始终可用
+  if (path === '/settings') {
     return false;
   }
   // 未加载存档时禁用其他菜单

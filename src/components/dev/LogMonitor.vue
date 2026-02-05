@@ -1,5 +1,15 @@
 <template>
   <Teleport to="body">
+    <!-- 悬浮开关按钮（仅开发模式） -->
+    <div
+      v-if="!isVisible"
+      class="log-toggle-btn"
+      @click="isVisible = true"
+      title="打开日志监控台 (Ctrl+Shift+L)"
+    >
+      📋
+    </div>
+
     <div
       v-if="isVisible"
       class="log-monitor"
@@ -471,5 +481,32 @@ defineExpose({
 .minimized .log-monitor-header {
   border-bottom: none;
   border-radius: 8px;
+}
+
+/* 悬浮开关按钮 */
+.log-toggle-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  background: #1e1e1e;
+  border: 1px solid #444;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+  z-index: 99998;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s;
+  opacity: 0.6;
+}
+
+.log-toggle-btn:hover {
+  opacity: 1;
+  background: #2d2d2d;
+  transform: scale(1.1);
 }
 </style>

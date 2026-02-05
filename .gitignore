@@ -58,5 +58,8 @@ coverage/
 .cache/
 *.tsbuildinfo
 
-*.md
+# *.md  # 已取消忽略，文档需要上传
 *.png
+
+# 归档的旧文档
+docs/archive/

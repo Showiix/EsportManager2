@@ -3,11 +3,6 @@ import { ref } from 'vue';
 
 const currentSeason = ref('S1');
 const currentPhase = ref('春季赛常规赛');
-
-const advancePhase = () => {
-  // TODO: 实际推进阶段逻辑
-  console.log('推进阶段');
-};
 </script>
 
 <template>
@@ -37,14 +32,6 @@ const advancePhase = () => {
 
       <!-- 操作按钮 -->
       <div class="flex items-center gap-2">
-        <button
-          @click="advancePhase"
-          class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
-        >
-          <span>▶</span>
-          <span>推进阶段</span>
-        </button>
-
         <button
           class="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
           title="快速保存"

@@ -21,9 +21,6 @@
         </div>
 
         <div class="header-actions">
-          <el-button type="success" :icon="VideoPlay" @click="advancePhase">
-            推进阶段
-          </el-button>
           <el-button :icon="FolderOpened" @click="$router.push('/settings')">
             存档
           </el-button>
@@ -125,11 +122,6 @@
             <el-icon><Setting /></el-icon>
             <span>系统设置</span>
           </el-menu-item>
-
-          <el-menu-item index="/dev-tools">
-            <el-icon><Tools /></el-icon>
-            <span>开发工具</span>
-          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -169,7 +161,6 @@ import {
   Sort,
   Medal,
   Setting,
-  VideoPlay,
   FolderOpened,
   DataLine,
   Star,
@@ -192,7 +183,7 @@ const activeMenu = computed(() => route.path)
 
 // 检查菜单项是否应该禁用
 const isMenuDisabled = (path: string) => {
-  if (path === '/settings' || path === '/dev-tools') return false
+  if (path === '/settings') return false
   return !gameStore.hasSaveLoaded
 }
 
@@ -224,7 +215,6 @@ const breadcrumbs = computed(() => {
     'annual-awards': '年度颁奖典礼',
     honors: '荣誉殿堂',
     settings: '系统设置',
-    'dev-tools': '开发工具',
     lpl: 'LPL 中国赛区',
     lck: 'LCK 韩国赛区',
     lec: 'LEC 欧洲赛区',
@@ -244,10 +234,6 @@ const breadcrumbs = computed(() => {
 
   return crumbs
 })
-
-const advancePhase = () => {
-  console.log('推进阶段')
-}
 </script>
 
 <style scoped>

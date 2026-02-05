@@ -6,6 +6,7 @@ import ErrorGuide from './components/common/ErrorGuide.vue'
 import { loggerService, createLogger, LogLevel } from '@/utils/logger'
 
 const logger = createLogger('App')
+const isDev = import.meta.env.DEV
 
 // 初始化日志系统
 onMounted(() => {
@@ -40,7 +41,7 @@ onMounted(() => {
   </MainLayout>
 
   <!-- 开发工具：日志监控台 (Ctrl+Shift+L 切换显示) -->
-  <LogMonitor v-if="import.meta.env.DEV" />
+  <LogMonitor v-if="isDev" />
 
   <!-- 全局错误引导弹窗 -->
   <ErrorGuide />
