@@ -61,15 +61,19 @@
 
           <div class="region-status">
             <template v-if="getRegionGMStatus(region.id).allConfigured">
-              <el-tag type="success" size="small">
-                <el-icon><Check /></el-icon>
-                GM配置完成
+              <el-tag type="success" size="small" class="gm-status-tag">
+                <span class="tag-content">
+                  <el-icon><Check /></el-icon>
+                  <span>GM配置完成</span>
+                </span>
               </el-tag>
             </template>
             <template v-else>
-              <el-tag type="warning" size="small">
-                <el-icon><Warning /></el-icon>
-                需配置 {{ getRegionGMStatus(region.id).unconfigured }} 队GM
+              <el-tag type="warning" size="small" class="gm-status-tag">
+                <span class="tag-content">
+                  <el-icon><Warning /></el-icon>
+                  <span>需配置 {{ getRegionGMStatus(region.id).unconfigured }} 队GM</span>
+                </span>
               </el-tag>
             </template>
           </div>
@@ -448,6 +452,13 @@ onMounted(() => {
 }
 
 .region-status .el-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.region-status .tag-content {
   display: inline-flex;
   align-items: center;
   gap: 4px;
