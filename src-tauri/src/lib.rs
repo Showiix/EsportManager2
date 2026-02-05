@@ -83,6 +83,8 @@ use commands::{
     get_transfer_events, get_transfer_report, get_transfer_window_status,
     get_team_personality, update_team_personality, get_team_reputation,
     get_player_market_list,
+    get_team_evaluations, get_team_position_needs,
+    get_player_listing_evaluations, get_player_stay_evaluations,
     // 日志系统命令
     log_frontend_event, log_frontend_error, get_log_files, read_log_file, cleanup_logs,
     // 应用状态
@@ -308,6 +310,11 @@ pub fn run() {
             update_team_personality,
             get_team_reputation,
             get_player_market_list,
+            // 评估系统命令
+            get_team_evaluations,
+            get_team_position_needs,
+            get_player_listing_evaluations,
+            get_player_stay_evaluations,
             // 日志系统命令
             log_frontend_event,
             log_frontend_error,

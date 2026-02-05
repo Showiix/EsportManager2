@@ -2790,6 +2790,72 @@ export interface UpdatePersonalityRequest {
   bargain_hunting?: number
 }
 
+// ========== 评估系统类型 ==========
+
+/** 战队赛季评估信息 */
+export interface TeamSeasonEvaluationInfo {
+  evaluation_id: number
+  team_id: number
+  team_name: string
+  region_code: string
+  season_id: number
+  current_rank: number
+  last_rank: number
+  stability_score: number
+  strategy: string
+  urgency_level: string
+  roster_power: number
+  roster_count: number
+  avg_age: number
+  avg_ability: number
+  budget_remaining: number
+  evaluation_reason: string
+  created_at: string
+}
+
+/** 位置需求信息 */
+export interface PositionNeedInfo {
+  position: string
+  current_count: number
+  target_count: number
+  gap: number
+  current_avg_ability: number
+  priority: string
+}
+
+/** 选手挂牌评估信息 */
+export interface PlayerListingEvaluationInfo {
+  player_id: number
+  player_name: string
+  position: string
+  age: number
+  ability: number
+  team_id: number
+  team_name: string
+  should_list: boolean
+  list_reason: string
+  is_protected: boolean
+  protect_reason: string
+  estimated_value: number
+}
+
+/** 选手留队评估信息 */
+export interface PlayerStayEvaluationInfo {
+  player_id: number
+  player_name: string
+  position: string
+  age: number
+  ability: number
+  team_id: number
+  team_name: string
+  stay_score: number
+  wants_to_leave: boolean
+  leave_reason: string
+  salary: number
+  satisfaction: number
+  loyalty: number
+}
+
 /** 转会系统 API */
 export const transferWindowApi = {
   // 开始转会期
@@ -2827,6 +2893,24 @@ export const transferWindowApi = {
   // 获取球队声望
   getTeamReputation: (teamId: number) =>
     invokeCommand<TeamReputation>('get_team_reputation', { teamId }),
+
+  // ========== 评估系统 ==========
+
+  // 获取战队评估列表
+  getTeamEvaluations: (seasonId?: number) =>
+    invokeCommand<TeamSeasonEvaluationInfo[]>('get_team_evaluations', { seasonId }),
+
+  // 获取战队位置需求
+  getTeamPositionNeeds: (teamId: number, seasonId?: number) =>
+    invokeCommand<PositionNeedInfo[]>('get_team_position_needs', { teamId, seasonId }),
+
+  // 获取选手挂牌评估
+  getPlayerListingEvaluations: (teamId?: number, seasonId?: number) =>
+    invokeCommand<PlayerListingEvaluationInfo[]>('get_player_listing_evaluations', { teamId, seasonId }),
+
+  // 获取选手留队评估
+  getPlayerStayEvaluations: (teamId?: number, seasonId?: number) =>
+    invokeCommand<PlayerStayEvaluationInfo[]>('get_player_stay_evaluations', { teamId, seasonId }),
 }
 
 export default tauriApi

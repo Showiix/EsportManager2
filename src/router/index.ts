@@ -180,6 +180,12 @@ const router = createRouter({
       meta: { title: '选手市场' }
     },
     {
+      path: '/transfer/team-evaluation',
+      name: 'TeamEvaluationCenter',
+      component: () => import('@/views/TeamEvaluationCenter.vue'),
+      meta: { title: '战队评估中心' }
+    },
+    {
       path: '/rankings',
       name: 'Rankings',
       component: () => import('@/views/Rankings.vue'),

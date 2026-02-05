@@ -20,8 +20,8 @@ const logger = createLogger('TransferWindowStore')
 /** 轮次名称 */
 export const ROUND_NAMES: Record<number, string> = {
   1: '赛季结算',
-  2: '续约谈判',
-  3: '双向评估',
+  2: '双向评估',
+  3: '续约谈判',
   4: '自由球员',
   5: '有合同挖角',
   6: '财政调整',

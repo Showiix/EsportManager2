@@ -64,6 +64,7 @@ pub enum TransferEventType {
     TransferPurchase,
     PlayerRetirement,
     PlayerListed,
+    PlayerRequestTransfer,
     EmergencySigning,
     DraftPickAuction,
     FinancialAdjustment,
@@ -79,6 +80,7 @@ impl TransferEventType {
             TransferEventType::TransferPurchase => "TRANSFER_PURCHASE",
             TransferEventType::PlayerRetirement => "PLAYER_RETIREMENT",
             TransferEventType::PlayerListed => "PLAYER_LISTED",
+            TransferEventType::PlayerRequestTransfer => "PLAYER_REQUEST_TRANSFER",
             TransferEventType::EmergencySigning => "EMERGENCY_SIGNING",
             TransferEventType::DraftPickAuction => "DRAFT_PICK_AUCTION",
             TransferEventType::FinancialAdjustment => "FINANCIAL_ADJUSTMENT",
@@ -94,6 +96,7 @@ impl TransferEventType {
             "TRANSFER_PURCHASE" => TransferEventType::TransferPurchase,
             "PLAYER_RETIREMENT" => TransferEventType::PlayerRetirement,
             "PLAYER_LISTED" => TransferEventType::PlayerListed,
+            "PLAYER_REQUEST_TRANSFER" => TransferEventType::PlayerRequestTransfer,
             "EMERGENCY_SIGNING" => TransferEventType::EmergencySigning,
             "DRAFT_PICK_AUCTION" => TransferEventType::DraftPickAuction,
             "FINANCIAL_ADJUSTMENT" => TransferEventType::FinancialAdjustment,
@@ -519,4 +522,32 @@ pub struct PlayerContractInfo {
     pub loyalty: i64,
     pub is_starter: bool,
     pub status: String,
+}
+
+// ============================================
+// 双向评估系统
+// ============================================
+
+/// 战队赛季评估结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamEvaluation {
+    pub evaluation_id: i64,
+    pub team_id: i64,
+    pub current_rank: i32,
+    pub last_rank: i32,
+    pub stability_score: i32,
+    pub strategy: String,
+    pub urgency_level: String,
+    pub roster_power: f64,
+}
+
+/// 选手评估结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerEvaluation {
+    pub player_id: i64,
+    pub stay_score: f64,
+    pub wants_to_leave: bool,
+    pub leave_reason: String,
+    pub should_list: bool,
+    pub list_reason: String,
 }

@@ -510,3 +510,459 @@ pub async fn get_player_market_list(
 
     Ok(CommandResult::ok(players))
 }
+
+// ============================================
+// 双向评估相关命令
+// ============================================
+
+/// 战队赛季评估信息（用于前端展示）
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TeamSeasonEvaluationInfo {
+    pub evaluation_id: i64,
+    pub team_id: i64,
+    pub team_name: String,
+    pub region_code: String,
+    pub season_id: i64,
+    pub current_rank: i32,
+    pub last_rank: i32,
+    pub stability_score: i32,
+    pub strategy: String,
+    pub urgency_level: String,
+    pub roster_power: f64,
+    pub roster_count: i32,
+    pub avg_age: f64,
+    pub avg_ability: f64,
+    pub budget_remaining: i64,
+    pub evaluation_reason: String,
+    pub created_at: String,
+}
+
+/// 位置需求信息
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PositionNeedInfo {
+    pub position: String,
+    pub current_count: i32,
+    pub target_count: i32,
+    pub gap: i32,
+    pub current_avg_ability: f64,
+    pub priority: String,
+}
+
+/// 选手挂牌评估信息
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PlayerListingEvaluationInfo {
+    pub player_id: i64,
+    pub player_name: String,
+    pub position: String,
+    pub age: i64,
+    pub ability: i64,
+    pub team_id: i64,
+    pub team_name: String,
+    pub should_list: bool,
+    pub list_reason: String,
+    pub is_protected: bool,
+    pub protect_reason: String,
+    pub estimated_value: i64,
+}
+
+/// 选手留队评估信息
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PlayerStayEvaluationInfo {
+    pub player_id: i64,
+    pub player_name: String,
+    pub position: String,
+    pub age: i64,
+    pub ability: i64,
+    pub team_id: i64,
+    pub team_name: String,
+    pub stay_score: f64,
+    pub wants_to_leave: bool,
+    pub leave_reason: String,
+    pub salary: i64,
+    pub satisfaction: i64,
+    pub loyalty: i64,
+}
+
+/// 获取战队评估列表
+#[tauri::command]
+pub async fn get_team_evaluations(
+    state: State<'_, AppState>,
+    season_id: Option<i64>,
+) -> Result<CommandResult<Vec<TeamSeasonEvaluationInfo>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取赛季ID
+    let target_season = match season_id {
+        Some(s) => s,
+        None => {
+            let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+                .bind(&save_id)
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            save_row.get("current_season")
+        }
+    };
+
+    // 查询战队评估数据
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            e.id as evaluation_id,
+            e.team_id,
+            t.name as team_name,
+            r.short_name as region_code,
+            e.season_id,
+            e.current_rank,
+            e.last_rank,
+            e.stability_score,
+            e.strategy,
+            e.urgency_level,
+            e.roster_power,
+            e.roster_count,
+            e.avg_age,
+            e.avg_ability,
+            e.budget_remaining,
+            e.evaluation_reason,
+            e.created_at
+        FROM team_season_evaluations e
+        JOIN teams t ON e.team_id = t.id
+        JOIN regions r ON t.region_id = r.id
+        WHERE e.save_id = ? AND e.season_id = ?
+        ORDER BY e.stability_score DESC, e.roster_power DESC
+        "#
+    )
+    .bind(&save_id)
+    .bind(target_season)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let evaluations: Vec<TeamSeasonEvaluationInfo> = rows
+        .iter()
+        .map(|row| TeamSeasonEvaluationInfo {
+            evaluation_id: row.get("evaluation_id"),
+            team_id: row.get("team_id"),
+            team_name: row.get("team_name"),
+            region_code: row.get("region_code"),
+            season_id: row.get("season_id"),
+            current_rank: row.get("current_rank"),
+            last_rank: row.get("last_rank"),
+            stability_score: row.get("stability_score"),
+            strategy: row.get("strategy"),
+            urgency_level: row.get("urgency_level"),
+            roster_power: row.get("roster_power"),
+            roster_count: row.get("roster_count"),
+            avg_age: row.get("avg_age"),
+            avg_ability: row.get("avg_ability"),
+            budget_remaining: row.get("budget_remaining"),
+            evaluation_reason: row.get("evaluation_reason"),
+            created_at: row.get("created_at"),
+        })
+        .collect();
+
+    Ok(CommandResult::ok(evaluations))
+}
+
+/// 获取战队位置需求
+#[tauri::command]
+pub async fn get_team_position_needs(
+    state: State<'_, AppState>,
+    team_id: i64,
+    season_id: Option<i64>,
+) -> Result<CommandResult<Vec<PositionNeedInfo>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取赛季ID
+    let target_season = match season_id {
+        Some(s) => s,
+        None => {
+            let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+                .bind(&save_id)
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            save_row.get("current_season")
+        }
+    };
+
+    // 先获取评估ID
+    let eval_row = sqlx::query(
+        "SELECT id FROM team_season_evaluations WHERE team_id = ? AND season_id = ? AND save_id = ?"
+    )
+    .bind(team_id)
+    .bind(target_season)
+    .bind(&save_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let evaluation_id: i64 = match eval_row {
+        Some(row) => row.get("id"),
+        None => return Ok(CommandResult::ok(vec![])),
+    };
+
+    // 查询位置需求
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            position,
+            current_count,
+            target_count,
+            gap,
+            current_avg_ability,
+            priority
+        FROM team_position_needs
+        WHERE evaluation_id = ?
+        ORDER BY
+            CASE priority
+                WHEN 'CRITICAL' THEN 1
+                WHEN 'HIGH' THEN 2
+                WHEN 'MEDIUM' THEN 3
+                ELSE 4
+            END
+        "#
+    )
+    .bind(evaluation_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let needs: Vec<PositionNeedInfo> = rows
+        .iter()
+        .map(|row| PositionNeedInfo {
+            position: row.get("position"),
+            current_count: row.get("current_count"),
+            target_count: row.get("target_count"),
+            gap: row.get("gap"),
+            current_avg_ability: row.get("current_avg_ability"),
+            priority: row.get("priority"),
+        })
+        .collect();
+
+    Ok(CommandResult::ok(needs))
+}
+
+/// 获取选手挂牌评估列表
+#[tauri::command]
+pub async fn get_player_listing_evaluations(
+    state: State<'_, AppState>,
+    team_id: Option<i64>,
+    season_id: Option<i64>,
+) -> Result<CommandResult<Vec<PlayerListingEvaluationInfo>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取赛季ID
+    let target_season = match season_id {
+        Some(s) => s,
+        None => {
+            let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+                .bind(&save_id)
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            save_row.get("current_season")
+        }
+    };
+
+    // 构建查询
+    let base_query = r#"
+        SELECT
+            le.player_id,
+            p.game_id as player_name,
+            p.position,
+            p.age,
+            p.ability,
+            le.team_id,
+            t.name as team_name,
+            le.should_list,
+            le.list_reason,
+            le.is_protected,
+            le.protect_reason,
+            le.estimated_value
+        FROM team_listing_evaluations le
+        JOIN players p ON le.player_id = p.id
+        JOIN teams t ON le.team_id = t.id
+        WHERE le.save_id = ? AND le.season_id = ?
+    "#;
+
+    let rows = if let Some(tid) = team_id {
+        sqlx::query(&format!("{} AND le.team_id = ? ORDER BY le.should_list DESC, p.ability DESC", base_query))
+            .bind(&save_id)
+            .bind(target_season)
+            .bind(tid)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query(&format!("{} ORDER BY le.should_list DESC, p.ability DESC", base_query))
+            .bind(&save_id)
+            .bind(target_season)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| e.to_string())?
+    };
+
+    let evaluations: Vec<PlayerListingEvaluationInfo> = rows
+        .iter()
+        .map(|row| PlayerListingEvaluationInfo {
+            player_id: row.get("player_id"),
+            player_name: row.get("player_name"),
+            position: row.get("position"),
+            age: row.get("age"),
+            ability: row.get("ability"),
+            team_id: row.get("team_id"),
+            team_name: row.get("team_name"),
+            should_list: row.get("should_list"),
+            list_reason: row.get("list_reason"),
+            is_protected: row.get("is_protected"),
+            protect_reason: row.get("protect_reason"),
+            estimated_value: row.get("estimated_value"),
+        })
+        .collect();
+
+    Ok(CommandResult::ok(evaluations))
+}
+
+/// 获取选手留队评估列表
+#[tauri::command]
+pub async fn get_player_stay_evaluations(
+    state: State<'_, AppState>,
+    team_id: Option<i64>,
+    season_id: Option<i64>,
+) -> Result<CommandResult<Vec<PlayerStayEvaluationInfo>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取赛季ID
+    let target_season = match season_id {
+        Some(s) => s,
+        None => {
+            let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+                .bind(&save_id)
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            save_row.get("current_season")
+        }
+    };
+
+    // 构建查询
+    let base_query = r#"
+        SELECT
+            se.player_id,
+            p.game_id as player_name,
+            p.position,
+            p.age,
+            p.ability,
+            se.team_id,
+            t.name as team_name,
+            se.stay_score,
+            se.wants_to_leave,
+            se.leave_reason,
+            p.salary,
+            p.satisfaction,
+            p.loyalty
+        FROM player_season_evaluations se
+        JOIN players p ON se.player_id = p.id
+        JOIN teams t ON se.team_id = t.id
+        WHERE se.save_id = ? AND se.season_id = ?
+    "#;
+
+    let rows = if let Some(tid) = team_id {
+        sqlx::query(&format!("{} AND se.team_id = ? ORDER BY se.stay_score ASC, p.ability DESC", base_query))
+            .bind(&save_id)
+            .bind(target_season)
+            .bind(tid)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query(&format!("{} ORDER BY se.stay_score ASC, p.ability DESC", base_query))
+            .bind(&save_id)
+            .bind(target_season)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| e.to_string())?
+    };
+
+    let evaluations: Vec<PlayerStayEvaluationInfo> = rows
+        .iter()
+        .map(|row| PlayerStayEvaluationInfo {
+            player_id: row.get("player_id"),
+            player_name: row.get("player_name"),
+            position: row.get("position"),
+            age: row.get("age"),
+            ability: row.get("ability"),
+            team_id: row.get("team_id"),
+            team_name: row.get("team_name"),
+            stay_score: row.get("stay_score"),
+            wants_to_leave: row.get("wants_to_leave"),
+            leave_reason: row.get("leave_reason"),
+            salary: row.get("salary"),
+            satisfaction: row.get("satisfaction"),
+            loyalty: row.get("loyalty"),
+        })
+        .collect();
+
+    Ok(CommandResult::ok(evaluations))
+}

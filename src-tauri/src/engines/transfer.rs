@@ -74,8 +74,8 @@ impl TransferEngine {
 
         let result = match round {
             1 => self.execute_season_settlement(pool, window_id, save_id, window.season_id).await?,
-            2 => self.execute_renewal_negotiations(pool, window_id, save_id, window.season_id).await?,
-            3 => self.execute_bidirectional_evaluation(pool, window_id, save_id, window.season_id).await?,
+            2 => self.execute_bidirectional_evaluation(pool, window_id, save_id, window.season_id).await?,
+            3 => self.execute_renewal_negotiations(pool, window_id, save_id, window.season_id).await?,
             4 => self.execute_free_agent_bidding(pool, window_id, save_id, window.season_id).await?,
             5 => self.execute_contracted_player_transfer(pool, window_id, save_id, window.season_id).await?,
             6 => self.execute_financial_adjustment(pool, window_id, save_id, window.season_id).await?,
@@ -380,7 +380,7 @@ impl TransferEngine {
     }
 
     // ============================================
-    // 第3轮：双向评估
+    // 第2轮：双向评估（战队评估选手 + 选手评估战队）
     // ============================================
 
     async fn execute_bidirectional_evaluation(
@@ -388,7 +388,7 @@ impl TransferEngine {
         pool: &Pool<Sqlite>,
         window_id: i64,
         save_id: &str,
-        _season_id: i64,
+        season_id: i64,
     ) -> Result<RoundResult, String> {
         let mut events = Vec::new();
 
@@ -400,34 +400,32 @@ impl TransferEngine {
             let team_name: String = team.get("name");
             let balance: i64 = team.get("balance");
 
-            // 获取球队阵容
+            // 1. 执行战队评估
+            let team_eval = self.evaluate_team(pool, save_id, window_id, team_id, &team_name, balance, season_id).await?;
+
+            // 2. 获取球队阵容并评估每个选手
             let roster = self.get_team_roster(pool, save_id, team_id).await?;
-            let roster_count = roster.len() as i32;
 
-            // 分析需求
-            let analysis = self.analyze_team_needs(&roster, team_id, &team_name, balance);
-
-            // 生成挂牌名单（高薪低能、年龄过大、位置过剩）
             for player in &roster {
                 let player_id: i64 = player.get("id");
                 let game_id: String = player.get("game_id");
                 let ability: i64 = player.get("ability");
                 let salary: i64 = player.get("salary");
                 let age: i64 = player.get("age");
+                let satisfaction: i64 = player.try_get("satisfaction").unwrap_or(70);
+                let loyalty: i64 = player.try_get("loyalty").unwrap_or(70);
+                let position: String = player.try_get("position").unwrap_or_default();
 
-                // 性价比检查：value_ratio = 能力值 / (薪资万元)
-                // 合理区间：能力80对应200万年薪，ratio=0.4
-                let value_ratio = if salary > 0 { ability as f64 / (salary as f64 / 10000.0) } else { 100.0 };
+                // 3. 执行选手评估
+                let player_eval = self.evaluate_player(
+                    pool, save_id, window_id, player_id, &game_id,
+                    team_id, &team_name, &team_eval,
+                    ability, age, salary, satisfaction, loyalty, &position,
+                    &roster, season_id
+                ).await?;
 
-                // 挂牌条件（满足任一即可）
-                let should_list =
-                    (value_ratio < 0.45 && salary > 100_0000)  // 高薪低能（薪资>100万且性价比低）
-                    || (age >= 29 && ability < 75)  // 年龄偏大且能力一般
-                    || (age >= 32)  // 32岁以上都可能被挂牌
-                    || (roster_count >= 6 && ability < analysis.power_rating as i64 - 5)  // 阵容充足且实力低于队伍均值
-                    || (ability < 65);  // 能力过低的选手
-
-                if should_list {
+                // 4. 根据评估结果决定是否挂牌
+                if player_eval.should_list {
                     let listing_price = self.calculate_market_value_simple(ability as u8, age as u8);
 
                     sqlx::query(
@@ -443,14 +441,29 @@ impl TransferEngine {
                     .map_err(|e| format!("创建挂牌失败: {}", e))?;
 
                     let event = self.record_event(
-                        pool, window_id, 3,
+                        pool, window_id, 2,
                         TransferEventType::PlayerListed,
                         EventLevel::from_ability_and_fee(ability as u8, 0),
                         player_id, &game_id, ability,
                         Some(team_id), Some(&team_name),
                         None, None,
                         listing_price, salary, 0,
-                        &format!("{}被{}挂牌，标价{}万", game_id, team_name, listing_price / 10000),
+                        &format!("{}被{}挂牌，{}，标价{}万", game_id, team_name, player_eval.list_reason, listing_price / 10000),
+                    ).await?;
+                    events.push(event);
+                }
+
+                // 5. 如果选手想离开但战队不想放人，记录矛盾事件
+                if player_eval.wants_to_leave && !player_eval.should_list {
+                    let event = self.record_event(
+                        pool, window_id, 2,
+                        TransferEventType::PlayerRequestTransfer,
+                        EventLevel::from_ability_and_fee(ability as u8, 0),
+                        player_id, &game_id, ability,
+                        Some(team_id), Some(&team_name),
+                        None, None,
+                        0, salary, 0,
+                        &format!("{}向{}提出转会申请，原因：{}", game_id, team_name, player_eval.leave_reason),
                     ).await?;
                     events.push(event);
                 }
@@ -458,11 +471,604 @@ impl TransferEngine {
         }
 
         Ok(RoundResult {
-            round: 3,
+            round: 2,
             round_name: "双向评估".to_string(),
             events,
-            summary: "已完成双向评估：生成挂牌名单".to_string(),
+            summary: "已完成双向评估：战队和选手互相评估，生成挂牌和转会申请".to_string(),
         })
+    }
+
+    /// 战队评估（评估战绩、阵容稳定性、策略）
+    async fn evaluate_team(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        window_id: i64,
+        team_id: i64,
+        team_name: &str,
+        balance: i64,
+        season_id: i64,
+    ) -> Result<TeamEvaluation, String> {
+        // 获取战队阵容
+        let roster = self.get_team_roster(pool, save_id, team_id).await?;
+        let roster_count = roster.len() as i32;
+
+        // 计算阵容战力和平均年龄
+        let mut total_ability: f64 = 0.0;
+        let mut total_age: f64 = 0.0;
+        let mut total_salary: i64 = 0;
+
+        for player in &roster {
+            let ability: i64 = player.get("ability");
+            let age: i64 = player.get("age");
+            let salary: i64 = player.get("salary");
+            total_ability += ability as f64;
+            total_age += age as f64;
+            total_salary += salary;
+        }
+
+        let roster_power = if roster_count > 0 { total_ability / roster_count as f64 } else { 0.0 };
+        let roster_age_avg = if roster_count > 0 { total_age / roster_count as f64 } else { 0.0 };
+
+        // 获取当前赛季和上赛季的排名
+        let current_rank = self.get_team_annual_rank(pool, save_id, team_id, season_id).await.unwrap_or(99);
+        let last_rank = if season_id > 1 {
+            self.get_team_annual_rank(pool, save_id, team_id, season_id - 1).await.unwrap_or(99)
+        } else {
+            current_rank
+        };
+
+        let rank_change = current_rank - last_rank;  // 负数=进步，正数=退步
+        let rank_trend = if rank_change < -2 {
+            "UP"
+        } else if rank_change > 2 {
+            "DOWN"
+        } else {
+            "STABLE"
+        };
+
+        // 计算稳定性评分
+        let stability_score = self.calculate_stability_score(current_rank, last_rank);
+
+        // 决定策略
+        let (strategy, urgency_level, strategy_reason) = self.determine_team_strategy(
+            stability_score, current_rank, roster_power, roster_age_avg
+        );
+
+        // 保存评估结果到数据库
+        let result = sqlx::query(
+            r#"INSERT INTO team_season_evaluations
+            (save_id, window_id, team_id, team_name, season_id,
+             current_rank, last_season_rank, rank_trend, rank_change,
+             roster_power, roster_age_avg, roster_salary_total, budget_remaining, roster_count,
+             stability_score, urgency_level, strategy, strategy_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#
+        )
+        .bind(save_id)
+        .bind(window_id)
+        .bind(team_id)
+        .bind(team_name)
+        .bind(season_id)
+        .bind(current_rank)
+        .bind(last_rank)
+        .bind(rank_trend)
+        .bind(rank_change)
+        .bind(roster_power)
+        .bind(roster_age_avg)
+        .bind(total_salary)
+        .bind(balance)
+        .bind(roster_count)
+        .bind(stability_score)
+        .bind(&urgency_level)
+        .bind(&strategy)
+        .bind(&strategy_reason)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("保存战队评估失败: {}", e))?;
+
+        let evaluation_id = result.last_insert_rowid();
+
+        // 生成位置需求
+        self.generate_position_needs(pool, evaluation_id, &roster, &strategy, roster_power, balance).await?;
+
+        Ok(TeamEvaluation {
+            evaluation_id,
+            team_id,
+            current_rank,
+            last_rank,
+            stability_score,
+            strategy: strategy.clone(),
+            urgency_level,
+            roster_power,
+        })
+    }
+
+    /// 计算战绩稳定性评分
+    fn calculate_stability_score(&self, current_rank: i32, last_rank: i32) -> i32 {
+        let change = current_rank - last_rank;  // 正数=下滑
+
+        match (last_rank, change) {
+            // 卫冕冠军/亚军
+            (1, -1..=1) => 100,      // 冠军→冠亚军：极稳定
+            (1, 2..=3) => 70,        // 冠军→3-4名：可接受
+            (1, 4..) => 30,          // 冠军→5名开外：危机
+            (2, -2..=1) => 95,       // 亚军维持：稳定
+
+            // 上赛季前4
+            (3..=4, ..=-1) => 95,    // 进步：稳定
+            (3..=4, 0..=2) => 80,    // 维持：稳定
+            (3..=4, 3..=5) => 50,    // 下滑：警惕
+            (3..=4, 6..) => 25,      // 大幅下滑：必须调整
+
+            // 上赛季5-8名
+            (5..=8, ..=-3) => 95,    // 大幅上升：稳定
+            (5..=8, -2..=2) => 75,   // 维持：稳定
+            (5..=8, 3..) => 45,      // 下滑：考虑调整
+
+            // 其他情况
+            (_, ..=-3) => 90,        // 大幅进步
+            (_, -2..=2) => 60,       // 维持
+            (_, 3..) => 35,          // 下滑
+        }
+    }
+
+    /// 决定战队策略
+    fn determine_team_strategy(&self, stability_score: i32, current_rank: i32, roster_power: f64, roster_age_avg: f64)
+        -> (String, String, String)
+    {
+        let (strategy, urgency, reason) = if stability_score >= 90 {
+            ("DYNASTY", "NONE", format!("战绩稳定，排名{}，无需变动", current_rank))
+        } else if stability_score >= 70 {
+            ("MAINTAIN", "LOW", format!("战绩尚可，排名{}，可小幅调整", current_rank))
+        } else if stability_score >= 40 {
+            if roster_age_avg > 26.0 {
+                ("UPGRADE", "MEDIUM", format!("战绩下滑且阵容老化，平均年龄{:.1}岁，需要补强", roster_age_avg))
+            } else {
+                ("UPGRADE", "MEDIUM", format!("战绩下滑，排名{}，需要补强", current_rank))
+            }
+        } else {
+            if roster_power < 75.0 {
+                ("REBUILD", "HIGH", format!("战绩大幅下滑，阵容战力{:.1}偏低，需要重建", roster_power))
+            } else {
+                ("REBUILD", "HIGH", format!("战绩大幅下滑，排名从前列跌落，需要大幅调整"))
+            }
+        };
+
+        (strategy.to_string(), urgency.to_string(), reason)
+    }
+
+    /// 生成位置需求
+    async fn generate_position_needs(
+        &self,
+        pool: &Pool<Sqlite>,
+        evaluation_id: i64,
+        roster: &[sqlx::sqlite::SqliteRow],
+        strategy: &str,
+        roster_power: f64,
+        budget: i64,
+    ) -> Result<(), String> {
+        use sqlx::Row;
+
+        let positions = ["TOP", "JUG", "MID", "ADC", "SUP"];
+
+        for pos in &positions {
+            // 找到该位置的首发
+            let starter = roster.iter().find(|p| {
+                let position: String = p.try_get("position").unwrap_or_default();
+                let is_starter: bool = p.try_get("is_starter").unwrap_or(false);
+                position == *pos && is_starter
+            });
+
+            let (starter_id, starter_name, starter_ability, starter_age) = match starter {
+                Some(p) => (
+                    Some(p.get::<i64, _>("id")),
+                    Some(p.get::<String, _>("game_id")),
+                    Some(p.get::<i64, _>("ability")),
+                    Some(p.get::<i64, _>("age")),
+                ),
+                None => (None, None, None, None),
+            };
+
+            // 根据策略和当前首发能力判断需求等级
+            let (need_level, min_ability_target, reason) = match strategy {
+                "DYNASTY" => ("NONE", 0, "阵容稳定无需变动".to_string()),
+                "MAINTAIN" => {
+                    if let Some(ability) = starter_ability {
+                        if ability < 75 {
+                            ("OPTIONAL", (ability + 5) as i32, format!("{}位置能力{}偏低，可考虑补强", pos, ability))
+                        } else {
+                            ("NONE", 0, "当前首发足够".to_string())
+                        }
+                    } else {
+                        ("CRITICAL", 75, format!("{}位置缺少首发", pos))
+                    }
+                },
+                "UPGRADE" => {
+                    if let Some(ability) = starter_ability {
+                        if ability < roster_power as i64 - 5 {
+                            ("IMPORTANT", (roster_power as i32 + 5).min(90), format!("{}位置能力{}低于队伍均值", pos, ability))
+                        } else if ability < 80 {
+                            ("OPTIONAL", 80, format!("{}位置能力{}，可考虑升级", pos, ability))
+                        } else {
+                            ("NONE", 0, "当前首发足够".to_string())
+                        }
+                    } else {
+                        ("CRITICAL", 78, format!("{}位置缺少首发", pos))
+                    }
+                },
+                "REBUILD" => {
+                    if let Some(ability) = starter_ability {
+                        if ability < 75 {
+                            ("CRITICAL", 80, format!("重建期需要补强{}位置", pos))
+                        } else {
+                            ("OPTIONAL", (ability + 5) as i32, format!("可考虑升级{}位置", pos))
+                        }
+                    } else {
+                        ("CRITICAL", 75, format!("{}位置缺少首发", pos))
+                    }
+                },
+                _ => ("NONE", 0, "无需求".to_string()),
+            };
+
+            if need_level != "NONE" {
+                let max_salary = (budget as f64 * 0.15) as i64;  // 最多用15%预算
+                let prefer_young = strategy == "REBUILD" || starter_age.unwrap_or(25) > 27;
+
+                sqlx::query(
+                    r#"INSERT INTO team_position_needs
+                    (evaluation_id, position, current_starter_id, current_starter_name,
+                     current_starter_ability, current_starter_age,
+                     need_level, min_ability_target, max_salary_budget, prefer_young, reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#
+                )
+                .bind(evaluation_id)
+                .bind(*pos)
+                .bind(starter_id)
+                .bind(&starter_name)
+                .bind(starter_ability)
+                .bind(starter_age)
+                .bind(need_level)
+                .bind(min_ability_target)
+                .bind(max_salary)
+                .bind(prefer_young as i32)
+                .bind(&reason)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("保存位置需求失败: {}", e))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 选手评估（评估是否想留队）
+    async fn evaluate_player(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        window_id: i64,
+        player_id: i64,
+        player_name: &str,
+        team_id: i64,
+        team_name: &str,
+        team_eval: &TeamEvaluation,
+        ability: i64,
+        age: i64,
+        salary: i64,
+        satisfaction: i64,
+        loyalty: i64,
+        position: &str,
+        roster: &[sqlx::sqlite::SqliteRow],
+        season_id: i64,
+    ) -> Result<PlayerEvaluation, String> {
+        use sqlx::Row;
+
+        let mut stay_score: f64 = 50.0;
+
+        // 1. 战队排名评分
+        let team_rank_score = match team_eval.current_rank {
+            1..=4 => 20.0,
+            5..=8 => 10.0,
+            9..=12 => -5.0,
+            _ => -15.0,
+        };
+        stay_score += team_rank_score;
+
+        // 2. 战绩趋势评分
+        let rank_change = team_eval.last_rank - team_eval.current_rank;  // 正数=进步
+        let team_trend_score = (rank_change as f64 * 3.0).clamp(-15.0, 15.0);
+        stay_score += team_trend_score;
+
+        // 3. 队友水平评分
+        let teammate_avg: f64 = roster.iter()
+            .filter(|p| p.get::<i64, _>("id") != player_id)
+            .map(|p| p.get::<i64, _>("ability") as f64)
+            .sum::<f64>() / (roster.len() - 1).max(1) as f64;
+
+        let teammate_score = if ability > teammate_avg as i64 + 10 {
+            -15.0  // 我比队友强太多
+        } else if ability < teammate_avg as i64 - 5 {
+            10.0   // 队友很强
+        } else {
+            0.0
+        };
+        stay_score += teammate_score;
+
+        // 4. 薪资评分
+        let estimated_salary = self.estimate_market_salary(ability as u8, age as u8);
+        let salary_ratio = if estimated_salary > 0 { salary as f64 / estimated_salary as f64 } else { 1.0 };
+        let salary_score = if salary_ratio < 0.7 {
+            -20.0  // 被严重低估
+        } else if salary_ratio < 0.9 {
+            -10.0  // 略被低估
+        } else if salary_ratio > 1.2 {
+            15.0   // 高薪
+        } else {
+            0.0
+        };
+        stay_score += salary_score;
+
+        // 5. 荣誉评分（检查近2赛季是否有荣誉）
+        let has_recent_honor = self.check_player_recent_honors(pool, save_id, player_id, season_id).await.unwrap_or(false);
+        let honor_score = if has_recent_honor {
+            5.0  // 有荣誉，可能想留或想去更强的队
+        } else if ability >= 80 && team_eval.current_rank > 8 {
+            -10.0  // 实力强但队伍弱没荣誉，想走
+        } else {
+            0.0
+        };
+        stay_score += honor_score;
+
+        // 6. 满意度评分
+        let satisfaction_score = (satisfaction as f64 - 70.0) * 0.5;
+        stay_score += satisfaction_score;
+
+        // 7. 年龄因素
+        if age >= 28 && team_eval.current_rank > 8 {
+            stay_score -= 20.0;  // 老将在弱队想去强队冲荣誉
+        }
+
+        // 8. 忠诚度加成
+        stay_score += (loyalty as f64 - 70.0) * 0.3;
+
+        let stay_score = stay_score.clamp(0.0, 100.0);
+        let wants_to_leave = stay_score < 40.0;
+
+        // 决定离队原因
+        let leave_reason = if wants_to_leave {
+            if salary_score < -15.0 {
+                "薪资被严重低估".to_string()
+            } else if team_rank_score < -10.0 {
+                "战队战绩太差".to_string()
+            } else if teammate_score < -10.0 {
+                "队友水平跟不上".to_string()
+            } else if age >= 28 && team_eval.current_rank > 8 {
+                "想去强队冲击荣誉".to_string()
+            } else {
+                "对现状不满意".to_string()
+            }
+        } else {
+            "".to_string()
+        };
+
+        // 战队评估选手是否应该挂牌
+        let (should_list, list_reason, protect_reason) = self.evaluate_player_for_listing(
+            ability, age, salary, team_eval, has_recent_honor, position, roster
+        );
+
+        // 保存选手评估到数据库
+        sqlx::query(
+            r#"INSERT INTO player_season_evaluations
+            (save_id, window_id, player_id, player_name, team_id, team_name,
+             ability, age, salary, satisfaction, loyalty,
+             team_rank_score, team_trend_score, teammate_score, salary_score, honor_score, satisfaction_score,
+             stay_score, wants_to_leave, leave_reason,
+             estimated_market_salary, salary_gap)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#
+        )
+        .bind(save_id)
+        .bind(window_id)
+        .bind(player_id)
+        .bind(player_name)
+        .bind(team_id)
+        .bind(team_name)
+        .bind(ability)
+        .bind(age)
+        .bind(salary)
+        .bind(satisfaction)
+        .bind(loyalty)
+        .bind(team_rank_score)
+        .bind(team_trend_score)
+        .bind(teammate_score)
+        .bind(salary_score)
+        .bind(honor_score)
+        .bind(satisfaction_score)
+        .bind(stay_score)
+        .bind(wants_to_leave as i32)
+        .bind(&leave_reason)
+        .bind(estimated_salary)
+        .bind(estimated_salary - salary)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("保存选手评估失败: {}", e))?;
+
+        // 保存挂牌评估
+        let team_eval_id = team_eval.evaluation_id;
+        sqlx::query(
+            r#"INSERT INTO team_listing_evaluations
+            (evaluation_id, player_id, player_name, position,
+             ability, age, salary, has_recent_honor, season_influence_rank,
+             should_list, list_reason, protect_reason, suggested_price)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#
+        )
+        .bind(team_eval_id)
+        .bind(player_id)
+        .bind(player_name)
+        .bind(position)
+        .bind(ability)
+        .bind(age)
+        .bind(salary)
+        .bind(has_recent_honor as i32)
+        .bind(0)  // TODO: 影响力排名
+        .bind(should_list as i32)
+        .bind(&list_reason)
+        .bind(&protect_reason)
+        .bind(self.calculate_market_value_simple(ability as u8, age as u8))
+        .execute(pool)
+        .await
+        .map_err(|e| format!("保存挂牌评估失败: {}", e))?;
+
+        Ok(PlayerEvaluation {
+            player_id,
+            stay_score,
+            wants_to_leave,
+            leave_reason,
+            should_list,
+            list_reason,
+        })
+    }
+
+    /// 评估选手是否应该被挂牌（战队视角）
+    fn evaluate_player_for_listing(
+        &self,
+        ability: i64,
+        age: i64,
+        salary: i64,
+        team_eval: &TeamEvaluation,
+        has_recent_honor: bool,
+        _position: &str,
+        roster: &[sqlx::sqlite::SqliteRow],
+    ) -> (bool, String, String) {
+        use sqlx::Row;
+
+        // 荣誉保护
+        if has_recent_honor && ability >= 75 {
+            return (false, "".to_string(), "近2赛季有荣誉".to_string());
+        }
+
+        // 王朝模式几乎不挂牌
+        if team_eval.strategy == "DYNASTY" {
+            if ability < 60 || age >= 34 {
+                return (true, "能力过低或年龄过大".to_string(), "".to_string());
+            }
+            return (false, "".to_string(), "战队处于王朝期".to_string());
+        }
+
+        // 核心选手保护（能力高于队伍均值5分以上）
+        if ability > team_eval.roster_power as i64 + 5 && ability >= 80 {
+            return (false, "".to_string(), "核心选手".to_string());
+        }
+
+        // 维持模式：只挂牌明显不合格的
+        if team_eval.strategy == "MAINTAIN" {
+            if ability < 70 || (age >= 32 && ability < 75) {
+                return (true, "能力不足".to_string(), "".to_string());
+            }
+            return (false, "".to_string(), "阵容稳定".to_string());
+        }
+
+        // 补强/重建模式：更积极挂牌
+        let roster_count = roster.len() as i32;
+
+        // 性价比检查
+        let value_ratio = if salary > 0 { ability as f64 / (salary as f64 / 10000.0) } else { 100.0 };
+        if value_ratio < 0.40 && salary > 100_0000 {
+            return (true, "高薪低能".to_string(), "".to_string());
+        }
+
+        // 年龄检查
+        if age >= 30 && ability < 78 {
+            return (true, "年龄偏大且能力一般".to_string(), "".to_string());
+        }
+
+        // 阵容过大检查
+        if roster_count >= 7 && ability < team_eval.roster_power as i64 - 5 {
+            return (true, "能力低于队伍均值".to_string(), "".to_string());
+        }
+
+        // 能力过低
+        if ability < 65 {
+            return (true, "能力过低".to_string(), "".to_string());
+        }
+
+        (false, "".to_string(), "综合评估通过".to_string())
+    }
+
+    /// 获取战队年度积分排名
+    async fn get_team_annual_rank(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        team_id: i64,
+        season_id: i64,
+    ) -> Result<i32, String> {
+        let row: Option<(i32,)> = sqlx::query_as(
+            r#"SELECT COALESCE(
+                (SELECT COUNT(*) + 1 FROM team_annual_points t2
+                 WHERE t2.save_id = t1.save_id AND t2.season_id = t1.season_id
+                 AND t2.total_points > t1.total_points),
+                99
+            ) as rank
+            FROM team_annual_points t1
+            WHERE t1.save_id = ? AND t1.season_id = ? AND t1.team_id = ?"#
+        )
+        .bind(save_id)
+        .bind(season_id)
+        .bind(team_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("获取排名失败: {}", e))?;
+
+        Ok(row.map(|r| r.0).unwrap_or(99))
+    }
+
+    /// 检查选手近2赛季是否有荣誉
+    async fn check_player_recent_honors(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        player_id: i64,
+        current_season: i64,
+    ) -> Result<bool, String> {
+        let count: (i64,) = sqlx::query_as(
+            r#"SELECT COUNT(*) FROM honors
+            WHERE save_id = ? AND player_id = ?
+            AND season_id >= ?
+            AND honor_type IN ('CHAMPION', 'MVP', 'FINALS_MVP', 'YEARLY_MVP', 'YEARLY_TOP20')"#
+        )
+        .bind(save_id)
+        .bind(player_id)
+        .bind(current_season - 1)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("查询荣誉失败: {}", e))?;
+
+        Ok(count.0 > 0)
+    }
+
+    /// 估算选手市场薪资
+    fn estimate_market_salary(&self, ability: u8, age: u8) -> i64 {
+        // 基础薪资（万元）
+        let base = match ability {
+            95..=100 => 300,
+            90..=94 => 200,
+            85..=89 => 150,
+            80..=84 => 100,
+            75..=79 => 70,
+            70..=74 => 50,
+            _ => 30,
+        };
+
+        // 年龄因素
+        let age_factor = match age {
+            17..=22 => 1.2,
+            23..=26 => 1.0,
+            27..=28 => 0.9,
+            29..=30 => 0.8,
+            _ => 0.6,
+        };
+
+        ((base as f64 * age_factor) * 10000.0) as i64  // 转换为元
     }
 
     // ============================================
