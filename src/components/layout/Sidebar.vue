@@ -41,7 +41,6 @@ const menuItems: MenuItem[] = [
       { name: '市场分析', path: '/transfer', icon: 'preview' },
       { name: 'AI GM配置', path: '/transfer/gm-config', icon: 'robot' },
       { name: '选手市场', path: '/transfer/player-market', icon: 'market' },
-      { name: 'LLM 转会市场', path: '/transfer/llm-market', icon: 'robot' },
     ]
   },
   { name: '积分排名', path: '/rankings', icon: 'chart' },

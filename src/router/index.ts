@@ -153,7 +153,7 @@ const router = createRouter({
       path: '/transfer',
       name: 'Transfer',
       component: () => import('@/views/Transfer.vue'),
-      meta: { title: '市场分析' }
+      meta: { title: '转会系统' }
     },
     {
       path: '/transfer/gm-config',
@@ -162,16 +162,22 @@ const router = createRouter({
       meta: { title: 'AI GM配置' }
     },
     {
+      path: '/transfer/window/:region',
+      name: 'TransferWindow',
+      component: () => import('@/views/TransferWindow.vue'),
+      meta: { title: '转会期' }
+    },
+    {
+      path: '/transfer/report/:windowId',
+      name: 'TransferReport',
+      component: () => import('@/views/TransferReport.vue'),
+      meta: { title: '转会报告' }
+    },
+    {
       path: '/transfer/player-market',
       name: 'PlayerMarket',
       component: () => import('@/views/PlayerMarket.vue'),
       meta: { title: '选手市场' }
-    },
-    {
-      path: '/transfer/llm-market',
-      name: 'LLMTransferMarket',
-      component: () => import('@/views/LLMTransferMarket.vue'),
-      meta: { title: 'LLM 转会市场' }
     },
     {
       path: '/rankings',

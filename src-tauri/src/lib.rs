@@ -77,6 +77,10 @@ use commands::{
     dev_simulate_all_matches, dev_redistribute_prizes, dev_grant_funds,
     dev_reset_save, dev_get_game_status, dev_check_incomplete_matches, dev_force_complete_match,
     dev_migrate_loyalty_satisfaction, dev_recalculate_market_values, dev_fix_starters,
+    // 转会系统命令
+    start_transfer_window, execute_transfer_round, fast_forward_transfer,
+    get_transfer_events, get_transfer_report, get_transfer_window_status,
+    get_team_personality, update_team_personality, get_team_reputation,
     // 应用状态
     AppState,
 };
@@ -286,6 +290,16 @@ pub fn run() {
             dev_migrate_loyalty_satisfaction,
             dev_recalculate_market_values,
             dev_fix_starters,
+            // 转会系统命令
+            start_transfer_window,
+            execute_transfer_round,
+            fast_forward_transfer,
+            get_transfer_events,
+            get_transfer_report,
+            get_transfer_window_status,
+            get_team_personality,
+            update_team_personality,
+            get_team_reputation,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,319 +1,266 @@
 <template>
-  <div class="transfer-view">
+  <div class="transfer-system">
     <!-- 页面标题 -->
     <div class="page-header">
       <div>
-        <h1>转会中心</h1>
-        <p>{{ currentSeason }} 赛季 - 市场分析</p>
+        <h1>转会系统</h1>
+        <p>S{{ currentSeason }} 赛季 - 休赛期转会</p>
+      </div>
+      <div class="header-actions">
+        <el-tag type="info" size="large" effect="dark">
+          选择赛区开始转会
+        </el-tag>
       </div>
     </div>
 
-    <!-- 筛选栏 -->
-    <div class="filter-bar">
-      <el-select v-model="analysisFilters.region" placeholder="全部赛区" clearable style="width: 120px">
-        <el-option label="全部赛区" value="" />
-        <el-option label="LPL" value="LPL" />
-        <el-option label="LCK" value="LCK" />
-        <el-option label="LEC" value="LEC" />
-        <el-option label="LCS" value="LCS" />
-      </el-select>
-      <el-select v-model="analysisFilters.strategy" placeholder="全部策略" clearable style="width: 140px">
-        <el-option label="全部策略" value="" />
-        <el-option label="积极买人" value="AggressiveBuy" />
-        <el-option label="观望" value="Passive" />
-        <el-option label="必须卖人" value="MustSell" />
-        <el-option label="强制清洗" value="ForceClear" />
-        <el-option label="全面重建" value="FullRebuild" />
-        <el-option label="追逐巨星" value="StarHunting" />
-      </el-select>
-      <el-input
-        v-model="analysisFilters.search"
-        placeholder="搜索球队..."
-        style="width: 200px"
-        clearable
-      >
-        <template #prefix>
-          <el-icon><Search /></el-icon>
-        </template>
-      </el-input>
-      <el-button @click="loadTeamPlans" :loading="isLoadingPlans">
-        <el-icon><Refresh /></el-icon>
-        刷新数据
-      </el-button>
-    </div>
-
-    <!-- 球队转会计划表格 -->
-    <el-card class="analysis-table-card">
-      <el-table
-        :data="filteredTeamPlans"
-        v-loading="isLoadingPlans"
-        stripe
-        style="width: 100%"
-        max-height="600"
-      >
-        <el-table-column prop="team_name" label="球队" width="120" fixed>
-          <template #default="{ row }">
-            <div class="team-cell">
-              <span class="team-name">{{ row.team_name }}</span>
+    <!-- 流程说明 -->
+    <el-card class="intro-card">
+      <div class="intro-content">
+        <div class="intro-icon">
+          <el-icon :size="48"><Opportunity /></el-icon>
+        </div>
+        <div class="intro-text">
+          <h3>转会期流程</h3>
+          <p>每个赛区的转会期分为 8 个阶段，按顺序执行：</p>
+          <div class="round-flow">
+            <div v-for="(name, round) in roundNames" :key="round" class="round-item">
+              <span class="round-number">{{ round }}</span>
+              <span class="round-name">{{ name }}</span>
             </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="赛区" width="70" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="getRegionTagType(row.region_code)">{{ formatRegion(row.region_code) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="strategy" label="策略" width="90">
-          <template #default="{ row }">
-            <el-tag :type="getStrategyTagType(row.strategy)" effect="dark" size="small">
-              {{ getStrategyLabel(row.strategy) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="ambition" label="野心" width="80">
-          <template #default="{ row }">
-            <span :class="'ambition-' + row.ambition.toLowerCase()">{{ getAmbitionLabel(row.ambition) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="financial_status" label="财务" width="70">
-          <template #default="{ row }">
-            <el-tag :type="getFinancialTagType(row.financial_status)" size="small">
-              {{ getFinancialLabel(row.financial_status) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="transfer_budget" label="预算" width="90" align="right">
-          <template #default="{ row }">
-            <span class="budget-value">{{ formatBudget(row.transfer_budget) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="salary_space" label="薪资空间" width="100" align="right">
-          <template #default="{ row }">
-            <span :class="row.salary_space > 0 ? 'positive' : 'negative'">
-              {{ formatBudget(row.salary_space) }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="roster_count" label="人数" width="65" align="center">
-          <template #default="{ row }">
-            <span :class="{ 'roster-warning': row.roster_count < 5 || row.roster_count > 10 }">
-              {{ row.roster_count }}/10
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="TOP" min-width="45" align="center">
-          <template #default="{ row }">
-            <span :class="getNeedClass(row.position_needs?.TOP)">{{ row.position_needs?.TOP || 0 }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="JUG" min-width="45" align="center">
-          <template #default="{ row }">
-            <span :class="getNeedClass(row.position_needs?.JUG)">{{ row.position_needs?.JUG || 0 }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="MID" min-width="45" align="center">
-          <template #default="{ row }">
-            <span :class="getNeedClass(row.position_needs?.MID)">{{ row.position_needs?.MID || 0 }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="ADC" min-width="45" align="center">
-          <template #default="{ row }">
-            <span :class="getNeedClass(row.position_needs?.ADC)">{{ row.position_needs?.ADC || 0 }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="SUP" min-width="45" align="center">
-          <template #default="{ row }">
-            <span :class="getNeedClass(row.position_needs?.SUP)">{{ row.position_needs?.SUP || 0 }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="avg_ability" label="均能力" width="75" align="center">
-          <template #default="{ row }">
-            <span :style="{ color: getAbilityColor(row.avg_ability) }">
-              {{ row.avg_ability.toFixed(1) }}
-            </span>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 说明 -->
-      <div class="table-legend">
-        <span>位置需求: </span>
-        <span class="legend-item need-urgent">100=急需</span>
-        <span class="legend-item need-need">70=需要</span>
-        <span class="legend-item need-consider">30=可考虑</span>
-        <span class="legend-item need-none">0=不需要</span>
+          </div>
+        </div>
       </div>
+    </el-card>
+
+    <!-- 赛区选择 -->
+    <div class="regions-section">
+      <div class="section-header">
+        <h2>
+          <el-icon><Flag /></el-icon>
+          选择赛区
+        </h2>
+      </div>
+
+      <div class="regions-grid">
+        <div
+          v-for="region in regions"
+          :key="region.id"
+          class="region-card"
+          :class="{ disabled: !canStartTransfer(region) }"
+          @click="handleRegionClick(region)"
+        >
+          <div class="region-header">
+            <div class="region-logo" :style="{ background: getRegionGradient(region.code) }">
+              {{ region.code }}
+            </div>
+            <div class="region-info">
+              <h3>{{ region.name }}</h3>
+              <p>{{ getRegionTeamCount(region.id) }} 支战队</p>
+            </div>
+          </div>
+
+          <div class="region-status">
+            <template v-if="getRegionGMStatus(region.id).allConfigured">
+              <el-tag type="success" size="small">
+                <el-icon><Check /></el-icon>
+                GM配置完成
+              </el-tag>
+            </template>
+            <template v-else>
+              <el-tag type="warning" size="small">
+                <el-icon><Warning /></el-icon>
+                需配置 {{ getRegionGMStatus(region.id).unconfigured }} 队GM
+              </el-tag>
+            </template>
+          </div>
+
+          <div class="region-actions">
+            <el-button
+              v-if="!getRegionGMStatus(region.id).allConfigured"
+              type="warning"
+              size="small"
+              @click.stop="goToGMConfig(region)"
+            >
+              <el-icon><Setting /></el-icon>
+              配置GM
+            </el-button>
+            <el-button
+              v-else
+              type="primary"
+              size="small"
+              @click.stop="startRegionTransfer(region)"
+            >
+              <el-icon><VideoPlay /></el-icon>
+              开始转会
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 转会须知 -->
+    <el-card class="notice-card">
+      <template #header>
+        <div class="card-header">
+          <el-icon><InfoFilled /></el-icon>
+          <span>转会须知</span>
+        </div>
+      </template>
+      <ul class="notice-list">
+        <li>转会期开始前，必须为所有 AI 球队配置 GM 性格</li>
+        <li>每个赛区的转会期独立进行，可以逐轮执行或快进完成</li>
+        <li>转会期间会自动处理合同续约、自由球员签约、球员挖角等事务</li>
+        <li>转会完成后可查看详细的转会报告</li>
+      </ul>
     </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, reactive } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import {
-  Search,
-  Refresh,
+  Opportunity,
+  Flag,
+  Check,
+  Warning,
+  Setting,
+  VideoPlay,
+  InfoFilled,
 } from '@element-plus/icons-vue'
+import { useTransferWindowStore, ROUND_NAMES } from '@/stores/useTransferWindowStore'
 import { useGameStore } from '@/stores/useGameStore'
-import { transferApi, type TeamTransferPlanInfo } from '@/api/tauri'
+import { queryApi } from '@/api/tauri'
 
+interface Region {
+  id: number
+  code: string
+  name: string
+}
+
+interface Team {
+  id: number
+  name: string
+  region_id: number
+}
+
+const router = useRouter()
+const transferStore = useTransferWindowStore()
 const gameStore = useGameStore()
 
-// 市场分析数据
-const teamPlans = ref<TeamTransferPlanInfo[]>([])
-const isLoadingPlans = ref(false)
-const analysisFilters = reactive({
-  region: '',
-  strategy: '',
-  search: '',
-})
+const { currentSeason } = storeToRefs(gameStore)
 
-// 加载球队转会计划
-const loadTeamPlans = async () => {
-  isLoadingPlans.value = true
-  try {
-    teamPlans.value = await transferApi.getTeamTransferPlans()
-  } catch (e) {
-    console.error('Failed to load team plans:', e)
-    ElMessage.error('加载球队转会计划失败')
-  } finally {
-    isLoadingPlans.value = false
+// 状态
+const regions = ref<Region[]>([])
+const teamsByRegion = ref<Map<number, Team[]>>(new Map())
+const gmStatusByRegion = ref<Map<number, { total: number; configured: number }>>(new Map())
+const isLoading = ref(false)
+
+// 轮次名称
+const roundNames = ROUND_NAMES
+
+// 赛区颜色
+const regionColors: Record<string, string> = {
+  LPL: 'linear-gradient(135deg, #ef4444, #dc2626)',
+  LCK: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+  LEC: 'linear-gradient(135deg, #22c55e, #16a34a)',
+  LCS: 'linear-gradient(135deg, #f59e0b, #d97706)',
+}
+
+// 获取赛区渐变色
+function getRegionGradient(code: string): string {
+  return regionColors[code.toUpperCase()] || 'linear-gradient(135deg, #6b7280, #4b5563)'
+}
+
+// 获取赛区球队数量
+function getRegionTeamCount(regionId: number): number {
+  return teamsByRegion.value.get(regionId)?.length ?? 0
+}
+
+// 获取赛区GM配置状态
+function getRegionGMStatus(regionId: number) {
+  const status = gmStatusByRegion.value.get(regionId)
+  if (!status) {
+    return { allConfigured: false, unconfigured: 0 }
+  }
+  return {
+    allConfigured: status.configured === status.total,
+    unconfigured: status.total - status.configured,
   }
 }
 
-// 过滤后的球队计划
-const filteredTeamPlans = computed(() => {
-  return teamPlans.value.filter(plan => {
-    // 筛选时需要转换 region_code
-    const planRegion = formatRegion(plan.region_code)
-    if (analysisFilters.region && planRegion !== analysisFilters.region) return false
-    if (analysisFilters.strategy && plan.strategy !== analysisFilters.strategy) return false
-    if (analysisFilters.search && !plan.team_name.toLowerCase().includes(analysisFilters.search.toLowerCase())) return false
-    return true
+// 是否可以开始转会
+function canStartTransfer(region: Region): boolean {
+  return getRegionGMStatus(region.id).allConfigured
+}
+
+// 点击赛区
+function handleRegionClick(region: Region) {
+  if (!canStartTransfer(region)) {
+    ElMessage.warning('请先完成该赛区所有球队的GM配置')
+    return
+  }
+  startRegionTransfer(region)
+}
+
+// 跳转到GM配置
+function goToGMConfig(region: Region) {
+  router.push({
+    path: '/transfer/gm-config',
+    query: { region: region.code.toLowerCase() }
   })
-})
+}
 
-// 从 store 获取响应式数据
-const { currentSeason } = storeToRefs(gameStore)
+// 开始赛区转会
+function startRegionTransfer(region: Region) {
+  transferStore.setRegion(region.id, region.code)
+  router.push(`/transfer/window/${region.code.toLowerCase()}`)
+}
 
-// 初始化加载数据
-onMounted(async () => {
+// 加载数据
+async function loadData() {
+  isLoading.value = true
+
   try {
-    await gameStore.refreshGameState()
-    await loadTeamPlans()
+    // 加载所有赛区
+    const allRegions = await queryApi.getAllRegions()
+    regions.value = allRegions.filter(r => ['LPL', 'LCK', 'LEC', 'LCS'].includes(r.code.toUpperCase()))
+
+    // 加载每个赛区的球队
+    for (const region of regions.value) {
+      const teams = await queryApi.getTeamsByRegion(region.id)
+      teamsByRegion.value.set(region.id, teams)
+
+      // 加载GM配置状态
+      let configuredCount = 0
+      for (const team of teams) {
+        const config = await transferStore.loadTeamPersonality(team.id)
+        if (config) {
+          configuredCount++
+        }
+      }
+      gmStatusByRegion.value.set(region.id, {
+        total: teams.length,
+        configured: configuredCount,
+      })
+    }
   } catch (e) {
     console.error('Failed to load data:', e)
     ElMessage.error('加载数据失败')
+  } finally {
+    isLoading.value = false
   }
+}
+
+onMounted(() => {
+  loadData()
 })
-
-// ======== 辅助函数 ========
-
-// 格式化赛区显示（CN -> LPL, KR -> LCK 等）
-const formatRegion = (region: string) => {
-  const regionMap: Record<string, string> = {
-    'CN': 'LPL',
-    'KR': 'LCK',
-    'EU': 'LEC',
-    'NA': 'LCS',
-    'LPL': 'LPL',
-    'LCK': 'LCK',
-    'LEC': 'LEC',
-    'LCS': 'LCS',
-  }
-  return regionMap[region] || region
-}
-
-const getRegionTagType = (region: string) => {
-  const formatted = formatRegion(region)
-  const types: Record<string, string> = {
-    'LPL': 'danger',
-    'LCK': 'primary',
-    'LEC': 'success',
-    'LCS': 'warning',
-  }
-  return types[formatted] || 'info'
-}
-
-const getAbilityColor = (ability: number) => {
-  if (ability >= 90) return '#ef4444'
-  if (ability >= 80) return '#f59e0b'
-  if (ability >= 70) return '#3b82f6'
-  return '#22c55e'
-}
-
-const getStrategyTagType = (strategy: string) => {
-  const types: Record<string, string> = {
-    'AggressiveBuy': 'success',
-    'Passive': 'info',
-    'MustSell': 'warning',
-    'ForceClear': 'danger',
-    'FullRebuild': 'danger',
-    'StarHunting': '',
-  }
-  return types[strategy] || 'info'
-}
-
-const getStrategyLabel = (strategy: string) => {
-  const labels: Record<string, string> = {
-    'AggressiveBuy': '积极买',
-    'Passive': '观望',
-    'MustSell': '必须卖',
-    'ForceClear': '清洗',
-    'FullRebuild': '重建',
-    'StarHunting': '追星',
-  }
-  return labels[strategy] || strategy
-}
-
-const getAmbitionLabel = (ambition: string) => {
-  const labels: Record<string, string> = {
-    'Championship': '争冠',
-    'Playoff': '季后赛',
-    'Rebuild': '重建',
-  }
-  return labels[ambition] || ambition
-}
-
-const getFinancialTagType = (status: string) => {
-  const types: Record<string, string> = {
-    'Wealthy': 'success',
-    'Healthy': 'primary',
-    'Struggling': 'warning',
-    'Bankrupt': 'danger',
-  }
-  return types[status] || 'info'
-}
-
-const getFinancialLabel = (status: string) => {
-  const labels: Record<string, string> = {
-    'Wealthy': '富裕',
-    'Healthy': '健康',
-    'Struggling': '紧张',
-    'Bankrupt': '破产',
-  }
-  return labels[status] || status
-}
-
-const formatBudget = (value: number) => {
-  // 后端已转换为万，直接使用
-  if (value >= 10000) return `${(value / 10000).toFixed(1)}亿`
-  if (value >= 1) return `${Math.round(value)}万`
-  return `${value}万`
-}
-
-const getNeedClass = (need: number | undefined) => {
-  if (need === undefined) return 'need-none'
-  if (need >= 100) return 'need-urgent'
-  if (need >= 70) return 'need-need'
-  if (need >= 30) return 'need-consider'
-  return 'need-none'
-}
 </script>
 
 <style scoped>
-.transfer-view {
+.transfer-system {
   padding: 0;
 }
 
@@ -322,11 +269,11 @@ const getNeedClass = (need: number | undefined) => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .page-header h1 {
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 700;
   color: #303133;
   margin: 0 0 8px 0;
@@ -338,136 +285,200 @@ const getNeedClass = (need: number | undefined) => {
   margin: 0;
 }
 
-/* 筛选栏 */
-.filter-bar {
+/* 流程介绍卡片 */
+.intro-card {
+  margin-bottom: 24px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.intro-card :deep(.el-card__body) {
+  padding: 24px;
+}
+
+.intro-content {
   display: flex;
-  gap: 12px;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.intro-icon {
+  width: 80px;
+  height: 80px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.intro-text {
+  flex: 1;
+  color: white;
+}
+
+.intro-text h3 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+}
+
+.intro-text p {
+  font-size: 14px;
+  opacity: 0.9;
+  margin: 0 0 16px 0;
+}
+
+.round-flow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.round-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  font-size: 13px;
+}
+
+.round-number {
+  width: 20px;
+  height: 20px;
+  background: white;
+  color: #764ba2;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.round-name {
+  opacity: 0.95;
+}
+
+/* 赛区选择 */
+.regions-section {
+  margin-bottom: 24px;
+}
+
+.section-header {
   margin-bottom: 16px;
-  padding: 16px;
-  background: #f5f7fa;
-  border-radius: 8px;
 }
 
-/* 表格卡片 */
-.analysis-table-card {
-  border-radius: 12px;
-}
-
-.team-cell {
+.section-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: 0;
 }
 
-.team-name {
+.regions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.region-card {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  border: 2px solid #e5e7eb;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.region-card:hover:not(.disabled) {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+  border-color: #3b82f6;
+}
+
+.region-card.disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.region-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.region-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 18px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.region-info h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0 0 4px 0;
+}
+
+.region-info p {
+  font-size: 13px;
+  color: #909399;
+  margin: 0;
+}
+
+.region-status {
+  margin-bottom: 16px;
+}
+
+.region-status .el-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.region-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 须知卡片 */
+.notice-card {
+  border-radius: 12px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
   font-weight: 600;
   color: #303133;
 }
 
-.budget-value {
-  font-weight: 600;
-  color: #409eff;
-}
-
-.positive {
-  color: #67c23a;
-  font-weight: 600;
-}
-
-.negative {
-  color: #f56c6c;
-  font-weight: 600;
-}
-
-.roster-warning {
-  color: #f56c6c;
-  font-weight: 600;
-}
-
-/* 野心等级样式 */
-.ambition-championship {
-  color: #e6a23c;
-  font-weight: 700;
-}
-
-.ambition-playoff {
-  color: #409eff;
-  font-weight: 600;
-}
-
-.ambition-rebuild {
-  color: #909399;
-}
-
-/* 位置需求样式 */
-.need-urgent {
-  color: #f56c6c;
-  font-weight: 700;
-  white-space: nowrap;
-  display: inline-block;
-}
-
-.need-need {
-  color: #e6a23c;
-  font-weight: 600;
-  white-space: nowrap;
-  display: inline-block;
-}
-
-.need-consider {
-  color: #409eff;
-  white-space: nowrap;
-  display: inline-block;
-}
-
-.need-none {
-  color: #c0c4cc;
-  white-space: nowrap;
-  display: inline-block;
-}
-
-/* 表格列头不换行 */
-.analysis-table-card :deep(.el-table__header th) {
-  white-space: nowrap;
-}
-
-.analysis-table-card :deep(.el-table__cell) {
-  padding: 8px 4px;
-}
-
-/* 图例 */
-.table-legend {
-  margin-top: 12px;
-  padding: 8px 12px;
-  background: #f5f7fa;
-  border-radius: 6px;
-  font-size: 12px;
+.notice-list {
+  margin: 0;
+  padding-left: 20px;
   color: #606266;
+  line-height: 2;
 }
 
-.legend-item {
-  margin-left: 12px;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.legend-item.need-urgent {
-  background: #fef0f0;
-  color: #f56c6c;
-}
-
-.legend-item.need-need {
-  background: #fdf6ec;
-  color: #e6a23c;
-}
-
-.legend-item.need-consider {
-  background: #ecf5ff;
-  color: #409eff;
-}
-
-.legend-item.need-none {
-  background: #f5f7fa;
-  color: #c0c4cc;
+.notice-list li {
+  font-size: 14px;
 }
 </style>

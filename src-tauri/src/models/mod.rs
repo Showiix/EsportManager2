@@ -16,6 +16,7 @@ pub mod game_time;
 pub mod match_game_detail;
 pub mod player_status;
 pub mod llm_task_log;
+pub mod transfer;
 
 pub use player::*;
 pub use team::*;
@@ -35,3 +36,4 @@ pub use game_time::*;
 pub use match_game_detail::*;
 pub use player_status::*;
 pub use llm_task_log::*;
+pub use transfer::*;

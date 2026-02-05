@@ -75,7 +75,7 @@ impl SatisfactionEngine {
         }
 
         // 3. 薪资满意度
-        let expected_salary = calculate_expected_salary(market_value).expected;
+        let expected_salary = calculate_expected_salary(market_value);
         let salary_ratio = if expected_salary > 0 {
             player.salary as f64 / expected_salary as f64
         } else {
@@ -157,7 +157,7 @@ impl SatisfactionEngine {
         // 4. 薪资不满（通过满意度间接判断）
         if satisfaction < 35 {
             let market_value = player.calculate_market_value();
-            let expected = calculate_expected_salary(market_value).expected;
+            let expected = calculate_expected_salary(market_value);
             if player.salary < (expected as f64 * 0.7) as u64 {
                 reasons.push(DepartureReason::SalaryDispute);
             }

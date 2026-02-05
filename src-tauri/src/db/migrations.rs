@@ -23,9 +23,10 @@ impl MigrationManager {
         // 检查并运行迁移
         let migrations = vec![
             ("001_initial", include_str!("../../migrations/001_initial.sql")),
+            ("010_transfer_system", include_str!("../../migrations/010_transfer_system.sql")),
         ];
 
-        for (name, _sql) in migrations {
+        for (name, sql) in migrations {
             let applied: Option<(i64,)> = sqlx::query_as(
                 "SELECT id FROM _migrations WHERE name = ?"
             )
@@ -35,8 +36,18 @@ impl MigrationManager {
             .map_err(|e| e.to_string())?;
 
             if applied.is_none() {
-                // 迁移已在 connection.rs 的 SCHEMA_SQL 中处理
-                // 这里只记录迁移已应用
+                // 执行迁移 SQL（逐条执行，跳过空语句）
+                for statement in sql.split(';') {
+                    let trimmed = statement.trim();
+                    if !trimmed.is_empty() {
+                        sqlx::query(trimmed)
+                            .execute(pool)
+                            .await
+                            .map_err(|e| format!("Migration {} failed: {}", name, e))?;
+                    }
+                }
+
+                // 记录迁移已应用
                 sqlx::query("INSERT INTO _migrations (name) VALUES (?)")
                     .bind(name)
                     .execute(pool)

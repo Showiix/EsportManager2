@@ -252,7 +252,7 @@ impl DraftAuctionEngine {
 
     /// AI 卖签决策（简化版本）
     fn evaluate_sell_decision(&self, team_info: &TeamAuctionInfo, position: u32, rng: &mut impl Rng) -> bool {
-        let mut base_prob = 0.2; // 基础卖签概率
+        let mut base_prob: f64 = 0.2; // 基础卖签概率
 
         // 1. 财务困难大幅提高
         if matches!(team_info.financial_status, FinancialStatus::Bankrupt | FinancialStatus::Deficit) {

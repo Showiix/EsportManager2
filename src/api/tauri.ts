@@ -1175,6 +1175,9 @@ export const queryApi = {
 
   searchPlayers: (query: string) =>
     invokeCommand<Player[]>('search_players', { query }),
+
+  getTeamsByRegion: (regionId: number) =>
+    invokeCommand<Team[]>('get_teams_by_region', { regionId }),
 }
 
 // ========================================
@@ -2514,24 +2517,6 @@ export const aiTransferApi = {
   initAITransferTables: () =>
     invokeCommand<void>('init_ai_transfer_tables'),
 
-  // ========== LLM AI 相关 ==========
-
-  /** 检查 LLM 配置状态 */
-  checkLLMConfig: () =>
-    invokeCommand<LLMConfigInfo>('check_llm_config'),
-
-  /** 配置 LLM API */
-  configureLLM: (provider: string, apiKey: string, model?: string, baseUrl?: string) =>
-    invokeCommand<void>('configure_llm', { provider, apiKey, model, baseUrl }),
-
-  /** 使用 LLM 生成单个球队的策略 */
-  generateLLMStrategy: (teamId: number) =>
-    invokeCommand<AITransferStrategy>('generate_llm_strategy', { teamId }),
-
-  /** 清除 LLM 配置 */
-  clearLLMConfig: () =>
-    invokeCommand<void>('clear_llm_config'),
-
   // ========== 选手转会策略相关 ==========
 
   /** 为选手生成转会策略 */
@@ -2549,14 +2534,6 @@ export const aiTransferApi = {
   /** 初始化选手策略数据库表 */
   initPlayerStrategyTables: () =>
     invokeCommand<void>('init_player_strategy_tables'),
-}
-
-// LLM 配置信息类型
-export interface LLMConfigInfo {
-  is_configured: boolean
-  provider: string
-  model: string
-  base_url: string | null
 }
 
 // ========== 选手转会策略类型 ==========
@@ -2674,352 +2651,180 @@ export const tauriApi = {
 }
 
 // ========================================
-// LLM Transfer Market API
+// Transfer Window System API (新转会系统)
 // ========================================
 
-/** 市场阶段 */
-export type MarketPhase =
-  | 'INTENTION_GENERATION'
-  | 'STRATEGY_GENERATION'
-  | 'RENEWAL_PROCESSING'
-  | 'FREE_MARKET'
-  | 'TRANSFER_ROUNDS'
-  | 'COMPLETED'
+/** 转会期状态 */
+export type TransferWindowStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
 
-/** 市场状态摘要 */
-export interface MarketStateSummary {
-  save_id: string
-  season_id: number
-  current_phase: MarketPhase
-  phase_name: string
-  phase_description: string
-  current_round: number
-  max_rounds: number
-  /** 转会轮次阶段的当前轮次 */
-  transfer_round: number
-  /** 转会轮次阶段的最大轮次 */
-  max_transfer_rounds: number
-  progress_percentage: number
-  free_agents_count: number
-  /** 可挖人选手数量（有合同但想离队） */
-  poachable_players_count: number
-  active_negotiations_count: number
-  completed_transfers_count: number
-  intentions_progress: string
-  strategies_progress: string
-  is_market_stable: boolean
-  /** 转会轮次是否稳定 */
-  is_transfer_stable: boolean
-  is_completed: boolean
-}
-
-/** 球队市场状态摘要 */
-export interface TeamMarketSummary {
-  team_id: number
-  team_name: string
-  remaining_budget: number
-  spent_amount: number
-  roster_count: number
-  min_roster_size: number
-  pending_negotiations: number
-  completed_signings: number
-  departed_players: number
-  needs_emergency_signing: boolean
-  strategy_generated: boolean
-}
-
-/** 生成进度 */
-export interface GenerationProgress {
-  task_type: string
-  current: number
-  total: number
-  percentage: number
-  current_item?: string
-  is_completed: boolean
-  errors: string[]
-}
-
-/** 谈判状态 */
-export type NegotiationStatus = 'OPEN' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'WITHDRAWN'
-
-/** 谈判列表项 */
-export interface NegotiationListInfo {
-  id: number
-  player_id: number
-  player_name: string
-  player_position: string
-  player_ability: number
-  from_team_name?: string
-  status: NegotiationStatus
-  status_name: string
-  current_round: number
-  offers_count: number
-  competing_teams_count: number
-  highest_offer?: number
-  final_team_name?: string
-  created_at: string
-}
-
-/** 报价信息 */
-export interface OfferInfo {
-  id: number
-  negotiation_id: number
-  from_team_id: number
-  from_team_name: string
-  to_player_id: number
-  round: number
-  salary_offer: number
-  contract_years: number
-  guarantee_starter: boolean
-  signing_bonus: number
-  transfer_fee: number
-  status: string
-  offer_reasoning: string
-  analysis_steps: AnalysisStep[]
-  created_at: string
-}
-
-/** 报价回应 */
-export interface OfferResponseInfo {
-  id: number
-  offer_id: number
-  player_id: number
-  response_type: string
-  counter_salary?: number
-  counter_years?: number
-  counter_starter?: boolean
-  reasoning: string
-  analysis_steps: AnalysisStep[]
-  responded_at: string
-}
-
-/** 球队报价历史 */
-export interface TeamOfferHistory {
-  team_id: number
-  team_name: string
-  offers: OfferInfo[]
-  responses: OfferResponseInfo[]
-  latest_status: string
-  is_leading: boolean
-}
-
-/** 谈判事件 */
-export interface NegotiationEvent {
-  event_type: string
-  round: number
-  team_id?: number
-  team_name?: string
-  description: string
-  details?: string
-  timestamp: string
-}
-
-/** 谈判详情 */
-export interface NegotiationDetailInfo {
-  negotiation: NegotiationListInfo
-  offers_by_team: TeamOfferHistory[]
-  timeline: NegotiationEvent[]
-}
-
-/** 离队候选人信息 */
-export interface DepartureCandidateInfo {
-  player_id: number
-  player_name: string
-  position: string
-  ability: number
-  age: number
-  team_id?: number
-  team_name: string
-  decision_confidence: number
-  leave_reasoning: string
-  expected_salary: number
-  preferred_teams_count: number
-}
-
-/** 市场事件类型 */
-export type MarketEventType =
-  | 'CONTRACT_EXPIRED'
-  | 'PLAYER_RETIRED'
-  | 'TRANSFER_REQUESTED'
-  | 'RENEWAL_SUCCESSFUL'
-  | 'RENEWAL_FAILED'
-  | 'OFFER_MADE'
-  | 'OFFER_ACCEPTED'
-  | 'OFFER_REJECTED'
-  | 'COUNTER_OFFER'
-  | 'OFFER_RAISED'
-  | 'TEAM_WITHDREW'
-  | 'SIGNING_COMPLETED'
-  | 'TRADE_COMPLETED'
+/** 转会事件类型 */
+export type TransferEventType =
+  | 'SEASON_SETTLEMENT'
+  | 'CONTRACT_RENEWAL'
+  | 'CONTRACT_TERMINATION'
+  | 'FREE_AGENT_SIGNING'
+  | 'TRANSFER_PURCHASE'
+  | 'PLAYER_RETIREMENT'
+  | 'PLAYER_LISTED'
   | 'EMERGENCY_SIGNING'
+  | 'DRAFT_PICK_AUCTION'
+  | 'FINANCIAL_ADJUSTMENT'
 
-/** 市场事件 */
-export interface MarketEvent {
-  id: number
-  save_id: string
+/** 事件等级 */
+export type TransferEventLevel = 'S' | 'A' | 'B' | 'C'
+
+/** AI球队性格类型 */
+export type AITeamPersonality = 'AGGRESSIVE' | 'CONSERVATIVE' | 'BALANCED' | 'DEVELOPMENT' | 'WIN_NOW'
+
+/** 转会期响应 */
+export interface TransferWindowResponse {
+  window_id: number
+  current_round: number
+  status: string
   season_id: number
-  event_type: MarketEventType
-  phase: MarketPhase
+}
+
+/** 转会事件 */
+export interface TransferEvent {
+  id: number
+  window_id: number
   round: number
-  player_id?: number
-  player_name?: string
-  team_id?: number
-  team_name?: string
-  secondary_team_id?: number
-  secondary_team_name?: string
-  amount?: number
-  title: string
-  description: string
-  ai_analysis?: string
+  event_type: string
+  level: string
+  player_id: number
+  player_name: string
+  player_ability: number
+  from_team_id: number | null
+  from_team_name: string | null
+  to_team_id: number | null
+  to_team_name: string | null
+  transfer_fee: number
+  salary: number
+  contract_years: number
+  reason: string | null
   created_at: string
 }
 
-/** 轮次执行结果 */
-export interface RoundExecutionResult {
-  phase: MarketPhase
+/** 轮次结果 */
+export interface RoundResult {
   round: number
-  phase_changed: boolean
-  new_phase?: MarketPhase
-  events: MarketEvent[]
-  new_negotiations: number
-  completed_signings: number
+  round_name: string
+  events: TransferEvent[]
   summary: string
 }
 
-/** 续约分析步骤 */
-export interface RenewalAnalysisStep {
-  step_name: string
-  data_used: string
-  result: string
-  impact: string
+/** 轮次执行响应 */
+export interface RoundExecutionResponse {
+  round: number
+  round_name: string
+  events: TransferEvent[]
+  event_count: number
+  next_round: number | null
+  summary: string
 }
 
-/** 续约决策 */
-export interface RenewalDecision {
-  player_id: number
-  player_name: string
+/** 快进响应 */
+export interface FastForwardResponse {
+  completed_rounds: number
+  total_events: number
+  rounds: RoundResult[]
+}
+
+/** 球队转会摘要 */
+export interface TeamTransferSummary {
   team_id: number
   team_name: string
-  team_wants_renewal: boolean
-  team_rejection_reason?: string
-  offered_salary: number
-  offered_years: number
-  player_accepts: boolean
-  player_rejection_reason?: string
-  renewal_successful: boolean
-  final_salary?: number
-  final_years?: number
-  team_analysis: RenewalAnalysisStep[]
-  player_analysis: RenewalAnalysisStep[]
-  summary: string
+  players_in: number
+  players_out: number
+  money_spent: number
+  money_earned: number
+  net_spend: number
 }
 
-/** 续约处理结果 */
-export interface RenewalProcessingResult {
-  total_processed: number
-  successful_renewals: number
-  team_rejections: number
-  player_rejections: number
-  decisions: RenewalDecision[]
-  errors: string[]
+/** 转会报告 */
+export interface TransferReport {
+  window_id: number
+  season_id: number
+  total_events: number
+  total_transfer_fee: number
+  events_by_type: Record<string, number>
+  events_by_level: Record<string, number>
+  team_summaries: TeamTransferSummary[]
+  top_events: TransferEvent[]
 }
 
-/** LLM 转会市场 API */
-export const llmMarketApi = {
-  // 初始化市场
-  initMarket: () =>
-    invokeCommand<MarketStateSummary>('init_llm_transfer_market'),
+/** 球队性格配置 */
+export interface TeamPersonalityConfig {
+  id: number
+  team_id: number
+  save_id: string
+  personality: string
+  short_term_focus: number
+  long_term_focus: number
+  risk_tolerance: number
+  youth_preference: number
+  star_chasing: number
+  bargain_hunting: number
+  updated_at: string
+}
 
-  // 获取市场状态
-  getMarketState: () =>
-    invokeCommand<MarketStateSummary>('get_llm_market_state'),
+/** 球队声望 */
+export interface TeamReputation {
+  team_id: number
+  overall: number
+  historical: number
+  recent: number
+  international: number
+}
 
-  // 获取所有球队市场状态
-  getAllTeamMarketStates: () =>
-    invokeCommand<TeamMarketSummary[]>('get_all_team_market_states'),
+/** 更新性格请求 */
+export interface UpdatePersonalityRequest {
+  personality: string
+  short_term_focus?: number
+  long_term_focus?: number
+  risk_tolerance?: number
+  youth_preference?: number
+  star_chasing?: number
+  bargain_hunting?: number
+}
 
-  // 生成选手意愿
-  generatePlayerIntentions: () =>
-    invokeCommand<GenerationProgress>('generate_player_intentions'),
+/** 转会系统 API */
+export const transferWindowApi = {
+  // 开始转会期
+  startTransferWindow: () =>
+    invokeCommand<TransferWindowResponse>('start_transfer_window'),
 
-  // 生成球队策略（LLM版本）
-  generateTeamStrategies: () =>
-    invokeCommand<GenerationProgress>('generate_team_strategies_llm'),
+  // 执行单轮转会
+  executeTransferRound: (windowId: number, round: number) =>
+    invokeCommand<RoundExecutionResponse>('execute_transfer_round', { windowId, round }),
 
-  // 生成球队策略（规则引擎版本，快速）
-  generateRuleBasedStrategies: () =>
-    invokeCommand<GenerationProgress>('generate_rule_based_team_strategies'),
+  // 快进转会期
+  fastForwardTransfer: (windowId: number, fromRound?: number) =>
+    invokeCommand<FastForwardResponse>('fast_forward_transfer', { windowId, fromRound }),
 
-  // 处理续约
-  processRenewals: () =>
-    invokeCommand<RenewalProcessingResult>('process_renewals'),
+  // 获取转会事件
+  getTransferEvents: (windowId: number, round?: number, level?: string) =>
+    invokeCommand<TransferEvent[]>('get_transfer_events', { windowId, round, level }),
 
-  // 执行下一轮（LLM版本）
-  executeRound: () =>
-    invokeCommand<RoundExecutionResult>('execute_llm_market_round'),
+  // 获取转会报告
+  getTransferReport: (windowId: number) =>
+    invokeCommand<TransferReport>('get_transfer_report', { windowId }),
 
-  // 执行下一轮（规则引擎版本，快速）
-  executeRuleBasedRound: () =>
-    invokeCommand<RoundExecutionResult>('execute_rule_based_market_round'),
+  // 获取转会期状态
+  getTransferWindowStatus: (windowId: number) =>
+    invokeCommand<TransferWindowResponse>('get_transfer_window_status', { windowId }),
 
-  // 推进阶段
-  advancePhase: () =>
-    invokeCommand<MarketStateSummary>('advance_market_phase'),
+  // 获取球队AI性格
+  getTeamPersonality: (teamId: number) =>
+    invokeCommand<TeamPersonalityConfig | null>('get_team_personality', { teamId }),
 
-  // 获取活跃谈判
-  getActiveNegotiations: () =>
-    invokeCommand<NegotiationListInfo[]>('get_active_negotiations_llm'),
+  // 更新球队AI性格
+  updateTeamPersonality: (teamId: number, request: UpdatePersonalityRequest) =>
+    invokeCommand<boolean>('update_team_personality', { teamId, request }),
 
-  // 获取谈判详情
-  getNegotiationDetail: (negotiationId: number) =>
-    invokeCommand<NegotiationDetailInfo>('get_negotiation_detail_llm', { negotiationId }),
-
-  // 获取选手策略
-  getPlayerStrategy: (playerId: number) =>
-    invokeCommand<PlayerTransferStrategy | null>('get_player_strategy_llm', { playerId }),
-
-  // 获取球队策略
-  getTeamStrategy: (teamId: number) =>
-    invokeCommand<AITransferStrategy | null>('get_team_strategy_llm', { teamId }),
-
-  // 获取离队候选人
-  getDepartureCandidates: () =>
-    invokeCommand<DepartureCandidateInfo[]>('get_departure_candidates_llm'),
-
-  // 获取所有事件
-  getMarketEvents: () =>
-    invokeCommand<MarketEvent[]>('get_llm_market_events'),
-
-  // 获取指定轮次事件
-  getEventsForRound: (round: number) =>
-    invokeCommand<MarketEvent[]>('get_llm_market_events_for_round', { round }),
-
-  // 重置转会市场
-  resetMarket: () =>
-    invokeCommand<void>('reset_llm_transfer_market'),
-
-  // 获取续约结果（从数据库加载）
-  getRenewalResults: () =>
-    invokeCommand<RenewalProcessingResult>('get_renewal_results'),
-
-  // 修复：将想离队的选手加入自由球员列表（临时命令）
-  fixAddDepartureToFreeAgents: () =>
-    invokeCommand<number>('fix_add_departure_to_free_agents'),
-
-  // LLM 任务追踪
-  // 获取任务进度
-  getTaskProgress: (taskType: 'intention' | 'strategy' | 'renewal' | 'free_market' | 'poaching') =>
-    invokeCommand<{
-      total: number
-      pending: number
-      running: number
-      success: number
-      failed: number
-    }>('get_llm_task_progress', { saveId: '', seasonId: 0, taskType }),
-
-  // 重试失败任务
-  retryFailedTasks: (taskType: 'intention' | 'strategy' | 'renewal') =>
-    invokeCommand<number>('retry_failed_llm_tasks', { saveId: '', seasonId: 0, taskType }),
+  // 获取球队声望
+  getTeamReputation: (teamId: number) =>
+    invokeCommand<TeamReputation>('get_team_reputation', { teamId }),
 }
 
 export default tauriApi

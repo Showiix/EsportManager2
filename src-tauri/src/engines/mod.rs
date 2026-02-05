@@ -12,6 +12,7 @@ pub mod market_value;
 pub mod condition;
 pub mod traits;
 pub mod satisfaction;
+pub mod transfer;
 
 pub use match_simulation::*;
 pub use player_performance::*;
@@ -27,3 +28,4 @@ pub use market_value::*;
 pub use condition::*;
 pub use traits::*;
 pub use satisfaction::*;
+pub use transfer::*;
