@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod db;
 pub mod engines;
+pub mod errors;
 pub mod models;
 pub mod services;
 
@@ -82,12 +83,27 @@ use commands::{
     get_transfer_events, get_transfer_report, get_transfer_window_status,
     get_team_personality, update_team_personality, get_team_reputation,
     get_player_market_list,
+    // 日志系统命令
+    log_frontend_event, log_frontend_error, get_log_files, read_log_file, cleanup_logs,
     // 应用状态
     AppState,
 };
 
+use services::logging_service::{init_logging, LoggingConfig};
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 初始化日志系统
+    let log_config = if cfg!(debug_assertions) {
+        LoggingConfig::development()
+    } else {
+        LoggingConfig::production()
+    };
+
+    if let Err(e) = init_logging(log_config) {
+        eprintln!("日志系统初始化失败: {}", e);
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(AppState::new())
@@ -302,6 +318,12 @@ pub fn run() {
             update_team_personality,
             get_team_reputation,
             get_player_market_list,
+            // 日志系统命令
+            log_frontend_event,
+            log_frontend_error,
+            get_log_files,
+            read_log_file,
+            cleanup_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

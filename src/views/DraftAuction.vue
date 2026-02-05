@@ -106,7 +106,7 @@
               <el-icon :size="24"><Coin /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-number">{{ auctionStats.totalCommission }}万</div>
+              <div class="stat-number">{{ formatMoneyFromWan(auctionStats.totalCommission) }}</div>
               <div class="stat-label">联盟佣金</div>
             </div>
           </div>

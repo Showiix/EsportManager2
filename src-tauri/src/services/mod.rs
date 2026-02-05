@@ -6,6 +6,7 @@ pub mod player_data;
 pub mod draft_pool_data;
 pub mod honor_service;
 pub mod draft_ai_service;
+pub mod logging_service;
 
 pub use league_service::*;
 pub use tournament_service::*;
@@ -14,3 +15,4 @@ pub use game_flow::*;
 pub use draft_pool_data::*;
 pub use honor_service::*;
 pub use draft_ai_service::*;
+pub use logging_service::*;

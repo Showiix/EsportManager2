@@ -16,6 +16,7 @@ pub mod match_detail_commands;
 pub mod dev_commands;
 pub mod awards_commands;
 pub mod transfer_commands;
+pub mod log_commands;
 
 pub use save_commands::*;
 pub use team_commands::*;
@@ -35,6 +36,7 @@ pub use match_detail_commands::*;
 pub use dev_commands::*;
 pub use awards_commands::*;
 pub use transfer_commands::*;
+pub use log_commands::*;
 
 use serde::{Deserialize, Serialize};
 
