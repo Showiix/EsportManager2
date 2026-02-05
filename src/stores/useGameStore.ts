@@ -7,6 +7,10 @@ import { ref, computed } from 'vue'
 import { saveApi, type SaveInfo, type GameState } from '@/api/tauri'
 import { usePlayerStore } from './usePlayerStore'
 import { useMatchDetailStore } from './useMatchDetailStore'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('GameStore')
 
 export const useGameStore = defineStore('game', () => {
   // ========================================
@@ -61,12 +65,17 @@ export const useGameStore = defineStore('game', () => {
     error.value = null
 
     try {
-      await saveApi.initDatabase()
+      await logger.timed('初始化数据库', () => saveApi.initDatabase())
       isInitialized.value = true
-      console.log('Database initialized successfully')
+      logger.info('数据库初始化成功')
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to initialize database'
-      console.error('Failed to initialize database:', e)
+      handleError(e, {
+        component: 'GameStore',
+        userAction: '初始化数据库',
+        canRetry: true,
+        retryFn: initDatabase
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -81,16 +90,20 @@ export const useGameStore = defineStore('game', () => {
     error.value = null
 
     try {
+      logger.warn('删除数据库')
       await saveApi.deleteDatabase()
       // 清除所有状态
       isInitialized.value = false
       saves.value = []
       currentSave.value = null
       gameState.value = null
-      console.log('Database deleted successfully')
+      logger.info('数据库已删除')
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to delete database'
-      console.error('Failed to delete database:', e)
+      handleError(e, {
+        component: 'GameStore',
+        userAction: '删除数据库'
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -108,10 +121,14 @@ export const useGameStore = defineStore('game', () => {
       saves.value = await saveApi.getSaves()
       // 如果能成功加载存档列表，说明数据库已初始化
       isInitialized.value = true
-      console.log(`Loaded ${saves.value.length} saves`)
+      logger.debug('存档列表已加载', { count: saves.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load saves'
-      console.error('Failed to load saves:', e)
+      handleError(e, {
+        component: 'GameStore',
+        userAction: '加载存档列表',
+        silent: true
+      })
       // 保持 isInitialized 为 false，表示数据库未初始化
       throw e
     } finally {
@@ -127,8 +144,9 @@ export const useGameStore = defineStore('game', () => {
     error.value = null
 
     try {
-      const saveInfo = await saveApi.createSave(name)
-      console.log(`Created save: ${saveInfo.id}`)
+      logger.info('创建新存档', { name })
+      const saveInfo = await logger.timed('创建存档', () => saveApi.createSave(name))
+      logger.info('存档创建成功', { saveId: saveInfo.id, name })
 
       // 重新加载存档列表
       await loadSaves()
@@ -139,7 +157,12 @@ export const useGameStore = defineStore('game', () => {
       return saveInfo.id
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to create save'
-      console.error('Failed to create save:', e)
+      handleError(e, {
+        component: 'GameStore',
+        userAction: '创建存档',
+        canRetry: true,
+        retryFn: () => createSave(name)
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -154,21 +177,27 @@ export const useGameStore = defineStore('game', () => {
     error.value = null
 
     try {
+      logger.info('加载存档', { saveId })
       // 清除旧存档的缓存数据
       const playerStore = usePlayerStore()
       const matchDetailStore = useMatchDetailStore()
       playerStore.clearAll()
       matchDetailStore.clearAll()
-      console.log('已清除旧存档的缓存数据')
+      logger.debug('已清除旧存档缓存')
 
-      currentSave.value = await saveApi.loadSave(saveId)
-      console.log(`Loaded save: ${currentSave.value.name}`)
+      currentSave.value = await logger.timed('加载存档', () => saveApi.loadSave(saveId))
+      logger.info('存档加载成功', { name: currentSave.value.name })
 
       // 获取游戏状态
       await refreshGameState()
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load save'
-      console.error('Failed to load save:', e)
+      handleError(e, {
+        component: 'GameStore',
+        userAction: '加载存档',
+        canRetry: true,
+        retryFn: () => loadSave(saveId)
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -183,8 +212,9 @@ export const useGameStore = defineStore('game', () => {
     error.value = null
 
     try {
+      logger.info('删除存档', { saveId })
       await saveApi.deleteSave(saveId)
-      console.log(`Deleted save: ${saveId}`)
+      logger.info('存档已删除', { saveId })
 
       // 如果删除的是当前存档，清除状态
       if (currentSave.value?.id === saveId) {
@@ -196,7 +226,10 @@ export const useGameStore = defineStore('game', () => {
       await loadSaves()
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to delete save'
-      console.error('Failed to delete save:', e)
+      handleError(e, {
+        component: 'GameStore',
+        userAction: '删除存档'
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -211,8 +244,12 @@ export const useGameStore = defineStore('game', () => {
 
     try {
       gameState.value = await saveApi.getGameState()
+      logger.debug('游戏状态已刷新', {
+        season: gameState.value?.current_season,
+        phase: gameState.value?.current_phase
+      })
     } catch (e) {
-      console.error('Failed to refresh game state:', e)
+      logger.error('刷新游戏状态失败', { error: e })
       // 不抛出错误，允许继续
     }
   }
@@ -229,12 +266,18 @@ export const useGameStore = defineStore('game', () => {
     error.value = null
 
     try {
+      logger.info('推进游戏阶段')
       gameState.value = await saveApi.advancePhase()
-      console.log(`Advanced to phase: ${gameState.value.phase_name}`)
+      logger.info('阶段推进成功', { phase: gameState.value.phase_name })
       return gameState.value
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to advance phase'
-      console.error('Failed to advance phase:', e)
+      handleError(e, {
+        component: 'GameStore',
+        userAction: '推进阶段',
+        canRetry: true,
+        retryFn: advancePhase
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -248,12 +291,13 @@ export const useGameStore = defineStore('game', () => {
     try {
       const saveId = await saveApi.getCurrentSaveId()
       if (saveId) {
+        logger.debug('发现已保存的存档', { saveId })
         await loadSave(saveId)
         return true
       }
       return false
     } catch (e) {
-      console.error('Failed to check current save:', e)
+      logger.error('检查当前存档失败', { error: e })
       return false
     }
   }

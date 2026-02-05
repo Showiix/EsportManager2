@@ -395,6 +395,9 @@ import { ElMessage } from 'element-plus'
 import { draftApi, teamApi, queryApi } from '@/api/tauri'
 import { useGameStore } from '@/stores/useGameStore'
 import { storeToRefs } from 'pinia'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('DraftRegion')
 
 const route = useRoute()
 const router = useRouter()
@@ -455,7 +458,7 @@ const getRegionId = async (regionCode: string): Promise<number> => {
     const region = regions.find(r => r.code.toLowerCase() === regionCode.toLowerCase())
     return region?.id ?? 1
   } catch (e) {
-    console.error('Failed to get region id:', e)
+    logger.error('Failed to get region id:', e)
     return 1
   }
 }
@@ -474,7 +477,7 @@ const loadTeams = async () => {
       assigned: false,
     }))
   } catch (e) {
-    console.error('Failed to load teams:', e)
+    logger.error('Failed to load teams:', e)
     ElMessage.error('加载队伍失败')
   } finally {
     isLoading.value = false
@@ -623,7 +626,7 @@ const drawDraftRoster = async () => {
     currentStep.value = 1
     ElMessage.success('选秀名单抽取完成！')
   } catch (e) {
-    console.error('Failed to draw draft roster:', e)
+    logger.error('Failed to draw draft roster:', e)
     ElMessage.error('抽取选秀名单失败')
   } finally {
     isLoading.value = false
@@ -646,7 +649,7 @@ const runBackendLottery = async () => {
 
     ElMessage.success('抽签完成!')
   } catch (e) {
-    console.error('Failed to run draft lottery:', e)
+    logger.error('Failed to run draft lottery:', e)
     ElMessage.error('抽签失败')
   } finally {
     isLoading.value = false
@@ -690,7 +693,7 @@ const assignPlayers = async () => {
     currentStep.value = 5
     ElMessage.success('选手分配完成!')
   } catch (e) {
-    console.error('Failed to assign players:', e)
+    logger.error('Failed to assign players:', e)
     ElMessage.error('分配选手失败')
   } finally {
     isLoading.value = false

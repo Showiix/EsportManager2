@@ -270,6 +270,9 @@ import type { BracketInfo, MatchBracketInfo, GroupStandingInfo, DetailedGameResu
 import type { ClauchMatch, ClauchGroup, ClauchGroupStanding as ClauchGroupStandingType, ClauchKnockoutBracket as ClauchKnockoutBracketType } from '@/types/clauch'
 import type { PlayerPosition } from '@/types/player'
 import type { MatchDetail } from '@/types/matchDetail'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('MadridDetail')
 
 // Stores
 const matchDetailStore = useMatchDetailStore()
@@ -349,7 +352,7 @@ onMounted(async () => {
       ElMessage.info('请先创建马德里大师赛')
     }
   } catch (error) {
-    console.error('初始化失败:', error)
+    logger.error('初始化失败:', error)
     ElMessage.error('加载赛事数据失败')
   } finally {
     loading.value = false
@@ -370,7 +373,7 @@ const loadTournamentData = async () => {
     // 转换数据格式适配前端组件
     convertBracketToMadridFormat()
   } catch (error) {
-    console.error('加载赛事数据失败:', error)
+    logger.error('加载赛事数据失败:', error)
     throw error
   }
 }
@@ -934,7 +937,7 @@ const handleSimulateMatch = async (match: ClauchMatch) => {
       checkKnockoutCompletion()
     }
   } catch (error) {
-    console.error('模拟比赛失败:', error)
+    logger.error('模拟比赛失败:', error)
     ElMessage.error('模拟比赛失败')
   }
 }
@@ -989,7 +992,7 @@ const handleGenerateKnockout = async () => {
 
     ElMessage.success('淘汰赛对阵生成成功!')
   } catch (error) {
-    console.error('生成淘汰赛对阵失败:', error)
+    logger.error('生成淘汰赛对阵失败:', error)
     ElMessage.error('生成淘汰赛对阵失败')
   } finally {
     generatingKnockout.value = false
@@ -1150,7 +1153,7 @@ const batchSimulateGroupStage = async () => {
           })
         })
       } catch (e) {
-        console.error(`模拟比赛 ${matchId} 失败:`, e)
+        logger.error(`模拟比赛 ${matchId} 失败:`, e)
       }
 
       simulationProgress.value = Math.floor(((i + 1) / uncompletedGroupMatches.length) * 100)
@@ -1165,7 +1168,7 @@ const batchSimulateGroupStage = async () => {
     ElMessage.success('小组赛模拟完成！现在可以生成淘汰赛对阵。')
   } catch (error: any) {
     if (error !== 'cancel') {
-      console.error('小组赛模拟失败:', error)
+      logger.error('小组赛模拟失败:', error)
       ElMessage.error(error.message || '小组赛模拟失败')
     }
   } finally {
@@ -1332,7 +1335,7 @@ const batchSimulateKnockout = async () => {
             await internationalApi.advanceBracket(tournamentId.value, match.match_id, result.winner_id)
           }
         } catch (e) {
-          console.error(`模拟比赛 ${match.match_id} 失败:`, e)
+          logger.error(`模拟比赛 ${match.match_id} 失败:`, e)
         }
 
         await new Promise(resolve => setTimeout(resolve, 100))
@@ -1352,7 +1355,7 @@ const batchSimulateKnockout = async () => {
     }
   } catch (error: any) {
     if (error !== 'cancel') {
-      console.error('淘汰赛模拟失败:', error)
+      logger.error('淘汰赛模拟失败:', error)
       ElMessage.error(error.message || '淘汰赛模拟失败')
     }
   } finally {

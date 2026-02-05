@@ -1,4 +1,7 @@
 import axios from 'axios'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('APIClient')
 
 // 创建axios实例
 const apiClient = axios.create({
@@ -107,7 +110,7 @@ apiClient.interceptors.response.use(
     return response.data
   },
   (error) => {
-    console.error('API Error:', error)
+    logger.error('API请求失败', { error })
     return Promise.reject(error)
   }
 )

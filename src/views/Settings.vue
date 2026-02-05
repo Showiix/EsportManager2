@@ -296,6 +296,9 @@ import {
 import GameGuide from '@/components/settings/GameGuide.vue'
 import { useGameStore } from '@/stores/useGameStore'
 import type { SaveInfo } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('Settings')
 
 const gameStore = useGameStore()
 const { saves, currentSave, isLoading, isInitialized } = storeToRefs(gameStore)
@@ -323,7 +326,7 @@ onMounted(async () => {
   try {
     await gameStore.loadSaves()
   } catch (e) {
-    console.log('数据库未初始化，请先初始化数据库')
+    logger.debug('数据库未初始化，请先初始化数据库')
   }
 })
 

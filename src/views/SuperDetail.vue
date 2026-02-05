@@ -356,6 +356,9 @@ import type {
   SuperMatch,
   SuperBracket,
 } from '@/types/super'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('SuperDetail')
 
 const router = useRouter()
 const gameStore = useGameStore()
@@ -420,7 +423,7 @@ const loadTournamentData = async () => {
     // 转换数据到前端格式
     convertBracketToSuperFormat()
   } catch (error) {
-    console.error('加载赛事数据失败:', error)
+    logger.error('加载赛事数据失败:', error)
   }
 }
 
@@ -853,7 +856,7 @@ const handleStartTournament = async () => {
     ElMessage.success('Super洲际赛已开始！Fighter组预选赛抽签完成。')
   } catch (error: any) {
     if (error !== 'cancel') {
-      console.error('开始失败:', error)
+      logger.error('开始失败:', error)
       ElMessage.error(error.message || '开始失败')
     }
   } finally {
@@ -979,7 +982,7 @@ const handleSimulateMatch = async (match: SuperMatch) => {
       checkFinalCompletion()
     }
   } catch (error) {
-    console.error('模拟比赛失败:', error)
+    logger.error('模拟比赛失败:', error)
     ElMessage.error('模拟比赛失败')
   }
 }
@@ -1033,7 +1036,7 @@ const batchSimulateFighterStage = async () => {
     ElMessage.success('Fighter组预选赛模拟完成！现在可以生成第二阶段。')
   } catch (error: any) {
     if (error !== 'cancel') {
-      console.error('模拟失败:', error)
+      logger.error('模拟失败:', error)
       ElMessage.error(error.message || '模拟失败')
     }
   } finally {
@@ -1046,7 +1049,7 @@ const batchSimulateFighterStage = async () => {
  * 生成第二阶段（挑战者组）
  */
 const handleGenerateChallengerStage = async () => {
-  console.log('[Super] 生成第二阶段, tournamentId:', tournamentId.value)
+  logger.debug('[Super] 生成第二阶段, tournamentId:', tournamentId.value)
 
   if (!tournamentId.value) {
     ElMessage.error('赛事ID不存在，请刷新页面重试')
@@ -1057,9 +1060,9 @@ const handleGenerateChallengerStage = async () => {
 
   try {
     // 调用后端生成挑战者组阶段
-    console.log('[Super] 调用 generateKnockoutBracket API...')
+    logger.debug('[Super] 调用 generateKnockoutBracket API...')
     await internationalApi.generateKnockoutBracket(tournamentId.value)
-    console.log('[Super] API 调用成功')
+    logger.debug('[Super] API 调用成功')
 
     // 重新加载数据
     await loadTournamentData()
@@ -1067,7 +1070,7 @@ const handleGenerateChallengerStage = async () => {
     superBracket.status = 'challenger_stage'
     ElMessage.success('第二阶段生成成功！')
   } catch (error: any) {
-    console.error('生成第二阶段失败:', error)
+    logger.error('生成第二阶段失败:', error)
     ElMessage.error(error?.message || '生成第二阶段失败')
   } finally {
     generatingChallenger.value = false
@@ -1122,7 +1125,7 @@ const batchSimulateChallengerStage = async () => {
     ElMessage.success('挑战者组阶段模拟完成！现在可以生成第三阶段。')
   } catch (error: any) {
     if (error !== 'cancel') {
-      console.error('模拟失败:', error)
+      logger.error('模拟失败:', error)
       ElMessage.error(error.message || '模拟失败')
     }
   } finally {
@@ -1141,14 +1144,14 @@ const handleGenerateChampionPrepStage = async () => {
   try {
     // 调用后端 API 生成第三阶段比赛
     const matchIds = await internationalApi.generateChampionPrepStage(tournamentId.value)
-    console.log('[handleGenerateChampionPrepStage] 创建了比赛 IDs:', matchIds)
+    logger.debug('[handleGenerateChampionPrepStage] 创建了比赛 IDs:', matchIds)
 
     // 重新加载赛事数据
     await loadTournamentData()
 
     ElMessage.success('第三阶段生成成功！')
   } catch (error) {
-    console.error('生成第三阶段失败:', error)
+    logger.error('生成第三阶段失败:', error)
     ElMessage.error(`生成第三阶段失败: ${error}`)
   } finally {
     generatingChampionPrep.value = false
@@ -1214,7 +1217,7 @@ const batchSimulateChampionPrepStage = async () => {
     ElMessage.success('冠军预备战模拟完成！现在可以生成终极冠军赛。')
   } catch (error: any) {
     if (error !== 'cancel') {
-      console.error('模拟失败:', error)
+      logger.error('模拟失败:', error)
       ElMessage.error(error.message || '模拟失败')
     }
   } finally {
@@ -1233,14 +1236,14 @@ const handleGenerateFinalStage = async () => {
   try {
     // 调用后端 API 生成第四阶段比赛
     const matchIds = await internationalApi.generateFinalStage(tournamentId.value)
-    console.log('[handleGenerateFinalStage] 创建了比赛 IDs:', matchIds)
+    logger.debug('[handleGenerateFinalStage] 创建了比赛 IDs:', matchIds)
 
     // 重新加载赛事数据
     await loadTournamentData()
 
     ElMessage.success('终极冠军赛生成成功！')
   } catch (error) {
-    console.error('生成终极冠军赛失败:', error)
+    logger.error('生成终极冠军赛失败:', error)
     ElMessage.error(`生成终极冠军赛失败: ${error}`)
   } finally {
     generatingFinal.value = false
@@ -1373,7 +1376,7 @@ const batchSimulateFinalStage = async () => {
     showChampionCelebration(superBracket.champion?.teamName || '')
   } catch (error: any) {
     if (error !== 'cancel') {
-      console.error('模拟失败:', error)
+      logger.error('模拟失败:', error)
       ElMessage.error(error.message || '模拟失败')
     }
   } finally {
@@ -1389,7 +1392,7 @@ const simulateMatchInternal = async (match: SuperMatch) => {
   try {
     const matchId = Number(match.id)
     if (isNaN(matchId)) {
-      console.error('无效的比赛ID:', match.id)
+      logger.error('无效的比赛ID:', match.id)
       return
     }
 
@@ -1519,7 +1522,7 @@ const simulateMatchInternal = async (match: SuperMatch) => {
       }
     }
   } catch (error) {
-    console.error('模拟比赛失败:', error)
+    logger.error('模拟比赛失败:', error)
     throw error
   }
 }
@@ -1646,9 +1649,9 @@ const showChampionCelebration = async (championName: string) => {
   if (tournamentId.value) {
     try {
       await financeApi.distributeTournamentPrizes(tournamentId.value)
-      console.log('Super赛事奖金已发放')
+      logger.debug('Super赛事奖金已发放')
     } catch (e) {
-      console.error('发放奖金失败:', e)
+      logger.error('发放奖金失败:', e)
     }
   }
 
@@ -1677,7 +1680,7 @@ const initSuperData = async () => {
     // 获取当前存档和赛季
     const currentSave = gameStore.currentSave
     if (!currentSave) {
-      console.warn('未找到当前存档')
+      logger.warn('未找到当前存档')
       return
     }
 
@@ -1713,7 +1716,7 @@ const initSuperData = async () => {
         }))
       }
     } catch (e) {
-      console.warn('加载参赛队伍数据失败:', e)
+      logger.warn('加载参赛队伍数据失败:', e)
     }
 
     // 获取 Super 赛事ID (类型为 'SuperIntercontinental')
@@ -1724,10 +1727,10 @@ const initSuperData = async () => {
       // 加载赛事数据
       await loadTournamentData()
     } else {
-      console.warn('未找到 Super 赛事')
+      logger.warn('未找到 Super 赛事')
     }
   } catch (error) {
-    console.error('初始化 Super 数据失败:', error)
+    logger.error('初始化 Super 数据失败:', error)
   }
 }
 

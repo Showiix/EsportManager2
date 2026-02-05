@@ -251,12 +251,6 @@ const router = createRouter({
       component: () => import('@/views/Settings.vue'),
       meta: { title: '系统设置' }
     },
-    {
-      path: '/dev-tools',
-      name: 'DevTools',
-      component: () => import('@/views/DevTools.vue'),
-      meta: { title: '开发工具' }
-    },
   ]
 });
 

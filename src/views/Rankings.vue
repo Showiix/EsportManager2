@@ -488,6 +488,9 @@ import {
 } from '@element-plus/icons-vue'
 import { teamApi, queryApi, pointsApi } from '@/api/tauri'
 import type { Team, Region, TeamAnnualPoints, AnnualPointsDetail } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('Rankings')
 
 const router = useRouter()
 
@@ -574,7 +577,7 @@ onMounted(async () => {
 
     powerRankings.value = powerData
   } catch (error) {
-    console.error('Failed to load rankings data:', error)
+    logger.error('Failed to load rankings data:', error)
   } finally {
     loading.value = false
   }
@@ -776,10 +779,10 @@ const showPointsDetail = async (team: any) => {
   // 加载队伍积分明细
   try {
     teamPointsDetails.value = await pointsApi.getTeamPoints(team.id)
-    console.log('[Rankings] Team points details for team', team.id, ':', teamPointsDetails.value)
-    console.log('[Rankings] selectedTeamDetail computed:', selectedTeamDetail.value)
+    logger.debug('[Rankings] Team points details for team', team.id, ':', teamPointsDetails.value)
+    logger.debug('[Rankings] selectedTeamDetail computed:', selectedTeamDetail.value)
   } catch (error) {
-    console.error('Failed to load team points detail:', error)
+    logger.error('Failed to load team points detail:', error)
     teamPointsDetails.value = []
   }
 }

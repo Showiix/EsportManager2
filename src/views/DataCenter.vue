@@ -190,6 +190,9 @@ import { teamApi, devApi } from '@/api/tauri'
 import { ElMessage } from 'element-plus'
 import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('DataCenter')
 
 const router = useRouter()
 const playerStore = usePlayerStore()
@@ -247,17 +250,17 @@ const fetchRankings = async () => {
   loading.value = true
   try {
     const numericSeasonId = getNumericSeasonId(selectedSeason.value)
-    console.log('[DataCenter] fetchRankings 开始, numericSeasonId:', numericSeasonId)
+    logger.debug('[DataCenter] fetchRankings 开始, numericSeasonId:', numericSeasonId)
     // 增大 limit 以显示所有有比赛记录的选手
     const result = await playerStore.getSeasonImpactRanking(numericSeasonId, 500)
-    console.log('[DataCenter] fetchRankings 结果:', result?.length || 0, '条数据')
+    logger.debug('[DataCenter] fetchRankings 结果:', result?.length || 0, '条数据')
     if (result && result.length > 0) {
-      console.log('[DataCenter] 第一条数据:', JSON.stringify(result[0]))
+      logger.debug('[DataCenter] 第一条数据:', JSON.stringify(result[0]))
     }
     rankings.value = result
-    console.log('[DataCenter] rankings.value 已更新，当前长度:', rankings.value.length)
+    logger.debug('[DataCenter] rankings.value 已更新，当前长度:', rankings.value.length)
   } catch (error) {
-    console.error('获取排行数据失败:', error)
+    logger.error('获取排行数据失败:', error)
     rankings.value = []
   } finally {
     loading.value = false
@@ -351,10 +354,10 @@ const refreshData = async () => {
       teams.forEach(t => {
         teamsMap.value.set(t.id, t.short_name || t.name)
       })
-      console.log('[DataCenter] 加载战队数据:', teamsMap.value.size, '支队伍')
+      logger.debug('[DataCenter] 加载战队数据:', teamsMap.value.size, '支队伍')
     }
   } catch (e) {
-    console.warn('加载战队数据失败:', e)
+    logger.warn('加载战队数据失败:', e)
   }
   playerStore.loadFromStorage()
   await fetchRankings()
@@ -365,9 +368,9 @@ const syncData = async () => {
   loading.value = true
   try {
     const seasonNum = parseInt(selectedSeason.value.replace('S', '')) || 1
-    console.log('[DataCenter] 开始同步数据, seasonNum:', seasonNum)
+    logger.debug('[DataCenter] 开始同步数据, seasonNum:', seasonNum)
     const result = await devApi.syncPlayerGamesPlayed(seasonNum)
-    console.log('[DataCenter] 同步结果:', result)
+    logger.debug('[DataCenter] 同步结果:', result)
 
     // 处理两种可能的返回格式
     if ('success' in result) {
@@ -387,7 +390,7 @@ const syncData = async () => {
 
     await fetchRankings()
   } catch (e: any) {
-    console.error('同步失败:', e)
+    logger.error('同步失败:', e)
     ElMessage.error(`数据同步失败: ${e.message || e}`)
   } finally {
     loading.value = false

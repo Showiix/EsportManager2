@@ -245,7 +245,7 @@ git commit -m "docs: 添加新系统文档"
 
 1. **不要直接删除**
 2. 移动到 `archive/` 目录
-3. 从 `README.md` 索引中移除链接
+3. 从 `README.md` 索引中移除链接 
 
 ```bash
 mv docs/03-core-systems/old-system.md docs/archive/

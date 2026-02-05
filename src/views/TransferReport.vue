@@ -255,6 +255,9 @@ import {
 import { transferWindowApi, type TransferReport, type TransferEvent } from '@/api/tauri'
 import { formatMoneyFromWan } from '@/utils'
 import { EVENT_TYPE_NAMES, EVENT_LEVEL_CONFIG } from '@/stores/useTransferWindowStore'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('TransferReport')
 
 const route = useRoute()
 
@@ -278,7 +281,7 @@ async function loadReport() {
   try {
     report.value = await transferWindowApi.getTransferReport(windowId)
   } catch (e) {
-    console.error('Failed to load report:', e)
+    logger.error('Failed to load report:', e)
   } finally {
     isLoading.value = false
   }

@@ -5,6 +5,10 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { pointsApi } from '@/api';
+import { createLogger } from '@/utils/logger';
+import { handleError } from '@/utils/errors';
+
+const logger = createLogger('PointsStore');
 
 // ========================================
 // 类型定义
@@ -112,7 +116,7 @@ export const usePointsStore = defineStore('points', () => {
       
       if (response.success) {
         seasonRankings.value = response.data;
-        console.log('✅ 赛季积分排名加载成功', {
+        logger.info('赛季积分排名加载成功', {
           seasonYear,
           teamsCount: seasonRankings.value.length
         });
@@ -121,7 +125,11 @@ export const usePointsStore = defineStore('points', () => {
       }
     } catch (err: any) {
       error.value = err.message || '获取赛季积分排名失败';
-      console.error('❌ 获取赛季积分排名失败', err);
+      handleError(err, {
+        component: 'PointsStore',
+        userAction: '获取赛季积分排名',
+        silent: true
+      });
       throw err;
     } finally {
       loading.value = false;
@@ -141,7 +149,7 @@ export const usePointsStore = defineStore('points', () => {
       if (response.success) {
         const key = `${regionId}-${seasonYear}`;
         regionRankings.value.set(key, response.data);
-        console.log('✅ 赛区积分排名加载成功', {
+        logger.info('赛区积分排名加载成功', {
           regionId,
           seasonYear,
           teamsCount: response.data.length
@@ -151,7 +159,11 @@ export const usePointsStore = defineStore('points', () => {
       }
     } catch (err: any) {
       error.value = err.message || '获取赛区积分排名失败';
-      console.error('❌ 获取赛区积分排名失败', err);
+      handleError(err, {
+        component: 'PointsStore',
+        userAction: '获取赛区积分排名',
+        silent: true
+      });
       throw err;
     } finally {
       loading.value = false;
@@ -171,7 +183,7 @@ export const usePointsStore = defineStore('points', () => {
       if (response.success) {
         const key = `${teamId}-${seasonYear}`;
         teamPointsBreakdown.value.set(key, response.data);
-        console.log('✅ 战队积分详情加载成功', {
+        logger.info('战队积分详情加载成功', {
           teamId,
           seasonYear,
           totalPoints: response.data.totalPoints
@@ -181,7 +193,11 @@ export const usePointsStore = defineStore('points', () => {
       }
     } catch (err: any) {
       error.value = err.message || '获取战队积分详情失败';
-      console.error('❌ 获取战队积分详情失败', err);
+      handleError(err, {
+        component: 'PointsStore',
+        userAction: '获取战队积分详情',
+        silent: true
+      });
       throw err;
     } finally {
       loading.value = false;
@@ -201,7 +217,7 @@ export const usePointsStore = defineStore('points', () => {
       if (response.success) {
         const key = seasonYear ? `${teamId}-${seasonYear}` : `${teamId}-all`;
         teamPointsHistory.value.set(key, response.data);
-        console.log('✅ 战队积分历史加载成功', {
+        logger.info('战队积分历史加载成功', {
           teamId,
           seasonYear: seasonYear || '全部',
           recordsCount: response.data.length
@@ -211,7 +227,11 @@ export const usePointsStore = defineStore('points', () => {
       }
     } catch (err: any) {
       error.value = err.message || '获取战队积分历史失败';
-      console.error('❌ 获取战队积分历史失败', err);
+      handleError(err, {
+        component: 'PointsStore',
+        userAction: '获取战队积分历史',
+        silent: true
+      });
       throw err;
     } finally {
       loading.value = false;
@@ -229,21 +249,24 @@ export const usePointsStore = defineStore('points', () => {
       const response = await pointsApi.recalculateSeasonPoints(seasonYear);
       
       if (response.success) {
-        console.log('✅ 赛季积分重新计算成功', {
+        logger.info('赛季积分重新计算成功', {
           seasonYear,
           result: response.data
         });
-        
+
         // 重新加载赛季排名
         await fetchSeasonRanking(seasonYear);
-        
+
         return response.data;
       } else {
         throw new Error(response.message || '重新计算赛季积分失败');
       }
     } catch (err: any) {
       error.value = err.message || '重新计算赛季积分失败';
-      console.error('❌ 重新计算赛季积分失败', err);
+      handleError(err, {
+        component: 'PointsStore',
+        userAction: '重新计算赛季积分'
+      });
       throw err;
     } finally {
       loading.value = false;
@@ -283,7 +306,7 @@ export const usePointsStore = defineStore('points', () => {
     teamPointsBreakdown.value.clear();
     teamPointsHistory.value.clear();
     error.value = null;
-    console.log('🗑️ 积分Store缓存已清空');
+    logger.info('积分Store缓存已清空');
   }
 
   /**

@@ -6,6 +6,10 @@ import type {
   GenerateMSIRequest,
   SimulateMSIMatchRequest
 } from '@/types'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('MSIStore')
 
 export const useMSIStore = defineStore('msi', () => {
   // 状态
@@ -75,7 +79,11 @@ export const useMSIStore = defineStore('msi', () => {
       }
     } catch (err: any) {
       error.value = err.message || '获取MSI信息失败'
-      console.error('Failed to fetch MSI bracket:', err)
+      handleError(err, {
+        component: 'MSIStore',
+        userAction: '获取MSI信息',
+        silent: true
+      })
       throw err
     } finally {
       loading.value = false
@@ -96,7 +104,7 @@ export const useMSIStore = defineStore('msi', () => {
     }
     
     const seasonId = String(season.id)
-    console.log(`[MSIStore] fetchMSIBracketBySeason: ${seasonCode} -> ID: ${seasonId}`)
+    logger.debug('获取MSI对阵', { seasonCode, seasonId })
     return await fetchMSIBracket(seasonId)
   }
 
@@ -118,7 +126,10 @@ export const useMSIStore = defineStore('msi', () => {
       }
     } catch (err: any) {
       error.value = err.message || '生成MSI对阵失败'
-      console.error('Failed to generate MSI:', err)
+      handleError(err, {
+        component: 'MSIStore',
+        userAction: '生成MSI对阵'
+      })
       throw err
     } finally {
       loading.value = false
@@ -135,7 +146,11 @@ export const useMSIStore = defineStore('msi', () => {
       return response.data
     } catch (err: any) {
       error.value = err.message || '检查MSI资格失败'
-      console.error('Failed to check MSI eligibility:', err)
+      handleError(err, {
+        component: 'MSIStore',
+        userAction: '检查MSI资格',
+        silent: true
+      })
       throw err
     }
   }
@@ -150,7 +165,11 @@ export const useMSIStore = defineStore('msi', () => {
       return response.data
     } catch (err: any) {
       error.value = err.message || '获取晋级队伍失败'
-      console.error('Failed to get qualified teams:', err)
+      handleError(err, {
+        component: 'MSIStore',
+        userAction: '获取晋级队伍',
+        silent: true
+      })
       throw err
     }
   }
@@ -188,7 +207,10 @@ export const useMSIStore = defineStore('msi', () => {
       }
     } catch (err: any) {
       error.value = err.message || '模拟比赛失败'
-      console.error('Failed to simulate MSI match:', err)
+      handleError(err, {
+        component: 'MSIStore',
+        userAction: '模拟MSI比赛'
+      })
       throw err
     } finally {
       loading.value = false

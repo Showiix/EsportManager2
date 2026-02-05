@@ -20,7 +20,7 @@
           <span class="stat-label">自由球员</span>
         </div>
         <div class="stat-item">
-          <span class="stat-value">{{ formatCurrency(totalSalary) }}</span>
+          <span class="stat-value">{{ formatMoneyFromWan(totalSalary) }}</span>
           <span class="stat-label">总薪资支出</span>
         </div>
       </div>
@@ -175,7 +175,7 @@
             <div class="contract-info">
               <div class="contract-salary">
                 <span class="label">薪资:</span>
-                <span class="value">{{ formatCurrency(row.salary) }}/年</span>
+                <span class="value">{{ formatMoneyFromWan(row.salary) }}/年</span>
               </div>
               <div class="contract-duration">
                 <span class="label">到期:</span>
@@ -191,9 +191,9 @@
         <el-table-column prop="calculated_market_value" label="身价" width="140" sortable align="right">
           <template #default="{ row }">
             <div class="market-value">
-              <span class="current-value">{{ formatCurrency(row.calculated_market_value) }}</span>
+              <span class="current-value">{{ formatMoneyFromWan(row.calculated_market_value) }}</span>
               <span v-if="row.calculated_market_value !== row.base_market_value" class="base-value">
-                基础: {{ formatCurrency(row.base_market_value) }}
+                基础: {{ formatMoneyFromWan(row.base_market_value) }}
               </span>
             </div>
           </template>
@@ -327,7 +327,7 @@
           <div class="detail-grid">
             <div class="detail-item">
               <span class="label">年薪</span>
-              <span class="value salary">{{ formatCurrency(selectedPlayer.salary) }}</span>
+              <span class="value salary">{{ formatMoneyFromWan(selectedPlayer.salary) }}</span>
             </div>
             <div class="detail-item">
               <span class="label">合同到期</span>
@@ -337,11 +337,11 @@
             </div>
             <div class="detail-item">
               <span class="label">基础身价</span>
-              <span class="value">{{ formatCurrency(selectedPlayer.base_market_value) }}</span>
+              <span class="value">{{ formatMoneyFromWan(selectedPlayer.base_market_value) }}</span>
             </div>
             <div class="detail-item">
               <span class="label">当前身价</span>
-              <span class="value market-value">{{ formatCurrency(selectedPlayer.calculated_market_value) }}</span>
+              <span class="value market-value">{{ formatMoneyFromWan(selectedPlayer.calculated_market_value) }}</span>
             </div>
           </div>
         </div>
@@ -394,6 +394,10 @@ import { ElMessage } from 'element-plus'
 import { Search, Refresh } from '@element-plus/icons-vue'
 import { transferApi, type PlayerMarketInfo } from '@/api/tauri'
 import { useGameStore } from '@/stores/useGameStore'
+import { formatMoneyFromWan } from '@/utils/format'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('PlayerMarket')
 
 const gameStore = useGameStore()
 
@@ -531,7 +535,7 @@ const loadPlayers = async () => {
     const result = await transferApi.getPlayerMarketList()
     players.value = result
   } catch (error) {
-    console.error('Failed to load player list:', error)
+    logger.error('Failed to load player list:', error)
     ElMessage.error(`加载选手列表失败: ${error}`)
   } finally {
     loading.value = false
@@ -555,16 +559,6 @@ const handleSizeChange = (size: number) => {
 
 const handlePageChange = (page: number) => {
   pagination.page = page
-}
-
-// 格式化
-const formatCurrency = (value: number) => {
-  if (value >= 1000000) {
-    return `$${(value / 1000000).toFixed(1)}M`
-  } else if (value >= 1000) {
-    return `$${(value / 1000).toFixed(0)}K`
-  }
-  return `$${value}`
 }
 
 const getPositionLabel = (position: string | null) => {

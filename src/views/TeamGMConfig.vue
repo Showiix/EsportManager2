@@ -189,6 +189,9 @@ import {
 } from '@element-plus/icons-vue'
 import { useTransferWindowStore, PERSONALITY_CONFIG } from '@/stores/useTransferWindowStore'
 import { queryApi, transferWindowApi } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('TeamGMConfig')
 
 interface Region {
   id: number
@@ -267,7 +270,7 @@ async function loadRegions() {
       selectedRegion.value = regions.value[0].code.toLowerCase()
     }
   } catch (e) {
-    console.error('Failed to load regions:', e)
+    logger.error('Failed to load regions:', e)
     ElMessage.error('加载赛区失败')
   }
 }
@@ -290,7 +293,7 @@ async function loadTeams() {
       }
     }
   } catch (e) {
-    console.error('Failed to load teams:', e)
+    logger.error('Failed to load teams:', e)
     ElMessage.error('加载球队失败')
   }
 }
@@ -313,7 +316,7 @@ async function saveTeamPersonality(teamId: number) {
       ElMessage.error('保存失败')
     }
   } catch (e) {
-    console.error('Failed to save personality:', e)
+    logger.error('Failed to save personality:', e)
     ElMessage.error('保存失败')
   } finally {
     savingTeamId.value = null
@@ -342,7 +345,7 @@ async function batchConfigureAll() {
 
     ElMessage.success(`已为 ${successCount} 支球队配置性格`)
   } catch (e) {
-    console.error('Failed to batch configure:', e)
+    logger.error('Failed to batch configure:', e)
     ElMessage.error('批量配置失败')
   } finally {
     isBatchSaving.value = false

@@ -255,6 +255,9 @@ import { teamApi, statsApi, playerApi } from '@/api/tauri'
 import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
 import type { PlayerFullDetail } from '@/api/tauri'
 import { POSITION_NAMES } from '@/types/player'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('DataCenterPlayerDetail')
 
 // 注册 ECharts 组件
 use([
@@ -318,7 +321,7 @@ const fetchPlayerStats = async () => {
       playerRankValue.value = null
     }
   } catch (error) {
-    console.error('获取选手统计数据失败:', error)
+    logger.error('获取选手统计数据失败:', error)
     playerStatsData.value = null
     playerRankValue.value = null
   }
@@ -326,12 +329,12 @@ const fetchPlayerStats = async () => {
   // 单独获取影响力历史数据（不影响主数据显示）
   try {
     const seasonNum = Number(selectedSeason.value.replace('S', ''))
-    console.log('[DataCenterPlayerDetail] Fetching impact history for player:', playerIdNum, 'season:', seasonNum)
+    logger.debug('[DataCenterPlayerDetail] Fetching impact history for player:', playerIdNum, 'season:', seasonNum)
     const history = await statsApi.getPlayerImpactHistory(playerIdNum, seasonNum)
-    console.log('[DataCenterPlayerDetail] Impact history result:', history)
+    logger.debug('[DataCenterPlayerDetail] Impact history result:', history)
     impactHistory.value = history || []
   } catch (error) {
-    console.error('[DataCenterPlayerDetail] 获取影响力历史数据失败:', error)
+    logger.error('[DataCenterPlayerDetail] 获取影响力历史数据失败:', error)
     impactHistory.value = []
   }
 
@@ -339,9 +342,9 @@ const fetchPlayerStats = async () => {
   try {
     const detail = await playerApi.getPlayerFullDetail(playerIdNum)
     playerFullDetail.value = detail
-    console.log('[DataCenterPlayerDetail] Player full detail:', detail)
+    logger.debug('[DataCenterPlayerDetail] Player full detail:', detail)
   } catch (error) {
-    console.error('[DataCenterPlayerDetail] 获取选手完整详情失败:', error)
+    logger.error('[DataCenterPlayerDetail] 获取选手完整详情失败:', error)
     playerFullDetail.value = null
   }
 
@@ -695,7 +698,7 @@ onMounted(async () => {
       })
     }
   } catch (e) {
-    console.warn('加载战队数据失败:', e)
+    logger.warn('加载战队数据失败:', e)
   }
 
   // 加载选手数据

@@ -2,6 +2,10 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Team, QueryOptions } from '@/types'
 import { teamApi, mockData } from '@/api'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('TeamStore')
 
 export const useTeamStore = defineStore('team', () => {
   // 状态
@@ -140,7 +144,7 @@ export const useTeamStore = defineStore('team', () => {
         const pointsResult = await pointsResponse.json()
         pointsData = pointsResult.data || []
       } catch (error) {
-        console.warn('Failed to fetch points data:', error)
+        logger.warn('获取积分数据失败', { error })
       }
 
       // 创建积分映射表（以teamId为key）
@@ -149,8 +153,7 @@ export const useTeamStore = defineStore('team', () => {
         pointsMap.set(String(p.teamId), p.totalPoints || 0)
       })
 
-      console.log('Teams from API:', backendTeams.slice(0, 2))
-      console.log('Points map size:', pointsMap.size)
+      logger.debug('从API获取战队数据', { teams: backendTeams.slice(0, 2), pointsMapSize: pointsMap.size })
 
       // apiClient的拦截器已经将字段转换为驼峰命名
       // 所以直接使用转换后的字段名
@@ -158,7 +161,7 @@ export const useTeamStore = defineStore('team', () => {
         const teamId = String(team.id)
         const totalPoints = pointsMap.get(teamId) || 0
         
-        console.log(`Team ${team.name}: regionId=${team.regionId}, strength=${team.strength}, totalPoints=${totalPoints}`)
+        logger.debug('战队数据映射', { team: team.name, regionId: team.regionId, strength: team.strength, totalPoints })
         
         return {
           id: teamId,
@@ -178,9 +181,12 @@ export const useTeamStore = defineStore('team', () => {
           }
         }
       })
-      console.log(`加载了 ${teams.value.length} 支队伍，积分数据: ${pointsData.length} 条`)
+      logger.info('加载战队完成', { teamCount: teams.value.length, pointsCount: pointsData.length })
     } catch (error) {
-      console.error('Failed to fetch teams:', error)
+      handleError(error, {
+        component: 'TeamStore',
+        userAction: '加载战队列表'
+      })
       throw error
     } finally {
       loading.value = false
@@ -202,7 +208,11 @@ export const useTeamStore = defineStore('team', () => {
       selectedTeam.value = response.data ?? null
       return selectedTeam.value
     } catch (error) {
-      console.error('Failed to fetch team:', error)
+      handleError(error, {
+        component: 'TeamStore',
+        userAction: '获取战队详情',
+        silent: true
+      })
       throw error
     } finally {
       loading.value = false
@@ -240,7 +250,10 @@ export const useTeamStore = defineStore('team', () => {
       }
       return newTeam
     } catch (error) {
-      console.error('Failed to create team:', error)
+      handleError(error, {
+        component: 'TeamStore',
+        userAction: '创建战队'
+      })
       throw error
     } finally {
       loading.value = false
@@ -277,7 +290,10 @@ export const useTeamStore = defineStore('team', () => {
       }
       return updatedTeam
     } catch (error) {
-      console.error('Failed to update team:', error)
+      handleError(error, {
+        component: 'TeamStore',
+        userAction: '更新战队'
+      })
       throw error
     } finally {
       loading.value = false
@@ -311,7 +327,10 @@ export const useTeamStore = defineStore('team', () => {
         selectedTeam.value = null
       }
     } catch (error) {
-      console.error('Failed to delete team:', error)
+      handleError(error, {
+        component: 'TeamStore',
+        userAction: '删除战队'
+      })
       throw error
     } finally {
       loading.value = false

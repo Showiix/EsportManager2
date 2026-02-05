@@ -214,6 +214,9 @@ import {
 import { useTournamentStoreTauri } from '@/stores/useTournamentStoreTauri'
 import { useGameStore } from '@/stores/useGameStore'
 import { queryApi, timeApi } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('Tournaments')
 
 const router = useRouter()
 const tournamentStore = useTournamentStoreTauri()
@@ -235,13 +238,13 @@ onMounted(async () => {
 // 加载所有赛事（赛季 + 国际）
 const loadAllTournaments = async () => {
   if (!gameState.value?.current_season) {
-    console.log('No current season')
+    logger.debug('No current season')
     return
   }
 
   isLoading.value = true
   const seasonId = gameState.value.current_season
-  console.log('Loading tournaments for season:', seasonId)
+  logger.debug('Loading tournaments for season:', seasonId)
 
   try {
     const [seasonTournaments, internationalTournaments] = await Promise.all([
@@ -249,8 +252,8 @@ const loadAllTournaments = async () => {
       queryApi.getInternationalTournaments(seasonId)
     ])
 
-    console.log('Season tournaments:', seasonTournaments)
-    console.log('International tournaments:', internationalTournaments)
+    logger.debug('Season tournaments:', seasonTournaments)
+    logger.debug('International tournaments:', internationalTournaments)
 
     // 合并并去重
     const allTournaments = [...seasonTournaments]
@@ -260,9 +263,9 @@ const loadAllTournaments = async () => {
       }
     }
     tournaments.value = allTournaments
-    console.log(`Loaded ${allTournaments.length} tournaments (${seasonTournaments.length} season + ${internationalTournaments.length} international)`)
+    logger.debug(`Loaded ${allTournaments.length} tournaments (${seasonTournaments.length} season + ${internationalTournaments.length} international)`)
   } catch (e) {
-    console.error('Failed to load tournaments:', e)
+    logger.error('Failed to load tournaments:', e)
   } finally {
     isLoading.value = false
   }
@@ -286,7 +289,7 @@ const handleFixTournamentStatus = async () => {
       ElMessage.info(result.message)
     }
   } catch (e) {
-    console.error('修复赛事状态失败:', e)
+    logger.error('修复赛事状态失败:', e)
     ElMessage.error('修复赛事状态失败')
   } finally {
     isFixing.value = false
@@ -394,7 +397,7 @@ const groupedTournaments = computed<TournamentGroup[]>(() => {
   const leagueGroups: Record<string, TournamentGroup> = {}
   const internationalList: TournamentGroup[] = []
 
-  console.log('Processing tournaments:', tournaments.value.length)
+  logger.debug('Processing tournaments:', tournaments.value.length)
 
   for (const t of tournaments.value) {
     const type = t.tournament_type || 'Unknown'
@@ -426,7 +429,7 @@ const groupedTournaments = computed<TournamentGroup[]>(() => {
       }
     } else {
       // 国际赛事 - 保持原样单独显示
-      console.log('International tournament:', t.name, t.tournament_type)
+      logger.debug('International tournament:', t.name, t.tournament_type)
       internationalList.push({
         type,
         name: t.name, // 使用原始名称
@@ -460,8 +463,8 @@ const groupedTournaments = computed<TournamentGroup[]>(() => {
 
   // 合并并排序：联赛在前，国际赛事在后
   const allGroups = [...Object.values(leagueGroups), ...internationalList]
-  console.log('Grouped result:', allGroups.length, 'groups (', Object.keys(leagueGroups).length, 'leagues +', internationalList.length, 'international)')
-  console.log('All groups:', allGroups.map(g => ({ name: g.name, isLeague: g.isLeague, order: g.order })))
+  logger.debug('Grouped result:', allGroups.length, 'groups (', Object.keys(leagueGroups).length, 'leagues +', internationalList.length, 'international)')
+  logger.debug('All groups:', allGroups.map(g => ({ name: g.name, isLeague: g.isLeague, order: g.order })))
   return allGroups.sort((a, b) => a.order - b.order)
 })
 

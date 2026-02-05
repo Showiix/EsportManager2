@@ -334,6 +334,9 @@ import { useDraftAuctionStore } from '@/stores/useDraftAuctionStore'
 import { useGameStore } from '@/stores/useGameStore'
 import { queryApi } from '@/api/tauri'
 import { formatMoneyFromWan } from '@/utils'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('DraftAuction')
 
 const route = useRoute()
 const router = useRouter()
@@ -405,7 +408,7 @@ const getRegionId = async (regionCode: string): Promise<number> => {
     const r = regions.find(r => r.code.toLowerCase() === regionCode.toLowerCase())
     return r?.id ?? 1
   } catch (e) {
-    console.error('Failed to get region id:', e)
+    logger.error('Failed to get region id:', e)
     return 1
   }
 }
@@ -436,7 +439,7 @@ const handleStartAuction = async () => {
     await auctionStore.startAuction(regionId.value)
     ElMessage.success('拍卖已开始！')
   } catch (e) {
-    console.error('Failed to start auction:', e)
+    logger.error('Failed to start auction:', e)
     ElMessage.error('开始拍卖失败')
   }
 }
@@ -447,7 +450,7 @@ const handleNextRound = async () => {
     await auctionStore.executeRound(regionId.value)
     ElMessage.success(`第 ${currentRound.value} 轮完成`)
   } catch (e) {
-    console.error('Failed to execute round:', e)
+    logger.error('Failed to execute round:', e)
     ElMessage.error('执行失败')
   }
 }
@@ -469,7 +472,7 @@ const handleFastForward = async () => {
     ElMessage.success('拍卖已完成！')
   } catch (e) {
     if (e !== 'cancel') {
-      console.error('Failed to fast forward:', e)
+      logger.error('Failed to fast forward:', e)
       ElMessage.error('快进失败')
     }
   }
@@ -496,7 +499,7 @@ const handleFinalize = async () => {
     }, 1500)
   } catch (e) {
     if (e !== 'cancel') {
-      console.error('Failed to finalize:', e)
+      logger.error('Failed to finalize:', e)
       ElMessage.error('确认失败')
     }
   }

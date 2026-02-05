@@ -14,6 +14,10 @@ import {
   type PhaseStatus,
   type TimeAction
 } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('TimeStore')
 
 export const useTimeStore = defineStore('time', () => {
   // ========================================
@@ -111,11 +115,21 @@ export const useTimeStore = defineStore('time', () => {
     error.value = null
 
     try {
-      timeState.value = await timeApi.getTimeState()
-      console.log('Time state loaded:', timeState.value)
+      timeState.value = await logger.timed('获取时间状态', () => timeApi.getTimeState())
+      logger.debug('时间状态已加载', {
+        season: timeState.value?.current_season,
+        phase: timeState.value?.current_phase,
+        progress: timeState.value?.phase_progress.percentage
+      })
     } catch (e) {
       error.value = e instanceof Error ? e.message : '获取时间状态失败'
-      console.error('Failed to fetch time state:', e)
+      handleError(e, {
+        component: 'TimeStore',
+        userAction: '获取时间状态',
+        canRetry: true,
+        retryFn: fetchTimeState,
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -130,16 +144,22 @@ export const useTimeStore = defineStore('time', () => {
     error.value = null
 
     try {
-      const message = await timeApi.initPhase()
+      logger.info('初始化阶段', { phase: currentPhase.value })
+      const message = await logger.timed('初始化阶段', () => timeApi.initPhase())
       lastMessage.value = message
-      console.log('Phase initialized:', message)
+      logger.info('阶段初始化完成', { message })
 
       // 刷新状态
       await fetchTimeState()
       return message
     } catch (e) {
       error.value = e instanceof Error ? e.message : '初始化阶段失败'
-      console.error('Failed to init phase:', e)
+      handleError(e, {
+        component: 'TimeStore',
+        userAction: '初始化阶段',
+        canRetry: true,
+        retryFn: initPhase
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -154,18 +174,28 @@ export const useTimeStore = defineStore('time', () => {
     error.value = null
 
     try {
-      const result = await timeApi.completeAndAdvance()
+      logger.info('完成阶段并推进', { phase: currentPhase.value })
+      const result = await logger.timed('完成并推进', () => timeApi.completeAndAdvance())
       lastMessage.value = result.message
       recentHonors.value = result.honors_awarded
 
       // 更新状态
       timeState.value = result.new_time_state
 
-      console.log('Phase completed and advanced:', result)
+      logger.info('阶段推进完成', {
+        from: currentPhase.value,
+        to: result.new_time_state.current_phase,
+        honorsCount: result.honors_awarded.length
+      })
       return result
     } catch (e) {
       error.value = e instanceof Error ? e.message : '完成阶段失败'
-      console.error('Failed to complete and advance:', e)
+      handleError(e, {
+        component: 'TimeStore',
+        userAction: '完成阶段并推进',
+        canRetry: true,
+        retryFn: completeAndAdvance
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -180,17 +210,26 @@ export const useTimeStore = defineStore('time', () => {
     error.value = null
 
     try {
-      const result = await timeApi.fastForwardTo(target)
+      logger.info('开始快进', { target, from: currentPhase.value })
+      const result = await logger.timed(`快进到${target}`, () => timeApi.fastForwardTo(target))
       lastMessage.value = result.message
 
       // 刷新状态
       await fetchTimeState()
 
-      console.log('Fast forwarded:', result)
+      logger.info('快进完成', {
+        target,
+        skippedPhases: result.skipped_phases?.length || 0
+      })
       return result
     } catch (e) {
       error.value = e instanceof Error ? e.message : '快进失败'
-      console.error('Failed to fast forward:', e)
+      handleError(e, {
+        component: 'TimeStore',
+        userAction: `快进到${target}`,
+        canRetry: true,
+        retryFn: () => fastForwardTo(target)
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -205,17 +244,23 @@ export const useTimeStore = defineStore('time', () => {
     error.value = null
 
     try {
-      const count = await timeApi.simulateAll()
+      logger.info('开始模拟所有比赛', { phase: currentPhase.value })
+      const count = await logger.timed('模拟所有比赛', () => timeApi.simulateAll())
       lastMessage.value = `已模拟 ${count} 场比赛`
 
       // 刷新状态
       await fetchTimeState()
 
-      console.log('Simulated matches:', count)
+      logger.info('模拟完成', { matchCount: count })
       return count
     } catch (e) {
       error.value = e instanceof Error ? e.message : '模拟比赛失败'
-      console.error('Failed to simulate all:', e)
+      handleError(e, {
+        component: 'TimeStore',
+        userAction: '模拟所有比赛',
+        canRetry: true,
+        retryFn: simulateAll
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -237,11 +282,19 @@ export const useTimeStore = defineStore('time', () => {
       // 刷新状态
       await fetchTimeState()
 
-      console.log('Simulated match:', result)
+      logger.debug('比赛模拟完成', {
+        match: `${result.home_team_name} vs ${result.away_team_name}`,
+        score: `${result.home_score}:${result.away_score}`
+      })
       return result
     } catch (e) {
       error.value = e instanceof Error ? e.message : '模拟比赛失败'
-      console.error('Failed to simulate next:', e)
+      handleError(e, {
+        component: 'TimeStore',
+        userAction: '模拟下一场比赛',
+        canRetry: true,
+        retryFn: simulateNext
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -256,17 +309,26 @@ export const useTimeStore = defineStore('time', () => {
     error.value = null
 
     try {
-      const result = await timeApi.seasonSettlement()
+      logger.info('开始赛季结算', { season: currentSeason.value })
+      const result = await logger.timed('赛季结算', () => timeApi.seasonSettlement())
       lastMessage.value = `赛季 ${result.season} 结算完成`
 
       // 刷新状态
       await fetchTimeState()
 
-      console.log('Season settlement:', result)
+      logger.info('赛季结算完成', {
+        season: result.season,
+        retiredCount: result.retired_players?.length || 0
+      })
       return result
     } catch (e) {
       error.value = e instanceof Error ? e.message : '赛季结算失败'
-      console.error('Failed to execute season settlement:', e)
+      handleError(e, {
+        component: 'TimeStore',
+        userAction: '赛季结算',
+        canRetry: true,
+        retryFn: executeSeasonSettlement
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -281,17 +343,23 @@ export const useTimeStore = defineStore('time', () => {
     error.value = null
 
     try {
-      const newSeason = await timeApi.startNewSeason()
+      logger.info('开始新赛季', { fromSeason: currentSeason.value })
+      const newSeason = await logger.timed('开始新赛季', () => timeApi.startNewSeason())
       lastMessage.value = `已进入第 ${newSeason} 赛季`
 
       // 刷新状态
       await fetchTimeState()
 
-      console.log('New season started:', newSeason)
+      logger.info('新赛季已开始', { newSeason })
       return newSeason
     } catch (e) {
       error.value = e instanceof Error ? e.message : '开始新赛季失败'
-      console.error('Failed to start new season:', e)
+      handleError(e, {
+        component: 'TimeStore',
+        userAction: '开始新赛季',
+        canRetry: true,
+        retryFn: startNewSeason
+      })
       throw e
     } finally {
       isLoading.value = false

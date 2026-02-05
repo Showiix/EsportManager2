@@ -10,6 +10,10 @@ import {
   type DraftOrder,
   type DraftPick
 } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('DraftStore')
 
 export const useDraftStoreTauri = defineStore('draftTauri', () => {
   // ========================================
@@ -105,10 +109,15 @@ export const useDraftStoreTauri = defineStore('draftTauri', () => {
 
     try {
       draftPool.value = await draftApi.generateDraftPool(regionId, poolSize)
-      console.log(`Generated draft pool with ${draftPool.value.length} players`)
+      logger.debug('生成选秀池', { playerCount: draftPool.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to generate draft pool'
-      console.error('Failed to generate draft pool:', e)
+      handleError(e, {
+        component: 'DraftStore',
+        userAction: '生成选秀池',
+        canRetry: true,
+        retryFn: () => generateDraftPool(regionId, poolSize)
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -132,10 +141,13 @@ export const useDraftStoreTauri = defineStore('draftTauri', () => {
       isDraftStarted.value = true
       currentPick.value = 1
       draftPicks.value = []
-      console.log('Draft lottery completed, order:', draftOrder.value)
+      logger.info('选秀抽签完成', { order: draftOrder.value })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to run draft lottery'
-      console.error('Failed to run draft lottery:', e)
+      handleError(e, {
+        component: 'DraftStore',
+        userAction: '选秀抽签'
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -158,7 +170,11 @@ export const useDraftStoreTauri = defineStore('draftTauri', () => {
       draftOrder.value = await draftApi.getDraftOrder(targetRegion)
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load draft order'
-      console.error('Failed to load draft order:', e)
+      handleError(e, {
+        component: 'DraftStore',
+        userAction: '加载选秀顺序',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -181,7 +197,11 @@ export const useDraftStoreTauri = defineStore('draftTauri', () => {
       draftPool.value = await draftApi.getAvailableDraftPlayers(targetRegion)
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load available players'
-      console.error('Failed to load available players:', e)
+      handleError(e, {
+        component: 'DraftStore',
+        userAction: '加载可用选手',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -209,11 +229,14 @@ export const useDraftStoreTauri = defineStore('draftTauri', () => {
       draftPicks.value.push(pick)
       currentPick.value++
 
-      console.log(`Pick ${pick.pick_number}: ${pick.team_name} selected ${pick.player.tag}`)
+      logger.info('选秀选择', { pick: pick.pick_number, team: pick.team_name, player: pick.player.tag })
       return pick
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to make draft pick'
-      console.error('Failed to make draft pick:', e)
+      handleError(e, {
+        component: 'DraftStore',
+        userAction: '进行选秀选择'
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -236,11 +259,14 @@ export const useDraftStoreTauri = defineStore('draftTauri', () => {
       const picks = await draftApi.aiAutoDraft(targetRegion)
       draftPicks.value = picks
       currentPick.value = picks.length + 1
-      console.log(`AI completed draft with ${picks.length} picks`)
+      logger.info('AI完成选秀', { picksCount: picks.length })
       return picks
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to auto complete draft'
-      console.error('Failed to auto complete draft:', e)
+      handleError(e, {
+        component: 'DraftStore',
+        userAction: 'AI自动选秀'
+      })
       throw e
     } finally {
       isLoading.value = false

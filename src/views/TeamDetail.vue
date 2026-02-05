@@ -478,6 +478,9 @@ import {
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
 import { honorApi, formatHonorType, type HonorRecord } from '@/api/tauri'
 import { formatMoney } from '@/utils'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('TeamDetail')
 
 const route = useRoute()
 const router = useRouter()
@@ -499,7 +502,7 @@ onMounted(async () => {
   try {
     honors.value = await honorApi.getTeamHonors(teamId)
   } catch (e) {
-    console.error('Failed to load team honors:', e)
+    logger.error('Failed to load team honors:', e)
   }
 })
 
@@ -510,7 +513,7 @@ watch(() => route.params.id, async (newId) => {
     try {
       honors.value = await honorApi.getTeamHonors(Number(newId))
     } catch (e) {
-      console.error('Failed to load team honors:', e)
+      logger.error('Failed to load team honors:', e)
     }
   }
 })

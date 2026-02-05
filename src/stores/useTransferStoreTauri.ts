@@ -17,6 +17,10 @@ import {
   type RetiringPlayer,
 } from '@/api/tauri'
 import { useGameStore } from './useGameStore'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('TransferStore')
 
 export const useTransferStoreTauri = defineStore('transferTauri', () => {
   // ========================================
@@ -164,20 +168,31 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
       const gameStore = useGameStore()
       const currentSeason = gameStore.currentSeason
 
-      const [expiring, retiring, market] = await Promise.all([
-        eventApi.getExpiringContracts(currentSeason),
-        eventApi.getRetiringCandidates(),
-        transferApi.getTransferMarket(),
-      ])
+      const [expiring, retiring, market] = await logger.timed('加载转会预览', () =>
+        Promise.all([
+          eventApi.getExpiringContracts(currentSeason),
+          eventApi.getRetiringCandidates(),
+          transferApi.getTransferMarket(),
+        ])
+      )
 
       expiringContracts.value = expiring
       retiringCandidates.value = retiring
       listings.value = market
 
-      console.log(`Loaded preview: ${expiring.length} expiring, ${retiring.length} retiring, ${market.length} listings`)
+      logger.info('转会预览数据已加载', {
+        expiring: expiring.length,
+        retiring: retiring.length,
+        listings: market.length
+      })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load preview data'
-      console.error('Failed to load preview data:', e)
+      handleError(e, {
+        component: 'TransferStore',
+        userAction: '加载转会预览',
+        canRetry: true,
+        retryFn: loadPreviewData
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -196,16 +211,17 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
     error.value = null
 
     try {
+      logger.info('开始转会窗口')
       transferWindow.value = await transferApi.startTransferWindow()
       allTransferEvents.value = []
       currentRoundEvents.value = []
-      console.log('Transfer window started:', transferWindow.value)
+      logger.info('转会窗口已开始', { status: transferWindow.value?.status })
       return transferWindow.value
     } catch (e) {
       // 如果转会窗口已存在，尝试获取现有状态
       const errMsg = e instanceof Error ? e.message : String(e)
       if (errMsg.includes('already exists')) {
-        console.log('Transfer window already exists, loading status...')
+        logger.debug('转会窗口已存在，加载现有状态')
         transferWindow.value = await transferApi.getTransferWindowStatus()
         // 加载已有的事件
         const events = await transferApi.getTransferEvents()
@@ -213,7 +229,10 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
         return transferWindow.value
       }
       error.value = errMsg
-      console.error('Failed to start transfer window:', e)
+      handleError(e, {
+        component: 'TransferStore',
+        userAction: '开始转会窗口'
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -228,18 +247,32 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
     error.value = null
 
     try {
-      const roundInfo = await transferApi.executeTransferRound()
+      const nextRound = (transferWindow.value?.current_round ?? 0) + 1
+      logger.info('执行转会轮次', { round: nextRound })
+
+      const roundInfo = await logger.timed(`执行第${nextRound}轮转会`, () =>
+        transferApi.executeTransferRound()
+      )
       currentRoundEvents.value = roundInfo.events
       allTransferEvents.value.push(...roundInfo.events)
 
       // 更新窗口状态
       transferWindow.value = await transferApi.getTransferWindowStatus()
 
-      console.log(`Round ${roundInfo.round} completed:`, roundInfo.summary)
+      logger.info('转会轮次完成', {
+        round: roundInfo.round,
+        eventsCount: roundInfo.events.length,
+        summary: roundInfo.summary
+      })
       return roundInfo
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to execute round'
-      console.error('Failed to execute round:', e)
+      handleError(e, {
+        component: 'TransferStore',
+        userAction: '执行转会轮次',
+        canRetry: true,
+        retryFn: executeNextRound
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -254,13 +287,21 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
     error.value = null
 
     try {
-      transferWindow.value = await transferApi.fastForwardTransfers()
+      logger.info('快进完成所有转会')
+      transferWindow.value = await logger.timed('快进转会', () =>
+        transferApi.fastForwardTransfers()
+      )
       allTransferEvents.value = await transferApi.getTransferEvents()
-      console.log('Transfer window completed:', transferWindow.value)
+      logger.info('转会窗口已完成', {
+        totalEvents: allTransferEvents.value.length
+      })
       return transferWindow.value
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to fast forward'
-      console.error('Failed to fast forward:', e)
+      handleError(e, {
+        component: 'TransferStore',
+        userAction: '快进转会'
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -288,7 +329,7 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
     try {
       return await transferApi.getTransferEvents(round)
     } catch (e) {
-      console.error('Failed to get round events:', e)
+      logger.error('获取轮次事件失败', { round, error: e })
       return []
     }
   }
@@ -306,10 +347,14 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
 
     try {
       listings.value = await transferApi.getTransferMarket()
-      console.log(`Loaded ${listings.value.length} transfer listings`)
+      logger.debug('转会市场已加载', { count: listings.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load transfer market'
-      console.error('Failed to load transfer market:', e)
+      handleError(e, {
+        component: 'TransferStore',
+        userAction: '加载转会市场',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -325,10 +370,14 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
 
     try {
       freeAgents.value = await transferApi.getFreeAgents()
-      console.log(`Loaded ${freeAgents.value.length} free agents`)
+      logger.debug('自由球员已加载', { count: freeAgents.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load free agents'
-      console.error('Failed to load free agents:', e)
+      handleError(e, {
+        component: 'TransferStore',
+        userAction: '加载自由球员',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -353,13 +402,17 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
     error.value = null
 
     try {
+      logger.info('挂牌出售选手', { teamId, playerId, askingPrice })
       const listing = await transferApi.listPlayerForTransfer(teamId, playerId, askingPrice)
       listings.value.push(listing)
-      console.log(`Listed player ${listing.player_name} for ${askingPrice}`)
+      logger.info('选手已挂牌', { playerName: listing.player_name, price: askingPrice })
       return listing
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to list player'
-      console.error('Failed to list player:', e)
+      handleError(e, {
+        component: 'TransferStore',
+        userAction: '挂牌选手'
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -374,12 +427,16 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
     error.value = null
 
     try {
+      logger.info('取消挂牌', { listingId })
       await transferApi.cancelTransferListing(listingId)
       listings.value = listings.value.filter(l => l.id !== listingId)
-      console.log(`Cancelled listing ${listingId}`)
+      logger.info('挂牌已取消', { listingId })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to cancel listing'
-      console.error('Failed to cancel listing:', e)
+      handleError(e, {
+        component: 'TransferStore',
+        userAction: '取消挂牌'
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -399,6 +456,7 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
     error.value = null
 
     try {
+      logger.info('购买挂牌选手', { listingId, buyerTeamId, contractYears, salary })
       const record = await transferApi.buyListedPlayer(
         listingId,
         buyerTeamId,
@@ -412,11 +470,18 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
       // 添加到历史
       transferHistory.value.unshift(record)
 
-      console.log(`Bought player ${record.player_name} for ${record.fee}`)
+      logger.info('选手购买成功', {
+        playerName: record.player_name,
+        fee: record.fee,
+        toTeam: record.to_team_name
+      })
       return record
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to buy player'
-      console.error('Failed to buy player:', e)
+      handleError(e, {
+        component: 'TransferStore',
+        userAction: '购买选手'
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -436,6 +501,7 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
     error.value = null
 
     try {
+      logger.info('签约自由球员', { playerId, teamId, contractYears, salary })
       const record = await transferApi.signFreeAgent(
         playerId,
         teamId,
@@ -449,11 +515,17 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
       // 添加到历史
       transferHistory.value.unshift(record)
 
-      console.log(`Signed free agent ${record.player_name}`)
+      logger.info('自由球员签约成功', {
+        playerName: record.player_name,
+        toTeam: record.to_team_name
+      })
       return record
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to sign free agent'
-      console.error('Failed to sign free agent:', e)
+      handleError(e, {
+        component: 'TransferStore',
+        userAction: '签约自由球员'
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -469,10 +541,14 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
 
     try {
       transferHistory.value = await transferApi.getTransferHistory(teamId)
-      console.log(`Loaded ${transferHistory.value.length} transfer records`)
+      logger.debug('转会历史已加载', { count: transferHistory.value.length, teamId })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load transfer history'
-      console.error('Failed to load transfer history:', e)
+      handleError(e, {
+        component: 'TransferStore',
+        userAction: '加载转会历史',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false

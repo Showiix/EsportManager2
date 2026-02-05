@@ -292,6 +292,9 @@ import type { BracketInfo, MatchBracketInfo, GroupStandingInfo, DetailedGameResu
 import type { MatchDetail } from '@/types/matchDetail'
 import type { PlayerPosition } from '@/types/player'
 import type { ClauchMatch, ClauchGroup, ClauchGroupStanding as ClauchGroupStandingType, ClauchKnockoutBracket as ClauchKnockoutBracketType } from '@/types/clauch'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('ClauchDetail')
 
 const router = useRouter()
 const route = useRoute()
@@ -519,7 +522,7 @@ const handleSimulateMatch = async (match: ClauchMatch) => {
       checkKnockoutCompletion()
     }
   } catch (error) {
-    console.error('模拟比赛失败:', error)
+    logger.error('模拟比赛失败:', error)
     ElMessage.error('模拟比赛失败')
   }
 }
@@ -574,7 +577,7 @@ const handleGenerateKnockout = async () => {
 
     ElMessage.success('淘汰赛对阵生成成功!')
   } catch (error) {
-    console.error('生成淘汰赛对阵失败:', error)
+    logger.error('生成淘汰赛对阵失败:', error)
     ElMessage.error('生成淘汰赛对阵失败')
   } finally {
     generatingKnockout.value = false
@@ -603,14 +606,14 @@ const batchSimulateGroupStage = async () => {
     const groupMatches = clauchBracket.groups.flatMap(g => g.matches)
     const uncompletedGroupMatches = groupMatches.filter(m => m.status !== 'completed')
 
-    console.log('[batchSimulateGroupStage] clauchBracket.groups.length:', clauchBracket.groups.length)
-    console.log('[batchSimulateGroupStage] groupMatches.length:', groupMatches.length)
-    console.log('[batchSimulateGroupStage] uncompletedGroupMatches.length:', uncompletedGroupMatches.length)
-    console.log('[batchSimulateGroupStage] clauchBracket.status:', clauchBracket.status)
+    logger.debug('[batchSimulateGroupStage] clauchBracket.groups.length:', clauchBracket.groups.length)
+    logger.debug('[batchSimulateGroupStage] groupMatches.length:', groupMatches.length)
+    logger.debug('[batchSimulateGroupStage] uncompletedGroupMatches.length:', uncompletedGroupMatches.length)
+    logger.debug('[batchSimulateGroupStage] clauchBracket.status:', clauchBracket.status)
 
     if (uncompletedGroupMatches.length === 0) {
       ElMessage.info('没有需要模拟的比赛')
-      console.log('[batchSimulateGroupStage] 没有需要模拟的比赛，检查 isGroupStageComplete:', isGroupStageComplete.value)
+      logger.debug('[batchSimulateGroupStage] 没有需要模拟的比赛，检查 isGroupStageComplete:', isGroupStageComplete.value)
       return
     }
 
@@ -741,7 +744,7 @@ const batchSimulateGroupStage = async () => {
           })
         })
       } catch (e) {
-        console.error(`模拟比赛 ${matchId} 失败:`, e)
+        logger.error(`模拟比赛 ${matchId} 失败:`, e)
       }
 
       simulationProgress.value = Math.floor(((i + 1) / uncompletedGroupMatches.length) * 100)
@@ -756,7 +759,7 @@ const batchSimulateGroupStage = async () => {
     ElMessage.success('小组赛模拟完成！现在可以生成淘汰赛对阵。')
   } catch (error: any) {
     if (error !== 'cancel') {
-      console.error('小组赛模拟失败:', error)
+      logger.error('小组赛模拟失败:', error)
       ElMessage.error(error.message || '小组赛模拟失败')
     }
   } finally {
@@ -924,7 +927,7 @@ const batchSimulateKnockout = async () => {
             await internationalApi.advanceBracket(tournamentId.value, match.match_id, result.winner_id)
           }
         } catch (e) {
-          console.error(`模拟比赛 ${match.match_id} 失败:`, e)
+          logger.error(`模拟比赛 ${match.match_id} 失败:`, e)
         }
 
         await new Promise(resolve => setTimeout(resolve, 100))
@@ -944,7 +947,7 @@ const batchSimulateKnockout = async () => {
     }
   } catch (error: any) {
     if (error !== 'cancel') {
-      console.error('淘汰赛模拟失败:', error)
+      logger.error('淘汰赛模拟失败:', error)
       ElMessage.error(error.message || '淘汰赛模拟失败')
     }
   } finally {
@@ -1009,22 +1012,22 @@ const loadTournamentData = async () => {
   try {
     // 获取对阵数据
     bracketData.value = await internationalApi.getTournamentBracket(tournamentId.value)
-    console.log('[ClauchDetail] 后端返回 bracketData:', bracketData.value)
-    console.log('[ClauchDetail] 比赛数量:', bracketData.value?.matches?.length || 0)
-    console.log('[ClauchDetail] 阶段数量:', bracketData.value?.stages?.length || 0)
+    logger.debug('[ClauchDetail] 后端返回 bracketData:', bracketData.value)
+    logger.debug('[ClauchDetail] 比赛数量:', bracketData.value?.matches?.length || 0)
+    logger.debug('[ClauchDetail] 阶段数量:', bracketData.value?.stages?.length || 0)
 
     // 获取小组赛积分榜
     groupStandings.value = await internationalApi.getGroupStandings(tournamentId.value)
-    console.log('[ClauchDetail] 小组积分榜:', groupStandings.value)
+    logger.debug('[ClauchDetail] 小组积分榜:', groupStandings.value)
 
     // 转换数据格式适配前端组件
     convertBracketToClauchFormat()
 
-    console.log('[ClauchDetail] 转换后 clauchBracket.status:', clauchBracket.status)
-    console.log('[ClauchDetail] 转换后 clauchBracket.groups:', clauchBracket.groups)
-    console.log('[ClauchDetail] isGroupStageComplete:', isGroupStageComplete.value)
+    logger.debug('[ClauchDetail] 转换后 clauchBracket.status:', clauchBracket.status)
+    logger.debug('[ClauchDetail] 转换后 clauchBracket.groups:', clauchBracket.groups)
+    logger.debug('[ClauchDetail] isGroupStageComplete:', isGroupStageComplete.value)
   } catch (error) {
-    console.error('加载赛事数据失败:', error)
+    logger.error('加载赛事数据失败:', error)
     throw error
   }
 }
@@ -1060,9 +1063,9 @@ const convertBracketToClauchFormat = () => {
     )
     const knockoutHasTeams = knockoutMatches.some(m => m.home_team !== null && m.away_team !== null)
 
-    console.log('[convertBracketToClauchFormat] allGroupComplete:', allGroupComplete)
-    console.log('[convertBracketToClauchFormat] knockoutHasTeams:', knockoutHasTeams)
-    console.log('[convertBracketToClauchFormat] knockoutMatches sample:', knockoutMatches.slice(0, 2))
+    logger.debug('[convertBracketToClauchFormat] allGroupComplete:', allGroupComplete)
+    logger.debug('[convertBracketToClauchFormat] knockoutHasTeams:', knockoutHasTeams)
+    logger.debug('[convertBracketToClauchFormat] knockoutMatches sample:', knockoutMatches.slice(0, 2))
 
     // 只有当淘汰赛比赛已经分配了队伍时，才进入 knockout_stage
     if (allGroupComplete && knockoutHasTeams) {
@@ -1256,14 +1259,14 @@ onMounted(async () => {
           tournamentId.value = tournaments[0].id
           await loadTournamentData()
         } else {
-          console.warn('未找到 Clauch 赛事')
+          logger.warn('未找到 Clauch 赛事')
         }
       } else {
-        console.warn('未找到当前存档')
+        logger.warn('未找到当前存档')
       }
     }
   } catch (error) {
-    console.error('初始化失败:', error)
+    logger.error('初始化失败:', error)
     // 如果后端加载失败，继续使用 mock 数据
   } finally {
     loading.value = false

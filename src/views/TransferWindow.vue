@@ -332,6 +332,9 @@ import {
 import { useTransferWindowStore, ROUND_NAMES, EVENT_TYPE_NAMES, EVENT_LEVEL_CONFIG } from '@/stores/useTransferWindowStore'
 import { useGameStore } from '@/stores/useGameStore'
 import type { TransferEvent } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('TransferWindow')
 
 // 添加 Lightning 图标替代
 const Lightning = EditPen // 使用 EditPen 作为替代
@@ -506,7 +509,7 @@ async function handleStartWindow() {
     await transferStore.startTransferWindow()
     ElMessage.success('转会期已开始！')
   } catch (e) {
-    console.error('Failed to start window:', e)
+    logger.error('Failed to start window:', e)
     ElMessage.error('开始转会期失败')
   }
 }
@@ -517,7 +520,7 @@ async function handleNextRound() {
     const result = await transferStore.executeRound()
     ElMessage.success(`${result.round_name} 完成，${result.event_count} 个事件`)
   } catch (e) {
-    console.error('Failed to execute round:', e)
+    logger.error('Failed to execute round:', e)
     ElMessage.error('执行失败')
   }
 }
@@ -539,7 +542,7 @@ async function handleFastForward() {
     ElMessage.success(`转会期完成！共 ${result.total_events} 个事件`)
   } catch (e) {
     if (e !== 'cancel') {
-      console.error('Failed to fast forward:', e)
+      logger.error('Failed to fast forward:', e)
       ElMessage.error('快进失败')
     }
   }

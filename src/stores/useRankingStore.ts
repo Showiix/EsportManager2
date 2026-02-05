@@ -4,10 +4,14 @@ import { useEventStore } from './useEventStore'
 import { useTeamStore } from './useTeamStore'
 import { useRegionStore } from './useRegionStore'
 import { pointsApi } from '@/api'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
 import type {
   Team,
   Competition,
 } from '@/types'
+
+const logger = createLogger('RankingStore')
 
 // 积分排名相关类型定义
 export interface RegularSeasonStanding {
@@ -169,13 +173,13 @@ export const useRankingStore = defineStore('ranking', () => {
     error.value = null
 
     try {
-      console.log(`📊 获取积分榜: regionId=${regionId}, seasonId=${seasonId}, type=${competitionType}`)
-      
+      logger.debug('获取积分榜', { regionId, seasonId, type: competitionType })
+
       // 第三阶段：从后端获取积分榜数据
       const { rankingApi } = await import('@/api')
       const response = await rankingApi.getRegionalStandings(regionId, seasonId, competitionType)
 
-      console.log('📊 后端返回数据:', response.data)
+      logger.debug('后端返回数据', { data: response.data })
 
       if (response.data) {
         const standings: RegionalStandings = {
@@ -189,9 +193,8 @@ export const useRankingStore = defineStore('ranking', () => {
 
         const key = `${regionId}-${competitionType}`
         regionalStandings.value.set(key, standings)
-        
-        console.log(`✅ 积分榜已更新: key=${key}, 战队数=${standings.standings.length}`)
-        console.log('战队列表:', standings.standings.map(s => s.teamName))
+
+        logger.debug('积分榜已更新', { key, teamCount: standings.standings.length })
 
         return standings
       }
@@ -210,7 +213,11 @@ export const useRankingStore = defineStore('ranking', () => {
       return standings
     } catch (err) {
       error.value = '获取赛区积分榜失败'
-      console.error(err)
+      handleError(err, {
+        component: 'RankingStore',
+        userAction: '获取赛区积分榜',
+        silent: true
+      })
       throw err
     } finally {
       loading.value = false
@@ -227,15 +234,15 @@ export const useRankingStore = defineStore('ranking', () => {
       const season = eventStore.seasons.find(s => s.id === seasonId)
       const seasonYear = season?.year || new Date().getFullYear()
 
-      console.log(`🔍 获取赛季积分排名: seasonId=${seasonId}, year=${seasonYear}`)
+      logger.debug('获取赛季积分排名', { seasonId, year: seasonYear })
 
       // 首先尝试使用新的积分系统API
       try {
         const response = await pointsApi.getSeasonPointsRanking(seasonYear)
-        
+
         if (response.success && response.data.length > 0) {
-          console.log('✅ 使用积分系统API获取数据成功', response.data.length)
-          
+          logger.info('使用积分系统API获取数据成功', { count: response.data.length })
+
           // 转换API数据为前端格式
           const annualRankings = response.data.map((item: any) => ({
             teamId: String(item.teamId),
@@ -265,12 +272,12 @@ export const useRankingStore = defineStore('ranking', () => {
           }
 
           seasonRankings.value.set(seasonId, rankings)
-          console.log('📊 积分排名已更新到Store', annualRankings.length)
-          
+          logger.debug('积分排名已更新到Store', { count: annualRankings.length })
+
           return rankings
         }
       } catch (apiError) {
-        console.warn('⚠️ 积分系统API调用失败，回退到本地计算', apiError)
+        logger.warn('积分系统API调用失败，回退到本地计算', { error: apiError })
       }
 
       // 如果API失败，回退到本地计算
@@ -286,7 +293,11 @@ export const useRankingStore = defineStore('ranking', () => {
       return rankings
     } catch (err) {
       error.value = '获取赛季积分排名失败'
-      console.error(err)
+      handleError(err, {
+        component: 'RankingStore',
+        userAction: '获取赛季积分排名',
+        silent: true
+      })
       throw err
     } finally {
       loading.value = false
@@ -442,8 +453,8 @@ export const useRankingStore = defineStore('ranking', () => {
 
         const summerStanding = await calculateRegionalStandings(region.id, seasonId, 'summer')
         summerStandings.push(summerStanding)
-      } catch (error) {
-        console.warn(`Failed to calculate standings for region ${region.id}:`, error)
+      } catch (calcError) {
+        logger.warn('计算赛区积分榜失败', { regionId: region.id, error: calcError })
       }
     }
 
@@ -673,9 +684,12 @@ export const useRankingStore = defineStore('ranking', () => {
       const key = `${regionId}-${competitionType}`
       regionalStandings.value.set(key, standings)
       return standings
-    } catch (error) {
-      console.error('更新赛区积分榜失败:', error)
-      throw error
+    } catch (updateError) {
+      handleError(updateError, {
+        component: 'RankingStore',
+        userAction: '更新赛区积分榜'
+      })
+      throw updateError
     }
   }
 
@@ -685,9 +699,12 @@ export const useRankingStore = defineStore('ranking', () => {
       const rankings = await calculateSeasonRankings(seasonId)
       seasonRankings.value.set(seasonId, rankings)
       return rankings
-    } catch (error) {
-      console.error('更新赛季积分排名失败:', error)
-      throw error
+    } catch (updateError) {
+      handleError(updateError, {
+        component: 'RankingStore',
+        userAction: '更新赛季积分排名'
+      })
+      throw updateError
     }
   }
 
@@ -709,7 +726,10 @@ export const useRankingStore = defineStore('ranking', () => {
       await updateSeasonRankings(seasonId)
     } catch (err) {
       error.value = '刷新排名数据失败'
-      console.error(err)
+      handleError(err, {
+        component: 'RankingStore',
+        userAction: '刷新所有排名'
+      })
       throw err
     } finally {
       loading.value = false

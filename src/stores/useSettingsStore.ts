@@ -1,5 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('SettingsStore')
 
 export interface SystemSettings {
   // 基础设置
@@ -67,7 +71,11 @@ export const useSettingsStore = defineStore('settings', () => {
       }
     } catch (err) {
       error.value = err instanceof Error ? err.message : '加载设置失败'
-      console.error('Failed to load settings:', err)
+      handleError(err, {
+        component: 'SettingsStore',
+        userAction: '加载设置',
+        silent: true
+      })
     } finally {
       isLoading.value = false
     }
@@ -87,7 +95,10 @@ export const useSettingsStore = defineStore('settings', () => {
       }))
     } catch (err) {
       error.value = err instanceof Error ? err.message : '保存设置失败'
-      console.error('Failed to save settings:', err)
+      handleError(err, {
+        component: 'SettingsStore',
+        userAction: '保存设置'
+      })
       throw err
     } finally {
       isLoading.value = false

@@ -13,6 +13,10 @@ import {
   type TeamRoster,
   type Region
 } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('TeamStore')
 
 export const useTeamStoreTauri = defineStore('teamTauri', () => {
   // ========================================
@@ -95,10 +99,14 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
 
     try {
       regions.value = await queryApi.getAllRegions()
-      console.log(`Loaded ${regions.value.length} regions`)
+      logger.debug('加载赛区', { count: regions.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load regions'
-      console.error('Failed to load regions:', e)
+      handleError(e, {
+        component: 'TeamStore',
+        userAction: '加载赛区',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -119,10 +127,14 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
         ...team,
         power_rating: Math.round(team.power_rating * 100) / 100
       }))
-      console.log(`Loaded ${teams.value.length} teams from all regions`)
+      logger.debug('加载所有队伍', { count: teams.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load all teams'
-      console.error('Failed to load all teams:', e)
+      handleError(e, {
+        component: 'TeamStore',
+        userAction: '加载所有队伍',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -145,10 +157,14 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
         ...team,
         power_rating: Math.round(team.power_rating * 100) / 100
       }))
-      console.log(`Selected region: ${detail.region.name}, ${teams.value.length} teams`)
+      logger.debug('选择赛区', { region: detail.region.name, teamCount: teams.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load region'
-      console.error('Failed to load region:', e)
+      handleError(e, {
+        component: 'TeamStore',
+        userAction: '选择赛区',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -169,10 +185,14 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
         ...team,
         power_rating: Math.round(team.power_rating * 100) / 100
       }))
-      console.log(`Loaded ${teams.value.length} teams for region ${regionId}`)
+      logger.debug('按赛区加载队伍', { regionId, count: teams.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load teams'
-      console.error('Failed to load teams:', e)
+      handleError(e, {
+        component: 'TeamStore',
+        userAction: '按赛区加载队伍',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -195,10 +215,14 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
 
       selectedTeam.value = team
       roster.value = teamRoster
-      console.log(`Selected team: ${team.name}, ${allPlayers.value.length} players`)
+      logger.debug('选择队伍', { team: team.name, playerCount: allPlayers.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load team'
-      console.error('Failed to load team:', e)
+      handleError(e, {
+        component: 'TeamStore',
+        userAction: '选择队伍',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -216,7 +240,11 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
       roster.value = await teamApi.getTeamRoster(teamId)
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load roster'
-      console.error('Failed to load roster:', e)
+      handleError(e, {
+        component: 'TeamStore',
+        userAction: '加载阵容',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -234,7 +262,11 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
       selectedPlayer.value = await playerApi.getPlayer(playerId)
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load player'
-      console.error('Failed to load player:', e)
+      handleError(e, {
+        component: 'TeamStore',
+        userAction: '选择选手',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -254,7 +286,10 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
       await loadRoster(teamId)
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to update starter'
-      console.error('Failed to update starter:', e)
+      handleError(e, {
+        component: 'TeamStore',
+        userAction: '设置首发'
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -277,7 +312,11 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
       teams.value = await queryApi.searchTeams(query)
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to search teams'
-      console.error('Failed to search teams:', e)
+      handleError(e, {
+        component: 'TeamStore',
+        userAction: '搜索队伍',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -295,7 +334,7 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
     try {
       return await queryApi.searchPlayers(query)
     } catch (e) {
-      console.error('Failed to search players:', e)
+      logger.error('搜索选手失败', { query, error: e })
       return []
     }
   }

@@ -337,6 +337,9 @@ import { useGameStore } from '@/stores/useGameStore'
 import { useTimeStore } from '@/stores/useTimeStore'
 import { queryApi, teamApi, tournamentApi, matchApi, statsApi, type Team, type PlayerTournamentStats } from '@/api/tauri'
 import type { MatchDetail, GameDetail } from '@/types/matchDetail'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('SummerDetail')
 
 const route = useRoute()
 const router = useRouter()
@@ -397,7 +400,7 @@ const loadRegions = async () => {
       selectedRegion.value = regionList[0].id
     }
   } catch (error) {
-    console.error('Failed to load regions:', error)
+    logger.error('Failed to load regions:', error)
     ElMessage.error('加载赛区数据失败')
   }
 }
@@ -409,7 +412,7 @@ const loadTeams = async (regionId: number) => {
     teamMap.value.clear()
     teams.forEach(team => teamMap.value.set(team.id, team))
   } catch (error) {
-    console.error('Failed to load teams:', error)
+    logger.error('Failed to load teams:', error)
   }
 }
 
@@ -417,14 +420,14 @@ const loadTeams = async (regionId: number) => {
 const loadTournament = async (regionId: number) => {
   try {
     const seasonId = gameStore.gameState?.current_season || 1
-    console.log('[SummerDetail] loadTournament: regionId=', regionId, ', seasonId=', seasonId)
+    logger.debug('[SummerDetail] loadTournament: regionId=', regionId, ', seasonId=', seasonId)
     const tournaments = await queryApi.getRegionTournaments(regionId, seasonId)
-    console.log('[SummerDetail] loadTournament: 获取到', tournaments.length, '个赛事')
-    tournaments.forEach(t => console.log('[SummerDetail]   -', t.name, t.tournament_type, 'matches:', t.match_count))
+    logger.debug('[SummerDetail] loadTournament: 获取到', tournaments.length, '个赛事')
+    tournaments.forEach(t => logger.debug('[SummerDetail]   -', t.name, t.tournament_type, 'matches:', t.match_count))
     // 查找夏季常规赛 (后端存储格式为 PascalCase: SummerRegular)
     const summerRegular = tournaments.find(t => t.tournament_type === 'SummerRegular')
     if (summerRegular) {
-      console.log('[SummerDetail] 找到夏季常规赛: id=', summerRegular.id, ', status=', summerRegular.status, ', matches=', summerRegular.match_count)
+      logger.debug('[SummerDetail] 找到夏季常规赛: id=', summerRegular.id, ', status=', summerRegular.status, ', matches=', summerRegular.match_count)
       currentTournamentId.value = summerRegular.id
       const statusLower = (summerRegular.status || '').toLowerCase()
       tournament.value = {
@@ -436,25 +439,25 @@ const loadTournament = async (regionId: number) => {
         description: '夏季常规赛与季后赛',
       }
     } else {
-      console.log('[SummerDetail] 未找到夏季常规赛!')
+      logger.debug('[SummerDetail] 未找到夏季常规赛!')
       // 没找到赛事也保持 active 状态，允许用户操作
       tournament.value.status = 'active'
     }
   } catch (error) {
-    console.error('Failed to load tournament:', error)
+    logger.error('Failed to load tournament:', error)
   }
 }
 
 // 加载比赛列表
 const loadMatches = async () => {
   if (!currentTournamentId.value) {
-    console.log('[SummerDetail] loadMatches: 没有 currentTournamentId，跳过')
+    logger.debug('[SummerDetail] loadMatches: 没有 currentTournamentId，跳过')
     return
   }
   try {
-    console.log('[SummerDetail] loadMatches: tournamentId=', currentTournamentId.value)
+    logger.debug('[SummerDetail] loadMatches: tournamentId=', currentTournamentId.value)
     const matchList = await tournamentApi.getTournamentMatches(currentTournamentId.value)
-    console.log('[SummerDetail] loadMatches: 获取到', matchList.length, '场比赛')
+    logger.debug('[SummerDetail] loadMatches: 获取到', matchList.length, '场比赛')
     matches.value = matchList.map(m => ({
       id: m.id,
       week: m.round || 1,
@@ -470,20 +473,20 @@ const loadMatches = async () => {
       simulating: false,
     }))
   } catch (error) {
-    console.error('Failed to load matches:', error)
+    logger.error('Failed to load matches:', error)
   }
 }
 
 // 加载积分榜
 const loadStandings = async () => {
   if (!currentTournamentId.value) {
-    console.log('[SummerDetail] loadStandings: 没有 currentTournamentId，跳过')
+    logger.debug('[SummerDetail] loadStandings: 没有 currentTournamentId，跳过')
     return
   }
   try {
-    console.log('[SummerDetail] loadStandings: tournamentId=', currentTournamentId.value)
+    logger.debug('[SummerDetail] loadStandings: tournamentId=', currentTournamentId.value)
     const standingList = await tournamentApi.getStandings(currentTournamentId.value)
-    console.log('[SummerDetail] loadStandings: 获取到', standingList.length, '条积分榜数据')
+    logger.debug('[SummerDetail] loadStandings: 获取到', standingList.length, '条积分榜数据')
     standings.value = standingList.map(s => {
       const team = teamMap.value.get(s.team_id)
       return {
@@ -497,7 +500,7 @@ const loadStandings = async () => {
       }
     })
   } catch (error) {
-    console.error('Failed to load standings:', error)
+    logger.error('Failed to load standings:', error)
   }
 }
 
@@ -508,9 +511,9 @@ const loadMvpRanking = async () => {
   try {
     const ranking = await statsApi.getTournamentMvpRanking(currentTournamentId.value, 10)
     mvpRanking.value = ranking
-    console.log('[SummerDetail] Loaded MVP ranking:', ranking.length, 'players')
+    logger.debug('[SummerDetail] Loaded MVP ranking:', ranking.length, 'players')
   } catch (error) {
-    console.error('Failed to load MVP ranking:', error)
+    logger.error('Failed to load MVP ranking:', error)
     mvpRanking.value = []
   } finally {
     mvpLoading.value = false
@@ -538,7 +541,7 @@ const refreshData = async () => {
     await loadRegionData(selectedRegion.value)
     ElMessage.success('数据刷新成功')
   } catch (error) {
-    console.error('刷新数据失败:', error)
+    logger.error('刷新数据失败:', error)
     ElMessage.error('刷新数据失败')
   } finally {
     refreshing.value = false
@@ -706,7 +709,7 @@ const simulateSingleMatch = async (match: any) => {
       ElMessage.success(`比赛结束: ${match.homeTeam} ${result.home_score} - ${result.away_score} ${match.awayTeam}`)
     }
   } catch (error) {
-    console.error('Failed to simulate match:', error)
+    logger.error('Failed to simulate match:', error)
     ElMessage.error('模拟比赛失败')
   } finally {
     match.simulating = false
@@ -865,7 +868,7 @@ const simulateNextMatch = async () => {
       ElMessage.info('没有待模拟的比赛')
     }
   } catch (error) {
-    console.error('Failed to simulate next match:', error)
+    logger.error('Failed to simulate next match:', error)
     ElMessage.error('模拟比赛失败')
   } finally {
     simulating.value = false
@@ -896,7 +899,7 @@ const simulateAll = async () => {
 
     ElMessage.success('常规赛模拟完成！请前往赛事管理页面进入季后赛')
   } catch (error) {
-    console.error('Failed to simulate all matches:', error)
+    logger.error('Failed to simulate all matches:', error)
     ElMessage.error('模拟比赛失败')
   } finally {
     batchSimulating.value = false
@@ -924,10 +927,10 @@ onMounted(async () => {
 watch(
   timeLastMessage,
   async (newVal, oldVal) => {
-    console.log('[SummerDetail] watch lastMessage:', oldVal, '->', newVal)
+    logger.debug('[SummerDetail] watch lastMessage:', oldVal, '->', newVal)
     // 检测到初始化成功消息时刷新数据
     if (newVal && newVal.includes('成功创建') && selectedRegion.value) {
-      console.log('[SummerDetail] 检测到阶段初始化成功，重新加载数据')
+      logger.debug('[SummerDetail] 检测到阶段初始化成功，重新加载数据')
       // 等待一小段时间确保后端数据已持久化
       await new Promise(resolve => setTimeout(resolve, 100))
       await loadRegionData(selectedRegion.value)

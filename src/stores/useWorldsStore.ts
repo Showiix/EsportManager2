@@ -1,6 +1,10 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { worldsApi } from '@/api'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('WorldsStore')
 
 interface WorldsData {
   id?: number
@@ -65,13 +69,15 @@ export const useWorldsStore = defineStore('worlds', () => {
     error.value = null
 
     try {
-      console.log('开始获取世界赛数据，赛季:', season)
+      logger.debug('开始获取世界赛数据', { season })
       const response = await worldsApi.getWorldsBracket(season)
-      console.log('后端返回的完整响应:', response)
 
       if (response.data) {
-        console.log('世界赛数据:', response.data)
-        console.log('参赛队伍原始数据:', response.data.qualified_teams)
+        logger.debug('世界赛数据加载成功', {
+          season,
+          status: response.data.status,
+          teamsCount: response.data.qualified_teams?.length
+        })
 
         const worldsData = {
           id: response.data.id as any,
@@ -92,22 +98,21 @@ export const useWorldsStore = defineStore('worlds', () => {
             groupStage: (response.data.pointsDistribution as any).groupStage || (response.data.pointsDistribution as any).groupStageEliminated || 4
           } : undefined
         }
-        
+
         currentWorlds.value = worldsData
-        
+
         // 存入Map，供历史查看
         worldsBrackets.value.set(season, worldsData)
 
         // 读取当前瑞士轮轮次
         if (response.data.currentSwissRound !== undefined) {
           currentSwissRound.value = response.data.currentSwissRound
-          console.log('✅ 从后端加载当前轮次:', currentSwissRound.value)
+          logger.debug('加载当前轮次', { round: currentSwissRound.value })
         } else {
           currentSwissRound.value = 0
         }
 
         // 更新参赛队伍数据
-        // 优先使用playInTeams，如果没有则使用qualified_teams
         const teamsData = response.data.playInTeams || response.data.qualified_teams
         if (teamsData) {
           playInTeams.value = teamsData.map((team: any) => ({
@@ -117,9 +122,9 @@ export const useWorldsStore = defineStore('worlds', () => {
             isDirect: team.directToKnockout,
             quarterSlot: team.quarterSlot
           }))
-          console.log('解析后的队伍数据:', playInTeams.value)
+          logger.debug('解析队伍数据', { count: playInTeams.value.length })
         } else {
-          console.warn('后端没有返回参赛队伍数据')
+          logger.warn('后端没有返回参赛队伍数据')
         }
 
         // 更新瑞士轮数据
@@ -127,21 +132,21 @@ export const useWorldsStore = defineStore('worlds', () => {
           const standings = response.data.swissStandings || response.data.swiss_standings
           if (standings && Array.isArray(standings)) {
             swissStandings.value = standings.map((standing: any) => ({
-              rank: 0, // 排名将在后续更新
+              rank: 0,
               teamName: standing.teamName,
               teamId: standing.teamId,
               wins: standing.wins || 0,
               losses: standing.losses || 0,
               status: standing.status
             }))
-            console.log('从后端加载的瑞士轮积分榜:', swissStandings.value)
+            logger.debug('加载瑞士轮积分榜', { count: swissStandings.value.length })
           }
         }
-        
+
         // 获取所有瑞士轮比赛数据
         if (response.data.swissMatches && Array.isArray(response.data.swissMatches)) {
           allSwissMatches.value = response.data.swissMatches
-          console.log('✅ 从后端加载瑞士轮比赛:', allSwissMatches.value.length, '场')
+          logger.debug('加载瑞士轮比赛', { count: allSwissMatches.value.length })
         } else {
           allSwissMatches.value = []
         }
@@ -149,13 +154,12 @@ export const useWorldsStore = defineStore('worlds', () => {
         // 更新淘汰赛数据
         if (response.data.knockoutMatches) {
           knockoutMatches.value = response.data.knockoutMatches
-          console.log('✅ 从后端加载淘汰赛比赛:', knockoutMatches.value.length, '场')
+          logger.debug('加载淘汰赛比赛', { count: knockoutMatches.value.length })
         } else {
           knockoutMatches.value = []
         }
       } else {
-        console.log('后端没有返回 data，设置为初始状态')
-        // 如果没有数据，设置为初始状态
+        logger.debug('后端没有返回数据，设置为初始状态')
         currentWorlds.value = {
           season: season,
           status: 'NOT_STARTED'
@@ -166,11 +170,9 @@ export const useWorldsStore = defineStore('worlds', () => {
         knockoutMatches.value = []
       }
     } catch (err: any) {
-      console.error('获取世界赛数据时出错:', err)
-      console.error('错误响应:', err.response)
       // 如果是404，表示该赛季还没有世界赛
       if (err.response?.status === 404 || err.message?.includes('404')) {
-        console.log('404错误，该赛季尚未创建世界赛')
+        logger.debug('该赛季尚未创建世界赛', { season })
         currentWorlds.value = {
           season: season,
           status: 'NOT_STARTED'
@@ -181,7 +183,11 @@ export const useWorldsStore = defineStore('worlds', () => {
         knockoutMatches.value = []
       } else {
         error.value = err.message || '获取世界赛数据失败'
-        console.error('Failed to fetch Worlds data:', err)
+        handleError(err, {
+          component: 'WorldsStore',
+          userAction: '获取世界赛数据',
+          silent: true
+        })
       }
     } finally {
       loading.value = false
@@ -196,7 +202,7 @@ export const useWorldsStore = defineStore('worlds', () => {
     error.value = null
 
     try {
-      // 后端会自动检测当前赛季
+      logger.info('创建世界赛')
       const response = await worldsApi.generateWorlds({})
 
       if (response.data) {
@@ -205,12 +211,16 @@ export const useWorldsStore = defineStore('worlds', () => {
           season: response.data.seasonId || 'S1',
           status: 'NOT_STARTED'
         }
+        logger.info('世界赛创建成功', { id: response.data.id })
       }
 
       return response.data
     } catch (err: any) {
       error.value = err.message || '生成世界赛失败'
-      console.error('Failed to create Worlds:', err)
+      handleError(err, {
+        component: 'WorldsStore',
+        userAction: '创建世界赛'
+      })
       throw err
     } finally {
       loading.value = false
@@ -239,7 +249,7 @@ export const useWorldsStore = defineStore('worlds', () => {
         throw new Error('世界赛队伍数据尚未生成，请稍后再试')
       }
 
-      console.log('入围赛抽签完成，队伍数据:', playInTeams.value)
+      logger.info('入围赛抽签完成', { teamsCount: playInTeams.value.length })
 
       // 更新状态为已抽签
       if (currentWorlds.value.status === 'NOT_STARTED') {
@@ -247,7 +257,10 @@ export const useWorldsStore = defineStore('worlds', () => {
       }
     } catch (err: any) {
       error.value = err.message || '入围赛抽签失败'
-      console.error('Failed to conduct play-in draw:', err)
+      handleError(err, {
+        component: 'WorldsStore',
+        userAction: '入围赛抽签'
+      })
       throw err
     } finally {
       loading.value = false
@@ -266,37 +279,38 @@ export const useWorldsStore = defineStore('worlds', () => {
     error.value = null
 
     try {
-      console.log('开始小组赛，世界赛ID:', currentWorlds.value.id)
-      
+      logger.info('开始小组赛', { worldsId: currentWorlds.value.id })
+
       // 先更新数据库中的状态
       await worldsApi.updateWorldsStatus(currentWorlds.value.id.toString(), 'group_stage')
-      console.log('✅ 数据库状态已更新为 group_stage')
-      
+      logger.debug('数据库状态已更新为 group_stage')
+
       // 更新本地状态为小组赛阶段
       currentWorlds.value.status = 'GROUP_STAGE'
 
-      // 从后端获取瑞士轮积分榜（后端在创建世界赛时已初始化）
+      // 从后端获取瑞士轮积分榜
       const response = await worldsApi.getSwissStandings(currentWorlds.value.id.toString())
-      console.log('瑞士轮积分榜响应:', response)
-      
+
       if (response.data) {
         swissStandings.value = response.data.map((standing: any) => ({
-          rank: 0, // 排名将在后续更新
+          rank: 0,
           teamName: standing.teamName,
           teamId: standing.teamId,
           wins: standing.wins || 0,
           losses: standing.losses || 0
         }))
-        console.log('解析后的瑞士轮积分榜:', swissStandings.value)
+        logger.debug('瑞士轮积分榜加载成功', { count: swissStandings.value.length })
       }
 
       currentSwissRound.value = 0
-      console.log('小组赛开始成功')
+      logger.info('小组赛开始成功')
     } catch (err: any) {
-      console.error('开始小组赛时出错:', err)
-      console.error('错误详情:', err.response || err.message)
       error.value = err.response?.data?.error?.message || err.message || '开始小组赛失败'
       currentWorlds.value.status = 'PLAY_IN_DRAW' // 回滚状态
+      handleError(err, {
+        component: 'WorldsStore',
+        userAction: '开始小组赛'
+      })
       throw err
     } finally {
       loading.value = false
@@ -311,39 +325,39 @@ export const useWorldsStore = defineStore('worlds', () => {
       throw new Error('世界赛不存在')
     }
 
-    console.log('🎮 [generateSwissRound] 开始生成瑞士轮对阵')
-    console.log('🎮 [generateSwissRound] 当前世界赛ID:', currentWorlds.value.id)
-    console.log('🎮 [generateSwissRound] 当前轮次:', currentSwissRound.value)
+    logger.info('开始生成瑞士轮对阵', {
+      worldsId: currentWorlds.value.id,
+      currentRound: currentSwissRound.value
+    })
 
     loading.value = true
     error.value = null
 
     try {
       const response = await worldsApi.generateSwissRound(currentWorlds.value.id.toString())
-      console.log('🎮 [generateSwissRound] 后端响应:', response)
 
       if (response.data) {
         currentSwissRound.value += 1
         const newMatches = response.data.matches || response.data || []
-        console.log('🎮 [generateSwissRound] 新生成的比赛:', newMatches)
-        console.log('🎮 [generateSwissRound] 比赛数量:', newMatches.length)
-        
+        logger.debug('新生成的比赛', { count: newMatches.length })
+
         currentSwissMatches.value = newMatches
-        
+
         // 将新比赛添加到所有比赛列表中
         allSwissMatches.value.push(...newMatches)
-        console.log('🎮 [generateSwissRound] 所有瑞士轮比赛数量:', allSwissMatches.value.length)
-        console.log('🎮 [generateSwissRound] 所有瑞士轮比赛:', allSwissMatches.value)
-        
+        logger.debug('所有瑞士轮比赛', { count: allSwissMatches.value.length })
+
         // 生成新一轮对阵后，更新积分榜
         await updateSwissStandings()
-        console.log('🎮 [generateSwissRound] 积分榜更新完成')
       }
 
       return response.data
     } catch (err: any) {
       error.value = err.message || '生成瑞士轮对阵失败'
-      console.error('❌ [generateSwissRound] 生成失败:', err)
+      handleError(err, {
+        component: 'WorldsStore',
+        userAction: '生成瑞士轮对阵'
+      })
       throw err
     } finally {
       loading.value = false
@@ -369,34 +383,33 @@ export const useWorldsStore = defineStore('worlds', () => {
       })
 
       if (response.data) {
-        console.log('🎮 [simulateSwissMatch] 模拟成功，返回数据:', response.data)
-        
+        logger.debug('瑞士轮比赛模拟成功', { matchId })
+
         const updatedMatch = response.data.match
-        console.log('🎮 [simulateSwissMatch] 更新的比赛:', updatedMatch)
-        
+
         // 更新allSwissMatches中的比赛数据
         const matchIndex = allSwissMatches.value.findIndex(m => m.id == matchId)
         if (matchIndex !== -1 && updatedMatch) {
           allSwissMatches.value[matchIndex] = updatedMatch
-          console.log('🎮 [simulateSwissMatch] 更新了allSwissMatches中的比赛')
         }
 
         // 更新当前轮次比赛数据
         const currentMatchIndex = currentSwissMatches.value.findIndex(m => m.id == matchId)
         if (currentMatchIndex !== -1 && updatedMatch) {
           currentSwissMatches.value[currentMatchIndex] = updatedMatch
-          console.log('🎮 [simulateSwissMatch] 更新了currentSwissMatches中的比赛')
         }
 
         // 更新积分榜
         await updateSwissStandings()
-        console.log('🎮 [simulateSwissMatch] 积分榜更新完成')
       }
 
       return response.data
     } catch (err: any) {
       error.value = err.message || '模拟比赛失败'
-      console.error('Failed to simulate Swiss match:', err)
+      handleError(err, {
+        component: 'WorldsStore',
+        userAction: '模拟瑞士轮比赛'
+      })
       throw err
     } finally {
       loading.value = false
@@ -411,7 +424,6 @@ export const useWorldsStore = defineStore('worlds', () => {
     error.value = null
 
     try {
-      // TODO: 调用后端API设置比赛结果
       const matchIndex = currentSwissMatches.value.findIndex(m => m.id === matchId)
       if (matchIndex !== -1) {
         currentSwissMatches.value[matchIndex].winnerId = winnerId
@@ -421,7 +433,10 @@ export const useWorldsStore = defineStore('worlds', () => {
       await updateSwissStandings()
     } catch (err: any) {
       error.value = err.message || '设置比赛结果失败'
-      console.error('Failed to set match winner:', err)
+      handleError(err, {
+        component: 'WorldsStore',
+        userAction: '设置瑞士轮比赛结果'
+      })
       throw err
     } finally {
       loading.value = false
@@ -441,7 +456,7 @@ export const useWorldsStore = defineStore('worlds', () => {
         swissStandings.value = response.data
       }
     } catch (err: any) {
-      console.error('Failed to update Swiss standings:', err)
+      logger.error('更新瑞士轮积分榜失败', { error: err })
     }
   }
 
@@ -453,8 +468,7 @@ export const useWorldsStore = defineStore('worlds', () => {
       throw new Error('世界赛不存在')
     }
 
-    console.log('🏆 [simulateKnockoutMatch] 开始模拟淘汰赛比赛')
-    console.log('🏆 [simulateKnockoutMatch] 比赛ID:', matchId)
+    logger.info('开始模拟淘汰赛比赛', { matchId })
 
     loading.value = true
     error.value = null
@@ -465,18 +479,20 @@ export const useWorldsStore = defineStore('worlds', () => {
         matchId: matchId.toString(),
         matchType: 'knockout'
       })
-      console.log('🏆 [simulateKnockoutMatch] 后端响应:', response)
 
       if (response.data && response.data.match) {
-        // 重新获取完整的世界赛数据，以更新所有相关比赛（包括推进到下一轮的队伍）
+        // 重新获取完整的世界赛数据
         await fetchWorldsBySeason(currentWorlds.value.season)
-        console.log('🏆 [simulateKnockoutMatch] 已刷新完整淘汰赛对阵数据')
+        logger.info('淘汰赛比赛模拟完成', { matchId })
       }
 
       return response.data
     } catch (err: any) {
       error.value = err.message || '模拟淘汰赛比赛失败'
-      console.error('❌ [simulateKnockoutMatch] 模拟失败:', err)
+      handleError(err, {
+        component: 'WorldsStore',
+        userAction: '模拟淘汰赛比赛'
+      })
       throw err
     } finally {
       loading.value = false
@@ -491,29 +507,29 @@ export const useWorldsStore = defineStore('worlds', () => {
       throw new Error('世界赛不存在')
     }
 
-    console.log('🏆 [generateKnockoutBracket] 开始生成淘汰赛对阵')
-    console.log('🏆 [generateKnockoutBracket] 当前世界赛ID:', currentWorlds.value.id)
+    logger.info('开始生成淘汰赛对阵', { worldsId: currentWorlds.value.id })
 
     loading.value = true
     error.value = null
 
     try {
       const response = await worldsApi.generateKnockout(currentWorlds.value.id.toString())
-      console.log('🏆 [generateKnockoutBracket] 后端响应:', response)
 
       if (response.data && response.data.matches) {
         knockoutMatches.value = response.data.matches
-        console.log('🏆 [generateKnockoutBracket] 淘汰赛比赛数量:', knockoutMatches.value.length)
-        
+        logger.info('淘汰赛对阵生成成功', { matchCount: knockoutMatches.value.length })
+
         // 更新状态为淘汰赛阶段
         currentWorlds.value.status = 'KNOCKOUT'
-        console.log('🏆 [generateKnockoutBracket] 状态已更新为KNOCKOUT')
       }
 
       return response.data
     } catch (err: any) {
       error.value = err.message || '生成淘汰赛对阵失败'
-      console.error('❌ [generateKnockoutBracket] 生成失败:', err)
+      handleError(err, {
+        component: 'WorldsStore',
+        userAction: '生成淘汰赛对阵'
+      })
       throw err
     } finally {
       loading.value = false
@@ -528,7 +544,6 @@ export const useWorldsStore = defineStore('worlds', () => {
     error.value = null
 
     try {
-      // TODO: 调用后端API设置比赛结果
       const matchIndex = knockoutMatches.value.findIndex(m => m.id === matchId)
       if (matchIndex !== -1) {
         knockoutMatches.value[matchIndex].winnerId = winnerId
@@ -537,19 +552,19 @@ export const useWorldsStore = defineStore('worlds', () => {
         const match = knockoutMatches.value[matchIndex]
 
         if (match.round === 'QUARTER_FINAL') {
-          // 生成半决赛
           generateSemiFinals()
         } else if (match.round === 'SEMI_FINAL') {
-          // 生成决赛和季军赛
           generateFinals()
         } else if (match.round === 'FINAL' || match.round === 'THIRD_PLACE') {
-          // 检查是否完成
           checkIfCompleted()
         }
       }
     } catch (err: any) {
       error.value = err.message || '设置比赛结果失败'
-      console.error('Failed to set knockout match winner:', err)
+      handleError(err, {
+        component: 'WorldsStore',
+        userAction: '设置淘汰赛比赛结果'
+      })
       throw err
     } finally {
       loading.value = false
@@ -642,7 +657,7 @@ export const useWorldsStore = defineStore('worlds', () => {
       'knockout_stage': 'KNOCKOUT',
       'completed': 'COMPLETED'
     }
-    console.log('📊 [mapBackendStatus] 映射状态:', backendStatus, '->', statusMap[backendStatus])
+    logger.debug('映射状态', { from: backendStatus, to: statusMap[backendStatus] })
     return statusMap[backendStatus] || 'NOT_STARTED'
   }
 

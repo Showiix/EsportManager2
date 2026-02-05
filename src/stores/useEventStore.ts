@@ -7,6 +7,10 @@ import {
   type CompetitionStatus,
   type CompetitionFormat,
 } from '@/types'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('EventStore')
 
 export const useEventStore = defineStore('event', () => {
   // 状态
@@ -44,12 +48,12 @@ export const useEventStore = defineStore('event', () => {
         const { seasonApi } = await import('@/api')
         const response = await seasonApi.getSeasons()
 
-        console.log('[EventStore] 从API获取到seasons:', response.data)
+        logger.debug('从API获取seasons', { data: response.data })
 
         if (response.data && Array.isArray(response.data)) {
           seasons.value = response.data
         } else {
-          console.warn('[EventStore] API返回的seasons数据格式异常:', response)
+          logger.warn('API返回的seasons数据格式异常', { response })
           seasons.value = []
         }
 
@@ -60,7 +64,11 @@ export const useEventStore = defineStore('event', () => {
         }
       } catch (err) {
         error.value = '获取赛季列表失败'
-        console.error(err)
+        handleError(err, {
+          component: 'EventStore',
+          userAction: '获取赛季列表',
+          silent: true
+        })
       } finally {
         loading.value = false
       }
@@ -73,11 +81,11 @@ export const useEventStore = defineStore('event', () => {
       try {
         // 从后端API获取真实数据
         const { competitionApi } = await import('@/api')
-        const response = seasonId 
+        const response = seasonId
           ? await competitionApi.getCompetitions({ seasonId: String(seasonId), limit: 1000 } as any)
           : await competitionApi.getCompetitions({ limit: 1000 } as any)
 
-        console.log('[EventStore] 从API获取到competitions:', response.data)
+        logger.debug('从API获取competitions', { data: response.data })
 
         if (response.data && Array.isArray(response.data)) {
           competitions.value = response.data
@@ -85,12 +93,16 @@ export const useEventStore = defineStore('event', () => {
           // 处理分页响应
           competitions.value = (response.data as any).items
         } else {
-          console.warn('[EventStore] API返回的competitions数据格式异常:', response)
+          logger.warn('API返回的competitions数据格式异常', { response })
           competitions.value = []
         }
       } catch (err) {
         error.value = '获取赛事列表失败'
-        console.error(err)
+        handleError(err, {
+          component: 'EventStore',
+          userAction: '获取赛事列表',
+          silent: true
+        })
       } finally {
         loading.value = false
       }
@@ -132,7 +144,10 @@ export const useEventStore = defineStore('event', () => {
         return newCompetition
       } catch (err) {
         error.value = '创建赛事失败'
-        console.error(err)
+        handleError(err, {
+          component: 'EventStore',
+          userAction: '创建赛事'
+        })
         throw err
       } finally {
         loading.value = false
@@ -152,7 +167,10 @@ export const useEventStore = defineStore('event', () => {
         throw new Error('赛事不存在')
       } catch (err) {
         error.value = '更新赛事失败'
-        console.error(err)
+        handleError(err, {
+          component: 'EventStore',
+          userAction: '更新赛事'
+        })
         throw err
       } finally {
         loading.value = false
@@ -170,7 +188,10 @@ export const useEventStore = defineStore('event', () => {
         }
       } catch (err) {
         error.value = '删除赛事失败'
-        console.error(err)
+        handleError(err, {
+          component: 'EventStore',
+          userAction: '删除赛事'
+        })
         throw err
       } finally {
         loading.value = false

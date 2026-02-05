@@ -301,6 +301,9 @@ import { useTimeStore } from '@/stores/useTimeStore'
 import { internationalApi, matchApi, queryApi, statsApi, type BracketInfo, type MatchBracketInfo, type RecordPerformanceParams, type MsiTeamGroups } from '@/api/tauri'
 import type { Player, PlayerPosition } from '@/types/player'
 import type { MatchDetail } from '@/types/matchDetail'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('MSIDetail')
 
 // Stores
 const matchDetailStore = useMatchDetailStore()
@@ -559,7 +562,7 @@ const loadMSIData = async () => {
 
     // 存储参赛队伍分组
     msiQualifiedTeams.value = qualifiedTeams
-    console.log('[MSI] 参赛队伍分组:', qualifiedTeams)
+    logger.debug('[MSI] 参赛队伍分组:', qualifiedTeams)
 
     // 查找 MSI 赛事 - 优先选择有比赛的，否则选择最新的（id最大的）
     const msiTournaments = tournaments.filter(t => t.tournament_type === 'Msi')
@@ -572,20 +575,20 @@ const loadMSIData = async () => {
 
     if (msiTournament) {
       currentTournamentId.value = msiTournament.id
-      console.log('[MSI] 选择赛事:', msiTournament.id, msiTournament.name, 'match_count:', msiTournament.match_count)
+      logger.debug('[MSI] 选择赛事:', msiTournament.id, msiTournament.name, 'match_count:', msiTournament.match_count)
 
       // 如果没有比赛但队伍已就绪，尝试重新生成对阵
       if (msiTournament.match_count === 0 &&
           qualifiedTeams.legendary.length === 4 &&
           qualifiedTeams.challenger.length === 4 &&
           qualifiedTeams.qualifier.length === 4) {
-        console.log('[MSI] 队伍已就绪但无比赛，尝试重新生成对阵...')
+        logger.debug('[MSI] 队伍已就绪但无比赛，尝试重新生成对阵...')
         try {
           const matchCount = await internationalApi.regenerateMsiBracket(msiTournament.id)
-          console.log('[MSI] 成功生成', matchCount, '场比赛')
+          logger.debug('[MSI] 成功生成', matchCount, '场比赛')
           ElMessage.success(`已生成 ${matchCount} 场 MSI 比赛`)
         } catch (e) {
-          console.error('[MSI] 重新生成对阵失败:', e)
+          logger.error('[MSI] 重新生成对阵失败:', e)
         }
       }
 
@@ -593,10 +596,10 @@ const loadMSIData = async () => {
       await loadBracketData()
     } else {
       // 如果没有 MSI 赛事，保持 mock 数据显示
-      console.log('No MSI tournament found for season', seasonId)
+      logger.debug('No MSI tournament found for season', seasonId)
     }
   } catch (error) {
-    console.error('Failed to load MSI data:', error)
+    logger.error('Failed to load MSI data:', error)
   } finally {
     loading.value = false
   }
@@ -611,7 +614,7 @@ const loadBracketData = async () => {
   try {
     const bracket = await internationalApi.getTournamentBracket(currentTournamentId.value)
     bracketData.value = bracket
-    console.log('[MSI] loadBracketData: 获取到', bracket.matches.length, '场比赛')
+    logger.debug('[MSI] loadBracketData: 获取到', bracket.matches.length, '场比赛')
 
     // 构建队伍映射
     teamMap.value.clear()
@@ -629,12 +632,12 @@ const loadBracketData = async () => {
         })
       }
     })
-    console.log('[MSI] teamMap 队伍数量:', teamMap.value.size)
+    logger.debug('[MSI] teamMap 队伍数量:', teamMap.value.size)
 
     // 更新 mockMSIBracket 的状态
     updateMSIBracketFromBackend(bracket)
   } catch (error) {
-    console.error('Failed to load bracket data:', error)
+    logger.error('Failed to load bracket data:', error)
   }
 }
 
@@ -659,7 +662,7 @@ const updateMSIBracketFromBackend = (bracket: BracketInfo) => {
       seed: 1
     })
   })
-  console.log('[MSI] 从 teamMap 添加队伍:', allTeams.length)
+  logger.debug('[MSI] 从 teamMap 添加队伍:', allTeams.length)
 
   // 从比赛数据中补充（以防 teamMap 没有包含所有队伍）
   bracket.matches.forEach(match => {
@@ -705,7 +708,7 @@ const updateMSIBracketFromBackend = (bracket: BracketInfo) => {
     msiQualifiedTeams.value.qualifier.forEach(addTeamIfNotExists)
   }
 
-  console.log('[MSI] 合并后队伍总数:', allTeams.length)
+  logger.debug('[MSI] 合并后队伍总数:', allTeams.length)
 
   // 根据阶段分类队伍
   const legendaryTeams: any[] = []
@@ -746,7 +749,7 @@ const updateMSIBracketFromBackend = (bracket: BracketInfo) => {
     }
   })
 
-  console.log('[MSI] 分组结果: legendary=', legendaryTeams.length, 'challenger=', challengerTeams.length, 'qualifier=', qualifierTeams.length)
+  logger.debug('[MSI] 分组结果: legendary=', legendaryTeams.length, 'challenger=', challengerTeams.length, 'qualifier=', qualifierTeams.length)
 
   // 更新 mockMSIBracket
   mockMSIBracket.qualifiedTeams = allTeams
@@ -790,7 +793,7 @@ const updateMatchesFromBackend = (matches: MatchBracketInfo[]) => {
 
   matches.forEach(backendMatch => {
     const matchType = stageToMatchType[backendMatch.stage] || backendMatch.stage.toLowerCase()
-    console.log('[MSI] 处理后端比赛:', backendMatch.stage, '-> matchType:', matchType, 'match_order:', backendMatch.match_order)
+    logger.debug('[MSI] 处理后端比赛:', backendMatch.stage, '-> matchType:', matchType, 'match_order:', backendMatch.match_order)
 
     // 在 rounds 中查找对应的比赛
     for (const round of mockMSIBracket.rounds) {
@@ -821,7 +824,7 @@ const updateMatchesFromBackend = (matches: MatchBracketInfo[]) => {
         frontendMatch.status = backendStatus === 'COMPLETED' ? 'completed' :
                               backendStatus === 'INPROGRESS' || backendStatus === 'IN_PROGRESS' ? 'active' : 'scheduled'
 
-        console.log('[MSI] 更新比赛:', frontendMatch.id, 'status:', frontendMatch.status,
+        logger.debug('[MSI] 更新比赛:', frontendMatch.id, 'status:', frontendMatch.status,
           'score:', frontendMatch.scoreA, '-', frontendMatch.scoreB)
         break
       }
@@ -849,7 +852,7 @@ const simulateMSIMatch = async (match: any) => {
     try {
       // 使用后端 API 模拟比赛
       const result = await matchApi.simulateMatchDetailed(match.backendMatchId)
-      console.log('[MSI] 模拟结果:', result)
+      logger.debug('[MSI] 模拟结果:', result)
 
       // 更新比赛结果
       match.scoreA = result.home_score
@@ -861,13 +864,13 @@ const simulateMSIMatch = async (match: any) => {
       // 转换后端结果为 MatchDetail 格式并保存
       const matchDetail = convertBackendToMatchDetail(result, match)
       await matchDetailStore.saveMatchDetail(match.id, matchDetail)
-      console.log(`[MSI] 已保存比赛详情到本地: ${match.id}`)
+      logger.debug(`[MSI] 已保存比赛详情到本地: ${match.id}`)
 
       // 同时用数据库 ID 保存一份，确保能从数据库加载（与季后赛保持一致）
       if (match.backendMatchId) {
         const dbMatchDetail = { ...matchDetail, matchId: String(match.backendMatchId) }
         await matchDetailStore.saveMatchDetail(match.backendMatchId, dbMatchDetail)
-        console.log(`[MSI] 已保存比赛详情到数据库: backendMatchId=${match.backendMatchId}`)
+        logger.debug(`[MSI] 已保存比赛详情到数据库: backendMatchId=${match.backendMatchId}`)
       }
 
       // 记录选手表现到数据中心系统
@@ -892,7 +895,7 @@ const simulateMSIMatch = async (match: any) => {
       checkMSICompletion()
       return
     } catch (error) {
-      console.error('Backend simulation failed, falling back to local:', error)
+      logger.error('Backend simulation failed, falling back to local:', error)
       // 后端失败时使用本地 PowerEngine
     }
   }
@@ -1381,9 +1384,9 @@ const recordPlayerPerformancesFromBackend = async (result: any) => {
   if (performances.length > 0) {
     try {
       const count = await statsApi.batchRecordPerformance(performances)
-      console.log(`[MSI] 已记录 ${count} 条选手表现数据`)
+      logger.debug(`[MSI] 已记录 ${count} 条选手表现数据`)
     } catch (error) {
-      console.error('[MSI] 记录选手表现失败:', error)
+      logger.error('[MSI] 记录选手表现失败:', error)
     }
   }
 }
@@ -1605,21 +1608,21 @@ const processTournamentCompletion = async (tournamentId: number) => {
     const result = await internationalApi.completeTournament(tournamentId)
 
     // 打印结果信息
-    console.log(`[MSI] ${result.message}`)
+    logger.debug(`[MSI] ${result.message}`)
 
     // 显示荣誉颁发信息
     if (result.honors_awarded.length > 0) {
-      console.log('[MSI] 颁发的荣誉:')
+      logger.debug('[MSI] 颁发的荣誉:')
       result.honors_awarded.forEach(honor => {
-        console.log(`  - ${honor.honor_type}: ${honor.recipient_name} (${honor.recipient_type})`)
+        logger.debug(`  - ${honor.honor_type}: ${honor.recipient_name} (${honor.recipient_type})`)
       })
     }
 
     // 显示积分颁发信息
     if (result.points_awarded.length > 0) {
-      console.log('[MSI] 颁发的年度积分:')
+      logger.debug('[MSI] 颁发的年度积分:')
       result.points_awarded.forEach(points => {
-        console.log(`  - ${points.team_name}: +${points.points}分 (${points.position})`)
+        logger.debug(`  - ${points.team_name}: +${points.points}分 (${points.position})`)
       })
 
       // 显示积分颁发通知
@@ -1629,7 +1632,7 @@ const processTournamentCompletion = async (tournamentId: number) => {
     }
 
   } catch (error) {
-    console.error('[MSI] 完成赛事处理失败:', error)
+    logger.error('[MSI] 完成赛事处理失败:', error)
     // 即使失败也不阻止游戏继续，只记录日志
   }
 }

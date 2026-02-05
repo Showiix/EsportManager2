@@ -99,6 +99,9 @@ import {
   getCurrentErrorInfo,
 } from '@/utils/errors'
 import type { ErrorSeverity } from '@/utils/errors'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('ErrorGuide')
 
 // 状态
 const showDetails = ref(false)
@@ -166,7 +169,7 @@ async function handleRetry() {
 function openHelp() {
   if (errorInfo.value?.docUrl) {
     // 在游戏内打开帮助页面或跳转到文档
-    console.log('Open help:', errorInfo.value.docUrl)
+    logger.debug('打开帮助文档', { url: errorInfo.value.docUrl })
     // TODO: 实现帮助页面跳转
   }
 }
@@ -176,7 +179,7 @@ async function copyErrorCode() {
     await navigator.clipboard.writeText(errorCode.value)
     showCopyFeedback()
   } catch (e) {
-    console.error('复制失败', e)
+    logger.error('复制错误码失败', { error: e })
   }
 }
 
@@ -197,7 +200,7 @@ async function copyAllInfo() {
     await navigator.clipboard.writeText(info)
     showCopyFeedback()
   } catch (e) {
-    console.error('复制失败', e)
+    logger.error('复制错误信息失败', { error: e })
   }
 }
 

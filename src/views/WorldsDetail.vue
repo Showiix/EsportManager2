@@ -361,6 +361,9 @@ import { PowerEngine } from '@/engines/PowerEngine'
 import type { MatchDetail } from '@/types/matchDetail'
 import type { Player, PlayerPosition } from '@/types/player'
 import type { WorldsQualification, SwissStandings, WorldsSwissMatch, WorldsKnockoutMatch } from '@/types/index'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('WorldsDetail')
 
 const router = useRouter()
 const matchDetailStore = useMatchDetailStore()
@@ -440,10 +443,10 @@ const loadWorldsData = async () => {
       // 加载对阵数据
       await loadBracketData()
     } else {
-      console.log('No Worlds tournament found for season', seasonId)
+      logger.debug('No Worlds tournament found for season', seasonId)
     }
   } catch (error) {
-    console.error('Failed to load Worlds data:', error)
+    logger.error('Failed to load Worlds data:', error)
   } finally {
     loading.value = false
   }
@@ -479,7 +482,7 @@ const loadBracketData = async () => {
     // 更新对阵数据
     updateWorldsBracketFromBackend(bracket)
   } catch (error) {
-    console.error('Failed to load bracket data:', error)
+    logger.error('Failed to load bracket data:', error)
   }
 }
 
@@ -487,7 +490,7 @@ const loadBracketData = async () => {
  * 从后端数据更新世界赛对阵 - 完全重写，从后端数据创建所有数据
  */
 const updateWorldsBracketFromBackend = (bracket: BracketInfo) => {
-  console.log('[WorldsDetail] updateWorldsBracketFromBackend called, matches:', bracket.matches.length)
+  logger.debug('[WorldsDetail] updateWorldsBracketFromBackend called, matches:', bracket.matches.length)
 
   // 辅助函数：检查比赛状态是否为已完成（兼容大小写）
   const isMatchCompleted = (status: string) => status === 'Completed' || status === 'COMPLETED' || status === 'completed'
@@ -540,7 +543,7 @@ const updateWorldsBracketFromBackend = (bracket: BracketInfo) => {
     m.stage.includes('Final') || m.stage.includes('Third')
   )
 
-  console.log('[WorldsDetail] Swiss matches:', swissMatches.length, 'Knockout matches:', knockoutMatches.length)
+  logger.debug('[WorldsDetail] Swiss matches:', swissMatches.length, 'Knockout matches:', knockoutMatches.length)
 
   const allSwissComplete = swissMatches.length > 0 && swissMatches.every(m => m.status && isMatchCompleted(m.status))
   const hasKnockoutTeams = knockoutMatches.some(m => m.home_team !== null && m.away_team !== null)
@@ -556,7 +559,7 @@ const updateWorldsBracketFromBackend = (bracket: BracketInfo) => {
     worldsBracket.status = 'not_started'
   }
 
-  console.log('[WorldsDetail] Status determined:', worldsBracket.status)
+  logger.debug('[WorldsDetail] Status determined:', worldsBracket.status)
 
   // 转换瑞士轮比赛
   const newSwissMatches: WorldsSwissMatch[] = swissMatches.map(m => {
@@ -737,7 +740,7 @@ const updateWorldsBracketFromBackend = (bracket: BracketInfo) => {
       .filter((t): t is WorldsQualification => t !== undefined)
   }
 
-  console.log('[WorldsDetail] Update complete. Swiss matches:', worldsBracket.swissMatches.length,
+  logger.debug('[WorldsDetail] Update complete. Swiss matches:', worldsBracket.swissMatches.length,
     'Knockout matches:', worldsBracket.knockoutMatches.length,
     'Swiss standings:', worldsBracket.swissStandings.length)
 }
@@ -982,7 +985,7 @@ const handleSimulateSwissMatch = async (match: WorldsSwissMatch) => {
       checkSwissRoundCompletion()
       return
     } catch (error) {
-      console.error('Backend simulation failed, falling back to local:', error)
+      logger.error('Backend simulation failed, falling back to local:', error)
       // 后端失败时使用本地 PowerEngine
     }
   }
@@ -1024,9 +1027,9 @@ const handleSimulateSwissMatch = async (match: WorldsSwissMatch) => {
         matchDetail.finalScoreB,
         parseInt(matchDetail.winnerId)
       )
-      console.log('[WorldsDetail] Swiss match local simulation synced to database')
+      logger.debug('[WorldsDetail] Swiss match local simulation synced to database')
     } catch (syncError) {
-      console.error('Failed to sync Swiss match to database:', syncError)
+      logger.error('Failed to sync Swiss match to database:', syncError)
     }
   }
 
@@ -1143,14 +1146,14 @@ const checkSwissRoundCompletion = async () => {
  */
 const generateNextSwissRound = async () => {
   if (!currentTournamentId.value) {
-    console.error('No tournament ID')
+    logger.error('No tournament ID')
     return
   }
 
   try {
     // 调用后端 API 生成下一轮比赛
     const newMatchIds = await internationalApi.generateNextSwissRound(currentTournamentId.value)
-    console.log('[WorldsDetail] Generated next Swiss round, new match IDs:', newMatchIds)
+    logger.debug('[WorldsDetail] Generated next Swiss round, new match IDs:', newMatchIds)
 
     // 重新加载对阵数据
     await loadBracketData()
@@ -1161,7 +1164,7 @@ const generateNextSwissRound = async () => {
 
     ElMessage.success(`已生成瑞士轮第 ${nextRound} 轮对阵`)
   } catch (error) {
-    console.error('Failed to generate next Swiss round:', error)
+    logger.error('Failed to generate next Swiss round:', error)
     ElMessage.error('生成下一轮对阵失败')
   }
 }
@@ -1196,7 +1199,7 @@ const handleGenerateKnockout = async () => {
 
     ElMessage.success('淘汰赛对阵生成成功!')
   } catch (error) {
-    console.error('Failed to generate knockout bracket:', error)
+    logger.error('Failed to generate knockout bracket:', error)
     ElMessage.error('生成淘汰赛对阵失败')
   } finally {
     generatingKnockout.value = false
@@ -1244,7 +1247,7 @@ const handleSimulateKnockoutMatch = async (match: WorldsKnockoutMatch) => {
       await checkKnockoutCompletion()
       return
     } catch (error) {
-      console.error('Backend simulation failed, falling back to local:', error)
+      logger.error('Backend simulation failed, falling back to local:', error)
       // 后端失败时使用本地 PowerEngine
     }
   }
@@ -1286,9 +1289,9 @@ const handleSimulateKnockoutMatch = async (match: WorldsKnockoutMatch) => {
         matchDetail.finalScoreB,
         parseInt(matchDetail.winnerId)
       )
-      console.log('[WorldsDetail] Knockout match local simulation synced to database')
+      logger.debug('[WorldsDetail] Knockout match local simulation synced to database')
     } catch (syncError) {
-      console.error('Failed to sync knockout match to database:', syncError)
+      logger.error('Failed to sync knockout match to database:', syncError)
     }
   }
 
@@ -1480,7 +1483,7 @@ const batchSimulateSwissRound = async () => {
     ElMessage.success('瑞士轮模拟完成！')
   } catch (error: any) {
     if (error !== 'cancel') {
-      console.error('瑞士轮模拟失败:', error)
+      logger.error('瑞士轮模拟失败:', error)
       ElMessage.error('瑞士轮模拟失败')
     }
   } finally {
@@ -1539,7 +1542,7 @@ const batchSimulateKnockout = async () => {
     ElMessage.success('淘汰赛模拟完成！')
   } catch (error: any) {
     if (error !== 'cancel') {
-      console.error('淘汰赛模拟失败:', error)
+      logger.error('淘汰赛模拟失败:', error)
       ElMessage.error('淘汰赛模拟失败')
     }
   } finally {
@@ -1600,21 +1603,21 @@ const processTournamentCompletion = async (tournamentId: number) => {
   try {
     // 调用后端 completeTournament 命令处理荣誉殿堂和年度积分
     const result = await internationalApi.completeTournament(tournamentId)
-    console.log(`[Worlds] ${result.message}`)
+    logger.debug(`[Worlds] ${result.message}`)
 
     // 输出荣誉信息
     if (result.honors_awarded.length > 0) {
-      console.log('[Worlds] 颁发的荣誉:')
+      logger.debug('[Worlds] 颁发的荣誉:')
       result.honors_awarded.forEach(honor => {
-        console.log(`  - ${honor.honor_type}: ${honor.recipient_name} (${honor.recipient_type})`)
+        logger.debug(`  - ${honor.honor_type}: ${honor.recipient_name} (${honor.recipient_type})`)
       })
     }
 
     // 输出年度积分信息
     if (result.points_awarded.length > 0) {
-      console.log('[Worlds] 颁发的年度积分:')
+      logger.debug('[Worlds] 颁发的年度积分:')
       result.points_awarded.forEach(points => {
-        console.log(`  - ${points.team_name}: +${points.points}分 (${points.position})`)
+        logger.debug(`  - ${points.team_name}: +${points.points}分 (${points.position})`)
       })
       // 显示前4名的积分变化
       const topTeams = result.points_awarded.slice(0, 4)
@@ -1625,13 +1628,13 @@ const processTournamentCompletion = async (tournamentId: number) => {
     // 分发赛事奖金
     try {
       await financeApi.distributeTournamentPrizes(tournamentId)
-      console.log('[Worlds] 赛事奖金已分发')
+      logger.debug('[Worlds] 赛事奖金已分发')
       ElMessage.success('赛事奖金已分发给各参赛队伍')
     } catch (financeError) {
-      console.error('[Worlds] 奖金分发失败:', financeError)
+      logger.error('[Worlds] 奖金分发失败:', financeError)
     }
   } catch (error) {
-    console.error('[Worlds] 完成赛事处理失败:', error)
+    logger.error('[Worlds] 完成赛事处理失败:', error)
   }
 }
 
@@ -1676,9 +1679,9 @@ const recordPlayerPerformancesFromBackend = async (result: any) => {
   if (performances.length > 0) {
     try {
       const count = await statsApi.batchRecordPerformance(performances)
-      console.log(`[Worlds] 已记录 ${count} 条选手表现数据`)
+      logger.debug(`[Worlds] 已记录 ${count} 条选手表现数据`)
     } catch (error) {
-      console.error('[Worlds] 记录选手表现失败:', error)
+      logger.error('[Worlds] 记录选手表现失败:', error)
     }
   }
 }

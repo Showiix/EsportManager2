@@ -220,6 +220,9 @@ import {
 } from '@element-plus/icons-vue'
 import { teamApi, financeApi, queryApi, type Team, type Region } from '@/api/tauri'
 import { formatMoney } from '@/utils'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('TeamEdit')
 
 const route = useRoute()
 const router = useRouter()
@@ -262,7 +265,7 @@ const loadData = async () => {
     form.value.shortName = teamData.short_name || ''
     form.value.description = '' // 暂无此字段
   } catch (error) {
-    console.error('加载战队数据失败:', error)
+    logger.error('加载战队数据失败:', error)
     ElMessage.error('加载战队数据失败')
   } finally {
     loading.value = false
@@ -312,7 +315,7 @@ const adjustBalance = async (isAdd: boolean) => {
     ElMessage.success(`${isAdd ? '增加' : '减少'} ${formatMoney(Math.abs(amount))} 成功`)
     adjustAmount.value = 100000
   } catch (error) {
-    console.error('调整余额失败:', error)
+    logger.error('调整余额失败:', error)
     ElMessage.error('调整余额失败')
   }
 }
@@ -330,7 +333,7 @@ const handleSubmit = async () => {
     ElMessage.success('战队信息保存成功')
     router.push(`/teams/${teamId.value}`)
   } catch (error) {
-    console.error('保存失败:', error)
+    logger.error('保存失败:', error)
     ElMessage.error('保存失败，请重试')
   } finally {
     submitting.value = false

@@ -5,6 +5,10 @@ import type {
   SeasonHonorsResponse,
   SeasonInfo
 } from '@/types'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('HonorHallStore')
 
 export const useHonorHallStore = defineStore('honorHall', () => {
   // ===================================================================
@@ -59,7 +63,11 @@ export const useHonorHallStore = defineStore('honorHall', () => {
       }
     } catch (err: any) {
       error.value = err.message || '获取赛季列表失败'
-      console.error('Error fetching available seasons:', err)
+      handleError(err, {
+        component: 'HonorHallStore',
+        userAction: '获取赛季列表',
+        silent: true
+      })
     } finally {
       loading.value = false
     }
@@ -71,7 +79,7 @@ export const useHonorHallStore = defineStore('honorHall', () => {
   const fetchSeasonHonorData = async (seasonId?: string) => {
     const targetSeasonId = seasonId || selectedSeasonId.value
     if (!targetSeasonId) {
-      console.warn('No season ID provided')
+      logger.warn('未提供赛季ID')
       return
     }
 
@@ -90,7 +98,11 @@ export const useHonorHallStore = defineStore('honorHall', () => {
     } catch (err: any) {
       error.value = err.message || '获取荣誉数据失败'
       currentHonorData.value = null
-      console.error('Error fetching season honor data:', err)
+      handleError(err, {
+        component: 'HonorHallStore',
+        userAction: '获取荣誉数据',
+        silent: true
+      })
     } finally {
       loading.value = false
     }

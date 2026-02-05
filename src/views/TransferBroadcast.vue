@@ -277,6 +277,9 @@ import { useTransferStoreTauri } from '@/stores/useTransferStoreTauri'
 import { useGameStore } from '@/stores/useGameStore'
 import { transferApi, type TransferRoundInfo } from '@/api/tauri'
 import { formatMoney } from '@/utils'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('TransferBroadcast')
 
 const router = useRouter()
 const transferStore = useTransferStoreTauri()
@@ -342,7 +345,7 @@ onMounted(async () => {
       allTransferEvents.value.splice(0, allTransferEvents.value.length, ...events)
     }
   } catch (e) {
-    console.error('Failed to load transfer events:', e)
+    logger.error('Failed to load transfer events:', e)
   }
 })
 
@@ -354,7 +357,7 @@ const handleNextRound = async () => {
     currentRoundSummary.value = roundInfo
     ElMessage.success(`第 ${roundInfo.round} 轮完成：${roundInfo.summary}`)
   } catch (e) {
-    console.error('Failed to execute round:', e)
+    logger.error('Failed to execute round:', e)
     ElMessage.error('执行失败')
   } finally {
     isProcessing.value = false
@@ -379,7 +382,7 @@ const handleFastForward = async () => {
     ElMessage.success('转会窗口已完成！')
   } catch (e) {
     if (e !== 'cancel') {
-      console.error('Failed to fast forward:', e)
+      logger.error('Failed to fast forward:', e)
       ElMessage.error('快进失败')
     }
   } finally {

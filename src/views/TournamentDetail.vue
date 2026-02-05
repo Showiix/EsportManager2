@@ -519,6 +519,9 @@ import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
 import type { Player, PlayerPosition } from '@/types/player'
 import type { MatchDetail } from '@/types/matchDetail'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('TournamentDetail')
 
 const route = useRoute()
 const router = useRouter()
@@ -1263,7 +1266,7 @@ const updateStandings = () => {
 onMounted(() => {
   // 根据路由参数加载赛事数据
   const tournamentId = route.params.id
-  console.log('Loading tournament:', tournamentId)
+  logger.debug('Loading tournament:', tournamentId)
 })
 </script>
 

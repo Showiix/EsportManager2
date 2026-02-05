@@ -49,8 +49,7 @@
         <div class="action-status">
           <template v-if="!gmConfigured">
             <el-tag type="warning" size="large" class="status-tag">
-              <el-icon><Warning /></el-icon>
-              需配置 {{ unconfiguredGMCount }} 队GM
+              <span class="tag-content"><el-icon><Warning /></el-icon> 需配置 {{ unconfiguredGMCount }} 队GM</span>
             </el-tag>
             <el-button type="warning" size="large" @click="goToGMConfig">
               <el-icon><Setting /></el-icon>
@@ -59,8 +58,7 @@
           </template>
           <template v-else>
             <el-tag type="success" size="large" class="status-tag">
-              <el-icon><Check /></el-icon>
-              所有GM配置完成
+              <span class="tag-content"><el-icon><Check /></el-icon> GM配置完成</span>
             </el-tag>
             <el-button type="primary" size="large" @click="startTransfer">
               <el-icon><VideoPlay /></el-icon>
@@ -147,6 +145,9 @@ import {
 import { useTransferWindowStore, ROUND_NAMES } from '@/stores/useTransferWindowStore'
 import { useGameStore } from '@/stores/useGameStore'
 import { queryApi } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('Transfer')
 
 interface Region {
   id: number
@@ -281,7 +282,7 @@ async function loadData() {
       })
     }
   } catch (e) {
-    console.error('Failed to load data:', e)
+    logger.error('Failed to load data:', e)
     ElMessage.error('加载数据失败')
   } finally {
     isLoading.value = false
@@ -410,6 +411,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 24px;
+  flex-wrap: nowrap;
 }
 
 .action-info {
@@ -451,13 +453,28 @@ onMounted(() => {
 .action-status {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .status-tag {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.status-tag .tag-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.status-tag .el-icon {
+  font-size: 14px;
+  flex-shrink: 0;
 }
 
 /* 赛区统计 */

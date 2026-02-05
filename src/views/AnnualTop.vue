@@ -288,6 +288,9 @@ import { useGameStore } from '@/stores/useGameStore'
 import { teamApi, statsApi } from '@/api/tauri'
 import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('AnnualTop')
 
 const router = useRouter()
 const playerStore = usePlayerStore()
@@ -325,7 +328,7 @@ const fetchRankings = async () => {
     }
     rankings.value = await playerStore.getSeasonImpactRanking(selectedSeason.value, 20)
   } catch (error) {
-    console.error('获取排行数据失败:', error)
+    logger.error('获取排行数据失败:', error)
     rankings.value = []
   } finally {
     loading.value = false
@@ -418,7 +421,7 @@ const recalculateScores = async () => {
     // 刷新排名数据
     await fetchRankings()
   } catch (error) {
-    console.error('重新计算失败:', error)
+    logger.error('重新计算失败:', error)
     ElMessage.error('重新计算失败')
   } finally {
     recalculating.value = false

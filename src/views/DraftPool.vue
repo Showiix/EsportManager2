@@ -446,6 +446,9 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { draftApi, queryApi } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('DraftPool')
 
 // 赛区列表
 const regionList = [
@@ -514,7 +517,7 @@ const getRegionId = async (regionCode: string): Promise<number> => {
     const region = regions.find(r => r.code.toLowerCase() === regionCode.toLowerCase())
     return region?.id ?? 1
   } catch (e) {
-    console.error('Failed to get region id:', e)
+    logger.error('Failed to get region id:', e)
     return 1
   }
 }
@@ -541,7 +544,7 @@ const loadPoolData = async (regionCode: string) => {
     poolData.value = poolData.value.filter(p => p.region !== regionCode)
     poolData.value.push(...regionPlayers)
   } catch (e) {
-    console.error('Failed to load pool data:', e)
+    logger.error('Failed to load pool data:', e)
     // 如果加载失败，清空该赛区数据
     poolData.value = poolData.value.filter(p => p.region !== regionCode)
   } finally {
@@ -716,7 +719,7 @@ const generateRandomPool = async () => {
 
     ElMessage.success(`已生成 ${regionPlayers.length} 名新秀`)
   } catch (e) {
-    console.error('Failed to generate draft pool:', e)
+    logger.error('Failed to generate draft pool:', e)
     ElMessage.error('生成选手池失败')
   } finally {
     isLoading.value = false
@@ -777,7 +780,7 @@ const processFile = async (file: File) => {
     }
   } catch (error) {
     ElMessage.error('文件解析失败，请检查文件格式')
-    console.error(error)
+    logger.error(error)
   }
 }
 

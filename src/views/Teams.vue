@@ -227,6 +227,9 @@ import {
   Edit,
 } from '@element-plus/icons-vue'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('Teams')
 
 const router = useRouter()
 const teamStore = useTeamStoreTauri()
@@ -322,7 +325,7 @@ const clearFilters = () => {
 
 // 导航
 const viewTeam = (team: any) => { router.push(`/teams/${team.id}`) }
-const editTeam = (team: any) => { console.log('Edit team:', team) }
+const editTeam = (team: any) => { logger.debug('Edit team:', team) }
 
 // 辅助函数 - 赛区相关
 const getRegionName = (regionId: number) => {

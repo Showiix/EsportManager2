@@ -11,6 +11,10 @@ import {
   type DraftPickPrice,
 } from '@/api/tauri'
 import { formatMoney } from '@/utils'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('DraftAuctionStore')
 
 export const useDraftAuctionStore = defineStore('draftAuction', () => {
   // ========================================
@@ -125,7 +129,11 @@ export const useDraftAuctionStore = defineStore('draftAuction', () => {
       const prices = await draftAuctionApi.getDraftPickPrices()
       pickPrices.value = prices
     } catch (e) {
-      console.error('Failed to load pick prices:', e)
+      handleError(e, {
+        component: 'DraftAuctionStore',
+        userAction: '加载签位价格',
+        silent: true
+      })
       error.value = e instanceof Error ? e.message : String(e)
     }
   }
@@ -143,7 +151,11 @@ export const useDraftAuctionStore = defineStore('draftAuction', () => {
         await fetchAuctionEvents(regionId)
       }
     } catch (e) {
-      console.error('Failed to fetch auction status:', e)
+      handleError(e, {
+        component: 'DraftAuctionStore',
+        userAction: '获取拍卖状态',
+        silent: true
+      })
       error.value = e instanceof Error ? e.message : String(e)
     } finally {
       isLoading.value = false
@@ -158,7 +170,7 @@ export const useDraftAuctionStore = defineStore('draftAuction', () => {
       // 重置显示索引到最新
       displayedEventIndex.value = eventList.length - 1
     } catch (e) {
-      console.error('Failed to fetch auction events:', e)
+      logger.warn('获取拍卖事件失败', { regionId, error: e })
     }
   }
 
@@ -174,7 +186,10 @@ export const useDraftAuctionStore = defineStore('draftAuction', () => {
       displayedEventIndex.value = 0 // 从头开始显示
       return status
     } catch (e) {
-      console.error('Failed to start auction:', e)
+      handleError(e, {
+        component: 'DraftAuctionStore',
+        userAction: '开始拍卖'
+      })
       error.value = e instanceof Error ? e.message : String(e)
       throw e
     } finally {
@@ -193,7 +208,10 @@ export const useDraftAuctionStore = defineStore('draftAuction', () => {
       await fetchAuctionEvents(regionId)
       return status
     } catch (e) {
-      console.error('Failed to execute round:', e)
+      handleError(e, {
+        component: 'DraftAuctionStore',
+        userAction: '执行拍卖轮次'
+      })
       error.value = e instanceof Error ? e.message : String(e)
       throw e
     } finally {
@@ -214,7 +232,10 @@ export const useDraftAuctionStore = defineStore('draftAuction', () => {
       displayedEventIndex.value = events.value.length - 1
       return status
     } catch (e) {
-      console.error('Failed to fast forward auction:', e)
+      handleError(e, {
+        component: 'DraftAuctionStore',
+        userAction: '快进拍卖'
+      })
       error.value = e instanceof Error ? e.message : String(e)
       throw e
     } finally {
@@ -231,7 +252,10 @@ export const useDraftAuctionStore = defineStore('draftAuction', () => {
       await draftAuctionApi.finalizeAuction(regionId)
       await fetchAuctionStatus(regionId)
     } catch (e) {
-      console.error('Failed to finalize auction:', e)
+      handleError(e, {
+        component: 'DraftAuctionStore',
+        userAction: '完成拍卖'
+      })
       error.value = e instanceof Error ? e.message : String(e)
       throw e
     } finally {

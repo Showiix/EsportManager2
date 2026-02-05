@@ -3,6 +3,10 @@ import { ref, computed } from 'vue'
 import type { Region, Team } from '@/types'
 import { regionApi, mockData } from '@/api'
 import { useTeamStore } from './useTeamStore'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('RegionStore')
 
 export const useRegionStore = defineStore('region', () => {
   // 状态
@@ -41,7 +45,7 @@ export const useRegionStore = defineStore('region', () => {
         totalPoints: regionTeams.reduce((sum, team) => sum + (team.statistics?.totalPoints || 0), 0),
       }
       
-      console.log(`赛区 ${region.name} (ID:${region.id}): ${teamCount} 支队伍, 平均战力: ${stat.averageStrength.toFixed(1)}`)
+      logger.debug('赛区统计', { region: region.name, regionId: region.id, teamCount, averageStrength: stat.averageStrength.toFixed(1) })
       return stat
     })
     
@@ -69,9 +73,12 @@ export const useRegionStore = defineStore('region', () => {
         ...region,
         id: String(region.id)
       }))
-      console.log('Regions loaded:', regions.value.map(r => ({ id: r.id, name: r.name })))
+      logger.info('加载赛区完成', { regions: regions.value.map(r => ({ id: r.id, name: r.name })) })
     } catch (error) {
-      console.error('Failed to fetch regions:', error)
+      handleError(error, {
+        component: 'RegionStore',
+        userAction: '加载赛区列表'
+      })
       throw error
     } finally {
       loading.value = false
@@ -99,7 +106,11 @@ export const useRegionStore = defineStore('region', () => {
       selectedRegion.value = response.data ?? null
       return selectedRegion.value
     } catch (error) {
-      console.error('Failed to fetch region:', error)
+      handleError(error, {
+        component: 'RegionStore',
+        userAction: '获取赛区详情',
+        silent: true
+      })
       throw error
     } finally {
       loading.value = false
@@ -136,7 +147,10 @@ export const useRegionStore = defineStore('region', () => {
       }
       return updatedRegion
     } catch (error) {
-      console.error('Failed to update region:', error)
+      handleError(error, {
+        component: 'RegionStore',
+        userAction: '更新赛区'
+      })
       throw error
     } finally {
       loading.value = false

@@ -230,6 +230,9 @@ import { internationalApi, matchApi, queryApi, statsApi, type BracketInfo, type 
 import { PowerEngine } from '@/engines/PowerEngine'
 import type { MatchDetail } from '@/types/matchDetail'
 import type { Player, PlayerPosition } from '@/types/player'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('ShanghaiDetail')
 
 const _router = useRouter()
 const matchDetailStore = useMatchDetailStore()
@@ -440,11 +443,11 @@ const refreshData = async () => {
     // 先清理重复的上海大师赛
     const deleted = await internationalApi.cleanupDuplicateTournaments('ShanghaiMasters')
     if (deleted > 0) {
-      console.log(`[ShanghaiDetail] 清理了 ${deleted} 个重复赛事`)
+      logger.debug(`[ShanghaiDetail] 清理了 ${deleted} 个重复赛事`)
       ElMessage.success(`已清理 ${deleted} 个重复赛事`)
     }
   } catch (error) {
-    console.error('[ShanghaiDetail] 清理重复赛事失败:', error)
+    logger.error('[ShanghaiDetail] 清理重复赛事失败:', error)
   }
   await loadShanghaiData()
   ElMessage.success('数据已刷新')
@@ -466,7 +469,7 @@ const loadShanghaiData = async () => {
 
     // 保存参赛队伍数据
     shanghaiQualifiedTeams.value = qualifiedTeams
-    console.log('[ShanghaiDetail] Qualified teams:', qualifiedTeams)
+    logger.debug('[ShanghaiDetail] Qualified teams:', qualifiedTeams)
 
     // 查找上海大师赛赛事
     const shanghaiTournament = tournaments.find(t => t.tournament_type === 'ShanghaiMasters')
@@ -477,10 +480,10 @@ const loadShanghaiData = async () => {
       // 加载对阵数据
       await loadBracketData()
     } else {
-      console.log('No Shanghai Masters tournament found for season', seasonId)
+      logger.debug('No Shanghai Masters tournament found for season', seasonId)
     }
   } catch (error) {
-    console.error('Failed to load Shanghai Masters data:', error)
+    logger.error('Failed to load Shanghai Masters data:', error)
   } finally {
     loading.value = false
   }
@@ -552,7 +555,7 @@ const loadBracketData = async () => {
     // 更新 mockBracket.qualifiedTeams
     if (allTeams.length > 0) {
       mockBracket.qualifiedTeams = allTeams
-      console.log('[Shanghai] Updated qualifiedTeams:', allTeams.length, 'teams')
+      logger.debug('[Shanghai] Updated qualifiedTeams:', allTeams.length, 'teams')
     }
 
     // 更新分组（从 API 数据）
@@ -577,7 +580,7 @@ const loadBracketData = async () => {
     // 更新 mockBracket 的比赛状态
     updateBracketFromBackend(bracket)
   } catch (error) {
-    console.error('Failed to load bracket data:', error)
+    logger.error('Failed to load bracket data:', error)
   }
 }
 
@@ -618,7 +621,7 @@ const updateBracketFromBackend = (bracket: BracketInfo) => {
 
   bracket.matches.forEach(backendMatch => {
     const matchType = stageToMatchType[backendMatch.stage] || backendMatch.stage.toLowerCase()
-    console.log('[Shanghai] 处理后端比赛:', backendMatch.stage, '-> matchType:', matchType, 'match_order:', backendMatch.match_order)
+    logger.debug('[Shanghai] 处理后端比赛:', backendMatch.stage, '-> matchType:', matchType, 'match_order:', backendMatch.match_order)
 
     // 在 rounds 中查找对应的比赛
     for (const round of mockBracket.rounds) {
@@ -677,7 +680,7 @@ const updateBracketFromBackend = (bracket: BracketInfo) => {
         frontendMatch.status = backendStatus === 'COMPLETED' ? 'completed' :
                               backendStatus === 'INPROGRESS' || backendStatus === 'IN_PROGRESS' ? 'active' : 'scheduled'
 
-        console.log('[Shanghai] 更新比赛:', frontendMatch.id, 'status:', frontendMatch.status,
+        logger.debug('[Shanghai] 更新比赛:', frontendMatch.id, 'status:', frontendMatch.status,
           'score:', frontendMatch.scoreA, '-', frontendMatch.scoreB)
         break
       }
@@ -923,7 +926,7 @@ const simulateMatch = async (match: any) => {
       await checkShanghaiCompletion()
       return
     } catch (error) {
-      console.error('Backend simulation failed, falling back to local:', error)
+      logger.error('Backend simulation failed, falling back to local:', error)
       // 后端失败时使用本地 PowerEngine
     }
   }
@@ -1076,21 +1079,21 @@ const processTournamentCompletion = async (tournamentId: number) => {
     const result = await internationalApi.completeTournament(tournamentId)
 
     // 打印结果信息
-    console.log(`[Shanghai] ${result.message}`)
+    logger.debug(`[Shanghai] ${result.message}`)
 
     // 显示荣誉颁发信息
     if (result.honors_awarded.length > 0) {
-      console.log('[Shanghai] 颁发的荣誉:')
+      logger.debug('[Shanghai] 颁发的荣誉:')
       result.honors_awarded.forEach(honor => {
-        console.log(`  - ${honor.honor_type}: ${honor.recipient_name} (${honor.recipient_type})`)
+        logger.debug(`  - ${honor.honor_type}: ${honor.recipient_name} (${honor.recipient_type})`)
       })
     }
 
     // 显示积分颁发信息
     if (result.points_awarded.length > 0) {
-      console.log('[Shanghai] 颁发的年度积分:')
+      logger.debug('[Shanghai] 颁发的年度积分:')
       result.points_awarded.forEach(points => {
-        console.log(`  - ${points.team_name}: +${points.points}分 (${points.position})`)
+        logger.debug(`  - ${points.team_name}: +${points.points}分 (${points.position})`)
       })
 
       // 显示积分颁发通知
@@ -1100,7 +1103,7 @@ const processTournamentCompletion = async (tournamentId: number) => {
     }
 
   } catch (error) {
-    console.error('[Shanghai] 完成赛事处理失败:', error)
+    logger.error('[Shanghai] 完成赛事处理失败:', error)
     // 即使失败也不阻止游戏继续，只记录日志
   }
 }
@@ -1147,9 +1150,9 @@ const recordPlayerPerformancesFromBackend = async (result: any) => {
   if (performances.length > 0) {
     try {
       const count = await statsApi.batchRecordPerformance(performances)
-      console.log(`[Shanghai] 已记录 ${count} 条选手表现数据`)
+      logger.debug(`[Shanghai] 已记录 ${count} 条选手表现数据`)
     } catch (error) {
-      console.error('[Shanghai] 记录选手表现失败:', error)
+      logger.error('[Shanghai] 记录选手表现失败:', error)
     }
   }
 }

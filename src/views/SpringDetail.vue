@@ -335,6 +335,9 @@ import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
 import { queryApi, teamApi, tournamentApi, matchApi, statsApi, type Team, type PlayerTournamentStats } from '@/api/tauri'
 import type { MatchDetail, GameDetail } from '@/types/matchDetail'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('SpringDetail')
 
 const route = useRoute()
 const router = useRouter()
@@ -393,7 +396,7 @@ const loadRegions = async () => {
       selectedRegion.value = regionList[0].id
     }
   } catch (error) {
-    console.error('Failed to load regions:', error)
+    logger.error('Failed to load regions:', error)
     ElMessage.error('加载赛区数据失败')
   }
 }
@@ -405,7 +408,7 @@ const loadTeams = async (regionId: number) => {
     teamMap.value.clear()
     teams.forEach(team => teamMap.value.set(team.id, team))
   } catch (error) {
-    console.error('Failed to load teams:', error)
+    logger.error('Failed to load teams:', error)
   }
 }
 
@@ -428,7 +431,7 @@ const loadTournament = async (regionId: number) => {
       }
     }
   } catch (error) {
-    console.error('Failed to load tournament:', error)
+    logger.error('Failed to load tournament:', error)
   }
 }
 
@@ -452,7 +455,7 @@ const loadMatches = async () => {
       simulating: false,
     }))
   } catch (error) {
-    console.error('Failed to load matches:', error)
+    logger.error('Failed to load matches:', error)
   }
 }
 
@@ -474,7 +477,7 @@ const loadStandings = async () => {
       }
     })
   } catch (error) {
-    console.error('Failed to load standings:', error)
+    logger.error('Failed to load standings:', error)
   }
 }
 
@@ -485,9 +488,9 @@ const loadMvpRanking = async () => {
   try {
     const ranking = await statsApi.getTournamentMvpRanking(currentTournamentId.value, 10)
     mvpRanking.value = ranking
-    console.log('[SpringDetail] Loaded MVP ranking:', ranking.length, 'players')
+    logger.debug('[SpringDetail] Loaded MVP ranking:', ranking.length, 'players')
   } catch (error) {
-    console.error('Failed to load MVP ranking:', error)
+    logger.error('Failed to load MVP ranking:', error)
     mvpRanking.value = []
   } finally {
     mvpLoading.value = false
@@ -515,7 +518,7 @@ const refreshData = async () => {
     await loadRegionData(selectedRegion.value)
     ElMessage.success('数据刷新成功')
   } catch (error) {
-    console.error('刷新数据失败:', error)
+    logger.error('刷新数据失败:', error)
     ElMessage.error('刷新数据失败')
   } finally {
     refreshing.value = false
@@ -639,15 +642,15 @@ const simulateSingleMatch = async (match: any) => {
 
     // 转换后端结果为 MatchDetail 格式并保存到 store
     const matchDetail = convertToMatchDetail(result, match)
-    console.log(`[SpringDetail] matchDetail.games.length = ${matchDetail.games.length}`)
+    logger.debug(`[SpringDetail] matchDetail.games.length = ${matchDetail.games.length}`)
     matchDetail.games.forEach((g, idx) => {
-      console.log(`[SpringDetail] game[${idx}]: teamAPlayers=${g.teamAPlayers.length}, teamBPlayers=${g.teamBPlayers.length}`)
+      logger.debug(`[SpringDetail] game[${idx}]: teamAPlayers=${g.teamAPlayers.length}, teamBPlayers=${g.teamBPlayers.length}`)
     })
     await matchDetailStore.saveMatchDetail(`spring-${match.id}`, matchDetail)
 
     // 记录选手表现到统计
     const regionName = getRegionName(selectedRegion.value)
-    console.log(`[SpringDetail] 开始记录选手表现, regionName=${regionName}`)
+    logger.debug(`[SpringDetail] 开始记录选手表现, regionName=${regionName}`)
     matchDetail.games.forEach(game => {
       game.teamAPlayers.forEach(perf => {
         playerStore.recordPerformance(
@@ -688,7 +691,7 @@ const simulateSingleMatch = async (match: any) => {
       ElMessage.success(`比赛结束: ${match.homeTeam} ${result.home_score} - ${result.away_score} ${match.awayTeam}`)
     }
   } catch (error) {
-    console.error('Failed to simulate match:', error)
+    logger.error('Failed to simulate match:', error)
     ElMessage.error('模拟比赛失败')
   } finally {
     match.simulating = false
@@ -843,7 +846,7 @@ const simulateNextMatch = async () => {
       ElMessage.info('没有待模拟的比赛')
     }
   } catch (error) {
-    console.error('Failed to simulate next match:', error)
+    logger.error('Failed to simulate next match:', error)
     ElMessage.error('模拟比赛失败')
   } finally {
     simulating.value = false
@@ -875,7 +878,7 @@ const simulateAll = async () => {
     // 开启季后赛
     ElMessage.success('常规赛模拟完成！请前往赛事管理页面进入季后赛')
   } catch (error) {
-    console.error('Failed to simulate all matches:', error)
+    logger.error('Failed to simulate all matches:', error)
     ElMessage.error('模拟比赛失败')
   } finally {
     batchSimulating.value = false

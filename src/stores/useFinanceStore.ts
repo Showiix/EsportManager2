@@ -6,6 +6,10 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { financeApi, type TeamFinanceSummary, type FinanceTransaction, type SeasonFinanceReport, type TournamentPrizeDetail } from '@/api/tauri'
 import { formatMoney as formatMoneyUtil } from '@/utils'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('FinanceStore')
 
 // ========================================
 // 类型定义
@@ -150,13 +154,17 @@ export const useFinanceStore = defineStore('finance', () => {
     try {
       const data = await financeApi.getAllTeamsFinance(regionId)
       teamsFinance.value = data
-      console.log('✅ 战队财务数据加载成功', {
+      logger.debug('战队财务数据加载成功', {
         teamsCount: teamsFinance.value.length,
         regionId
       })
     } catch (err: any) {
       error.value = err.message || '获取战队财务数据失败'
-      console.error('❌ 获取战队财务数据失败', err)
+      handleError(err, {
+        component: 'FinanceStore',
+        userAction: '获取战队财务数据',
+        silent: true
+      })
       throw err
     } finally {
       loading.value = false
@@ -173,14 +181,18 @@ export const useFinanceStore = defineStore('finance', () => {
     try {
       const data = await financeApi.getTeamFinanceSummary(teamId)
       selectedTeamFinance.value = data
-      console.log('✅ 战队财务摘要加载成功', {
+      logger.debug('战队财务摘要加载成功', {
         teamId,
         teamName: data.team_name
       })
       return data
     } catch (err: any) {
       error.value = err.message || '获取战队财务摘要失败'
-      console.error('❌ 获取战队财务摘要失败', err)
+      handleError(err, {
+        component: 'FinanceStore',
+        userAction: '获取战队财务摘要',
+        silent: true
+      })
       throw err
     } finally {
       loading.value = false
@@ -197,14 +209,18 @@ export const useFinanceStore = defineStore('finance', () => {
     try {
       const data = await financeApi.getTeamTransactions(teamId, seasonId)
       teamTransactions.value.set(teamId, data)
-      console.log('✅ 战队交易记录加载成功', {
+      logger.debug('战队交易记录加载成功', {
         teamId,
         transactionsCount: data.length
       })
       return data
     } catch (err: any) {
       error.value = err.message || '获取战队交易记录失败'
-      console.error('❌ 获取战队交易记录失败', err)
+      handleError(err, {
+        component: 'FinanceStore',
+        userAction: '获取战队交易记录',
+        silent: true
+      })
       throw err
     } finally {
       loading.value = false
@@ -222,14 +238,18 @@ export const useFinanceStore = defineStore('finance', () => {
       const data = await financeApi.getSeasonFinanceReport(teamId, seasonId)
       const key = `${teamId}-${seasonId || 'current'}`
       seasonReports.value.set(key, data)
-      console.log('✅ 赛季财务报告加载成功', {
+      logger.debug('赛季财务报告加载成功', {
         teamId,
         seasonId
       })
       return data
     } catch (err: any) {
       error.value = err.message || '获取赛季财务报告失败'
-      console.error('❌ 获取赛季财务报告失败', err)
+      handleError(err, {
+        component: 'FinanceStore',
+        userAction: '获取赛季财务报告',
+        silent: true
+      })
       throw err
     } finally {
       loading.value = false
@@ -246,14 +266,18 @@ export const useFinanceStore = defineStore('finance', () => {
     try {
       const data = await financeApi.getTeamPrizeDetails(teamId, seasonId)
       teamPrizeDetails.value.set(teamId, data)
-      console.log('✅ 战队赛事奖金明细加载成功', {
+      logger.debug('战队赛事奖金明细加载成功', {
         teamId,
         prizeCount: data.length
       })
       return data
     } catch (err: any) {
       error.value = err.message || '获取战队赛事奖金明细失败'
-      console.error('❌ 获取战队赛事奖金明细失败', err)
+      handleError(err, {
+        component: 'FinanceStore',
+        userAction: '获取战队赛事奖金明细',
+        silent: true
+      })
       throw err
     } finally {
       loading.value = false
@@ -354,7 +378,7 @@ export const useFinanceStore = defineStore('finance', () => {
     teamTransactions.value.clear()
     seasonReports.value.clear()
     error.value = null
-    console.log('🗑️ 财政Store缓存已清空')
+    logger.info('财政Store缓存已清空')
   }
 
   /**

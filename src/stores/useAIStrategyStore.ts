@@ -2,6 +2,10 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { aiTransferApi, type AIStrategyInfo } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('AIStrategyStore')
 
 // 进度事件类型
 export interface StrategyGenerationProgress {
@@ -24,7 +28,7 @@ export const useAIStrategyStore = defineStore('aiStrategy', () => {
   // 开始生成 AI 策略
   const generateStrategies = async () => {
     if (isGenerating.value) {
-      console.warn('已有生成任务在进行中')
+      logger.warn('已有生成任务在进行中')
       return strategies.value
     }
 
@@ -48,7 +52,10 @@ export const useAIStrategyStore = defineStore('aiStrategy', () => {
       strategies.value = await aiTransferApi.generateAIStrategies()
       return strategies.value
     } catch (e) {
-      console.error('Failed to generate strategies:', e)
+      handleError(e, {
+        component: 'AIStrategyStore',
+        userAction: '生成AI策略'
+      })
       error.value = e instanceof Error ? e.message : '生成策略失败'
       throw e
     } finally {

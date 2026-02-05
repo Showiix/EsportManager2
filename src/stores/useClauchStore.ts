@@ -6,6 +6,10 @@ import type {
   GenerateClauchRequest,
   SimulateClauchMatchRequest,
 } from '@/types'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('ClauchStore')
 
 export const useClauchStore = defineStore('clauch', () => {
   // 状态
@@ -82,7 +86,11 @@ export const useClauchStore = defineStore('clauch', () => {
       }
     } catch (err: any) {
       error.value = err.message || '获取C洲际赛信息失败'
-      console.error('Failed to fetch Clauch bracket:', err)
+      handleError(err, {
+        component: 'ClauchStore',
+        userAction: '获取C洲际赛信息',
+        silent: true
+      })
       throw err
     } finally {
       loading.value = false
@@ -103,7 +111,7 @@ export const useClauchStore = defineStore('clauch', () => {
     }
 
     const seasonId = String(season.id)
-    console.log(`[ClauchStore] fetchClauchBracketBySeason: ${seasonCode} -> ID: ${seasonId}`)
+    logger.debug('获取C洲际赛对阵', { seasonCode, seasonId })
     return await fetchClauchBracket(seasonId)
   }
 
@@ -124,7 +132,10 @@ export const useClauchStore = defineStore('clauch', () => {
       }
     } catch (err: any) {
       error.value = err.message || '生成C洲际赛对阵失败'
-      console.error('Failed to generate Clauch:', err)
+      handleError(err, {
+        component: 'ClauchStore',
+        userAction: '生成C洲际赛对阵'
+      })
       throw err
     } finally {
       loading.value = false
@@ -140,7 +151,11 @@ export const useClauchStore = defineStore('clauch', () => {
       return response.data
     } catch (err: any) {
       error.value = err.message || '检查C洲际赛资格失败'
-      console.error('Failed to check Clauch eligibility:', err)
+      handleError(err, {
+        component: 'ClauchStore',
+        userAction: '检查C洲际赛资格',
+        silent: true
+      })
       throw err
     }
   }
@@ -154,7 +169,11 @@ export const useClauchStore = defineStore('clauch', () => {
       return response.data
     } catch (err: any) {
       error.value = err.message || '获取晋级队伍失败'
-      console.error('Failed to get qualified teams:', err)
+      handleError(err, {
+        component: 'ClauchStore',
+        userAction: '获取晋级队伍',
+        silent: true
+      })
       throw err
     }
   }
@@ -177,7 +196,10 @@ export const useClauchStore = defineStore('clauch', () => {
       return response.data
     } catch (err: any) {
       error.value = err.message || '模拟比赛失败'
-      console.error('Failed to simulate Clauch match:', err)
+      handleError(err, {
+        component: 'ClauchStore',
+        userAction: '模拟C洲际赛比赛'
+      })
       throw err
     } finally {
       loading.value = false
@@ -194,7 +216,11 @@ export const useClauchStore = defineStore('clauch', () => {
       return response.data
     } catch (err: any) {
       error.value = err.message || '获取小组积分榜失败'
-      console.error('Failed to get group standings:', err)
+      handleError(err, {
+        component: 'ClauchStore',
+        userAction: '获取小组积分榜',
+        silent: true
+      })
       throw err
     }
   }
@@ -217,7 +243,10 @@ export const useClauchStore = defineStore('clauch', () => {
       return response.data
     } catch (err: any) {
       error.value = err.message || '生成淘汰赛对阵失败'
-      console.error('Failed to generate knockout:', err)
+      handleError(err, {
+        component: 'ClauchStore',
+        userAction: '生成淘汰赛对阵'
+      })
       throw err
     } finally {
       loading.value = false

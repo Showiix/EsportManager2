@@ -266,6 +266,9 @@ import {
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
 import { teamApi, type Player } from '@/api/tauri'
 import PlayerEditDialog from '@/components/player/PlayerEditDialog.vue'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('Players')
 
 const router = useRouter()
 const teamStore = useTeamStoreTauri()
@@ -298,15 +301,15 @@ const editingPlayer = ref<any>(null)
 
 // 初始化加载
 onMounted(async () => {
-  console.log('Players.vue onMounted started')
+  logger.debug('Players.vue onMounted started')
   try {
     // 先加载赛区信息（用于获取赛区代码）
     await teamStore.loadRegions()
-    console.log('Regions loaded')
+    logger.debug('Regions loaded')
 
     // 获取所有队伍（用于获取队伍名称）
     const allTeams = await teamApi.getAllTeams()
-    console.log(`Got ${allTeams.length} teams`)
+    logger.debug(`Got ${allTeams.length} teams`)
 
     // 创建队伍映射
     const teamMap = new Map<number, { name: string; short_name: string; region_id: number }>()
@@ -320,7 +323,7 @@ onMounted(async () => {
 
     // 一次性获取所有选手
     const allPlayers = await teamApi.getAllPlayers()
-    console.log(`Got ${allPlayers.length} players from API`)
+    logger.debug(`Got ${allPlayers.length} players from API`)
 
     // 添加队伍信息
     rawPlayers.value = allPlayers.map(p => {
@@ -333,9 +336,9 @@ onMounted(async () => {
       }
     }) as any
 
-    console.log(`Loaded ${rawPlayers.value.length} players total`)
+    logger.debug(`Loaded ${rawPlayers.value.length} players total`)
   } catch (e) {
-    console.error('Failed to load players:', e)
+    logger.error('Failed to load players:', e)
   }
 })
 

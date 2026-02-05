@@ -257,6 +257,9 @@ import { ElMessage } from 'element-plus'
 import { Loading, ArrowRight, Check } from '@element-plus/icons-vue'
 import { aiTransferApi, type PlayerTransferStrategy } from '@/api/tauri'
 import { formatMoneyFromWan } from '@/utils'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('PlayerStrategyDialog')
 
 const props = defineProps<{
   playerId: number | null
@@ -300,7 +303,7 @@ const loadStrategy = async () => {
     const result = await aiTransferApi.getPlayerTransferStrategy(props.playerId)
     strategy.value = result
   } catch (e) {
-    console.error('Failed to load strategy:', e)
+    logger.error('加载转会策略失败', { playerId: props.playerId, error: e })
   } finally {
     loading.value = false
   }
@@ -316,7 +319,7 @@ const generateStrategy = async () => {
     emit('strategyGenerated', props.playerId)
     ElMessage.success('策略生成成功')
   } catch (e) {
-    console.error('Failed to generate strategy:', e)
+    logger.error('生成转会策略失败', { playerId: props.playerId, error: e })
     ElMessage.error('策略生成失败')
   } finally {
     loading.value = false

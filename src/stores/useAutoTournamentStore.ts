@@ -4,6 +4,9 @@ import { useEventStore } from './useEventStore'
 import { useTeamStore } from './useTeamStore'
 import { useRegionStore } from './useRegionStore'
 import type { Competition, Team, CompetitionType, CompetitionFormat } from '@/types'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('AutoTournamentStore')
 
 interface AutoCreationRule {
   id: string
@@ -328,7 +331,7 @@ export const useAutoTournamentStore = defineStore('autoTournament', () => {
   const log = (message: string) => {
     const timestamp = new Date().toLocaleTimeString()
     processingLog.value.push(`[${timestamp}] ${message}`)
-    console.log(`[AutoTournament] ${message}`)
+    logger.debug(message)
   }
 
   // 手动触发检查

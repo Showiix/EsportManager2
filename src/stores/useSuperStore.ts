@@ -5,6 +5,10 @@ import type {
   SimulateSuperMatchRequest,
 } from '@/types'
 import type { BracketInfo, TeamAnnualPoints } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('SuperStore')
 
 export const useSuperStore = defineStore('super', () => {
   // 状态
@@ -165,7 +169,7 @@ export const useSuperStore = defineStore('super', () => {
     error.value = null
 
     try {
-      console.log(`[SuperStore] 获取Super赛事数据: tournamentId=${tournamentId}`)
+      logger.debug('获取Super赛事数据', { tournamentId })
       const { superApi } = await import('@/api')
       const response = await superApi.getSuperBracket(tournamentId)
 
@@ -175,17 +179,21 @@ export const useSuperStore = defineStore('super', () => {
         superBrackets.value.set(tournamentId, bracket)
         currentBracket.value = bracket
         currentTournamentId.value = tournamentId
-        console.log(`[SuperStore] ✅ Super赛事数据加载成功`)
+        logger.info('Super赛事数据加载成功')
         return response.data
       }
     } catch (err: any) {
       // 如果是404，表示还没有生成Super赛事
       if (err.response?.status === 404 || err.message?.includes('404')) {
-        console.log('[SuperStore] Super赛事尚未生成')
+        logger.debug('Super赛事尚未生成')
         currentBracket.value = null
       } else {
         error.value = err.message || '获取Super信息失败'
-        console.error('[SuperStore] ❌ 获取Super失败:', err)
+        handleError(err, {
+          component: 'SuperStore',
+          userAction: '获取Super赛事',
+          silent: true
+        })
       }
       throw err
     } finally {
@@ -201,7 +209,7 @@ export const useSuperStore = defineStore('super', () => {
     error.value = null
 
     try {
-      console.log(`[SuperStore] 开始生成Super赛事`)
+      logger.info('开始生成Super赛事')
       const { superApi } = await import('@/api')
       const response = await superApi.generateSuper(request)
 
@@ -212,12 +220,17 @@ export const useSuperStore = defineStore('super', () => {
         superBrackets.value.set(tournamentId, bracket)
         currentBracket.value = bracket
         currentTournamentId.value = tournamentId
-        console.log(`[SuperStore] ✅ Super赛事生成成功, tournamentId=${tournamentId}`)
+        logger.info('Super赛事生成成功', { tournamentId })
         return response.data
       }
     } catch (err: any) {
       error.value = err.message || '生成Super对阵失败'
-      console.error('[SuperStore] ❌ 生成Super失败:', err)
+      handleError(err, {
+        component: 'SuperStore',
+        userAction: '生成Super赛事',
+        canRetry: true,
+        retryFn: () => generateSuper(request)
+      })
       throw err
     } finally {
       loading.value = false
@@ -229,14 +242,18 @@ export const useSuperStore = defineStore('super', () => {
    */
   async function checkSuperEligibility() {
     try {
-      console.log(`[SuperStore] 检查Super资格`)
+      logger.debug('检查Super资格')
       const { superApi } = await import('@/api')
       const response = await superApi.checkSuperEligibility()
-      console.log(`[SuperStore] Super资格检查结果:`, response.data)
+      logger.debug('Super资格检查结果', { result: response.data })
       return response.data
     } catch (err: any) {
       error.value = err.message || '检查Super资格失败'
-      console.error('[SuperStore] ❌ 检查Super资格失败:', err)
+      handleError(err, {
+        component: 'SuperStore',
+        userAction: '检查Super资格',
+        silent: true
+      })
       throw err
     }
   }
@@ -246,18 +263,22 @@ export const useSuperStore = defineStore('super', () => {
    */
   async function fetchQualifiedTeams() {
     try {
-      console.log(`[SuperStore] 获取晋级队伍`)
+      logger.debug('获取晋级队伍')
       const { superApi } = await import('@/api')
       const response = await superApi.getQualifiedTeams()
       if (response.data) {
         // 使用 unknown 作为中间类型进行转换
         qualifiedTeams.value = response.data as unknown as TeamAnnualPoints[]
-        console.log(`[SuperStore] 晋级队伍数量:`, qualifiedTeams.value.length)
+        logger.debug('晋级队伍数量', { count: qualifiedTeams.value.length })
       }
       return response.data
     } catch (err: any) {
       error.value = err.message || '获取晋级队伍失败'
-      console.error('[SuperStore] ❌ 获取晋级队伍失败:', err)
+      handleError(err, {
+        component: 'SuperStore',
+        userAction: '获取晋级队伍',
+        silent: true
+      })
       throw err
     }
   }
@@ -270,12 +291,12 @@ export const useSuperStore = defineStore('super', () => {
     error.value = null
 
     try {
-      console.log(`[SuperStore] 模拟比赛: matchId=${request.matchId}`)
+      logger.debug('模拟比赛', { matchId: request.matchId })
       const { superApi } = await import('@/api')
       const response = await superApi.simulateSuperMatch(request)
 
       if (response.data) {
-        console.log(`[SuperStore] ✅ 比赛模拟成功`, response.data)
+        logger.info('比赛模拟成功', { result: response.data })
 
         // 刷新对阵数据
         if (currentTournamentId.value) {
@@ -286,7 +307,12 @@ export const useSuperStore = defineStore('super', () => {
       }
     } catch (err: any) {
       error.value = err.message || '模拟比赛失败'
-      console.error('[SuperStore] ❌ 模拟比赛失败:', err)
+      handleError(err, {
+        component: 'SuperStore',
+        userAction: '模拟Super比赛',
+        canRetry: true,
+        retryFn: () => simulateSuperMatch(request)
+      })
       throw err
     } finally {
       loading.value = false
@@ -298,14 +324,18 @@ export const useSuperStore = defineStore('super', () => {
    */
   async function fetchFighterStandings(tournamentId: number) {
     try {
-      console.log(`[SuperStore] 获取Fighter组积分榜: tournamentId=${tournamentId}`)
+      logger.debug('获取Fighter组积分榜', { tournamentId })
       const { superApi } = await import('@/api')
       const response = await superApi.getFighterStandings(tournamentId)
-      console.log(`[SuperStore] Fighter组积分榜:`, response.data)
+      logger.debug('Fighter组积分榜', { standings: response.data })
       return response.data
     } catch (err: any) {
       error.value = err.message || '获取积分榜失败'
-      console.error('[SuperStore] ❌ 获取积分榜失败:', err)
+      handleError(err, {
+        component: 'SuperStore',
+        userAction: '获取Fighter积分榜',
+        silent: true
+      })
       throw err
     }
   }
@@ -318,14 +348,17 @@ export const useSuperStore = defineStore('super', () => {
     error.value = null
 
     try {
-      console.log(`[SuperStore] 完成赛事: tournamentId=${tournamentId}`)
+      logger.info('完成赛事', { tournamentId })
       const { superApi } = await import('@/api')
       const response = await superApi.completeTournament(tournamentId)
-      console.log(`[SuperStore] ✅ 赛事完成成功`, response.data)
+      logger.info('赛事完成成功', { result: response.data })
       return response.data
     } catch (err: any) {
       error.value = err.message || '完成赛事失败'
-      console.error('[SuperStore] ❌ 完成赛事失败:', err)
+      handleError(err, {
+        component: 'SuperStore',
+        userAction: '完成Super赛事'
+      })
       throw err
     } finally {
       loading.value = false

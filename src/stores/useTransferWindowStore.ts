@@ -13,6 +13,9 @@ import {
   type UpdatePersonalityRequest,
 } from '@/api/tauri'
 import { formatMoney } from '@/utils'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('TransferWindowStore')
 
 /** 轮次名称 */
 export const ROUND_NAMES: Record<number, string> = {
@@ -306,7 +309,7 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
       }
       return config
     } catch (e) {
-      console.error('Failed to load team personality:', e)
+      logger.warn('加载球队AI性格失败', { teamId, error: e })
       return null
     }
   }
@@ -347,7 +350,7 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
       teamReputations.value.set(teamId, reputation)
       return reputation
     } catch (e) {
-      console.error('Failed to load team reputation:', e)
+      logger.warn('加载球队声望失败', { teamId, error: e })
       return null
     }
   }

@@ -530,6 +530,9 @@ import type { BracketInfo, GroupStandingInfo, DetailedGameResult, PlayerGameStat
 import type { PlayerPosition } from '@/types/player'
 import type { MatchDetail } from '@/types/matchDetail'
 import type { ICPTournament, ICPSeedGroup, ICPMatch, ICPRegionStats, ICPRegionMatch, ICPGroupStanding } from '@/types/icp'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('ICPDetail')
 
 const router = useRouter()
 const gameStore = useGameStore()
@@ -862,7 +865,7 @@ const handleSimulateMatch = async (match: ICPMatch) => {
       // 优先使用已保存的 backendMatchId，否则尝试查找
       const backendMatchId = match.backendMatchId || findBackendMatchId(match)
 
-      console.log('[handleSimulateMatch]', {
+      logger.debug('[handleSimulateMatch]', {
         matchId: match.id,
         backendMatchId,
         teamA: match.teamAName,
@@ -929,7 +932,7 @@ const handleSimulateMatch = async (match: ICPMatch) => {
         }
       }
     } catch (error) {
-      console.warn('后端 API 模拟失败，使用本地引擎:', error)
+      logger.warn('后端 API 模拟失败，使用本地引擎:', error)
     }
   }
 
@@ -944,7 +947,7 @@ const handleSimulateMatch = async (match: ICPMatch) => {
  */
 const findBackendMatchId = (match: ICPMatch, stagePrefix?: string): number | null => {
   if (!bracketData.value) {
-    console.warn('[findBackendMatchId] bracketData is null')
+    logger.warn('[findBackendMatchId] bracketData is null')
     return null
   }
 
@@ -956,7 +959,7 @@ const findBackendMatchId = (match: ICPMatch, stagePrefix?: string): number | nul
     allMatches = allMatches.filter(m => m.stage?.startsWith(stagePrefix))
   }
 
-  console.log('[findBackendMatchId] Looking for match:', {
+  logger.debug('[findBackendMatchId] Looking for match:', {
     teamAName: match.teamAName,
     teamBName: match.teamBName,
     teamAId: match.teamAId,
@@ -973,7 +976,7 @@ const findBackendMatchId = (match: ICPMatch, stagePrefix?: string): number | nul
 
     if ((homeTeamName === match.teamAName && awayTeamName === match.teamBName) ||
         (homeTeamName === match.teamBName && awayTeamName === match.teamAName)) {
-      console.log('[findBackendMatchId] Found by name:', m.match_id)
+      logger.debug('[findBackendMatchId] Found by name:', m.match_id)
       return m.match_id
     }
   }
@@ -986,16 +989,16 @@ const findBackendMatchId = (match: ICPMatch, stagePrefix?: string): number | nul
 
       if ((homeTeamId === Number(match.teamAId) && awayTeamId === Number(match.teamBId)) ||
           (homeTeamId === Number(match.teamBId) && awayTeamId === Number(match.teamAId))) {
-        console.log('[findBackendMatchId] Found by ID:', m.match_id)
+        logger.debug('[findBackendMatchId] Found by ID:', m.match_id)
         return m.match_id
       }
     }
   }
 
   // 如果匹配失败，打印调试信息
-  console.warn('[findBackendMatchId] No match found. Backend matches:')
+  logger.warn('[findBackendMatchId] No match found. Backend matches:')
   allMatches.slice(0, 10).forEach((m, idx) => {
-    console.log(`  [${idx}] stage: ${m.stage}, home: ${m.home_team?.id}(${m.home_team?.short_name || m.home_team?.name}), away: ${m.away_team?.id}(${m.away_team?.short_name || m.away_team?.name})`)
+    logger.debug(`  [${idx}] stage: ${m.stage}, home: ${m.home_team?.id}(${m.home_team?.short_name || m.home_team?.name}), away: ${m.away_team?.id}(${m.away_team?.short_name || m.away_team?.name})`)
   })
 
   return null
@@ -1105,8 +1108,8 @@ const handleGenerateRegionBattle = async () => {
     // 关键：只有当第二名和第三名可以明确区分时，才能跳过半决赛直接决赛
     const canSkipSemifinal = sortedRegions[1].totalBadges > sortedRegions[2].totalBadges
 
-    console.log('[ICP] 赛区排名:', sortedRegions.map(r => `${r.region}:${r.totalBadges}`).join(', '))
-    console.log('[ICP] 是否可以跳过半决赛:', canSkipSemifinal)
+    logger.debug('[ICP] 赛区排名:', sortedRegions.map(r => `${r.region}:${r.totalBadges}`).join(', '))
+    logger.debug('[ICP] 是否可以跳过半决赛:', canSkipSemifinal)
 
     if (canSkipSemifinal) {
       // 第二名徽章数 > 第三名，可以明确区分前两名，直接进行决赛
@@ -1165,9 +1168,9 @@ const fillKnockoutMatchTeams = async (stagePrefix: string, regionBattle: ICPRegi
           Number(match.teamAId),
           Number(match.teamBId)
         )
-        console.log(`[fillKnockoutMatchTeams] Updated ${targetStage}: ${match.teamAName} vs ${match.teamBName}, backendMatchId=${backendMatch.match_id}`)
+        logger.debug(`[fillKnockoutMatchTeams] Updated ${targetStage}: ${match.teamAName} vs ${match.teamBName}, backendMatchId=${backendMatch.match_id}`)
       } catch (error) {
-        console.error(`[fillKnockoutMatchTeams] Failed to update ${targetStage}:`, error)
+        logger.error(`[fillKnockoutMatchTeams] Failed to update ${targetStage}:`, error)
       }
     }
   }
@@ -1194,14 +1197,14 @@ const cancelUnusedMatches = async (stagePrefix: string) => {
     m.stage?.startsWith(stagePrefix) && m.status?.toUpperCase() !== 'COMPLETED'
   )
 
-  console.log(`[ICP] 取消 ${matchesToCancel.length} 场不需要的比赛 (${stagePrefix})`)
+  logger.debug(`[ICP] 取消 ${matchesToCancel.length} 场不需要的比赛 (${stagePrefix})`)
 
   for (const match of matchesToCancel) {
     try {
       await matchApi.cancelMatch(match.match_id)
-      console.log(`[ICP] 已取消比赛: ${match.stage} (ID: ${match.match_id})`)
+      logger.debug(`[ICP] 已取消比赛: ${match.stage} (ID: ${match.match_id})`)
     } catch (error) {
-      console.warn(`[ICP] 取消比赛失败: ${match.stage}`, error)
+      logger.warn(`[ICP] 取消比赛失败: ${match.stage}`, error)
     }
   }
 }
@@ -1267,7 +1270,7 @@ const handleSimulateRegionMatch = async (battle: ICPRegionMatch, match: ICPMatch
       // 优先使用已保存的 backendMatchId，否则尝试查找（限定在对应阶段）
       const backendMatchId = match.backendMatchId || findBackendMatchId(match, stagePrefix)
 
-      console.log('[handleSimulateRegionMatch]', {
+      logger.debug('[handleSimulateRegionMatch]', {
         matchId: match.id,
         backendMatchId,
         stagePrefix,
@@ -1337,7 +1340,7 @@ const handleSimulateRegionMatch = async (battle: ICPRegionMatch, match: ICPMatch
         }
       }
     } catch (error) {
-      console.warn('后端 API 模拟失败:', error)
+      logger.warn('后端 API 模拟失败:', error)
     }
   }
 
@@ -1399,9 +1402,9 @@ const cancelUnusedTiebreaker = async (battle: ICPRegionMatch) => {
   if (tiebreakerMatch && tiebreakerMatch.status !== 'Completed' && tiebreakerMatch.status !== 'COMPLETED') {
     try {
       await matchApi.cancelMatch(tiebreakerMatch.match_id)
-      console.log(`[ICP] 已取消不需要的加赛: ${tiebreakerStage}`)
+      logger.debug(`[ICP] 已取消不需要的加赛: ${tiebreakerStage}`)
     } catch (error) {
-      console.error('[ICP] 取消加赛失败:', error)
+      logger.error('[ICP] 取消加赛失败:', error)
     }
   }
 }
@@ -1414,7 +1417,7 @@ const setupTiebreakerMatch = async (battle: ICPRegionMatch) => {
   const seed1Match = battle.matches[0] // 第一场是一号种子对决
 
   if (!seed1Match) {
-    console.error('无法找到一号种子比赛')
+    logger.error('无法找到一号种子比赛')
     return
   }
 
@@ -1450,9 +1453,9 @@ const setupTiebreakerMatch = async (battle: ICPRegionMatch) => {
           Number(seed1Match.teamAId),
           Number(seed1Match.teamBId)
         )
-        console.log(`[setupTiebreakerMatch] 已设置加赛队伍: ${seed1Match.teamAName} vs ${seed1Match.teamBName}`)
+        logger.debug(`[setupTiebreakerMatch] 已设置加赛队伍: ${seed1Match.teamAName} vs ${seed1Match.teamBName}`)
       } catch (error) {
-        console.error('[setupTiebreakerMatch] 设置加赛队伍失败:', error)
+        logger.error('[setupTiebreakerMatch] 设置加赛队伍失败:', error)
       }
     }
   }
@@ -1539,7 +1542,7 @@ const handleSimulateTiebreaker = async (battle: ICPRegionMatch) => {
       await checkTournamentCompletion()
     }
   } catch (error) {
-    console.error('模拟加赛失败:', error)
+    logger.error('模拟加赛失败:', error)
     ElMessage.error('模拟加赛失败')
   }
 }
@@ -1622,7 +1625,7 @@ const batchSimulateGroupStage = async () => {
     ElMessage.success('种子组赛模拟完成！现在可以进入赛区对决。')
   } catch (error: any) {
     if (error !== 'cancel') {
-      console.error('种子组赛模拟失败:', error)
+      logger.error('种子组赛模拟失败:', error)
       ElMessage.error(error.message || '种子组赛模拟失败')
     }
   } finally {
@@ -1672,7 +1675,7 @@ const batchSimulateRegionBattle = async () => {
     ElMessage.success('赛区对决模拟完成！')
   } catch (error: any) {
     if (error !== 'cancel') {
-      console.error('赛区对决模拟失败:', error)
+      logger.error('赛区对决模拟失败:', error)
       ElMessage.error(error.message || '赛区对决模拟失败')
     }
   } finally {
@@ -1689,7 +1692,7 @@ const simulateMatchInternal = async (match: ICPMatch) => {
   const backendMatchId = match.backendMatchId || findBackendMatchId(match)
 
   if (!backendMatchId) {
-    console.error('无法找到后端比赛ID:', match.id, match.teamAName, 'vs', match.teamBName)
+    logger.error('无法找到后端比赛ID:', match.id, match.teamAName, 'vs', match.teamBName)
     return
   }
 
@@ -1745,7 +1748,7 @@ const simulateMatchInternal = async (match: ICPMatch) => {
       checkGroupCompletion()
     }
   } catch (error) {
-    console.error('模拟比赛失败:', error)
+    logger.error('模拟比赛失败:', error)
     ElMessage.error('模拟比赛失败')
   }
 }
@@ -1760,7 +1763,7 @@ const simulateRegionBattleInternal = async (battle: ICPRegionMatch) => {
   for (const match of battle.matches) {
     // 检查是否已经有赛区赢得3场（BO4取胜条件）
     if (battle.regionAWins >= 3 || battle.regionBWins >= 3) {
-      console.log(`[ICP] 赛区对决提前结束: ${battle.regionAName} ${battle.regionAWins} - ${battle.regionBWins} ${battle.regionBName}`)
+      logger.debug(`[ICP] 赛区对决提前结束: ${battle.regionAName} ${battle.regionAWins} - ${battle.regionBWins} ${battle.regionBName}`)
       break
     }
 
@@ -1769,7 +1772,7 @@ const simulateRegionBattleInternal = async (battle: ICPRegionMatch) => {
       const backendMatchId = match.backendMatchId || findBackendMatchId(match, stagePrefix)
 
       if (!backendMatchId) {
-        console.error('无法找到后端比赛ID:', match.id, match.teamAName, 'vs', match.teamBName)
+        logger.error('无法找到后端比赛ID:', match.id, match.teamAName, 'vs', match.teamBName)
         continue
       }
 
@@ -1831,7 +1834,7 @@ const simulateRegionBattleInternal = async (battle: ICPRegionMatch) => {
           }
         }
       } catch (error) {
-        console.error('模拟比赛失败:', error)
+        logger.error('模拟比赛失败:', error)
       }
 
       await new Promise(resolve => setTimeout(resolve, 100))
@@ -1869,7 +1872,7 @@ const simulateTiebreakerInternal = async (battle: ICPRegionMatch) => {
   const backendMatchId = match.backendMatchId
 
   if (!backendMatchId) {
-    console.error('无法找到加赛后端比赛ID')
+    logger.error('无法找到加赛后端比赛ID')
     return
   }
 
@@ -1931,7 +1934,7 @@ const simulateTiebreakerInternal = async (battle: ICPRegionMatch) => {
       await checkTournamentCompletion()
     }
   } catch (error) {
-    console.error('模拟加赛失败:', error)
+    logger.error('模拟加赛失败:', error)
   }
 }
 
@@ -1943,9 +1946,9 @@ const showChampionCelebration = async (championName: string) => {
   if (tournamentId.value) {
     try {
       await financeApi.distributeTournamentPrizes(tournamentId.value)
-      console.log('ICP赛事奖金已发放')
+      logger.debug('ICP赛事奖金已发放')
     } catch (e) {
-      console.error('发放奖金失败:', e)
+      logger.error('发放奖金失败:', e)
     }
   }
 
@@ -1976,7 +1979,7 @@ const loadICPData = async () => {
     // 获取当前存档和赛季
     const currentSave = gameStore.currentSave
     if (!currentSave) {
-      console.warn('未找到当前存档')
+      logger.warn('未找到当前存档')
       return
     }
 
@@ -1989,7 +1992,7 @@ const loadICPData = async () => {
     }
 
     if (!tournamentId.value) {
-      console.warn('未找到ICP赛事')
+      logger.warn('未找到ICP赛事')
       return
     }
 
@@ -2030,14 +2033,14 @@ const loadICPData = async () => {
         await fillKnockoutMatchTeams('ICP_FINAL', icpTournament.final)
       }
     } else {
-      console.warn('[ICP] 数据不足，无法初始化种子组:', {
+      logger.warn('[ICP] 数据不足，无法初始化种子组:', {
         hasBracket: !!bracket,
         standingsCount: standings?.length || 0
       })
     }
 
   } catch (error) {
-    console.error('加载ICP数据失败:', error)
+    logger.error('加载ICP数据失败:', error)
   } finally {
     loading.value = false
   }
@@ -2085,8 +2088,8 @@ const _convertBracketToICPFormat = (bracket: BracketInfo) => {
  * 从后端数据初始化种子组
  */
 const initializeSeedGroupsFromBackend = (bracket: BracketInfo, standings: GroupStandingInfo[]) => {
-  console.log('[ICP] initializeSeedGroupsFromBackend - standings:', standings)
-  console.log('[ICP] initializeSeedGroupsFromBackend - bracket matches:', bracket.matches?.length)
+  logger.debug('[ICP] initializeSeedGroupsFromBackend - standings:', standings)
+  logger.debug('[ICP] initializeSeedGroupsFromBackend - bracket matches:', bracket.matches?.length)
 
   // 清空现有数据
   icpTournament.seedGroups = []
@@ -2104,7 +2107,7 @@ const initializeSeedGroupsFromBackend = (bracket: BracketInfo, standings: GroupS
       }
     })
   }
-  console.log('[ICP] teamRegionMap size:', teamRegionMap.size)
+  logger.debug('[ICP] teamRegionMap size:', teamRegionMap.size)
 
   // 从积分榜构建种子组
   // GroupStandingInfo 包含 { group_name, teams: TeamGroupStats[] }
@@ -2317,7 +2320,7 @@ const initializeSeedGroupsFromBackend = (bracket: BracketInfo, standings: GroupS
     activeSeedGroup.value = seedGroups[0].groupName
   }
 
-  console.log('[ICP] 初始化完成 - seedGroups:', seedGroups.length, 'regionStats:', icpTournament.regionStats.length)
+  logger.debug('[ICP] 初始化完成 - seedGroups:', seedGroups.length, 'regionStats:', icpTournament.regionStats.length)
 }
 
 /**
@@ -2339,7 +2342,7 @@ const getRegionDisplayName = (regionCode: string): string => {
 const _updateICPStandingsFromBackend = (standings: GroupStandingInfo[]) => {
   // 如果 seedGroups 为空，说明还没初始化，直接返回
   if (icpTournament.seedGroups.length === 0) {
-    console.warn('[ICP] seedGroups 为空，跳过更新积分榜')
+    logger.warn('[ICP] seedGroups 为空，跳过更新积分榜')
     return
   }
 
@@ -2351,7 +2354,7 @@ const _updateICPStandingsFromBackend = (standings: GroupStandingInfo[]) => {
 
     const group = icpTournament.seedGroups.find(g => g.groupName === groupName)
     if (!group) {
-      console.warn('[ICP] 找不到组:', groupName)
+      logger.warn('[ICP] 找不到组:', groupName)
       return
     }
 
@@ -2416,7 +2419,7 @@ const _updateICPStandingsFromBackend = (standings: GroupStandingInfo[]) => {
 const restoreRegionBattleFromBackend = (bracket: BracketInfo) => {
   if (!bracket.matches) return
 
-  console.log('[ICP] restoreRegionBattleFromBackend - 开始恢复赛区对决状态')
+  logger.debug('[ICP] restoreRegionBattleFromBackend - 开始恢复赛区对决状态')
 
   // 根据徽章数量排序赛区（用于确定对阵双方）
   const sortedRegions = [...icpTournament.regionStats].sort((a, b) => b.totalBadges - a.totalBadges)
@@ -2434,20 +2437,20 @@ const restoreRegionBattleFromBackend = (bracket: BracketInfo) => {
   const finalMatches = bracket.matches.filter(m => m.stage?.startsWith('ICP_FINAL_') && !m.stage?.includes('TIEBREAKER'))
   const finalTiebreaker = bracket.matches.find(m => m.stage === 'ICP_FINAL_TIEBREAKER')
 
-  console.log('[ICP] 半决赛比赛数:', semiMatches.length, '决赛比赛数:', finalMatches.length)
+  logger.debug('[ICP] 半决赛比赛数:', semiMatches.length, '决赛比赛数:', finalMatches.length)
 
   // 检查是否有已分配队伍的半决赛比赛
   const hasAssignedSemiMatches = semiMatches.some(m => m.home_team?.id && m.away_team?.id)
   const hasAssignedFinalMatches = finalMatches.some(m => m.home_team?.id && m.away_team?.id)
 
   if (!hasAssignedSemiMatches && !hasAssignedFinalMatches) {
-    console.log('[ICP] 没有已分配的淘汰赛比赛，跳过恢复')
+    logger.debug('[ICP] 没有已分配的淘汰赛比赛，跳过恢复')
     return
   }
 
   // 恢复半决赛状态
   if (hasAssignedSemiMatches && semiMatches.length >= 4) {
-    console.log('[ICP] 恢复半决赛状态')
+    logger.debug('[ICP] 恢复半决赛状态')
 
     // 从比赛中推断对阵的两个赛区
     const firstMatch = semiMatches.find(m => m.home_team?.id && m.away_team?.id)
@@ -2578,7 +2581,7 @@ const restoreRegionBattleFromBackend = (bracket: BracketInfo) => {
           }
         }
 
-        console.log('[ICP] 半决赛恢复完成:', {
+        logger.debug('[ICP] 半决赛恢复完成:', {
           regionA, regionB,
           regionAWins, regionBWins,
           status: icpTournament.semifinal.status,
@@ -2590,7 +2593,7 @@ const restoreRegionBattleFromBackend = (bracket: BracketInfo) => {
 
   // 恢复决赛状态
   if (hasAssignedFinalMatches && finalMatches.length >= 4) {
-    console.log('[ICP] 恢复决赛状态')
+    logger.debug('[ICP] 恢复决赛状态')
 
     // 从比赛中推断对阵的两个赛区
     const firstMatch = finalMatches.find(m => m.home_team?.id && m.away_team?.id)
@@ -2719,7 +2722,7 @@ const restoreRegionBattleFromBackend = (bracket: BracketInfo) => {
           }
         }
 
-        console.log('[ICP] 决赛恢复完成:', {
+        logger.debug('[ICP] 决赛恢复完成:', {
           regionA, regionB,
           regionAWins, regionBWins,
           status: icpTournament.final.status,
@@ -2738,7 +2741,7 @@ const restoreRegionBattleFromBackend = (bracket: BracketInfo) => {
       const semifinalWinner = icpTournament.regionStats.find(r => r.region === icpTournament.semifinal?.winnerId)
 
       if (semifinalWinner) {
-        console.log('[ICP] 半决赛已完成，创建决赛对阵')
+        logger.debug('[ICP] 半决赛已完成，创建决赛对阵')
         icpTournament.final = createRegionBattle(
           sortedRegions[0], // 第一名赛区
           semifinalWinner,
@@ -2768,11 +2771,11 @@ const restoreRegionBattleFromBackend = (bracket: BracketInfo) => {
       icpTournament.fourthPlace = remainingRegions[1]
 
       icpTournament.status = 'completed'
-      console.log('[ICP] 赛事已完成，冠军:', icpTournament.champion?.regionName)
+      logger.debug('[ICP] 赛事已完成，冠军:', icpTournament.champion?.regionName)
     }
   }
 
-  console.log('[ICP] 赛区对决状态恢复完成, status:', icpTournament.status)
+  logger.debug('[ICP] 赛区对决状态恢复完成, status:', icpTournament.status)
 }
 
 /**

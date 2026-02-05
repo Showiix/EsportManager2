@@ -222,7 +222,10 @@ import { ElMessage } from 'element-plus'
 import { Document, Money, Sunny, Medal, Warning, TrendCharts, Switch } from '@element-plus/icons-vue'
 import { transferApi, type PlayerContractDetail } from '@/api/tauri'
 import { useGameStore } from '@/stores/useGameStore'
-import { formatMoney as formatValue, formatMoney as formatSalary } from '@/utils'
+import { formatMoneyFromWan as formatValue, formatMoneyFromWan as formatSalary } from '@/utils'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('PlayerContractDialog')
 
 const router = useRouter()
 const gameStore = useGameStore()
@@ -264,7 +267,7 @@ const loadPlayerDetail = async (playerId: number) => {
   try {
     playerDetail.value = await transferApi.getPlayerContractDetail(playerId)
   } catch (e) {
-    console.error('Failed to load player detail:', e)
+    logger.error('加载选手详情失败', { playerId, error: e })
     ElMessage.error('加载选手详情失败')
   } finally {
     isLoading.value = false

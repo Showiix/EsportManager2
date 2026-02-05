@@ -454,6 +454,205 @@ impl DatabaseManager {
                 .map_err(|e| DatabaseError::Migration(e.to_string()))?;
         }
 
+        // 迁移：创建双向评估系统相关表
+        self.run_evaluation_tables_migration(pool).await?;
+
+        Ok(())
+    }
+
+    /// 运行双向评估系统表的迁移
+    async fn run_evaluation_tables_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        // 检查 team_season_evaluations 表是否已存在
+        let tables: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='team_season_evaluations'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if tables.is_empty() {
+            // 创建战队赛季评估表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS team_season_evaluations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    window_id INTEGER NOT NULL,
+                    team_id INTEGER NOT NULL,
+                    team_name TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+
+                    -- 战绩评估
+                    current_rank INTEGER,
+                    last_season_rank INTEGER,
+                    rank_trend TEXT,
+                    rank_change INTEGER,
+
+                    -- 阵容评估
+                    roster_power REAL,
+                    roster_age_avg REAL,
+                    roster_salary_total INTEGER,
+                    budget_remaining INTEGER,
+                    roster_count INTEGER,
+
+                    -- 评估结论
+                    stability_score INTEGER,
+                    urgency_level TEXT,
+                    strategy TEXT,
+                    strategy_reason TEXT,
+
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+                    FOREIGN KEY (window_id) REFERENCES transfer_windows(id) ON DELETE CASCADE
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建位置需求表（买人列表）
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS team_position_needs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    evaluation_id INTEGER NOT NULL,
+                    position TEXT NOT NULL,
+
+                    -- 当前状况
+                    current_starter_id INTEGER,
+                    current_starter_name TEXT,
+                    current_starter_ability INTEGER,
+                    current_starter_age INTEGER,
+
+                    -- 需求描述
+                    need_level TEXT,
+                    min_ability_target INTEGER,
+                    max_salary_budget INTEGER,
+                    prefer_young INTEGER,
+                    reason TEXT,
+
+                    FOREIGN KEY (evaluation_id) REFERENCES team_season_evaluations(id) ON DELETE CASCADE
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建挂牌评估表（卖人列表）
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS team_listing_evaluations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    evaluation_id INTEGER NOT NULL,
+                    player_id INTEGER NOT NULL,
+                    player_name TEXT NOT NULL,
+                    position TEXT,
+
+                    -- 选手状况
+                    ability INTEGER,
+                    age INTEGER,
+                    salary INTEGER,
+
+                    -- 保护因素
+                    has_recent_honor INTEGER,
+                    honor_details TEXT,
+                    season_influence_rank INTEGER,
+
+                    -- 挂牌决策
+                    should_list INTEGER,
+                    list_reason TEXT,
+                    protect_reason TEXT,
+                    suggested_price INTEGER,
+
+                    FOREIGN KEY (evaluation_id) REFERENCES team_season_evaluations(id) ON DELETE CASCADE,
+                    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建选手赛季评估表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS player_season_evaluations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    window_id INTEGER NOT NULL,
+                    player_id INTEGER NOT NULL,
+                    player_name TEXT NOT NULL,
+                    team_id INTEGER NOT NULL,
+                    team_name TEXT NOT NULL,
+
+                    -- 选手属性
+                    ability INTEGER,
+                    age INTEGER,
+                    salary INTEGER,
+                    satisfaction INTEGER,
+                    loyalty INTEGER,
+
+                    -- 评估因素得分
+                    team_rank_score REAL,
+                    team_trend_score REAL,
+                    teammate_score REAL,
+                    salary_score REAL,
+                    honor_score REAL,
+                    satisfaction_score REAL,
+
+                    -- 评估结论
+                    stay_score REAL,
+                    wants_to_leave INTEGER,
+                    leave_reason TEXT,
+
+                    -- 市场估值
+                    estimated_market_salary INTEGER,
+                    salary_gap INTEGER,
+
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
+                    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+                    FOREIGN KEY (window_id) REFERENCES transfer_windows(id) ON DELETE CASCADE
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建索引
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_season_evaluations_save ON team_season_evaluations(save_id, season_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_season_evaluations_team ON team_season_evaluations(team_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_position_needs_evaluation ON team_position_needs(evaluation_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_listing_evaluations_evaluation ON team_listing_evaluations(evaluation_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_season_evaluations_save ON player_season_evaluations(save_id, window_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_season_evaluations_player ON player_season_evaluations(player_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_season_evaluations_team ON player_season_evaluations(team_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
         Ok(())
     }
 

@@ -415,11 +415,17 @@ impl TransferEngine {
                 let salary: i64 = player.get("salary");
                 let age: i64 = player.get("age");
 
-                // 性价比检查
+                // 性价比检查：value_ratio = 能力值 / (薪资万元)
+                // 合理区间：能力80对应200万年薪，ratio=0.4
                 let value_ratio = if salary > 0 { ability as f64 / (salary as f64 / 10000.0) } else { 100.0 };
-                let should_list = (value_ratio < 0.04 && salary > 200_0000)  // 高薪低能
-                    || (age >= 32 && ability < 75)  // 年龄过大
-                    || (roster_count > 7 && ability < analysis.power_rating as i64 - 10);  // 实力差距大
+
+                // 挂牌条件（满足任一即可）
+                let should_list =
+                    (value_ratio < 0.45 && salary > 100_0000)  // 高薪低能（薪资>100万且性价比低）
+                    || (age >= 29 && ability < 75)  // 年龄偏大且能力一般
+                    || (age >= 32)  // 32岁以上都可能被挂牌
+                    || (roster_count >= 6 && ability < analysis.power_rating as i64 - 5)  // 阵容充足且实力低于队伍均值
+                    || (ability < 65);  // 能力过低的选手
 
                 if should_list {
                     let listing_price = self.calculate_market_value_simple(ability as u8, age as u8);

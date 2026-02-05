@@ -127,6 +127,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { tauriApi, type InternationalChampionCard, type ChampionDetail } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('InternationalHall')
 
 const loading = ref(true)
 const loadingDetail = ref(false)
@@ -142,7 +145,7 @@ const loadChampions = async () => {
     const res = await tauriApi.honor.getInternationalChampions()
     champions.value = res || []
   } catch (error) {
-    console.error('Failed to load champions:', error)
+    logger.error('Failed to load champions:', error)
     champions.value = []
   } finally {
     loading.value = false
@@ -194,7 +197,7 @@ const toggleExpand = async (tournamentId: number) => {
       const detail = await tauriApi.honor.getChampionDetail(tournamentId)
       championDetails.value[tournamentId] = detail
     } catch (error) {
-      console.error('Failed to load champion detail:', error)
+      logger.error('Failed to load champion detail:', error)
     } finally {
       loadingDetail.value = false
     }

@@ -366,6 +366,9 @@ import { ref, computed, onMounted } from 'vue'
 import { Trophy, Medal, Star, Flag, ArrowRight } from '@element-plus/icons-vue'
 import { honorApi, teamApi, queryApi } from '@/api/tauri'
 import type { Team } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('Honors')
 
 // 类型定义
 interface TeamInfo {
@@ -437,7 +440,7 @@ onMounted(async () => {
     // 加载荣誉数据
     await loadHonors()
   } catch (error) {
-    console.error('Failed to load data:', error)
+    logger.error('Failed to load data:', error)
   } finally {
     loading.value = false
   }
@@ -576,7 +579,7 @@ async function loadHonors() {
     teamHonors.value = Array.from(teamStatsMap.values())
       .sort((a, b) => b.points - a.points)
   } catch (error) {
-    console.error('Failed to load honors:', error)
+    logger.error('Failed to load honors:', error)
   }
 }
 

@@ -263,6 +263,9 @@ import {
 import { ElMessage } from 'element-plus'
 import { devApi, statsApi, timeApi } from '@/api/tauri'
 import type { ConsistencyCheckResult, GameStatusSummary } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('DevTools')
 
 // 状态
 const gameStatus = ref<GameStatusSummary | null>(null)
@@ -335,7 +338,7 @@ async function refreshStatus() {
       gameStatus.value = result.data
     }
   } catch (e) {
-    console.error('获取状态失败:', e)
+    logger.error('获取状态失败:', e)
   } finally {
     refreshing.value = false
   }

@@ -253,6 +253,9 @@ import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import type { PlayerPosition } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
 import { statsApi, devApi, type PlayerRankingItem } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('PlayerStatistics')
 
 const playerStore = usePlayerStore()
 const matchDetailStore = useMatchDetailStore()
@@ -298,9 +301,9 @@ const loadRankingsFromDB = async () => {
       SUP: supRankings
     }
 
-    console.log('从数据库加载排行榜数据:', rankings.length, '条')
+    logger.debug('从数据库加载排行榜数据:', rankings.length, '条')
   } catch (e) {
-    console.error('加载排行榜数据失败:', e)
+    logger.error('加载排行榜数据失败:', e)
     ElMessage.error('加载数据失败')
   } finally {
     isLoading.value = false
@@ -321,7 +324,7 @@ const overviewStats = computed(() => {
 
 // 计算属性 - 过滤后的排行榜
 const filteredRankings = computed(() => {
-  console.log('排行榜数据:', rankingsData.value.length, '条')
+  logger.debug('排行榜数据:', rankingsData.value.length, '条')
 
   if (selectedRegion.value) {
     return rankingsData.value.filter(r => r.region_id === selectedRegion.value)
@@ -365,7 +368,7 @@ const syncData = async () => {
       ElMessage.error(`同步失败: ${result.error}`)
     }
   } catch (e) {
-    console.error('同步失败:', e)
+    logger.error('同步失败:', e)
     ElMessage.error('数据同步失败')
   } finally {
     isLoading.value = false

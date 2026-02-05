@@ -6,6 +6,10 @@ import type {
   GeneratePlayoffRequest,
   SimulatePlayoffMatchRequest
 } from '@/types'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('PlayoffStore')
 
 export const usePlayoffStore = defineStore('playoff', () => {
   // 状态
@@ -61,7 +65,11 @@ export const usePlayoffStore = defineStore('playoff', () => {
       }
     } catch (err: any) {
       error.value = err.message || '获取季后赛信息失败'
-      console.error('Failed to fetch playoff bracket:', err)
+      handleError(err, {
+        component: 'PlayoffStore',
+        userAction: '获取季后赛信息',
+        silent: true
+      })
       throw err
     } finally {
       loading.value = false
@@ -77,23 +85,22 @@ export const usePlayoffStore = defineStore('playoff', () => {
 
     try {
       const { playoffApi } = await import('@/api')
-      console.log(`[PlayoffStore] 调用 API: getRegionPlayoffs(regionId=${regionId}, seasonId=${seasonId})`)
+      logger.debug('调用 API: getRegionPlayoffs', { regionId, seasonId })
       const response = await playoffApi.getRegionPlayoffs(regionId, seasonId)
 
-      console.log(`[PlayoffStore] API 响应:`, response)
-      console.log(`[PlayoffStore] response.data:`, response.data)
+      logger.debug('API 响应', { response })
 
       if (response.data) {
-        console.log(`[PlayoffStore] 收到 ${response.data.length} 个季后赛对阵`)
+        logger.debug('收到季后赛对阵', { count: response.data.length })
 
         // 调试：显示当前 Map 中的所有 key
-        console.log(`[PlayoffStore] 当前 Map 中的所有 key:`, Array.from(playoffBrackets.value.keys()))
+        logger.debug('当前 Map 中的所有 key', { keys: Array.from(playoffBrackets.value.keys()) })
 
         // 存储所有季后赛对阵
         response.data.forEach(bracket => {
           // 重要：key 需要包含 competitionType 来区分春季赛和夏季赛
           const key = `${bracket.competitionId}-${bracket.regionId}-${bracket.competitionType}`
-          console.log(`[PlayoffStore] 存储季后赛对阵:`, {
+          logger.debug('存储季后赛对阵', {
             key,
             competitionId: bracket.competitionId,
             competitionType: bracket.competitionType,
@@ -107,24 +114,27 @@ export const usePlayoffStore = defineStore('playoff', () => {
         })
 
         // 调试：显示更新后 Map 中的所有 key 和 competitionType
-        console.log(`[PlayoffStore] 更新后 Map 中的数据:`)
+        logger.debug('更新后 Map 中的数据')
         playoffBrackets.value.forEach((bracket, key) => {
-          console.log(`  - key: ${key}, competitionType: ${bracket.competitionType}, region: ${bracket.regionName}, qualifiedTeams: ${bracket.qualifiedTeams?.length || 0}`)
+          logger.debug('Map entry', {
+            key,
+            competitionType: bracket.competitionType,
+            region: bracket.regionName,
+            qualifiedTeams: bracket.qualifiedTeams?.length || 0
+          })
         })
 
         return response.data
       } else {
-        console.log(`[PlayoffStore] response.data 为空或未定义`)
+        logger.debug('response.data 为空或未定义')
         return []
       }
     } catch (err: any) {
       error.value = err.message || '获取赛区季后赛失败'
-      console.error('[PlayoffStore] Failed to fetch region playoffs:', err)
-      console.error('[PlayoffStore] Error details:', {
-        message: err.message,
-        response: err.response,
-        status: err.response?.status,
-        data: err.response?.data
+      handleError(err, {
+        component: 'PlayoffStore',
+        userAction: '获取赛区季后赛',
+        silent: true
       })
       throw err
     } finally {
@@ -152,7 +162,12 @@ export const usePlayoffStore = defineStore('playoff', () => {
       }
     } catch (err: any) {
       error.value = err.message || '生成季后赛失败'
-      console.error('Failed to generate playoff:', err)
+      handleError(err, {
+        component: 'PlayoffStore',
+        userAction: '生成季后赛',
+        canRetry: true,
+        retryFn: () => generatePlayoff(request)
+      })
       throw err
     } finally {
       loading.value = false
@@ -169,7 +184,11 @@ export const usePlayoffStore = defineStore('playoff', () => {
       return response.data
     } catch (err: any) {
       error.value = err.message || '检查季后赛资格失败'
-      console.error('Failed to check playoff eligibility:', err)
+      handleError(err, {
+        component: 'PlayoffStore',
+        userAction: '检查季后赛资格',
+        silent: true
+      })
       throw err
     }
   }
@@ -184,7 +203,11 @@ export const usePlayoffStore = defineStore('playoff', () => {
       return response.data
     } catch (err: any) {
       error.value = err.message || '获取晋级队伍失败'
-      console.error('Failed to get qualified teams:', err)
+      handleError(err, {
+        component: 'PlayoffStore',
+        userAction: '获取晋级队伍',
+        silent: true
+      })
       throw err
     }
   }
@@ -220,7 +243,12 @@ export const usePlayoffStore = defineStore('playoff', () => {
       }
     } catch (err: any) {
       error.value = err.message || '模拟比赛失败'
-      console.error('Failed to simulate playoff match:', err)
+      handleError(err, {
+        component: 'PlayoffStore',
+        userAction: '模拟季后赛比赛',
+        canRetry: true,
+        retryFn: () => simulatePlayoffMatch(request)
+      })
       throw err
     } finally {
       loading.value = false
@@ -330,7 +358,12 @@ export const usePlayoffStore = defineStore('playoff', () => {
       return null
     } catch (err: any) {
       error.value = err.message || '批量模拟失败'
-      console.error('Failed to batch simulate playoff:', err)
+      handleError(err, {
+        component: 'PlayoffStore',
+        userAction: '批量模拟季后赛',
+        canRetry: true,
+        retryFn: () => batchSimulatePlayoff(bracket, onProgress)
+      })
       throw err
     } finally {
       loading.value = false
@@ -390,7 +423,7 @@ export const usePlayoffStore = defineStore('playoff', () => {
     error.value = null
 
     try {
-      console.log('🏆 开始完成季后赛流程...', bracket)
+      logger.info('开始完成季后赛流程', { bracket })
 
       // 检查季后赛是否已完成
       if (bracket.status !== 'completed') {
@@ -402,12 +435,12 @@ export const usePlayoffStore = defineStore('playoff', () => {
       // 注意：bracket.competitionId 实际上是常规赛的ID，需要找到对应的季后赛competition
       // 但根据后端设计，季后赛是基于常规赛competitionId的，所以这里直接使用bracket.competitionId
 
-      console.log(`📝 完成季后赛: competitionId=${bracket.competitionId}, regionId=${bracket.regionId}`)
+      logger.debug('完成季后赛', { competitionId: bracket.competitionId, regionId: bracket.regionId })
 
       // 这里暂时不调用finishCompetition，因为季后赛的完成状态已经在模拟最后一场比赛时设置了
       // 如果后端有专门的完成季后赛API，可以在这里调用
 
-      console.log('✅ 季后赛已标记为完成')
+      logger.info('季后赛已标记为完成')
 
       // 更新store中的状态，重要：key 需要包含 competitionType
       const key = `${bracket.competitionId}-${bracket.regionId}-${bracket.competitionType}`
@@ -418,12 +451,15 @@ export const usePlayoffStore = defineStore('playoff', () => {
         currentBracket.value = updatedBracket
       }
 
-      console.log('🎉 季后赛完成流程执行完毕')
+      logger.info('季后赛完成流程执行完毕')
 
       return updatedBracket
     } catch (err: any) {
       error.value = err.message || '完成季后赛失败'
-      console.error('❌ 完成季后赛失败:', err)
+      handleError(err, {
+        component: 'PlayoffStore',
+        userAction: '完成季后赛'
+      })
       throw err
     } finally {
       loading.value = false

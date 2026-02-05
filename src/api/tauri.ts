@@ -4,6 +4,9 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import { appDataDir, join } from '@tauri-apps/api/path'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('TauriAPI')
 
 // Generic API response from Rust backend
 export interface CommandResult<T> {
@@ -19,13 +22,13 @@ export async function invokeCommand<T>(
 ): Promise<T> {
   try {
     const result = await invoke<CommandResult<T>>(command, args)
-    console.log(`Command ${command} result:`, JSON.stringify(result))
+    logger.debug('Tauri命令执行成功', { command, result: JSON.stringify(result) })
     if (result.success) {
       return result.data as T
     }
     throw new Error(result.error || 'Unknown error')
   } catch (error) {
-    console.error(`Command ${command} failed:`, error)
+    logger.error('Tauri命令执行失败', { command, error })
     throw error
   }
 }
@@ -38,7 +41,7 @@ export async function invokeCommandRaw<T>(
   try {
     return await invoke<CommandResult<T>>(command, args)
   } catch (error) {
-    console.error(`Command ${command} failed:`, error)
+    logger.error('Tauri命令执行失败', { command, error })
     return {
       success: false,
       data: null,

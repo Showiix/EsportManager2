@@ -201,6 +201,9 @@ import {
 } from '@element-plus/icons-vue'
 import { useFinanceStore, type FinancialStatus } from '@/stores/useFinanceStore'
 import type { TeamFinanceSummary, FinanceTransaction, SeasonFinanceReport, TournamentPrizeDetail } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('TeamFinanceDialog')
 
 const props = defineProps<{
   modelValue: boolean
@@ -237,7 +240,7 @@ watch(() => props.team, async (newTeam) => {
       // 加载赛事奖金明细
       prizeDetails.value = await financeStore.fetchTeamPrizeDetails(newTeam.team_id)
     } catch (e) {
-      console.error('加载财务详情失败', e)
+      logger.error('加载财务详情失败', { teamId: newTeam.team_id, error: e })
     }
   }
 }, { immediate: true })

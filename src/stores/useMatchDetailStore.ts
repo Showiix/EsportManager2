@@ -9,6 +9,9 @@ import type { MatchDetail, SeasonMatchSummary, GameDetail } from '@/types/matchD
 import type { PlayerPerformance, PlayerPosition, TraitType, ActivatedTrait } from '@/types/player'
 import { matchDetailsApi, type SaveMatchDetailsInput, type SaveGameInput, type SavePerformanceInput, type MatchFullDetails, type GameDetailWithPerformances } from '@/api/tauri'
 import { useGameStore } from './useGameStore'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('MatchDetailStore')
 
 const STORAGE_KEY = 'esport-match-details'
 
@@ -335,7 +338,7 @@ export const useMatchDetailStore = defineStore('matchDetail', () => {
     detail.matchId = matchId
     matchDetails.value.set(matchId, detail)
     saveToStorage()
-    console.log(`保存比赛详情到本地: ${matchId}`)
+    logger.debug('保存比赛详情到本地', { matchId })
 
     // 同时保存到数据库
     try {
@@ -350,11 +353,11 @@ export const useMatchDetailStore = defineStore('matchDetail', () => {
         if (!isNaN(numericMatchId) && numericMatchId > 0) {
           const input = convertToSaveInput(numericMatchId, detail)
           await matchDetailsApi.saveMatchDetails(saveId, input)
-          console.log(`保存比赛详情到数据库: matchId=${numericMatchId}`)
+          logger.debug('保存比赛详情到数据库', { matchId: numericMatchId })
         }
       }
     } catch (error) {
-      console.error('保存比赛详情到数据库失败:', error)
+      logger.error('保存比赛详情到数据库失败', { error })
       // 不影响本地存储，仅记录错误
     }
   }
@@ -377,7 +380,7 @@ export const useMatchDetailStore = defineStore('matchDetail', () => {
       const gameStore = useGameStore()
       const saveId = gameStore.currentSave?.id
       if (!saveId) {
-        console.warn('无法从数据库加载比赛详情: 没有当前存档')
+        logger.warn('无法从数据库加载比赛详情: 没有当前存档')
         return null
       }
 
@@ -387,11 +390,11 @@ export const useMatchDetailStore = defineStore('matchDetail', () => {
         : parseInt(String(matchId).replace(/\D/g, ''))
 
       if (isNaN(numericMatchId) || numericMatchId <= 0) {
-        console.warn('无效的 matchId:', matchId)
+        logger.warn('无效的 matchId', { matchId })
         return null
       }
 
-      console.log(`从数据库加载比赛详情: matchId=${numericMatchId}, saveId=${saveId}`)
+      logger.debug('从数据库加载比赛详情', { matchId: numericMatchId, saveId })
       const dbData = await matchDetailsApi.getMatchDetails(saveId, numericMatchId)
 
       if (dbData && dbData.games && dbData.games.length > 0) {
@@ -399,14 +402,14 @@ export const useMatchDetailStore = defineStore('matchDetail', () => {
         // 直接使用数据库中的完整数据，不再需要 enrichMatchDetail
         // 缓存到内存
         matchDetails.value.set(matchId, detail)
-        console.log(`成功从数据库加载比赛详情: matchId=${numericMatchId}`)
+        logger.debug('成功从数据库加载比赛详情', { matchId: numericMatchId })
         return detail
       }
 
-      console.log(`数据库中没有找到比赛详情: matchId=${numericMatchId}`)
+      logger.debug('数据库中没有找到比赛详情', { matchId: numericMatchId })
       return null
     } catch (error) {
-      console.error('从数据库加载比赛详情失败:', error)
+      logger.error('从数据库加载比赛详情失败', { error })
       return null
     }
   }
@@ -418,7 +421,7 @@ export const useMatchDetailStore = defineStore('matchDetail', () => {
       currentMatchDetail.value = detail
       dialogVisible.value = true
     } else {
-      console.warn(`比赛详情不存在: ${matchId}`)
+      logger.warn('比赛详情不存在', { matchId })
     }
   }
 
@@ -537,11 +540,11 @@ export const useMatchDetailStore = defineStore('matchDetail', () => {
         const data = JSON.parse(stored)
         if (data.matchDetails) {
           matchDetails.value = new Map(Object.entries(data.matchDetails))
-          console.log(`从存储加载了 ${matchDetails.value.size} 场比赛详情 (saveId: ${saveId})`)
+          logger.debug('从存储加载比赛详情', { count: matchDetails.value.size, saveId })
         }
       }
     } catch (error) {
-      console.error('Failed to load match details from storage:', error)
+      logger.error('从存储加载比赛详情失败', { error })
     }
   }
 
@@ -558,7 +561,7 @@ export const useMatchDetailStore = defineStore('matchDetail', () => {
       }
       localStorage.setItem(storageKey, JSON.stringify(data))
     } catch (error) {
-      console.error('Failed to save match details to storage:', error)
+      logger.error('保存比赛详情到存储失败', { error })
     }
   }
 
@@ -566,7 +569,7 @@ export const useMatchDetailStore = defineStore('matchDetail', () => {
   const clearCache = () => {
     matchDetails.value.clear()
     currentMatchDetail.value = null
-    console.log('已清空比赛详情缓存')
+    logger.info('已清空比赛详情缓存')
   }
 
   // 导出数据（用于备份）
@@ -585,10 +588,10 @@ export const useMatchDetailStore = defineStore('matchDetail', () => {
       if (data.matchDetails) {
         matchDetails.value = new Map(Object.entries(data.matchDetails))
         saveToStorage()
-        console.log(`导入了 ${matchDetails.value.size} 场比赛详情`)
+        logger.info('导入比赛详情', { count: matchDetails.value.size })
       }
     } catch (error) {
-      console.error('Failed to import match details:', error)
+      logger.error('导入比赛详情失败', { error })
       throw new Error('导入数据格式错误')
     }
   }

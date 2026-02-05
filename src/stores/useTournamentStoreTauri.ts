@@ -17,6 +17,10 @@ import {
   type DetailedMatchResult,
   type MatchPrediction
 } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('TournamentStore')
 
 export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
   // ========================================
@@ -99,10 +103,14 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
 
     try {
       tournaments.value = await queryApi.getSeasonTournaments(seasonId)
-      console.log(`Loaded ${tournaments.value.length} tournaments for season ${seasonId}`)
+      logger.debug('赛季赛事已加载', { seasonId, count: tournaments.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load tournaments'
-      console.error('Failed to load tournaments:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '加载赛季赛事',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -118,10 +126,14 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
 
     try {
       tournaments.value = await queryApi.getRegionTournaments(regionId, seasonId)
-      console.log(`Loaded ${tournaments.value.length} tournaments for region ${regionId}`)
+      logger.debug('赛区赛事已加载', { regionId, seasonId, count: tournaments.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load tournaments'
-      console.error('Failed to load tournaments:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '加载赛区赛事',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -137,10 +149,14 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
 
     try {
       tournaments.value = await queryApi.getInternationalTournaments(seasonId)
-      console.log(`Loaded ${tournaments.value.length} international tournaments`)
+      logger.debug('国际赛事已加载', { seasonId, count: tournaments.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load tournaments'
-      console.error('Failed to load tournaments:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '加载国际赛事',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -166,10 +182,15 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
       matches.value = tournamentMatches
       standings.value = tournamentStandings
 
-      console.log(`Selected tournament: ${tournament.name}`)
+      logger.info('赛事已选择', { tournamentId, name: tournament.name })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load tournament'
-      console.error('Failed to load tournament:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '选择赛事',
+        canRetry: true,
+        retryFn: () => selectTournament(tournamentId)
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -185,9 +206,14 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
 
     try {
       matches.value = await tournamentApi.getTournamentMatches(tournamentId)
+      logger.debug('比赛列表已加载', { tournamentId, count: matches.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load matches'
-      console.error('Failed to load matches:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '加载比赛列表',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -203,9 +229,14 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
 
     try {
       standings.value = await tournamentApi.getStandings(tournamentId)
+      logger.debug('积分榜已加载', { tournamentId, teamsCount: standings.value.length })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load standings'
-      console.error('Failed to load standings:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '加载积分榜',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -234,11 +265,22 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
 
         // 重新加载积分榜
         await loadStandings(currentTournament.value.id)
+
+        logger.debug('比赛已模拟', {
+          matchId: result.id,
+          homeTeam: result.home_team_name,
+          awayTeam: result.away_team_name
+        })
       }
       return result
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to simulate match'
-      console.error('Failed to simulate match:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '模拟下一场比赛',
+        canRetry: true,
+        retryFn: simulateNext
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -257,17 +299,24 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
     error.value = null
 
     try {
-      const results = await tournamentApi.simulateAllMatches(currentTournament.value.id)
+      const results = await logger.timed('模拟所有比赛', () =>
+        tournamentApi.simulateAllMatches(currentTournament.value!.id)
+      )
       matches.value = results
 
       // 重新加载积分榜
       await loadStandings(currentTournament.value.id)
 
-      console.log(`Simulated ${results.length} matches`)
+      logger.info('所有比赛已模拟', { matchCount: results.length })
       return results
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to simulate all matches'
-      console.error('Failed to simulate all matches:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '模拟所有比赛',
+        canRetry: true,
+        retryFn: simulateAll
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -290,10 +339,16 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
         await loadStandings(currentTournament.value.id)
       }
 
+      logger.debug('详细比赛已模拟', { matchId })
       return lastMatchResult.value
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to simulate match'
-      console.error('Failed to simulate match:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '模拟详细比赛',
+        canRetry: true,
+        retryFn: () => simulateMatchDetailed(matchId)
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -312,7 +367,11 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
       return matchPrediction.value
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to get prediction'
-      console.error('Failed to get prediction:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '获取比赛预测',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -328,9 +387,14 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
 
     try {
       bracket.value = await internationalApi.getTournamentBracket(tournamentId)
+      logger.debug('对阵图已加载', { tournamentId })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load bracket'
-      console.error('Failed to load bracket:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '加载对阵图',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -346,9 +410,14 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
 
     try {
       swissStatus.value = await internationalApi.getSwissRoundStatus(tournamentId)
+      logger.debug('瑞士轮状态已加载', { tournamentId })
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load swiss status'
-      console.error('Failed to load swiss status:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '加载瑞士轮状态',
+        silent: true
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -369,10 +438,16 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
         loadMatches(tournamentId),
         loadSwissStatus(tournamentId)
       ])
+      logger.info('瑞士轮已生成', { tournamentId, matchCount: newMatchIds.length })
       return newMatchIds
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to generate swiss round'
-      console.error('Failed to generate swiss round:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '生成瑞士轮',
+        canRetry: true,
+        retryFn: () => generateNextSwissRound(tournamentId)
+      })
       throw e
     } finally {
       isLoading.value = false
@@ -398,10 +473,16 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
       )
       // 重新加载对阵图
       await loadBracket(tournamentId)
+      logger.info('对阵图已推进', { tournamentId, completedMatchId, winnerId })
       return updatedMatchIds
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to advance bracket'
-      console.error('Failed to advance bracket:', e)
+      handleError(e, {
+        component: 'TournamentStore',
+        userAction: '推进淘汰赛对阵',
+        canRetry: true,
+        retryFn: () => advanceBracket(tournamentId, completedMatchId, winnerId)
+      })
       throw e
     } finally {
       isLoading.value = false

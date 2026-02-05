@@ -191,6 +191,9 @@ import { tauriApi } from '@/api/tauri'
 import type { AnnualAwardsData } from '@/api/tauri'
 import type { PlayerPosition } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('AnnualAwards')
 
 const router = useRouter()
 const gameStore = useGameStore()
@@ -220,7 +223,7 @@ const fetchAwardsData = async () => {
   try {
     awardsData.value = await tauriApi.awards.getAnnualAwardsData()
   } catch (error) {
-    console.error('获取颁奖数据失败:', error)
+    logger.error('获取颁奖数据失败:', error)
   } finally {
     loading.value = false
   }

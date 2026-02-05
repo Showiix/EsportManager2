@@ -104,6 +104,9 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { tauriApi, type PlayerHonorRanking } from '@/api/tauri'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('PlayerHonorRankings')
 
 const router = useRouter()
 const loading = ref(true)
@@ -118,7 +121,7 @@ const loadRankings = async () => {
     rankings.value = res || []
     sortRankings()
   } catch (error) {
-    console.error('Failed to load rankings:', error)
+    logger.error('Failed to load rankings:', error)
     rankings.value = []
   } finally {
     loading.value = false

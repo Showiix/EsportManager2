@@ -1,5 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('SeasonStore')
 
 // 游戏阶段定义
 export type GamePhase =
@@ -115,7 +118,7 @@ export const useSeasonStore = defineStore('season', () => {
         initializeDefaultSeason()
       }
     } catch (err) {
-      console.error('Failed to load seasons:', err)
+      logger.warn('加载赛季数据失败', { error: err })
       initializeDefaultSeason()
     } finally {
       isLoading.value = false

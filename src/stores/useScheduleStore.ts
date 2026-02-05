@@ -2,6 +2,10 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Match, MatchResult, Team, Competition } from '@/types'
 import { useRankingStore } from './useRankingStore'
+import { createLogger } from '@/utils/logger'
+import { handleError } from '@/utils/errors'
+
+const logger = createLogger('ScheduleStore')
 
 export interface TeamScore {
   teamId: string
@@ -48,7 +52,7 @@ export const useScheduleStore = defineStore('schedule', () => {
     }
 
     // 调试：查看前5场比赛的 regionId
-    console.log('🔍 [调试] 前5场比赛的regionId:', matches.value.slice(0, 5).map(m => ({
+    logger.debug('前5场比赛的regionId', matches.value.slice(0, 5).map(m => ({
       id: m.id,
       regionId: m.regionId,
       teamAId: m.teamAId,
@@ -63,7 +67,7 @@ export const useScheduleStore = defineStore('schedule', () => {
     })
 
     // 调试：查看前5个积分榜的 regionId
-    console.log('🔍 [调试] 前5个积分榜的regionId:', scoreboards.value.slice(0, 5).map(s => ({
+    logger.debug('前5个积分榜的regionId', scoreboards.value.slice(0, 5).map(s => ({
       teamId: s.teamId,
       teamName: s.teamName,
       regionId: s.regionId
@@ -81,7 +85,7 @@ export const useScheduleStore = defineStore('schedule', () => {
     })
 
     // 调试：输出每个赛区的数量
-    console.log('🔍 [调试] 各赛区比赛和积分榜数量:', {
+    logger.debug('各赛区比赛和积分榜数量', {
       LPL: { matches: regions.LPL.matches.length, scoreboard: regions.LPL.scoreboard.length },
       LCK: { matches: regions.LCK.matches.length, scoreboard: regions.LCK.scoreboard.length },
       LEC: { matches: regions.LEC.matches.length, scoreboard: regions.LEC.scoreboard.length },
@@ -133,7 +137,7 @@ export const useScheduleStore = defineStore('schedule', () => {
   async function loadTeamRegionMapping(): Promise<Map<string, string>> {
     // 如果已经有缓存，直接返回
     if (teamRegionCache.value.size > 0) {
-      console.log('✅ 使用缓存的队伍赛区映射')
+      logger.debug('使用缓存的队伍赛区映射')
       return teamRegionCache.value
     }
 
@@ -145,16 +149,7 @@ export const useScheduleStore = defineStore('schedule', () => {
         const teamsData = Array.isArray(teamsResponse.data) ? teamsResponse.data : []
         const mapping = new Map<string, string>()
 
-        console.log(`正在加载 ${teamsData.length} 支队伍的赛区信息...`)
-
-        // 调试：输出前10个队伍的原始数据
-        console.log('🔍 [调试] 前10个队伍的原始数据:', teamsData.slice(0, 10).map((team: any) => ({
-          id: team.id,
-          name: team.name,
-          region_code: team.region_code,
-          regionId: team.regionId,
-          region: team.region
-        })))
+        logger.debug('正在加载队伍赛区信息', { count: teamsData.length })
 
         // regionId 到赛区代码的映射
         const regionIdToCode: Record<number, string> = {
@@ -174,19 +169,19 @@ export const useScheduleStore = defineStore('schedule', () => {
         })
 
         teamRegionCache.value = mapping
-        console.log(`队伍赛区映射加载完成，共 ${mapping.size} 支队伍`)
+        logger.debug('队伍赛区映射加载完成', { count: mapping.size })
 
         // 按赛区统计队伍数量
         const regionCount: Record<string, number> = {}
         mapping.forEach((region) => {
           regionCount[region] = (regionCount[region] || 0) + 1
         })
-        console.log('各赛区队伍数量:', regionCount)
+        logger.debug('各赛区队伍数量', regionCount)
 
         return mapping
       }
     } catch (error) {
-      console.warn('无法加载队伍数据，将使用默认赛区', error)
+      logger.warn('无法加载队伍数据，将使用默认赛区', { error })
     }
 
     return new Map()
@@ -213,7 +208,7 @@ export const useScheduleStore = defineStore('schedule', () => {
       // 获取当前轮次信息
       try {
         const roundResponse = await competitionApi.getCurrentRound(competitionId)
-        console.log('🔍 [loadSchedule] 获取当前轮次响应:', roundResponse.data)
+        logger.debug('获取当前轮次响应', { data: roundResponse.data })
 
         if (roundResponse.data) {
           // 如果比赛已完成且当前轮次超过总轮次，则显示最后一轮
@@ -222,7 +217,7 @@ export const useScheduleStore = defineStore('schedule', () => {
 
           // 如果后端返回了 totalRounds，使用它；否则使用默认值 18
           totalRounds.value = apiTotalRounds !== undefined ? apiTotalRounds : 18
-          console.log(`🔍 [loadSchedule] 设置 totalRounds = ${totalRounds.value}`)
+          logger.debug('设置 totalRounds', { value: totalRounds.value })
 
           // 如果比赛已完成，显示最后一轮；否则显示当前轮次
           if (apiTotalRounds !== undefined && apiCurrentRound > apiTotalRounds) {
@@ -230,10 +225,10 @@ export const useScheduleStore = defineStore('schedule', () => {
           } else {
             currentRound.value = apiCurrentRound
           }
-          console.log(`🔍 [loadSchedule] 设置 currentRound = ${currentRound.value}`)
+          logger.debug('设置 currentRound', { value: currentRound.value })
         }
       } catch (error) {
-        console.warn('无法获取当前轮次信息，使用默认值', error)
+        logger.warn('无法获取当前轮次信息，使用默认值', { error })
         currentRound.value = 1
         totalRounds.value = 18
       }
@@ -249,29 +244,15 @@ export const useScheduleStore = defineStore('schedule', () => {
           matchesData = (matchesResponse.data as any).data
         }
         
-        console.log(`🔍 [loadSchedule] 比赛数据加载完成，共 ${matchesData.length} 场比赛`)
+        logger.debug('比赛数据加载完成', { count: matchesData.length })
 
         // 加载队伍赛区映射（使用缓存）
         const teamRegionMap = await loadTeamRegionMapping()
 
-        // 调试：输出 teamRegionMap 的前 5 个条目
-        console.log('🔍 [调试] teamRegionMap 前5个条目:', Array.from(teamRegionMap.entries()).slice(0, 5))
-
         // 为每场比赛添加 regionId
-        matches.value = matchesData.map((match: any, index: number) => {
+        matches.value = matchesData.map((match: any) => {
           const teamAId = String(match.teamAId || match.homeTeamId || '')
           const regionId = teamRegionMap.get(teamAId) || 'LPL'  // 默认为LPL
-
-          // 调试：输出前3场比赛的详细信息
-          if (index < 3) {
-            console.log(`🔍 [调试] 比赛 ${index + 1}:`, {
-              原始teamAId: match.teamAId,
-              转换后teamAId: teamAId,
-              从map查到的regionId: teamRegionMap.get(teamAId),
-              最终regionId: regionId,
-              teamAName: match.teamAName
-            })
-          }
 
           return {
             ...match,
@@ -281,7 +262,7 @@ export const useScheduleStore = defineStore('schedule', () => {
             teamBId: String(match.teamBId)
           }
         })
-        console.log(`加载了 ${matches.value.length} 场比赛`)
+        logger.debug('比赛加载完成', { count: matches.value.length })
 
         // 打印赛区分布用于调试
         const regionDistribution: Record<string, number> = {}
@@ -289,13 +270,17 @@ export const useScheduleStore = defineStore('schedule', () => {
           const region = m.regionId || 'unknown'
           regionDistribution[region] = (regionDistribution[region] || 0) + 1
         })
-        console.log('比赛赛区分布:', regionDistribution)
+        logger.debug('比赛赛区分布', regionDistribution)
       }
 
       // 更新积分榜
       await updateScoreboard()
     } catch (error) {
-      console.error('Failed to load schedule:', error)
+      handleError(error, {
+        component: 'ScheduleStore',
+        userAction: '加载赛程',
+        silent: true
+      })
 
       // 回退到模拟数据
       await mockLoadSchedule(competitionId)
@@ -334,7 +319,7 @@ export const useScheduleStore = defineStore('schedule', () => {
           }
         }
       } catch (error) {
-        console.error('更新积分榜失败:', error)
+        logger.error('更新积分榜失败', { error })
       }
     }
 
@@ -419,7 +404,7 @@ export const useScheduleStore = defineStore('schedule', () => {
             }
           }
         } catch (error) {
-          console.error('模拟后更新积分榜失败:', error)
+          logger.error('模拟后更新积分榜失败', { error })
         }
       }
 
@@ -448,8 +433,9 @@ export const useScheduleStore = defineStore('schedule', () => {
         const response = await competitionApi.simulateRound(currentCompetition.value.id.toString())
 
         if (response.data) {
-          console.log(`🎮 后端模拟轮次返回数据:`, response.data)
-          console.log(`🎮 模拟了 ${response.data.matchesSimulated} 场比赛`)
+          logger.debug('后端模拟轮次返回数据', {
+            matchesSimulated: response.data.matchesSimulated
+          })
 
           // 更新所有赛区的比赛结果（不只是当前赛区）
           let updatedCount = 0
@@ -482,7 +468,7 @@ export const useScheduleStore = defineStore('schedule', () => {
             }
           })
 
-          console.log(`✅ 成功更新 ${updatedCount} 场比赛结果`)
+          logger.debug('成功更新比赛结果', { count: updatedCount })
 
           // 更新积分榜
           await updateScoreboard()
@@ -513,27 +499,27 @@ export const useScheduleStore = defineStore('schedule', () => {
                 try {
                   const regionId = regionCodeToId[regionCode.toLowerCase()]
                   if (!regionId) {
-                    console.warn(`未知的赛区代码: ${regionCode}`)
+                    logger.warn('未知的赛区代码', { regionCode })
                     continue
                   }
-                  
+
                   await rankingStore.updateRegionalStandings(
                     regionId, // 传递数字ID
                     String(currentCompetition.value.seasonId),
                     competitionType as 'spring' | 'summer'
                   )
-                  console.log(`✅ ${regionCode.toUpperCase()} 赛区积分榜更新完成`)
+                  logger.debug('赛区积分榜更新完成', { region: regionCode.toUpperCase() })
                 } catch (error) {
-                  console.warn(`${regionCode.toUpperCase()} 赛区积分榜更新失败:`, error)
+                  logger.warn('赛区积分榜更新失败', { region: regionCode.toUpperCase(), error })
                   // 继续更新其他赛区
                 }
               }
             } catch (error) {
-              console.warn('更新积分榜失败:', error)
+              logger.warn('更新积分榜失败', { error })
             }
           }
 
-          console.log(`✅ 第 ${currentRound.value} 轮模拟完成，更新了所有赛区的比赛结果和积分榜`)
+          logger.info('轮次模拟完成', { round: currentRound.value })
 
           return {
             matches: response.data.results.map((r: any) => ({
@@ -555,7 +541,10 @@ export const useScheduleStore = defineStore('schedule', () => {
       // 如果没有后端数据，抛出错误
       throw new Error('无法连接到后端服务')
     } catch (error) {
-      console.error('模拟失败:', error)
+      handleError(error, {
+        component: 'ScheduleStore',
+        userAction: '模拟轮次'
+      })
       throw error
     } finally {
       isSimulating.value = false
@@ -724,7 +713,7 @@ export const useScheduleStore = defineStore('schedule', () => {
       (a, b) => b.points - a.points || b.winRate - a.winRate
     )
 
-    console.log('积分榜更新完成，共', scoreboards.value.length, '支队伍')
+    logger.debug('积分榜更新完成', { teamsCount: scoreboards.value.length })
   }
 
   function resetSchedule(): void {
@@ -751,10 +740,10 @@ export const useScheduleStore = defineStore('schedule', () => {
 
       // 洲际赛结束时只更新荣誉殿堂，不更新年度积分排名
       if (competition.type === 'intercontinental') {
-        console.log('洲际赛结束，更新荣誉记录但不影响年度积分排名')
+        logger.debug('洲际赛结束，更新荣誉记录但不影响年度积分排名')
       }
     } catch (error) {
-      console.error('更新年度积分排名失败:', error)
+      logger.error('更新年度积分排名失败', { error })
     }
   }
 
@@ -765,7 +754,7 @@ export const useScheduleStore = defineStore('schedule', () => {
     try {
       await rankingStore.refreshAllRankings(currentCompetition.value.seasonId.toString())
     } catch (error) {
-      console.error('刷新所有排名失败:', error)
+      logger.error('刷新所有排名失败', { error })
       throw error
     }
   }
@@ -777,21 +766,21 @@ export const useScheduleStore = defineStore('schedule', () => {
     }
 
     try {
-      console.log('🏆 开始完成常规赛流程...')
+      logger.info('开始完成常规赛流程')
 
       // 1. 调用完成赛事API
       const { competitionApi, playoffApi } = await import('@/api')
 
-      console.log(`📝 调用完成赛事API: competitionId=${currentCompetition.value.id}`)
+      logger.debug('调用完成赛事API', { competitionId: currentCompetition.value.id })
       await competitionApi.finishCompetition(String(currentCompetition.value.id))
-      console.log('✅ 赛事状态已更新为完成')
+      logger.debug('赛事状态已更新为完成')
 
       // 2. 如果指定了赛区，只为该赛区生成季后赛；否则为所有赛区生成季后赛
       const regions = regionId ? [regionId.toUpperCase()] : ['LPL', 'LCK', 'LEC', 'LCS']
 
       for (const region of regions) {
         try {
-          console.log(`🔍 检查${region}赛区是否可以生成季后赛...`)
+          logger.debug('检查赛区是否可以生成季后赛', { region })
 
           // 检查是否可以生成季后赛
           const eligibility = await playoffApi.checkPlayoffEligibility(
@@ -800,7 +789,7 @@ export const useScheduleStore = defineStore('schedule', () => {
           )
 
           if (eligibility.data?.eligible) {
-            console.log(`✅ ${region}赛区满足生成季后赛条件，开始生成...`)
+            logger.debug('赛区满足生成季后赛条件，开始生成', { region })
 
             // 生成季后赛
             const playoffResult = await playoffApi.generatePlayoff({
@@ -811,20 +800,23 @@ export const useScheduleStore = defineStore('schedule', () => {
             })
 
             if (playoffResult.data) {
-              console.log(`✅ ${region}赛区季后赛生成成功:`, playoffResult.data)
+              logger.info('赛区季后赛生成成功', { region })
             }
           } else {
-            console.warn(`⚠️ ${region}赛区不满足生成季后赛条件:`, eligibility.data?.reason)
+            logger.warn('赛区不满足生成季后赛条件', { region, reason: eligibility.data?.reason })
           }
         } catch (error) {
-          console.error(`❌ ${region}赛区季后赛生成失败:`, error)
+          logger.error('赛区季后赛生成失败', { region, error })
           // 继续处理其他赛区
         }
       }
 
-      console.log('🎉 常规赛完成流程执行完毕')
+      logger.info('常规赛完成流程执行完毕')
     } catch (error) {
-      console.error('❌ 完成常规赛失败:', error)
+      handleError(error, {
+        component: 'ScheduleStore',
+        userAction: '完成常规赛'
+      })
       throw error
     }
   }

@@ -8,6 +8,9 @@
  */
 
 import type { Player, PlayerPerformance } from '@/types/player'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('PlayerEngine')
 
 export class PlayerEngine {
   /**
@@ -77,11 +80,11 @@ export class PlayerEngine {
    */
   static calculateTeamPerformances(players: Player[]): PlayerPerformance[] {
     if (players.length === 0) {
-      console.warn('PlayerEngine: 没有选手数据')
+      logger.warn('没有选手数据')
       return []
     }
     if (players.length !== 5) {
-      console.warn(`PlayerEngine: 预期5名选手，实际收到 ${players.length} 名`)
+      logger.warn('选手数量异常', { expected: 5, actual: players.length })
     }
     return players.map((player) => this.calculatePerformance(player))
   }

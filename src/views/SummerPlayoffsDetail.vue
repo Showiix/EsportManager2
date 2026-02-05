@@ -557,6 +557,9 @@ import { useGameStore } from '@/stores/useGameStore'
 import { queryApi, teamApi, tournamentApi, matchApi, financeApi, type Team, type TournamentMatch, type DetailedGameResult, type PlayerGameStats } from '@/api/tauri'
 import type { PlayerPosition, TraitType } from '@/types/player'
 import type { MatchDetail } from '@/types/matchDetail'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('SummerPlayoffsDetail')
 
 const router = useRouter()
 
@@ -673,7 +676,7 @@ const loadRegions = async () => {
       selectedRegion.value = regionList[0].id
     }
   } catch (error) {
-    console.error('Failed to load regions:', error)
+    logger.error('Failed to load regions:', error)
     ElMessage.error('加载赛区数据失败')
   }
 }
@@ -684,7 +687,7 @@ const loadTeams = async (regionId: number) => {
     teamMap.value.clear()
     teams.forEach(team => teamMap.value.set(team.id, team))
   } catch (error) {
-    console.error('Failed to load teams:', error)
+    logger.error('Failed to load teams:', error)
   }
 }
 
@@ -697,7 +700,7 @@ const loadTournament = async (regionId: number) => {
       currentTournamentId.value = summerPlayoffs.id
     }
   } catch (error) {
-    console.error('Failed to load tournament:', error)
+    logger.error('Failed to load tournament:', error)
   }
 }
 
@@ -716,7 +719,7 @@ const checkRegularSeasonStatus = async (regionId: number) => {
       regularSeasonCompleted.value = false
     }
   } catch (error) {
-    console.error('Failed to check regular season status:', error)
+    logger.error('Failed to check regular season status:', error)
     regularSeasonCompleted.value = false
   }
 }
@@ -746,7 +749,7 @@ const loadStandings = async (regionId: number) => {
       }
     }
   } catch (error) {
-    console.error('Failed to load standings:', error)
+    logger.error('Failed to load standings:', error)
   }
 }
 
@@ -779,7 +782,7 @@ const updatePlayoffsData = async () => {
   try {
     playoffsMatches.value = await tournamentApi.getTournamentMatches(currentTournamentId.value)
   } catch (error) {
-    console.error('Failed to load playoffs matches:', error)
+    logger.error('Failed to load playoffs matches:', error)
     playoffsMatches.value = []
   }
 
@@ -1024,7 +1027,7 @@ const viewMatchDetail = async (match: any) => {
 
   // 如果本地没有，尝试从数据库加载
   if (!detail && match.dbMatchId) {
-    console.log(`本地未找到详情，尝试从数据库加载: dbMatchId=${match.dbMatchId}`)
+    logger.debug(`本地未找到详情，尝试从数据库加载: dbMatchId=${match.dbMatchId}`)
     detail = await matchDetailStore.loadMatchDetailFromDb(match.dbMatchId)
   }
 
@@ -1381,9 +1384,9 @@ const updateBracketAfterMatch = async (matchId: string, winnerId: number, loserI
     if (currentTournamentId.value) {
       try {
         await financeApi.distributeTournamentPrizes(currentTournamentId.value)
-        console.log('季后赛奖金已发放')
+        logger.debug('季后赛奖金已发放')
       } catch (e) {
-        console.error('发放奖金失败:', e)
+        logger.error('发放奖金失败:', e)
       }
     }
 
@@ -1420,7 +1423,7 @@ const simulateSingleMatch = async (match: any, matchIdPrefix: string) => {
 
     ElMessage.success(`比赛完成: ${match.teamA} ${match.scoreA} - ${match.scoreB} ${match.teamB}`)
   } catch (error) {
-    console.error('模拟比赛失败:', error)
+    logger.error('模拟比赛失败:', error)
     ElMessage.error('模拟比赛失败')
   } finally {
     simulatingMatchId.value = null

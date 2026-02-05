@@ -646,6 +646,9 @@ import { teamApi, playerApi, honorApi, statsApi, formatHonorType, type TraitInfo
 import { formatMoney } from '@/utils'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
 import * as echarts from 'echarts'
+import { createLogger } from '@/utils/logger'
+
+const logger = createLogger('PlayerDetail')
 
 const route = useRoute()
 const playerId = route.params.id as string
@@ -741,7 +744,7 @@ const loadMarketValueChanges = async () => {
       }
     }
   } catch (e) {
-    console.error('Failed to load market value changes:', e)
+    logger.error('Failed to load market value changes:', e)
   }
 }
 
@@ -785,7 +788,7 @@ onMounted(async () => {
             const region = teamStore.regions.find(r => r.id === team.region_id)
             regionCode = region?.code || 'LPL'
           } catch (e) {
-            console.error('Failed to get team info:', e)
+            logger.error('Failed to get team info:', e)
           }
         }
 
@@ -832,7 +835,7 @@ onMounted(async () => {
             position: formatHonorType(h.honor_type)
           }))
         } catch (e) {
-          console.error('Failed to load player honors:', e)
+          logger.error('Failed to load player honors:', e)
           honors.value = []
         }
 
@@ -845,7 +848,7 @@ onMounted(async () => {
           traits.value = traitsData || []
           conditionInfo.value = conditionData
         } catch (e) {
-          console.error('Failed to load traits/condition:', e)
+          logger.error('Failed to load traits/condition:', e)
           traits.value = []
           conditionInfo.value = null
         }
@@ -861,7 +864,7 @@ onMounted(async () => {
             initRadarChart()
           }
         } catch (e) {
-          console.error('Failed to load player stats:', e)
+          logger.error('Failed to load player stats:', e)
           playerStats.value = null
         }
 
@@ -875,7 +878,7 @@ onMounted(async () => {
       }
     }
   } catch (error) {
-    console.error('Failed to load player:', error)
+    logger.error('Failed to load player:', error)
   }
 })
 
