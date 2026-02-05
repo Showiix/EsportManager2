@@ -180,8 +180,45 @@
         <h2>
           <el-icon><Bell /></el-icon>
           转会动态
+          <span class="event-count">({{ filteredEvents.length }} 条)</span>
         </h2>
         <div class="filter-group">
+          <!-- 赛区筛选 -->
+          <el-select
+            v-model="filterRegion"
+            placeholder="全部赛区"
+            clearable
+            size="small"
+            style="width: 120px"
+          >
+            <el-option label="全部赛区" value="" />
+            <el-option
+              v-for="r in availableRegions"
+              :key="r"
+              :label="r"
+              :value="r"
+            />
+          </el-select>
+
+          <!-- 战队筛选 -->
+          <el-select
+            v-model="filterTeam"
+            placeholder="全部战队"
+            clearable
+            filterable
+            size="small"
+            style="width: 140px"
+          >
+            <el-option label="全部战队" value="" />
+            <el-option
+              v-for="t in availableTeams"
+              :key="t"
+              :label="t"
+              :value="t"
+            />
+          </el-select>
+
+          <!-- 等级筛选 -->
           <el-radio-group v-model="filterLevel" size="small">
             <el-radio-button value="all">全部</el-radio-button>
             <el-radio-button value="S">重磅</el-radio-button>
@@ -191,11 +228,11 @@
         </div>
       </div>
 
-      <el-empty v-if="filteredEvents.length === 0" description="暂无转会动态，点击「开始转会期」开始" />
+      <el-empty v-if="paginatedEvents.length === 0" description="暂无转会动态，点击「开始转会期」开始" />
 
       <transition-group name="event-list" tag="div" class="events-list">
         <div
-          v-for="event in filteredEvents"
+          v-for="event in paginatedEvents"
           :key="event.id"
           class="event-card"
           :class="[`level-${event.level.toLowerCase()}`, `type-${event.event_type.toLowerCase()}`]"
@@ -250,6 +287,19 @@
           </div>
         </div>
       </transition-group>
+
+      <!-- 分页 -->
+      <div v-if="filteredEvents.length > pageSize" class="pagination-wrapper">
+        <el-pagination
+          v-model:current-page="currentPage"
+          :page-size="pageSize"
+          :page-sizes="[20, 50, 100]"
+          :total="filteredEvents.length"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="handlePageChange"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -310,6 +360,10 @@ const {
 const region = ref((route.params.region as string)?.toLowerCase() || 'lpl')
 const regionId = ref<number>(1)
 const filterLevel = ref('all')
+const filterRegion = ref('')
+const filterTeam = ref('')
+const currentPage = ref(1)
+const pageSize = ref(20)
 
 // 赛区名称映射
 const regionNames: Record<string, string> = {
@@ -334,11 +388,125 @@ const statusText = computed(() => {
   return '准备开始'
 })
 
-const filteredEvents = computed(() => {
-  const sorted = [...events.value].reverse()
-  if (filterLevel.value === 'all') return sorted
-  return sorted.filter(e => e.level === filterLevel.value)
+// 从事件中提取可用的赛区列表（根据战队名称前缀判断）
+const availableRegions = computed(() => {
+  const regions = new Set<string>()
+  for (const event of events.value) {
+    const teamName = event.from_team_name || event.to_team_name
+    if (teamName) {
+      // 尝试从战队名称匹配赛区
+      if (teamName.includes('Gaming') || teamName.includes('Esports') || teamName.includes('Top') ||
+          teamName.includes('Weibo') || teamName.includes('JD') || teamName.includes('LNG') ||
+          teamName.includes('RNG') || teamName.includes('FPX') || teamName.includes('EDG') ||
+          teamName.includes('BLG') || teamName.includes('IG') || teamName.includes('NIP')) {
+        regions.add('LPL')
+      }
+      if (teamName.includes('T1') || teamName.includes('Gen') || teamName.includes('HLE') ||
+          teamName.includes('DRX') || teamName.includes('DK') || teamName.includes('KT') ||
+          teamName.includes('Sandbox') || teamName.includes('Freecs') || teamName.includes('BRION') ||
+          teamName.includes('Nongshim') || teamName.includes('FearX') || teamName.includes('Longzhu')) {
+        regions.add('LCK')
+      }
+      if (teamName.includes('Fnatic') || teamName.includes('G2') || teamName.includes('MAD') ||
+          teamName.includes('Heretics') || teamName.includes('Vitality') || teamName.includes('Excel') ||
+          teamName.includes('Misfits') || teamName.includes('Astralis') || teamName.includes('SK')) {
+        regions.add('LEC')
+      }
+      if (teamName.includes('100') || teamName.includes('Cloud9') || teamName.includes('Liquid') ||
+          teamName.includes('TSM') || teamName.includes('CLG') || teamName.includes('Dignitas') ||
+          teamName.includes('EG') || teamName.includes('NRG') || teamName.includes('Immortals')) {
+        regions.add('LCS')
+      }
+    }
+  }
+  return Array.from(regions).sort()
 })
+
+// 从事件中提取可用的战队列表
+const availableTeams = computed(() => {
+  const teams = new Set<string>()
+  for (const event of events.value) {
+    if (event.from_team_name) teams.add(event.from_team_name)
+    if (event.to_team_name) teams.add(event.to_team_name)
+  }
+  return Array.from(teams).filter(t => t && t !== '自由球员').sort()
+})
+
+const filteredEvents = computed(() => {
+  let result = [...events.value].reverse()
+
+  // 按等级筛选
+  if (filterLevel.value !== 'all') {
+    result = result.filter(e => e.level === filterLevel.value)
+  }
+
+  // 按战队筛选
+  if (filterTeam.value) {
+    result = result.filter(e =>
+      e.from_team_name === filterTeam.value || e.to_team_name === filterTeam.value
+    )
+  }
+
+  // 按赛区筛选（通过战队名称匹配）
+  if (filterRegion.value) {
+    result = result.filter(e => {
+      const teamName = e.from_team_name || e.to_team_name || ''
+      switch (filterRegion.value) {
+        case 'LPL':
+          return teamName.includes('Gaming') || teamName.includes('Esports') || teamName.includes('Top') ||
+                 teamName.includes('Weibo') || teamName.includes('JD') || teamName.includes('LNG') ||
+                 teamName.includes('RNG') || teamName.includes('FPX') || teamName.includes('EDG') ||
+                 teamName.includes('BLG') || teamName.includes('IG') || teamName.includes('NIP') ||
+                 teamName.includes('TT') || teamName.includes('AL') || teamName.includes('UP') ||
+                 teamName.includes('Mercury')
+        case 'LCK':
+          return teamName.includes('T1') || teamName.includes('Gen') || teamName.includes('HLE') ||
+                 teamName.includes('DRX') || teamName.includes('DK') || teamName.includes('KT') ||
+                 teamName.includes('Sandbox') || teamName.includes('Freecs') || teamName.includes('BRION') ||
+                 teamName.includes('Nongshim') || teamName.includes('FearX') || teamName.includes('Longzhu') ||
+                 teamName.includes('BNK') || teamName.includes('Afreeca')
+        case 'LEC':
+          return teamName.includes('Fnatic') || teamName.includes('G2') || teamName.includes('MAD') ||
+                 teamName.includes('Heretics') || teamName.includes('Vitality') || teamName.includes('Excel') ||
+                 teamName.includes('Misfits') || teamName.includes('Astralis') || teamName.includes('SK') ||
+                 teamName.includes('Whales') || teamName.includes('Falcons') || teamName.includes('Wolf') ||
+                 teamName.includes('Nike') || teamName.includes('AmBear')
+        case 'LCS':
+          return teamName.includes('100') || teamName.includes('Cloud9') || teamName.includes('Liquid') ||
+                 teamName.includes('TSM') || teamName.includes('CLG') || teamName.includes('Dignitas') ||
+                 teamName.includes('EG') || teamName.includes('NRG') || teamName.includes('Immortals') ||
+                 teamName.includes('Frost') || teamName.includes('Shopify') || teamName.includes('Logic')
+        default:
+          return true
+      }
+    })
+  }
+
+  // 重置分页
+  return result
+})
+
+// 分页后的事件
+const paginatedEvents = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  const end = start + pageSize.value
+  return filteredEvents.value.slice(start, end)
+})
+
+// 分页变化时重置页码
+watch([filterLevel, filterRegion, filterTeam], () => {
+  currentPage.value = 1
+})
+
+// 分页处理函数
+function handleSizeChange(size: number) {
+  pageSize.value = size
+  currentPage.value = 1
+}
+
+function handlePageChange(page: number) {
+  currentPage.value = page
+}
 
 // 获取赛区ID
 async function getRegionId(regionCode: string): Promise<number> {
@@ -811,5 +979,30 @@ function getEventDescription(event: TransferEvent): string {
 .event-list-leave-to {
   opacity: 0;
   transform: translateX(30px);
+}
+
+/* 分页 */
+.pagination-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+  padding: 16px;
+  background: white;
+  border-radius: 8px;
+}
+
+/* 事件数量 */
+.event-count {
+  font-size: 14px;
+  font-weight: 400;
+  color: #909399;
+  margin-left: 8px;
+}
+
+/* 筛选组 */
+.filter-group {
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 </style>

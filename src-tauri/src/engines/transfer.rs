@@ -182,6 +182,43 @@ impl TransferEngine {
             .await
             .map_err(|e| format!("更新选手年龄/能力失败: {}", e))?;
 
+            // 生成赛季结算事件（显示年龄和能力变化）
+            let ability_change = new_ability - ability;
+            let change_desc = if ability_change > 0 {
+                format!("+{}", ability_change)
+            } else if ability_change < 0 {
+                format!("{}", ability_change)
+            } else {
+                "不变".to_string()
+            };
+
+            let from_team_name = if let Some(tid) = team_id {
+                self.get_team_name(pool, tid).await.unwrap_or_default()
+            } else {
+                "自由球员".to_string()
+            };
+
+            // 根据能力变化确定事件等级
+            let level = if ability_change >= 3 {
+                EventLevel::A
+            } else if ability_change >= 2 {
+                EventLevel::B
+            } else {
+                EventLevel::C
+            };
+
+            let event = self.record_event(
+                pool, window_id, 1,
+                TransferEventType::SeasonSettlement,
+                level,
+                player_id, &game_id, new_ability,
+                team_id, if from_team_name.is_empty() { None } else { Some(&from_team_name) },
+                team_id, if from_team_name.is_empty() { None } else { Some(&from_team_name) },
+                0, 0, 0,
+                &format!("年龄 {} → {}，能力 {} → {} ({})", age, new_age, ability, new_ability, change_desc),
+            ).await?;
+            events.push(event);
+
             // 退役检查
             if new_age >= 35 && new_ability < 65 {
                 sqlx::query(

@@ -59,9 +59,9 @@ pub async fn start_transfer_window(
         .map_err(|e| e.to_string())?;
     let current_season: i64 = save_row.get("current_season");
 
-    // 检查是否已有进行中的转会期
+    // 检查是否已有转会期（任何状态）
     let existing = sqlx::query(
-        "SELECT id FROM transfer_windows WHERE save_id = ? AND season_id = ? AND status = 'IN_PROGRESS'"
+        "SELECT id, status, current_round FROM transfer_windows WHERE save_id = ? AND season_id = ?"
     )
     .bind(&save_id)
     .bind(current_season)
@@ -69,8 +69,28 @@ pub async fn start_transfer_window(
     .await
     .map_err(|e| e.to_string())?;
 
-    if existing.is_some() {
-        return Ok(CommandResult::err("本赛季已有进行中的转会期"));
+    if let Some(row) = existing {
+        // 已存在转会期
+        let window_id: i64 = row.get("id");
+        let mut status: String = row.get("status");
+        let current_round: i64 = row.get("current_round");
+
+        // 如果状态是 PENDING，更新为 IN_PROGRESS
+        if status == "PENDING" {
+            sqlx::query("UPDATE transfer_windows SET status = 'IN_PROGRESS' WHERE id = ?")
+                .bind(window_id)
+                .execute(&pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            status = "IN_PROGRESS".to_string();
+        }
+
+        return Ok(CommandResult::ok(TransferWindowResponse {
+            window_id,
+            season_id: current_season,
+            status,
+            current_round,
+        }));
     }
 
     let engine = TransferEngine::new();
