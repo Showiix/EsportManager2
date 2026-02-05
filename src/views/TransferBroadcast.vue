@@ -276,6 +276,7 @@ import {
 import { useTransferStoreTauri } from '@/stores/useTransferStoreTauri'
 import { useGameStore } from '@/stores/useGameStore'
 import { transferApi, type TransferRoundInfo } from '@/api/tauri'
+import { formatMoney } from '@/utils'
 
 const router = useRouter()
 const transferStore = useTransferStoreTauri()
@@ -451,14 +452,8 @@ const getAbilityClass = (ability: number) => {
   return 'normal'
 }
 
-// fee 的单位是元，需要转换为万
-const formatFee = (fee: number) => {
-  const feeInWan = fee / 10000
-  if (feeInWan >= 10000) return `${(feeInWan / 10000).toFixed(2)}亿`
-  if (feeInWan >= 1000) return `${(feeInWan / 1000).toFixed(1)}千万`
-  if (feeInWan >= 1) return `${Math.round(feeInWan)}万`
-  return `${fee}元`
-}
+// fee 的单位是元，使用统一格式化工具
+const formatFee = (fee: number) => formatMoney(fee)
 </script>
 
 <style scoped>

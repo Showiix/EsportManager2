@@ -222,6 +222,7 @@ import { ElMessage } from 'element-plus'
 import { Document, Money, Sunny, Medal, Warning, TrendCharts, Switch } from '@element-plus/icons-vue'
 import { transferApi, type PlayerContractDetail } from '@/api/tauri'
 import { useGameStore } from '@/stores/useGameStore'
+import { formatMoney as formatValue, formatMoney as formatSalary } from '@/utils'
 
 const router = useRouter()
 const gameStore = useGameStore()
@@ -295,20 +296,7 @@ const getAbilityColor = (ability: number) => {
   return '#22c55e'
 }
 
-const formatValue = (value: number) => {
-  // 身价单位是元，需要转换为万
-  const valueInWan = value / 10000
-  if (valueInWan >= 10000) return `${(valueInWan / 10000).toFixed(1)}亿`
-  if (valueInWan >= 1) return `${Math.round(valueInWan)}万`
-  return `${value}`
-}
-
-const formatSalary = (salary: number) => {
-  // 薪资单位是元，需要转换为万
-  const salaryInWan = salary / 10000
-  if (salaryInWan >= 10000) return `${(salaryInWan / 10000).toFixed(1)}亿`
-  return `${Math.round(salaryInWan)}万`
-}
+// formatValue 和 formatSalary 从 @/utils 导入
 
 const getContractClass = (endSeason: number | null) => {
   if (!endSeason) return 'contract-expired'

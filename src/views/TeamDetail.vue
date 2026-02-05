@@ -477,6 +477,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
 import { honorApi, formatHonorType, type HonorRecord } from '@/api/tauri'
+import { formatMoney } from '@/utils'
 
 const route = useRoute()
 const router = useRouter()
@@ -1055,12 +1056,7 @@ const goToPlayer = (playerId: number) => {
   router.push(`/players/${playerId}`)
 }
 
-const formatMoney = (value: number) => {
-  if (value >= 10000000) {
-    return `${(value / 10000000).toFixed(1)}千万`
-  }
-  return `${(value / 10000).toFixed(0)}万`
-}
+// formatMoney 从 @/utils 导入
 
 const getRegionType = (region: string) => {
   const types: Record<string, string> = {

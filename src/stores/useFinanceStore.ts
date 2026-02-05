@@ -5,6 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { financeApi, type TeamFinanceSummary, type FinanceTransaction, type SeasonFinanceReport, type TournamentPrizeDetail } from '@/api/tauri'
+import { formatMoney as formatMoneyUtil } from '@/utils'
 
 // ========================================
 // 类型定义
@@ -325,25 +326,10 @@ export const useFinanceStore = defineStore('finance', () => {
 
   /**
    * 格式化金额（输入单位：元）
-   * 数据库存储的是实际金额（元），需要转换为合适的显示单位
+   * 使用统一工具函数
    */
   function formatMoney(amount: number): string {
-    const absAmount = Math.abs(amount)
-    const sign = amount < 0 ? '-' : ''
-
-    if (absAmount >= 100000000) {
-      // 1亿及以上
-      return `${sign}${(absAmount / 100000000).toFixed(2)}亿`
-    } else if (absAmount >= 10000000) {
-      // 1千万及以上
-      return `${sign}${(absAmount / 10000000).toFixed(1)}千万`
-    } else if (absAmount >= 10000) {
-      // 1万及以上
-      return `${sign}${(absAmount / 10000).toFixed(0)}万`
-    } else {
-      // 1万以下
-      return `${sign}${absAmount.toFixed(0)}元`
-    }
+    return formatMoneyUtil(amount)
   }
 
   /**

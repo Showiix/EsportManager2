@@ -10,6 +10,7 @@ import {
   type AuctionEvent,
   type DraftPickPrice,
 } from '@/api/tauri'
+import { formatMoney } from '@/utils'
 
 export const useDraftAuctionStore = defineStore('draftAuction', () => {
   // ========================================
@@ -283,13 +284,9 @@ export const useDraftAuctionStore = defineStore('draftAuction', () => {
     return pickPrices.value.find(p => p.position === position)
   }
 
-  // 格式化金额(万)
+  // 格式化金额 - 使用统一工具函数
   function formatAmount(amount: number): string {
-    const wan = amount / 10000
-    if (wan >= 10000) {
-      return `${(wan / 10000).toFixed(1)}亿`
-    }
-    return `${wan}万`
+    return formatMoney(amount)
   }
 
   // 获取事件重要性颜色

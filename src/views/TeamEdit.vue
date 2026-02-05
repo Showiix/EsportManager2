@@ -219,6 +219,7 @@ import {
   Delete,
 } from '@element-plus/icons-vue'
 import { teamApi, financeApi, queryApi, type Team, type Region } from '@/api/tauri'
+import { formatMoney } from '@/utils'
 
 const route = useRoute()
 const router = useRouter()
@@ -273,15 +274,7 @@ const goBack = () => {
   router.push(`/teams/${teamId.value}`)
 }
 
-const formatMoney = (value: number) => {
-  if (value >= 10000000) {
-    return `${(value / 10000000).toFixed(2)} 千万`
-  }
-  if (value >= 10000) {
-    return `${(value / 10000).toFixed(0)} 万`
-  }
-  return `${value}`
-}
+// formatMoney 从 @/utils 导入
 
 const getRegionType = (region: string) => {
   const types: Record<string, string> = {

@@ -12,6 +12,7 @@ import {
   type TeamReputation,
   type UpdatePersonalityRequest,
 } from '@/api/tauri'
+import { formatMoney } from '@/utils'
 
 /** 轮次名称 */
 export const ROUND_NAMES: Record<number, string> = {
@@ -365,15 +366,9 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
   // Helpers
   // ============================================
 
-  /** 格式化金额（输入单位：元） */
+  /** 格式化金额（输入单位：元）- 使用统一工具函数 */
   function formatAmount(amount: number): string {
-    const wan = amount / 10000 // 转换为万
-    if (wan >= 10000) {
-      return `${(wan / 10000).toFixed(1)}亿`
-    } else if (wan >= 1) {
-      return `${wan.toFixed(0)}万`
-    }
-    return `${amount}元`
+    return formatMoney(amount)
   }
 
   /** 获取事件类型名称 */

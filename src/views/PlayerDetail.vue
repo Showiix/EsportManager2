@@ -643,6 +643,7 @@ import {
   InfoFilled,
 } from '@element-plus/icons-vue'
 import { teamApi, playerApi, honorApi, statsApi, formatHonorType, type TraitInfo, type PlayerConditionInfo, type MarketValueChange } from '@/api/tauri'
+import { formatMoney } from '@/utils'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
 import * as echarts from 'echarts'
 
@@ -911,22 +912,7 @@ const displayMarketValue = computed(() => {
     : player.value.marketValue
 })
 
-// 辅助函数
-const formatMoney = (value: number) => {
-  if (value >= 100000000) {
-    // 1亿 = 100,000,000
-    return `${(value / 100000000).toFixed(2)} 亿`
-  }
-  if (value >= 10000000) {
-    // 1千万 = 10,000,000
-    return `${(value / 10000000).toFixed(1)} 千万`
-  }
-  if (value >= 1000000) {
-    // 1百万 = 1,000,000
-    return `${(value / 10000).toFixed(0)} 万`
-  }
-  return `${(value / 10000).toFixed(0)} 万`
-}
+// formatMoney 从 @/utils 导入
 
 const getRegionType = (region: string) => {
   const types: Record<string, string> = {

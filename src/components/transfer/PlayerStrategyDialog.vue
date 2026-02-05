@@ -100,7 +100,7 @@
                 </div>
                 <div class="data-item">
                   <span class="data-label">年薪</span>
-                  <span class="data-value">{{ strategy.analysis_data.current_salary }}万</span>
+                  <span class="data-value">{{ formatSalary(strategy.analysis_data.current_salary) }}</span>
                 </div>
                 <div class="data-item">
                   <span class="data-label">球队</span>
@@ -256,6 +256,7 @@ import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading, ArrowRight, Check } from '@element-plus/icons-vue'
 import { aiTransferApi, type PlayerTransferStrategy } from '@/api/tauri'
+import { formatMoneyFromWan } from '@/utils'
 
 const props = defineProps<{
   playerId: number | null
@@ -322,10 +323,8 @@ const generateStrategy = async () => {
   }
 }
 
-const formatSalary = (salary: number) => {
-  if (salary >= 10000) return `${(salary / 10000).toFixed(1)}亿`
-  return `${salary}万`
-}
+// 此处薪资输入是万，使用 formatMoneyFromWan
+const formatSalary = (salary: number) => formatMoneyFromWan(salary)
 
 const formatDate = (dateStr: string) => {
   const date = new Date(dateStr)
