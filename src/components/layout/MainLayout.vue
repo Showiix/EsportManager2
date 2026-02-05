@@ -89,7 +89,6 @@
             <el-menu-item index="/transfer" :disabled="isMenuDisabled('/transfer')">📊 市场分析</el-menu-item>
             <el-menu-item index="/transfer/gm-config" :disabled="isMenuDisabled('/transfer/gm-config')">🤖 AI GM配置</el-menu-item>
             <el-menu-item index="/transfer/player-market" :disabled="isMenuDisabled('/transfer/player-market')">👤 选手市场</el-menu-item>
-            <el-menu-item index="/transfer/llm-market" :disabled="isMenuDisabled('/transfer/llm-market')">🤖 LLM 转会市场</el-menu-item>
           </el-sub-menu>
 
           <el-menu-item index="/rankings" :disabled="isMenuDisabled('/rankings')">

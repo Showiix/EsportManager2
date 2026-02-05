@@ -138,6 +138,9 @@ impl DatabaseManager {
         // 迁移6: 运行 009_llm_task_log.sql 的表创建
         self.run_llm_task_log_migration(pool).await?;
 
+        // 迁移7: 运行 010_transfer_system.sql 的表创建
+        self.run_transfer_system_migration(pool).await?;
+
         Ok(())
     }
 
@@ -930,6 +933,148 @@ impl DatabaseManager {
                 .map_err(|e| DatabaseError::Migration(e.to_string()))?;
 
             log::info!("✅ LLM 任务日志表创建成功");
+        }
+
+        Ok(())
+    }
+
+    /// 运行转会系统表的迁移 (010_transfer_system.sql)
+    async fn run_transfer_system_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        // 检查 team_personality_configs 表是否已存在
+        let tables: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='team_personality_configs'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if tables.is_empty() {
+            // 创建 AI 球队性格配置表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS team_personality_configs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    team_id INTEGER NOT NULL UNIQUE,
+                    save_id TEXT NOT NULL,
+                    personality TEXT NOT NULL DEFAULT 'BALANCED',
+                    short_term_focus REAL DEFAULT 0.5,
+                    long_term_focus REAL DEFAULT 0.5,
+                    risk_tolerance REAL DEFAULT 0.5,
+                    youth_preference REAL DEFAULT 0.5,
+                    star_chasing REAL DEFAULT 0.5,
+                    bargain_hunting REAL DEFAULT 0.5,
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (team_id) REFERENCES teams(id),
+                    FOREIGN KEY (save_id) REFERENCES saves(id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建球队声望缓存表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS team_reputation_cache (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    team_id INTEGER NOT NULL,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    overall INTEGER NOT NULL DEFAULT 30,
+                    historical INTEGER NOT NULL DEFAULT 30,
+                    recent INTEGER NOT NULL DEFAULT 30,
+                    international INTEGER NOT NULL DEFAULT 0,
+                    calculated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (team_id) REFERENCES teams(id),
+                    FOREIGN KEY (save_id) REFERENCES saves(id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建球员挂牌表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS player_listings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    player_id INTEGER NOT NULL,
+                    window_id INTEGER NOT NULL,
+                    listed_by_team_id INTEGER NOT NULL,
+                    listing_price INTEGER,
+                    min_accept_price INTEGER,
+                    status TEXT DEFAULT 'ACTIVE',
+                    listed_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    sold_at TEXT,
+                    sold_to_team_id INTEGER,
+                    actual_price INTEGER,
+                    FOREIGN KEY (player_id) REFERENCES players(id),
+                    FOREIGN KEY (window_id) REFERENCES transfer_windows(id),
+                    FOREIGN KEY (listed_by_team_id) REFERENCES teams(id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建球员冷却期记录表
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS player_cooldowns (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    player_id INTEGER NOT NULL,
+                    team_id INTEGER NOT NULL,
+                    window_id INTEGER NOT NULL,
+                    cooldown_until_round INTEGER NOT NULL,
+                    reason TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (player_id) REFERENCES players(id),
+                    FOREIGN KEY (team_id) REFERENCES teams(id),
+                    FOREIGN KEY (window_id) REFERENCES transfer_windows(id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 创建索引
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_personality_save ON team_personality_configs(save_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_reputation_team ON team_reputation_cache(team_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_reputation_season ON team_reputation_cache(save_id, season_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_listings_window ON player_listings(window_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_listings_status ON player_listings(status)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_listings_player ON player_listings(player_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_cooldowns_window ON player_cooldowns(window_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_cooldowns_player ON player_cooldowns(player_id, team_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            log::info!("✅ 转会系统表创建成功");
         }
 
         Ok(())

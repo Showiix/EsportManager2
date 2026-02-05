@@ -312,6 +312,13 @@ pub async fn update_team_personality(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
     };
 
+    // 获取当前存档 ID
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
     // 获取默认权重
     let personality = AITeamPersonality::from_str(&request.personality);
     let defaults = personality.default_weights();
@@ -323,15 +330,24 @@ pub async fn update_team_personality(
     let star = request.star_chasing.unwrap_or(defaults.star_chasing);
     let bargain = request.bargain_hunting.unwrap_or(defaults.bargain_hunting);
 
+    // 使用 INSERT OR REPLACE (UPSERT)
     sqlx::query(
-        r#"UPDATE team_personality_configs
-           SET personality = ?,
-               short_term_focus = ?, long_term_focus = ?,
-               risk_tolerance = ?, youth_preference = ?,
-               star_chasing = ?, bargain_hunting = ?,
-               updated_at = datetime('now')
-           WHERE team_id = ?"#
+        r#"INSERT INTO team_personality_configs
+           (team_id, save_id, personality, short_term_focus, long_term_focus,
+            risk_tolerance, youth_preference, star_chasing, bargain_hunting, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(team_id) DO UPDATE SET
+               personality = excluded.personality,
+               short_term_focus = excluded.short_term_focus,
+               long_term_focus = excluded.long_term_focus,
+               risk_tolerance = excluded.risk_tolerance,
+               youth_preference = excluded.youth_preference,
+               star_chasing = excluded.star_chasing,
+               bargain_hunting = excluded.bargain_hunting,
+               updated_at = datetime('now')"#
     )
+    .bind(team_id)
+    .bind(&save_id)
     .bind(personality.as_str())
     .bind(short_term)
     .bind(long_term)
@@ -339,7 +355,6 @@ pub async fn update_team_personality(
     .bind(youth)
     .bind(star)
     .bind(bargain)
-    .bind(team_id)
     .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
