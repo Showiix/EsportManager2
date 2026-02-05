@@ -365,14 +365,15 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
   // Helpers
   // ============================================
 
-  /** 格式化金额 */
+  /** 格式化金额（输入单位：元） */
   function formatAmount(amount: number): string {
-    if (amount >= 10000) {
-      return `${(amount / 10000).toFixed(1)}亿`
-    } else if (amount >= 100) {
-      return `${amount}万`
+    const wan = amount / 10000 // 转换为万
+    if (wan >= 10000) {
+      return `${(wan / 10000).toFixed(1)}亿`
+    } else if (wan >= 1) {
+      return `${wan.toFixed(0)}万`
     }
-    return `${amount}万`
+    return `${amount}元`
   }
 
   /** 获取事件类型名称 */

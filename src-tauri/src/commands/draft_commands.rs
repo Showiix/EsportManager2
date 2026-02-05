@@ -447,14 +447,24 @@ pub async fn make_draft_pick(
         .await
         .map_err(|e| e.to_string())?;
 
+    // 根据赛区计算 region_loyalty 默认值
+    // LPL(1)=75-90, LCK(2)=55-75, LEC(3)=45-65, LCS(4)=40-60
+    let region_loyalty: i64 = match region_id {
+        1 => 75 + (rand::random::<u8>() % 16) as i64,  // LPL: 75-90
+        2 => 55 + (rand::random::<u8>() % 21) as i64,  // LCK: 55-75
+        3 => 45 + (rand::random::<u8>() % 21) as i64,  // LEC: 45-65
+        4 => 40 + (rand::random::<u8>() % 21) as i64,  // LCS: 40-60
+        _ => 60,
+    };
+
     // 创建正式球员
     let new_player_id: i64 = sqlx::query(
         r#"
         INSERT INTO players (
             save_id, game_id, real_name, nationality, age, ability, potential, stability,
             tag, status, position, team_id, salary, market_value, contract_end_season,
-            join_season, is_starter
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, ?, ?, ?, ?, ?, 0)
+            join_season, is_starter, home_region_id, region_loyalty
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, ?, ?, ?, ?, ?, 0, ?, ?)
         RETURNING id
         "#,
     )
@@ -473,6 +483,8 @@ pub async fn make_draft_pick(
     .bind(50i64) // 初始市场价值
     .bind(current_season + 3) // 3年新秀合同
     .bind(current_season)
+    .bind(region_id)  // home_region_id = 选秀赛区
+    .bind(region_loyalty)
     .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())?

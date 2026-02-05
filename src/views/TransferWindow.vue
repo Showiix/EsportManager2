@@ -11,8 +11,8 @@
     <!-- 页面标题 -->
     <div class="page-header">
       <div>
-        <h1>{{ regionName }} 转会期</h1>
-        <p>S{{ currentSeason }} 赛季 - 休赛期</p>
+        <h1>全球转会期</h1>
+        <p>S{{ currentSeason }} 赛季 - 休赛期 · LPL / LCK / LEC / LCS</p>
       </div>
       <div class="header-actions">
         <el-tag :type="statusTagType" size="large" effect="dark">
@@ -224,6 +224,7 @@
             <el-radio-button value="S">重磅</el-radio-button>
             <el-radio-button value="A">头条</el-radio-button>
             <el-radio-button value="B">要闻</el-radio-button>
+            <el-radio-button value="data">数据</el-radio-button>
           </el-radio-group>
         </div>
       </div>
@@ -305,8 +306,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -330,13 +331,11 @@ import {
 } from '@element-plus/icons-vue'
 import { useTransferWindowStore, ROUND_NAMES, EVENT_TYPE_NAMES, EVENT_LEVEL_CONFIG } from '@/stores/useTransferWindowStore'
 import { useGameStore } from '@/stores/useGameStore'
-import { queryApi } from '@/api/tauri'
 import type { TransferEvent } from '@/api/tauri'
 
 // 添加 Lightning 图标替代
 const Lightning = EditPen // 使用 EditPen 作为替代
 
-const route = useRoute()
 const router = useRouter()
 const transferStore = useTransferWindowStore()
 const gameStore = useGameStore()
@@ -357,25 +356,13 @@ const {
 } = storeToRefs(transferStore)
 
 // 本地状态
-const region = ref((route.params.region as string)?.toLowerCase() || 'lpl')
-const regionId = ref<number>(1)
 const filterLevel = ref('all')
 const filterRegion = ref('')
 const filterTeam = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 
-// 赛区名称映射
-const regionNames: Record<string, string> = {
-  lpl: 'LPL 中国赛区',
-  lck: 'LCK 韩国赛区',
-  lec: 'LEC 欧洲赛区',
-  lcs: 'LCS 北美赛区',
-}
-
 // 计算属性
-const regionName = computed(() => regionNames[region.value] || region.value.toUpperCase())
-
 const statusTagType = computed(() => {
   if (isWindowCompleted.value) return 'success'
   if (isWindowInProgress.value) return 'warning'
@@ -437,7 +424,12 @@ const filteredEvents = computed(() => {
 
   // 按等级筛选
   if (filterLevel.value !== 'all') {
-    result = result.filter(e => e.level === filterLevel.value)
+    if (filterLevel.value === 'data') {
+      // 数据报告：筛选赛季结算事件
+      result = result.filter(e => e.event_type === 'SEASON_SETTLEMENT')
+    } else {
+      result = result.filter(e => e.level === filterLevel.value)
+    }
   }
 
   // 按战队筛选
@@ -507,37 +499,6 @@ function handleSizeChange(size: number) {
 function handlePageChange(page: number) {
   currentPage.value = page
 }
-
-// 获取赛区ID
-async function getRegionId(regionCode: string): Promise<number> {
-  try {
-    const regions = await queryApi.getAllRegions()
-    const r = regions.find(r => r.code.toLowerCase() === regionCode.toLowerCase())
-    return r?.id ?? 1
-  } catch (e) {
-    console.error('Failed to get region id:', e)
-    return 1
-  }
-}
-
-// 初始化
-onMounted(async () => {
-  regionId.value = await getRegionId(region.value)
-  transferStore.setRegion(regionId.value, region.value.toUpperCase())
-})
-
-// 监听路由变化
-watch(
-  () => route.params.region,
-  async (newRegion) => {
-    if (newRegion && typeof newRegion === 'string') {
-      region.value = newRegion.toLowerCase()
-      regionId.value = await getRegionId(region.value)
-      transferStore.clearState()
-      transferStore.setRegion(regionId.value, region.value.toUpperCase())
-    }
-  }
-)
 
 // 开始转会期
 async function handleStartWindow() {

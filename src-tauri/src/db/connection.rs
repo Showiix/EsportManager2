@@ -126,6 +126,50 @@ impl DatabaseManager {
                 .map_err(|e| DatabaseError::Migration(e.to_string()))?;
         }
 
+        // 迁移: 为 players 表添加 home_region_id 和 region_loyalty 字段（跨赛区转会偏好）
+        if !player_column_names.contains(&"home_region_id") {
+            sqlx::query("ALTER TABLE players ADD COLUMN home_region_id INTEGER")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 初始化现有选手的 home_region_id（根据当前球队所属赛区）
+            sqlx::query(r#"
+                UPDATE players
+                SET home_region_id = (
+                    SELECT t.region_id FROM teams t WHERE t.id = players.team_id
+                )
+                WHERE team_id IS NOT NULL AND home_region_id IS NULL
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        if !player_column_names.contains(&"region_loyalty") {
+            sqlx::query("ALTER TABLE players ADD COLUMN region_loyalty INTEGER NOT NULL DEFAULT 70")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 根据赛区设置默认 region_loyalty
+            // LPL (region_id=1): 80, LCK (region_id=2): 65, LEC (region_id=3): 55, LCS (region_id=4): 50
+            sqlx::query(r#"
+                UPDATE players SET region_loyalty =
+                    CASE
+                        WHEN home_region_id = 1 THEN 75 + ABS(RANDOM() % 16)  -- LPL: 75-90
+                        WHEN home_region_id = 2 THEN 55 + ABS(RANDOM() % 21)  -- LCK: 55-75
+                        WHEN home_region_id = 3 THEN 45 + ABS(RANDOM() % 21)  -- LEC: 45-65
+                        WHEN home_region_id = 4 THEN 40 + ABS(RANDOM() % 21)  -- LCS: 40-60
+                        ELSE 60
+                    END
+                WHERE home_region_id IS NOT NULL
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
         // 迁移3: 运行 005_player_satisfaction.sql 的表创建
         self.run_satisfaction_tables_migration(pool).await?;
 

@@ -380,6 +380,7 @@ pub struct TransferOffer {
     pub signing_bonus: i64,
     pub match_score: f64,
     pub priority: f64,
+    pub target_region_id: Option<i64>,  // 目标球队赛区ID（用于跨赛区转会意愿计算）
 }
 
 // ============================================

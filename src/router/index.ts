@@ -162,10 +162,10 @@ const router = createRouter({
       meta: { title: 'AI GM配置' }
     },
     {
-      path: '/transfer/window/:region',
+      path: '/transfer/window',
       name: 'TransferWindow',
       component: () => import('@/views/TransferWindow.vue'),
-      meta: { title: '转会期' }
+      meta: { title: '全球转会期' }
     },
     {
       path: '/transfer/report/:windowId',

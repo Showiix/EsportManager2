@@ -475,7 +475,8 @@ impl TransferEngine {
 
         // 获取所有自由球员
         let free_agents: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
-            r#"SELECT id, game_id, ability, salary, age, position, loyalty, potential, tag
+            r#"SELECT id, game_id, ability, salary, age, position, loyalty, potential, tag,
+                      home_region_id, region_loyalty
                FROM players
                WHERE save_id = ? AND status = 'Active' AND team_id IS NULL
                ORDER BY ability DESC"#
@@ -496,6 +497,8 @@ impl TransferEngine {
             let age: i64 = free_agent.get("age");
             let position: String = free_agent.get("position");
             let loyalty: i64 = free_agent.get("loyalty");
+            let home_region_id: Option<i64> = free_agent.try_get("home_region_id").ok();
+            let region_loyalty: i64 = free_agent.try_get("region_loyalty").unwrap_or(70);
 
             let expected_salary = self.calculate_expected_salary(ability as u8, age as u8);
 
@@ -556,6 +559,7 @@ impl TransferEngine {
                 let salary_multiplier = if weights.star_chasing > 0.7 { 1.1 } else if weights.bargain_hunting > 0.7 { 0.85 } else { 1.0 };
                 let offered_salary = (expected_salary as f64 * salary_multiplier) as i64;
                 let contract_years = if age <= 24 && weights.long_term_focus > 0.5 { 3 } else if age <= 28 { 2 } else { 1 };
+                let target_region_id: Option<i64> = team.try_get("region_id").ok();
 
                 offers.push(TransferOffer {
                     team_id,
@@ -566,6 +570,7 @@ impl TransferEngine {
                     signing_bonus: offered_salary / 4,
                     match_score,
                     priority: match_score,
+                    target_region_id,
                 });
             }
 
@@ -582,6 +587,7 @@ impl TransferEngine {
                 let willingness = self.calculate_willingness(
                     ability as u8, loyalty as u8, age as u8,
                     offer.offered_salary, expected_salary,
+                    home_region_id, offer.target_region_id, region_loyalty,
                     &mut rng,
                 );
                 if willingness >= 40.0 {
@@ -657,6 +663,7 @@ impl TransferEngine {
         let listings: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
             r#"SELECT pl.id as listing_id, pl.player_id, pl.listed_by_team_id, pl.listing_price, pl.min_accept_price,
                       p.game_id, p.ability, p.age, p.position, p.salary, p.loyalty,
+                      p.home_region_id, p.region_loyalty,
                       t.name as from_team_name
                FROM player_listings pl
                JOIN players p ON pl.player_id = p.id
@@ -684,8 +691,10 @@ impl TransferEngine {
             let salary: i64 = listing.get("salary");
             let loyalty: i64 = listing.get("loyalty");
             let from_team_name: String = listing.get("from_team_name");
+            let home_region_id: Option<i64> = listing.try_get("home_region_id").ok();
+            let region_loyalty: i64 = listing.try_get("region_loyalty").unwrap_or(70);
 
-            let mut best_bid: Option<(i64, String, i64, i64, i64)> = None; // (team_id, team_name, bid_price, offered_salary, contract_years)
+            let mut best_bid: Option<(i64, String, i64, i64, i64, Option<i64>)> = None; // (team_id, team_name, bid_price, offered_salary, contract_years, target_region_id)
 
             for team in &teams {
                 let team_id: i64 = team.get("id");
@@ -738,17 +747,20 @@ impl TransferEngine {
                 let team_name: String = team.get("name");
                 let expected_salary = self.calculate_expected_salary(ability as u8, age as u8);
                 let contract_years = if age <= 24 { 3 } else if age <= 28 { 2 } else { 1 };
+                let target_region_id: Option<i64> = team.try_get("region_id").ok();
 
                 if best_bid.is_none() || bid_price > best_bid.as_ref().unwrap().2 {
-                    best_bid = Some((team_id, team_name, bid_price, expected_salary, contract_years));
+                    best_bid = Some((team_id, team_name, bid_price, expected_salary, contract_years, target_region_id));
                 }
             }
 
-            if let Some((to_team_id, to_team_name, bid_price, new_salary, contract_years)) = best_bid {
+            if let Some((to_team_id, to_team_name, bid_price, new_salary, contract_years, target_region_id)) = best_bid {
                 // 球员意愿检查
                 let willingness = self.calculate_willingness(
                     ability as u8, loyalty as u8, age as u8,
-                    new_salary, salary, &mut rng,
+                    new_salary, salary,
+                    home_region_id, target_region_id, region_loyalty,
+                    &mut rng,
                 );
 
                 if willingness < 40.0 {
@@ -1563,6 +1575,9 @@ impl TransferEngine {
     }
 
     /// 计算球员转会意愿（0-100）
+    /// home_region_id: 选手出生赛区ID
+    /// target_region_id: 目标球队赛区ID
+    /// region_loyalty: 赛区偏好值（0-100，越高越不愿意离开本赛区）
     fn calculate_willingness(
         &self,
         _ability: u8,
@@ -1570,6 +1585,9 @@ impl TransferEngine {
         _age: u8,
         offered_salary: i64,
         current_salary: i64,
+        home_region_id: Option<i64>,
+        target_region_id: Option<i64>,
+        region_loyalty: i64,
         rng: &mut impl Rng,
     ) -> f64 {
         // 薪资满意度
@@ -1591,7 +1609,20 @@ impl TransferEngine {
         let random_factor: f64 = rng.gen_range(-5.0..5.0);
 
         let base = salary_score * 0.4 + loyalty_impact * 0.3 + 50.0 * 0.3;
-        (base + random_factor).clamp(0.0, 100.0)
+        let base_willingness = (base + random_factor).clamp(0.0, 100.0);
+
+        // 跨赛区惩罚
+        let cross_region_factor = match (home_region_id, target_region_id) {
+            (Some(home), Some(target)) if home != target => {
+                // 跨赛区转会，意愿度乘以 (100 - region_loyalty) / 100
+                // region_loyalty = 80 -> factor = 0.2（大幅降低）
+                // region_loyalty = 50 -> factor = 0.5（中度降低）
+                (100.0 - region_loyalty as f64) / 100.0
+            }
+            _ => 1.0  // 本赛区或无法判断时无惩罚
+        };
+
+        base_willingness * cross_region_factor
     }
 
     /// 分析球队需求

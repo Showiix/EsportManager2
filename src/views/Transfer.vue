@@ -8,7 +8,7 @@
       </div>
       <div class="header-actions">
         <el-tag type="info" size="large" effect="dark">
-          选择赛区开始转会
+          全球统一转会期
         </el-tag>
       </div>
     </div>
@@ -21,7 +21,7 @@
         </div>
         <div class="intro-text">
           <h3>转会期流程</h3>
-          <p>每个赛区的转会期分为 8 个阶段，按顺序执行：</p>
+          <p>全球四大赛区（LPL、LCK、LEC、LCS）统一进行转会，共 8 个阶段：</p>
           <div class="round-flow">
             <div v-for="(name, round) in roundNames" :key="round" class="round-item">
               <span class="round-number">{{ round }}</span>
@@ -32,74 +32,83 @@
       </div>
     </el-card>
 
-    <!-- 赛区选择 -->
-    <div class="regions-section">
+    <!-- 统一入口 -->
+    <el-card class="action-card">
+      <div class="action-content">
+        <div class="action-info">
+          <div class="region-badges">
+            <span class="region-badge lpl">LPL</span>
+            <span class="region-badge lck">LCK</span>
+            <span class="region-badge lec">LEC</span>
+            <span class="region-badge lcs">LCS</span>
+          </div>
+          <h3>全球转会期</h3>
+          <p>管理全部 {{ totalTeams }} 支战队的 {{ totalPlayers }} 名选手</p>
+        </div>
+
+        <div class="action-status">
+          <template v-if="!gmConfigured">
+            <el-tag type="warning" size="large" class="status-tag">
+              <el-icon><Warning /></el-icon>
+              需配置 {{ unconfiguredGMCount }} 队GM
+            </el-tag>
+            <el-button type="warning" size="large" @click="goToGMConfig">
+              <el-icon><Setting /></el-icon>
+              配置GM性格
+            </el-button>
+          </template>
+          <template v-else>
+            <el-tag type="success" size="large" class="status-tag">
+              <el-icon><Check /></el-icon>
+              所有GM配置完成
+            </el-tag>
+            <el-button type="primary" size="large" @click="startTransfer">
+              <el-icon><VideoPlay /></el-icon>
+              开始转会期
+            </el-button>
+          </template>
+        </div>
+      </div>
+    </el-card>
+
+    <!-- 赛区统计 -->
+    <div class="stats-section">
       <div class="section-header">
         <h2>
           <el-icon><Flag /></el-icon>
-          选择赛区
+          赛区概览
         </h2>
       </div>
 
-      <div class="regions-grid">
-        <div
-          v-for="region in regions"
-          :key="region.id"
-          class="region-card"
-          :class="{ disabled: !canStartTransfer(region) }"
-          @click="handleRegionClick(region)"
-        >
-          <div class="region-header">
-            <div class="region-logo" :style="{ background: getRegionGradient(region.code) }">
-              {{ region.code }}
+      <el-row :gutter="16">
+        <el-col v-for="region in regions" :key="region.id" :span="6">
+          <el-card class="region-stat-card">
+            <div class="region-stat-header" :style="{ background: getRegionGradient(region.code) }">
+              <span class="region-code">{{ region.code }}</span>
+              <span class="region-name">{{ region.name }}</span>
             </div>
-            <div class="region-info">
-              <h3>{{ region.name }}</h3>
-              <p>{{ getRegionTeamCount(region.id) }} 支战队</p>
+            <div class="region-stat-body">
+              <div class="stat-item">
+                <span class="stat-value">{{ getRegionTeamCount(region.id) }}</span>
+                <span class="stat-label">战队</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-value">{{ getRegionPlayerCount(region.id) }}</span>
+                <span class="stat-label">选手</span>
+              </div>
+              <div class="stat-item">
+                <template v-if="getRegionGMStatus(region.id).allConfigured">
+                  <el-icon class="stat-icon success"><Check /></el-icon>
+                </template>
+                <template v-else>
+                  <span class="stat-value warning">{{ getRegionGMStatus(region.id).unconfigured }}</span>
+                </template>
+                <span class="stat-label">待配置</span>
+              </div>
             </div>
-          </div>
-
-          <div class="region-status">
-            <template v-if="getRegionGMStatus(region.id).allConfigured">
-              <el-tag type="success" size="small" class="gm-status-tag">
-                <span class="tag-content">
-                  <el-icon><Check /></el-icon>
-                  <span>GM配置完成</span>
-                </span>
-              </el-tag>
-            </template>
-            <template v-else>
-              <el-tag type="warning" size="small" class="gm-status-tag">
-                <span class="tag-content">
-                  <el-icon><Warning /></el-icon>
-                  <span>需配置 {{ getRegionGMStatus(region.id).unconfigured }} 队GM</span>
-                </span>
-              </el-tag>
-            </template>
-          </div>
-
-          <div class="region-actions">
-            <el-button
-              v-if="!getRegionGMStatus(region.id).allConfigured"
-              type="warning"
-              size="small"
-              @click.stop="goToGMConfig(region)"
-            >
-              <el-icon><Setting /></el-icon>
-              配置GM
-            </el-button>
-            <el-button
-              v-else
-              type="primary"
-              size="small"
-              @click.stop="startRegionTransfer(region)"
-            >
-              <el-icon><VideoPlay /></el-icon>
-              开始转会
-            </el-button>
-          </div>
-        </div>
-      </div>
+          </el-card>
+        </el-col>
+      </el-row>
     </div>
 
     <!-- 转会须知 -->
@@ -112,7 +121,8 @@
       </template>
       <ul class="notice-list">
         <li>转会期开始前，必须为所有 AI 球队配置 GM 性格</li>
-        <li>每个赛区的转会期独立进行，可以逐轮执行或快进完成</li>
+        <li>四个赛区统一进行转会，选手可跨赛区转会</li>
+        <li>中国选手更倾向留在 LPL，韩国选手相对开放外出</li>
         <li>转会期间会自动处理合同续约、自由球员签约、球员挖角等事务</li>
         <li>转会完成后可查看详细的转会报告</li>
       </ul>
@@ -121,7 +131,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
@@ -173,6 +183,38 @@ const regionColors: Record<string, string> = {
   LCS: 'linear-gradient(135deg, #f59e0b, #d97706)',
 }
 
+// 计算属性
+const totalTeams = computed(() => {
+  let count = 0
+  teamsByRegion.value.forEach(teams => {
+    count += teams.length
+  })
+  return count
+})
+
+const totalPlayers = computed(() => {
+  // 估算：平均每队7名选手
+  return totalTeams.value * 7
+})
+
+const gmConfigured = computed(() => {
+  let allConfigured = true
+  gmStatusByRegion.value.forEach(status => {
+    if (status.configured < status.total) {
+      allConfigured = false
+    }
+  })
+  return allConfigured
+})
+
+const unconfiguredGMCount = computed(() => {
+  let count = 0
+  gmStatusByRegion.value.forEach(status => {
+    count += status.total - status.configured
+  })
+  return count
+})
+
 // 获取赛区渐变色
 function getRegionGradient(code: string): string {
   return regionColors[code.toUpperCase()] || 'linear-gradient(135deg, #6b7280, #4b5563)'
@@ -181,6 +223,11 @@ function getRegionGradient(code: string): string {
 // 获取赛区球队数量
 function getRegionTeamCount(regionId: number): number {
   return teamsByRegion.value.get(regionId)?.length ?? 0
+}
+
+// 获取赛区选手数量（估算）
+function getRegionPlayerCount(regionId: number): number {
+  return getRegionTeamCount(regionId) * 7
 }
 
 // 获取赛区GM配置状态
@@ -195,32 +242,15 @@ function getRegionGMStatus(regionId: number) {
   }
 }
 
-// 是否可以开始转会
-function canStartTransfer(region: Region): boolean {
-  return getRegionGMStatus(region.id).allConfigured
-}
-
-// 点击赛区
-function handleRegionClick(region: Region) {
-  if (!canStartTransfer(region)) {
-    ElMessage.warning('请先完成该赛区所有球队的GM配置')
-    return
-  }
-  startRegionTransfer(region)
-}
-
 // 跳转到GM配置
-function goToGMConfig(region: Region) {
-  router.push({
-    path: '/transfer/gm-config',
-    query: { region: region.code.toLowerCase() }
-  })
+function goToGMConfig() {
+  router.push('/transfer/gm-config')
 }
 
-// 开始赛区转会
-function startRegionTransfer(region: Region) {
-  transferStore.setRegion(region.id, region.code)
-  router.push(`/transfer/window/${region.code.toLowerCase()}`)
+// 开始转会期
+function startTransfer() {
+  transferStore.clearState()
+  router.push('/transfer/window')
 }
 
 // 加载数据
@@ -369,8 +399,69 @@ onMounted(() => {
   opacity: 0.95;
 }
 
-/* 赛区选择 */
-.regions-section {
+/* 操作入口卡片 */
+.action-card {
+  margin-bottom: 24px;
+  border-radius: 16px;
+}
+
+.action-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+}
+
+.action-info {
+  flex: 1;
+}
+
+.region-badges {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.region-badge {
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+}
+
+.region-badge.lpl { background: linear-gradient(135deg, #ef4444, #dc2626); }
+.region-badge.lck { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.region-badge.lec { background: linear-gradient(135deg, #22c55e, #16a34a); }
+.region-badge.lcs { background: linear-gradient(135deg, #f59e0b, #d97706); }
+
+.action-info h3 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #303133;
+  margin: 0 0 8px 0;
+}
+
+.action-info p {
+  font-size: 14px;
+  color: #909399;
+  margin: 0;
+}
+
+.action-status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 赛区统计 */
+.stats-section {
   margin-bottom: 24px;
 }
 
@@ -388,85 +479,67 @@ onMounted(() => {
   margin: 0;
 }
 
-.regions-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-}
-
-.region-card {
-  background: white;
-  border-radius: 16px;
-  padding: 20px;
-  border: 2px solid #e5e7eb;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.region-card:hover:not(.disabled) {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
-  border-color: #3b82f6;
-}
-
-.region-card.disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.region-header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.region-logo {
-  width: 56px;
-  height: 56px;
+.region-stat-card {
   border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;
+}
+
+.region-stat-card :deep(.el-card__body) {
+  padding: 0;
+}
+
+.region-stat-header {
+  padding: 16px;
   color: white;
-  font-size: 18px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.region-info h3 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #303133;
-  margin: 0 0 4px 0;
-}
-
-.region-info p {
-  font-size: 13px;
-  color: #909399;
-  margin: 0;
-}
-
-.region-status {
-  margin-bottom: 16px;
-}
-
-.region-status .el-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.region-status .tag-content {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.region-actions {
   display: flex;
-  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.region-code {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.region-name {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.region-stat-body {
+  padding: 16px;
+  display: flex;
+  justify-content: space-around;
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-value {
+  display: block;
+  font-size: 20px;
+  font-weight: 700;
+  color: #303133;
+}
+
+.stat-value.warning {
+  color: #f59e0b;
+}
+
+.stat-label {
+  display: block;
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+}
+
+.stat-icon {
+  font-size: 20px;
+}
+
+.stat-icon.success {
+  color: #22c55e;
 }
 
 /* 须知卡片 */
