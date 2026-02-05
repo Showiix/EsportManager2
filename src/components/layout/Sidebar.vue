@@ -38,9 +38,9 @@ const menuItems: MenuItem[] = [
     path: '/transfer',
     icon: 'exchange',
     children: [
-      { name: '市场分析', path: '/transfer', icon: 'preview' },
-      { name: 'AI GM配置', path: '/transfer/gm-config', icon: 'robot' },
-      { name: '选手市场', path: '/transfer/player-market', icon: 'market' },
+      { name: '转会总览', path: '/transfer', icon: 'preview' },
+      { name: 'GM性格配置', path: '/transfer/gm-config', icon: 'robot' },
+      { name: '选手合同中心', path: '/transfer/player-market', icon: 'market' },
     ]
   },
   { name: '积分排名', path: '/rankings', icon: 'chart' },
