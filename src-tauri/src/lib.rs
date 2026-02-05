@@ -81,6 +81,7 @@ use commands::{
     start_transfer_window, execute_transfer_round, fast_forward_transfer,
     get_transfer_events, get_transfer_report, get_transfer_window_status,
     get_team_personality, update_team_personality, get_team_reputation,
+    get_player_market_list,
     // 应用状态
     AppState,
 };
@@ -300,6 +301,7 @@ pub fn run() {
             get_team_personality,
             update_team_personality,
             get_team_reputation,
+            get_player_market_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

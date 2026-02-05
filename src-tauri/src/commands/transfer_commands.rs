@@ -403,3 +403,90 @@ pub async fn get_team_reputation(
 
     Ok(CommandResult::ok(reputation))
 }
+
+// ============================================
+// 选手合同中心命令
+// ============================================
+
+/// 获取选手合同列表（合同中心）
+#[tauri::command]
+pub async fn get_player_market_list(
+    state: State<'_, AppState>,
+) -> Result<CommandResult<Vec<PlayerContractInfo>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 查询所有选手的合同信息
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            p.id as player_id,
+            p.game_id as player_name,
+            p.position,
+            p.age,
+            p.ability,
+            p.potential,
+            p.team_id,
+            t.name as team_name,
+            r.short_name as region_code,
+            p.salary,
+            p.contract_end_season,
+            p.join_season,
+            p.market_value as base_market_value,
+            p.calculated_market_value,
+            p.satisfaction,
+            p.loyalty,
+            p.is_starter,
+            p.status
+        FROM players p
+        LEFT JOIN teams t ON p.team_id = t.id
+        LEFT JOIN regions r ON t.region_id = r.id
+        WHERE p.save_id = ? AND p.status != 'RETIRED'
+        ORDER BY p.ability DESC, p.potential DESC
+        "#
+    )
+    .bind(&save_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let players: Vec<PlayerContractInfo> = rows
+        .iter()
+        .map(|row| PlayerContractInfo {
+            player_id: row.get("player_id"),
+            player_name: row.get("player_name"),
+            position: row.get("position"),
+            age: row.get("age"),
+            ability: row.get("ability"),
+            potential: row.get("potential"),
+            team_id: row.get("team_id"),
+            team_name: row.get("team_name"),
+            region_code: row.get("region_code"),
+            salary: row.get("salary"),
+            contract_end_season: row.get("contract_end_season"),
+            join_season: row.get("join_season"),
+            base_market_value: row.get("base_market_value"),
+            calculated_market_value: row.get("calculated_market_value"),
+            satisfaction: row.get("satisfaction"),
+            loyalty: row.get("loyalty"),
+            is_starter: row.get("is_starter"),
+            status: row.get("status"),
+        })
+        .collect();
+
+    Ok(CommandResult::ok(players))
+}

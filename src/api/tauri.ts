@@ -919,7 +919,7 @@ export interface TeamTransferPlanInfo {
 export interface PlayerMarketInfo {
   player_id: number
   player_name: string
-  position: string
+  position: string | null
   age: number
   ability: number
   potential: number
@@ -930,16 +930,15 @@ export interface PlayerMarketInfo {
   // 合同信息
   salary: number
   contract_end_season: number | null
-  join_season: number
+  join_season: number | null
   // 身价信息
   base_market_value: number
   calculated_market_value: number
   // 状态信息
   satisfaction: number
   loyalty: number
-  loyalty_type: string
-  wants_to_leave: boolean
-  departure_reasons: string[]
+  is_starter: boolean
+  status: string
 }
 
 // 忠诚度变化记录

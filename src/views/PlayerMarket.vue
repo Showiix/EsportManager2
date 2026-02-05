@@ -1,732 +1,958 @@
 <template>
-  <div class="player-market-view">
+  <div class="contract-center">
     <!-- 页面标题 -->
     <div class="page-header">
-      <div>
-        <h1>选手市场</h1>
-        <p>查看所有选手的合同、身价、满意度和忠诚度信息</p>
+      <div class="header-content">
+        <h1>选手合同中心</h1>
+        <p>管理和查看所有选手的合同、薪资与状态信息</p>
       </div>
-      <div class="header-actions">
-        <el-button @click="loadPlayerList" :loading="isLoading">
-          <el-icon><Refresh /></el-icon>
+      <div class="header-stats">
+        <div class="stat-item">
+          <span class="stat-value">{{ totalPlayers }}</span>
+          <span class="stat-label">总选手数</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">{{ expiringContracts }}</span>
+          <span class="stat-label">合同即将到期</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">{{ freeAgents }}</span>
+          <span class="stat-label">自由球员</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">{{ formatCurrency(totalSalary) }}</span>
+          <span class="stat-label">总薪资支出</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 筛选区域 -->
+    <el-card class="filter-card">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label>搜索选手</label>
+          <el-input
+            v-model="filters.search"
+            placeholder="输入选手名称..."
+            :prefix-icon="Search"
+            clearable
+            style="width: 200px"
+          />
+        </div>
+        <div class="filter-group">
+          <label>赛区</label>
+          <el-select v-model="filters.region" placeholder="全部赛区" clearable style="width: 120px">
+            <el-option label="全部" value="" />
+            <el-option label="LPL" value="LPL" />
+            <el-option label="LCK" value="LCK" />
+            <el-option label="LEC" value="LEC" />
+            <el-option label="LCS" value="LCS" />
+          </el-select>
+        </div>
+        <div class="filter-group">
+          <label>位置</label>
+          <el-select v-model="filters.position" placeholder="全部位置" clearable style="width: 120px">
+            <el-option label="全部" value="" />
+            <el-option label="上单" value="TOP" />
+            <el-option label="打野" value="JUG" />
+            <el-option label="中单" value="MID" />
+            <el-option label="ADC" value="ADC" />
+            <el-option label="辅助" value="SUP" />
+          </el-select>
+        </div>
+        <div class="filter-group">
+          <label>合同状态</label>
+          <el-select v-model="filters.contractStatus" placeholder="全部状态" clearable style="width: 140px">
+            <el-option label="全部" value="" />
+            <el-option label="有效合同" value="active" />
+            <el-option label="即将到期" value="expiring" />
+            <el-option label="自由球员" value="free" />
+          </el-select>
+        </div>
+        <div class="filter-group">
+          <label>首发状态</label>
+          <el-select v-model="filters.starterStatus" placeholder="全部" clearable style="width: 120px">
+            <el-option label="全部" value="" />
+            <el-option label="首发" value="starter" />
+            <el-option label="替补" value="bench" />
+          </el-select>
+        </div>
+        <div class="filter-group">
+          <label>满意度</label>
+          <el-select v-model="filters.satisfaction" placeholder="全部" clearable style="width: 120px">
+            <el-option label="全部" value="" />
+            <el-option label="满意 (≥70)" value="high" />
+            <el-option label="一般 (40-69)" value="medium" />
+            <el-option label="不满 (<40)" value="low" />
+          </el-select>
+        </div>
+        <el-button type="primary" :icon="Refresh" @click="loadPlayers" :loading="loading">
           刷新数据
         </el-button>
-        <el-button type="warning" @click="batchGenerateStrategies" :loading="isBatchGenerating">
-          <el-icon><MagicStick /></el-icon>
-          批量生成AI策略
-        </el-button>
-        <el-button type="primary" @click="showDepartureCandidates" :loading="isLoadingStrategies">
-          <el-icon><TrendCharts /></el-icon>
-          查看离队意向
-        </el-button>
       </div>
-    </div>
+    </el-card>
 
-    <!-- 筛选栏 -->
-    <div class="filter-bar">
-      <el-select v-model="filters.position" placeholder="全部位置" clearable style="width: 120px">
-        <el-option label="全部位置" value="" />
-        <el-option label="TOP" value="TOP" />
-        <el-option label="JUG" value="JUG" />
-        <el-option label="MID" value="MID" />
-        <el-option label="ADC" value="ADC" />
-        <el-option label="SUP" value="SUP" />
-      </el-select>
-      <el-select v-model="filters.region" placeholder="全部赛区" clearable style="width: 120px">
-        <el-option label="全部赛区" value="" />
-        <el-option label="LPL" value="LPL" />
-        <el-option label="LCK" value="LCK" />
-        <el-option label="LEC" value="LEC" />
-        <el-option label="LCS" value="LCS" />
-      </el-select>
-      <el-select v-model="filters.contractStatus" placeholder="合同状态" clearable style="width: 140px">
-        <el-option label="全部状态" value="" />
-        <el-option label="即将到期" value="expiring" />
-        <el-option label="已到期" value="expired" />
-        <el-option label="长约" value="long" />
-      </el-select>
-      <el-select v-model="filters.transferIntent" placeholder="转会意愿" clearable style="width: 130px">
-        <el-option label="全部" value="" />
-        <el-option label="想离队" value="leave" />
-        <el-option label="愿意留" value="stay" />
-      </el-select>
-      <el-select v-model="filters.satisfaction" placeholder="满意度" clearable style="width: 130px">
-        <el-option label="全部" value="" />
-        <el-option label="不满 (<40)" value="low" />
-        <el-option label="一般 (40-70)" value="mid" />
-        <el-option label="满意 (>70)" value="high" />
-      </el-select>
-      <el-input
-        v-model="filters.search"
-        placeholder="搜索选手..."
-        style="width: 180px"
-        clearable
-      >
-        <template #prefix>
-          <el-icon><Search /></el-icon>
-        </template>
-      </el-input>
-    </div>
-
-    <!-- 选手表格 -->
-    <el-card class="player-table-card">
+    <!-- 数据表格 -->
+    <el-card class="table-card">
       <el-table
         :data="paginatedPlayers"
-        v-loading="isLoading"
+        v-loading="loading"
         stripe
         style="width: 100%"
-        @row-click="handleRowClick"
-        row-class-name="clickable-row"
+        :default-sort="{ prop: 'ability', order: 'descending' }"
+        @sort-change="handleSortChange"
+        max-height="calc(100vh - 280px)"
       >
-        <el-table-column prop="player_name" label="选手" width="150" fixed>
+        <!-- 选手基本信息 -->
+        <el-table-column label="选手" width="200" fixed>
           <template #default="{ row }">
-            <div class="player-cell">
-              <div class="player-avatar" :class="row.position?.toLowerCase()">
+            <div class="player-info">
+              <div class="player-avatar" :class="getPositionClass(row.position)">
                 {{ row.position || '?' }}
               </div>
-              <span class="player-name-text">{{ row.player_name }}</span>
+              <div class="player-details">
+                <span class="player-name">{{ row.player_name }}</span>
+                <span class="player-team">
+                  <el-tag v-if="row.team_name" size="small" :type="getRegionTagType(row.region_code)">
+                    {{ row.team_name }}
+                  </el-tag>
+                  <el-tag v-else size="small" type="info">自由球员</el-tag>
+                </span>
+              </div>
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="team_name" label="战队" width="140">
+
+        <!-- 年龄 -->
+        <el-table-column prop="age" label="年龄" width="80" sortable align="center">
           <template #default="{ row }">
-            <div v-if="row.team_name" class="team-cell">
-              <span>{{ row.team_name }}</span>
-              <el-tag v-if="row.region_code" size="small" :type="getRegionTagType(row.region_code)">
-                {{ formatRegion(row.region_code) }}
-              </el-tag>
+            <span :class="getAgeClass(row.age)">{{ row.age }}岁</span>
+          </template>
+        </el-table-column>
+
+        <!-- 能力值 -->
+        <el-table-column prop="ability" label="能力" width="100" sortable align="center">
+          <template #default="{ row }">
+            <div class="ability-display">
+              <span class="ability-value" :class="getAbilityClass(row.ability)">{{ row.ability }}</span>
+              <el-progress
+                :percentage="row.ability"
+                :stroke-width="4"
+                :show-text="false"
+                :color="getAbilityColor(row.ability)"
+              />
             </div>
-            <span v-else class="no-team">自由身</span>
           </template>
         </el-table-column>
-        <el-table-column prop="ability" label="能力" width="70" align="center" sortable>
+
+        <!-- 潜力值 -->
+        <el-table-column prop="potential" label="潜力" width="100" sortable align="center">
           <template #default="{ row }">
-            <span :style="{ color: getAbilityColor(row.ability), fontWeight: 700 }">
-              {{ row.ability }}
-            </span>
+            <div class="ability-display">
+              <span class="potential-value">{{ row.potential }}</span>
+              <el-progress
+                :percentage="row.potential"
+                :stroke-width="4"
+                :show-text="false"
+                color="#67c23a"
+              />
+            </div>
           </template>
         </el-table-column>
-        <el-table-column label="身价" width="100" align="right" sortable :sort-method="sortByValue">
+
+        <!-- 首发状态 -->
+        <el-table-column label="首发" width="80" align="center">
           <template #default="{ row }">
-            <span class="value-text">{{ formatValue(row.calculated_market_value || row.base_market_value) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="salary" label="年薪" width="90" align="right" sortable>
-          <template #default="{ row }">
-            <span>{{ formatSalary(row.salary) }}/年</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="合同" width="90" align="center">
-          <template #default="{ row }">
-            <span :class="getContractClass(row.contract_end_season)">
-              {{ row.contract_end_season ? `${row.contract_end_season}赛季` : '已到期' }}
-            </span>
-            <el-icon v-if="isExpiringSoon(row.contract_end_season)" class="expire-warning"><WarningFilled /></el-icon>
-          </template>
-        </el-table-column>
-        <el-table-column label="满意度" width="100" align="center" sortable :sort-by="'satisfaction'">
-          <template #default="{ row }">
-            <el-progress
-              :percentage="row.satisfaction"
-              :stroke-width="8"
-              :color="getSatisfactionColor(row.satisfaction)"
-              :show-text="false"
-              style="width: 50px; display: inline-block;"
-            />
-            <span :class="getSatisfactionClass(row.satisfaction)" style="margin-left: 4px;">
-              {{ row.satisfaction }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="忠诚度" width="100" align="center" sortable :sort-by="'loyalty'">
-          <template #default="{ row }">
-            <el-progress
-              :percentage="row.loyalty"
-              :stroke-width="8"
-              :color="getLoyaltyColor(row.loyalty)"
-              :show-text="false"
-              style="width: 50px; display: inline-block;"
-            />
-            <span :class="getLoyaltyClass(row.loyalty)" style="margin-left: 4px;">
-              {{ row.loyalty }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="意愿" width="80" align="center">
-          <template #default="{ row }">
-            <el-tag
-              :type="row.wants_to_leave ? 'danger' : 'success'"
-              size="small"
-              effect="plain"
-            >
-              {{ row.wants_to_leave ? '想走' : '想留' }}
+            <el-tag :type="row.is_starter ? 'success' : 'info'" size="small">
+              {{ row.is_starter ? '首发' : '替补' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="age" label="年龄" width="60" align="center" sortable />
-        <el-table-column label="AI策略" width="100" align="center" fixed="right">
+
+        <!-- 合同信息 -->
+        <el-table-column label="合同" width="160">
           <template #default="{ row }">
-            <el-button
-              size="small"
-              :type="hasStrategy(row.player_id) ? 'success' : 'default'"
-              @click.stop="openStrategyDialog(row)"
-            >
-              <el-icon><DataAnalysis /></el-icon>
-              {{ hasStrategy(row.player_id) ? '查看' : '分析' }}
+            <div class="contract-info">
+              <div class="contract-salary">
+                <span class="label">薪资:</span>
+                <span class="value">{{ formatCurrency(row.salary) }}/年</span>
+              </div>
+              <div class="contract-duration">
+                <span class="label">到期:</span>
+                <span class="value" :class="getContractClass(row.contract_end_season)">
+                  {{ row.contract_end_season ? `第${row.contract_end_season}赛季` : '无合同' }}
+                </span>
+              </div>
+            </div>
+          </template>
+        </el-table-column>
+
+        <!-- 身价 -->
+        <el-table-column prop="calculated_market_value" label="身价" width="140" sortable align="right">
+          <template #default="{ row }">
+            <div class="market-value">
+              <span class="current-value">{{ formatCurrency(row.calculated_market_value) }}</span>
+              <span v-if="row.calculated_market_value !== row.base_market_value" class="base-value">
+                基础: {{ formatCurrency(row.base_market_value) }}
+              </span>
+            </div>
+          </template>
+        </el-table-column>
+
+        <!-- 满意度 -->
+        <el-table-column prop="satisfaction" label="满意度" width="100" sortable align="center">
+          <template #default="{ row }">
+            <div class="stat-cell">
+              <span class="stat-value" :style="{ color: getSatisfactionColor(row.satisfaction) }">
+                {{ row.satisfaction }}
+              </span>
+              <el-progress
+                :percentage="row.satisfaction"
+                :stroke-width="4"
+                :show-text="false"
+                :color="getSatisfactionColor(row.satisfaction)"
+              />
+            </div>
+          </template>
+        </el-table-column>
+
+        <!-- 忠诚度 -->
+        <el-table-column prop="loyalty" label="忠诚度" width="100" sortable align="center">
+          <template #default="{ row }">
+            <div class="stat-cell">
+              <span class="stat-value" :style="{ color: getLoyaltyColor(row.loyalty) }">
+                {{ row.loyalty }}
+              </span>
+              <el-progress
+                :percentage="row.loyalty"
+                :stroke-width="4"
+                :show-text="false"
+                :color="getLoyaltyColor(row.loyalty)"
+              />
+            </div>
+          </template>
+        </el-table-column>
+
+        <!-- 状态 -->
+        <el-table-column prop="status" label="状态" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag :type="getStatusTagType(row.status)" size="small">
+              {{ getStatusLabel(row.status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+
+        <!-- 操作 -->
+        <el-table-column label="操作" width="100" fixed="right" align="center">
+          <template #default="{ row }">
+            <el-button type="primary" link size="small" @click="showPlayerDetail(row)">
+              详情
             </el-button>
           </template>
         </el-table-column>
       </el-table>
 
       <!-- 分页 -->
-      <div class="pagination-container">
+      <div class="pagination-wrapper">
         <el-pagination
-          v-model:current-page="currentPage"
-          v-model:page-size="pageSize"
-          :page-sizes="[20, 50, 100]"
+          v-model:current-page="pagination.page"
+          v-model:page-size="pagination.pageSize"
+          :page-sizes="[20, 50, 100, 200]"
           :total="filteredPlayers.length"
-          layout="total, sizes, prev, pager, next"
-          background
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="handlePageChange"
         />
       </div>
     </el-card>
 
-    <!-- 选手合同详情弹窗 -->
-    <PlayerContractDialog
-      v-model:visible="contractDialogVisible"
-      :player-id="selectedPlayerId"
-    />
-
-    <!-- 选手AI策略弹窗 -->
-    <PlayerStrategyDialog
-      v-model:visible="strategyDialogVisible"
-      :player-id="strategyPlayerId"
-      :player-name="strategyPlayerName"
-      @strategy-generated="onStrategyGenerated"
-    />
-
-    <!-- 离队意向列表弹窗 -->
+    <!-- 选手详情弹窗 -->
     <el-dialog
-      v-model="departureCandidatesVisible"
-      title="离队意向选手"
-      width="900px"
+      v-model="detailDialogVisible"
+      :title="`选手详情 - ${selectedPlayer?.player_name || ''}`"
+      width="600px"
+      :close-on-click-modal="true"
     >
-      <el-table :data="departureCandidates" v-loading="isLoadingStrategies" stripe>
-        <el-table-column prop="player_name" label="选手" width="120">
-          <template #default="{ row }">
-            <div class="player-cell">
-              <div class="player-avatar" :class="row.position?.toLowerCase()">
-                {{ row.position || '?' }}
-              </div>
-              <span>{{ row.player_name }}</span>
+      <div v-if="selectedPlayer" class="player-detail-dialog">
+        <div class="detail-section">
+          <h4>基本信息</h4>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="label">选手名称</span>
+              <span class="value">{{ selectedPlayer.player_name }}</span>
             </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="team_name" label="战队" width="120" />
-        <el-table-column prop="ability" label="能力" width="70" align="center" />
-        <el-table-column label="离队原因" min-width="150">
-          <template #default="{ row }">
-            <div class="reason-tags">
-              <el-tag
-                v-for="reason in row.departure_reasons"
-                :key="reason"
-                size="small"
-                type="warning"
-              >
-                {{ reason }}
+            <div class="detail-item">
+              <span class="label">位置</span>
+              <span class="value">{{ getPositionLabel(selectedPlayer.position) }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">年龄</span>
+              <span class="value">{{ selectedPlayer.age }}岁</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">能力值</span>
+              <span class="value ability" :class="getAbilityClass(selectedPlayer.ability)">{{ selectedPlayer.ability }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">潜力值</span>
+              <span class="value potential">{{ selectedPlayer.potential }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">首发状态</span>
+              <span class="value">{{ selectedPlayer.is_starter ? '首发' : '替补' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h4>战队信息</h4>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="label">当前战队</span>
+              <span class="value">{{ selectedPlayer.team_name || '自由球员' }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">赛区</span>
+              <span class="value">{{ selectedPlayer.region_code || '-' }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">加入赛季</span>
+              <span class="value">{{ selectedPlayer.join_season ? `第${selectedPlayer.join_season}赛季` : '-' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h4>合同信息</h4>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="label">年薪</span>
+              <span class="value salary">{{ formatCurrency(selectedPlayer.salary) }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">合同到期</span>
+              <span class="value" :class="getContractClass(selectedPlayer.contract_end_season)">
+                {{ selectedPlayer.contract_end_season ? `第${selectedPlayer.contract_end_season}赛季` : '无合同' }}
+              </span>
+            </div>
+            <div class="detail-item">
+              <span class="label">基础身价</span>
+              <span class="value">{{ formatCurrency(selectedPlayer.base_market_value) }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">当前身价</span>
+              <span class="value market-value">{{ formatCurrency(selectedPlayer.calculated_market_value) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h4>状态信息</h4>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="label">满意度</span>
+              <div class="value-with-progress">
+                <span class="value">{{ selectedPlayer.satisfaction }}%</span>
+                <el-progress
+                  :percentage="selectedPlayer.satisfaction"
+                  :stroke-width="6"
+                  :color="getSatisfactionColor(selectedPlayer.satisfaction)"
+                />
+              </div>
+            </div>
+            <div class="detail-item">
+              <span class="label">忠诚度</span>
+              <div class="value-with-progress">
+                <span class="value">{{ selectedPlayer.loyalty }}%</span>
+                <el-progress
+                  :percentage="selectedPlayer.loyalty"
+                  :stroke-width="6"
+                  :color="getLoyaltyColor(selectedPlayer.loyalty)"
+                />
+              </div>
+            </div>
+            <div class="detail-item">
+              <span class="label">选手状态</span>
+              <el-tag :type="getStatusTagType(selectedPlayer.status)">
+                {{ getStatusLabel(selectedPlayer.status) }}
               </el-tag>
             </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="偏好球队" width="150">
-          <template #default="{ row }">
-            <span v-if="row.preferred_teams_count > 0">
-              {{ row.preferred_teams[0]?.team_name }}
-              <span v-if="row.preferred_teams_count > 1" class="more-teams">
-                +{{ row.preferred_teams_count - 1 }}
-              </span>
-            </span>
-            <span v-else class="no-data">-</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="置信度" width="80" align="center">
-          <template #default="{ row }">
-            <el-progress
-              :percentage="row.decision_confidence"
-              :stroke-width="6"
-              :show-text="false"
-              style="width: 50px"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="80" align="center">
-          <template #default="{ row }">
-            <el-button size="small" @click="viewStrategyFromList(row)">
-              详情
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="detailDialogVisible = false">关闭</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, reactive } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, WarningFilled, DataAnalysis, TrendCharts, MagicStick } from '@element-plus/icons-vue'
-import { transferApi, aiTransferApi, type PlayerMarketInfo, type PlayerTransferStrategyInfo } from '@/api/tauri'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Search, Refresh } from '@element-plus/icons-vue'
+import { transferApi, type PlayerMarketInfo } from '@/api/tauri'
 import { useGameStore } from '@/stores/useGameStore'
-import PlayerContractDialog from '@/components/transfer/PlayerContractDialog.vue'
-import PlayerStrategyDialog from '@/components/transfer/PlayerStrategyDialog.vue'
 
 const gameStore = useGameStore()
 
 // 数据
 const players = ref<PlayerMarketInfo[]>([])
-const isLoading = ref(false)
-const currentPage = ref(1)
-const pageSize = ref(50)
-
-// 弹窗状态
-const contractDialogVisible = ref(false)
-const selectedPlayerId = ref<number | null>(null)
-
-// AI策略弹窗状态
-const strategyDialogVisible = ref(false)
-const strategyPlayerId = ref<number | null>(null)
-const strategyPlayerName = ref('')
-
-// 离队意向列表
-const departureCandidatesVisible = ref(false)
-const departureCandidates = ref<PlayerTransferStrategyInfo[]>([])
-const isLoadingStrategies = ref(false)
-
-// 批量生成状态
-const isBatchGenerating = ref(false)
-const batchProgress = ref({ current: 0, total: 0 })
-
-// 已生成策略的选手ID集合
-const playersWithStrategy = ref<Set<number>>(new Set())
+const loading = ref(false)
+const detailDialogVisible = ref(false)
+const selectedPlayer = ref<PlayerMarketInfo | null>(null)
 
 // 筛选条件
 const filters = reactive({
-  position: '',
-  region: '',
-  contractStatus: '',
-  transferIntent: '',
-  satisfaction: '',
   search: '',
+  region: '',
+  position: '',
+  contractStatus: '',
+  starterStatus: '',
+  satisfaction: '',
 })
 
-// 当前赛季
-const currentSeason = computed(() => gameStore.currentSeason)
+// 分页
+const pagination = reactive({
+  page: 1,
+  pageSize: 50,
+})
 
-// 加载选手列表
-const loadPlayerList = async () => {
-  isLoading.value = true
-  try {
-    players.value = await transferApi.getPlayerMarketList()
-    // 加载已生成策略的选手列表
-    await loadExistingStrategies()
-  } catch (e) {
-    console.error('Failed to load player list:', e)
-    ElMessage.error('加载选手列表失败')
-  } finally {
-    isLoading.value = false
-  }
-}
+// 排序
+const sortConfig = reactive({
+  prop: 'ability',
+  order: 'descending' as 'ascending' | 'descending',
+})
 
-// 加载已生成策略的选手ID
-const loadExistingStrategies = async () => {
-  try {
-    const strategies = await aiTransferApi.getAllPlayerStrategies()
-    playersWithStrategy.value = new Set(strategies.map(s => s.player_id))
-  } catch (e) {
-    console.error('Failed to load existing strategies:', e)
-  }
-}
+// 计算属性
+const totalPlayers = computed(() => players.value.length)
 
-// 检查选手是否已有策略
-const hasStrategy = (playerId: number) => {
-  return playersWithStrategy.value.has(playerId)
-}
+const expiringContracts = computed(() => {
+  const currentSeason = gameStore.currentSave?.current_season || 1
+  return players.value.filter(p =>
+    p.contract_end_season && p.contract_end_season <= currentSeason + 1
+  ).length
+})
 
-// 过滤后的选手列表
+const freeAgents = computed(() =>
+  players.value.filter(p => !p.team_id).length
+)
+
+const totalSalary = computed(() =>
+  players.value.reduce((sum, p) => sum + (p.salary || 0), 0)
+)
+
 const filteredPlayers = computed(() => {
-  return players.value.filter(player => {
-    // 位置筛选
-    if (filters.position && player.position?.toUpperCase() !== filters.position) return false
+  let result = [...players.value]
+  const currentSeason = gameStore.currentSave?.current_season || 1
 
-    // 赛区筛选
-    if (filters.region && player.region_code !== filters.region) return false
+  // 搜索
+  if (filters.search) {
+    const search = filters.search.toLowerCase()
+    result = result.filter(p =>
+      p.player_name.toLowerCase().includes(search) ||
+      (p.team_name && p.team_name.toLowerCase().includes(search))
+    )
+  }
 
-    // 合同状态筛选
-    if (filters.contractStatus) {
-      const season = currentSeason.value
-      const endSeason = player.contract_end_season
-      if (filters.contractStatus === 'expiring' && !(endSeason && endSeason <= season + 1)) return false
-      if (filters.contractStatus === 'expired' && endSeason !== null) return false
-      if (filters.contractStatus === 'long' && !(endSeason && endSeason > season + 1)) return false
+  // 赛区筛选
+  if (filters.region) {
+    result = result.filter(p => p.region_code === filters.region)
+  }
+
+  // 位置筛选
+  if (filters.position) {
+    result = result.filter(p => p.position === filters.position)
+  }
+
+  // 合同状态筛选
+  if (filters.contractStatus) {
+    switch (filters.contractStatus) {
+      case 'active':
+        result = result.filter(p => p.contract_end_season && p.contract_end_season > currentSeason + 1)
+        break
+      case 'expiring':
+        result = result.filter(p =>
+          p.contract_end_season &&
+          p.contract_end_season <= currentSeason + 1 &&
+          p.contract_end_season >= currentSeason
+        )
+        break
+      case 'free':
+        result = result.filter(p => !p.team_id)
+        break
     }
+  }
 
-    // 转会意愿筛选
-    if (filters.transferIntent === 'leave' && !player.wants_to_leave) return false
-    if (filters.transferIntent === 'stay' && player.wants_to_leave) return false
+  // 首发状态筛选
+  if (filters.starterStatus) {
+    result = result.filter(p =>
+      filters.starterStatus === 'starter' ? p.is_starter : !p.is_starter
+    )
+  }
 
-    // 满意度筛选
-    if (filters.satisfaction === 'low' && player.satisfaction >= 40) return false
-    if (filters.satisfaction === 'mid' && (player.satisfaction < 40 || player.satisfaction > 70)) return false
-    if (filters.satisfaction === 'high' && player.satisfaction <= 70) return false
+  // 满意度筛选
+  if (filters.satisfaction) {
+    switch (filters.satisfaction) {
+      case 'high':
+        result = result.filter(p => p.satisfaction >= 70)
+        break
+      case 'medium':
+        result = result.filter(p => p.satisfaction >= 40 && p.satisfaction < 70)
+        break
+      case 'low':
+        result = result.filter(p => p.satisfaction < 40)
+        break
+    }
+  }
 
-    // 搜索
-    if (filters.search && !player.player_name.toLowerCase().includes(filters.search.toLowerCase())) return false
-
-    return true
+  // 排序
+  result.sort((a, b) => {
+    const aVal = a[sortConfig.prop as keyof PlayerMarketInfo] as number
+    const bVal = b[sortConfig.prop as keyof PlayerMarketInfo] as number
+    return sortConfig.order === 'ascending' ? aVal - bVal : bVal - aVal
   })
+
+  return result
 })
 
-// 分页后的选手列表
+// 分页后的数据（只渲染当前页）
 const paginatedPlayers = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  const end = start + pageSize.value
+  const start = (pagination.page - 1) * pagination.pageSize
+  const end = start + pagination.pageSize
   return filteredPlayers.value.slice(start, end)
 })
 
-// 点击行打开详情弹窗
-const handleRowClick = (row: PlayerMarketInfo) => {
-  selectedPlayerId.value = row.player_id
-  contractDialogVisible.value = true
+// 方法
+const loadPlayers = async () => {
+  loading.value = true
+  try {
+    const result = await transferApi.getPlayerMarketList()
+    players.value = result
+  } catch (error) {
+    console.error('Failed to load player list:', error)
+    ElMessage.error(`加载选手列表失败: ${error}`)
+  } finally {
+    loading.value = false
+  }
 }
 
-// 辅助函数
-const formatRegion = (region: string | null) => {
-  const regionMap: Record<string, string> = {
-    'CN': 'LPL',
-    'KR': 'LCK',
-    'EU': 'LEC',
-    'NA': 'LCS',
-    'LPL': 'LPL',
-    'LCK': 'LCK',
-    'LEC': 'LEC',
-    'LCS': 'LCS',
+const showPlayerDetail = (player: PlayerMarketInfo) => {
+  selectedPlayer.value = player
+  detailDialogVisible.value = true
+}
+
+const handleSortChange = ({ prop, order }: { prop: string; order: 'ascending' | 'descending' | null }) => {
+  sortConfig.prop = prop || 'ability'
+  sortConfig.order = order || 'descending'
+}
+
+const handleSizeChange = (size: number) => {
+  pagination.pageSize = size
+  pagination.page = 1
+}
+
+const handlePageChange = (page: number) => {
+  pagination.page = page
+}
+
+// 格式化
+const formatCurrency = (value: number) => {
+  if (value >= 1000000) {
+    return `$${(value / 1000000).toFixed(1)}M`
+  } else if (value >= 1000) {
+    return `$${(value / 1000).toFixed(0)}K`
   }
-  return regionMap[region || ''] || region || ''
+  return `$${value}`
+}
+
+const getPositionLabel = (position: string | null) => {
+  const labels: Record<string, string> = {
+    TOP: '上单',
+    JUG: '打野',
+    MID: '中单',
+    ADC: 'ADC',
+    SUP: '辅助',
+  }
+  return position ? labels[position] || position : '-'
+}
+
+const getPositionClass = (position: string | null) => {
+  return position ? `position-${position.toLowerCase()}` : ''
 }
 
 const getRegionTagType = (region: string | null) => {
-  const formatted = formatRegion(region)
   const types: Record<string, string> = {
-    'LPL': 'danger',
-    'LCK': 'primary',
-    'LEC': 'success',
-    'LCS': 'warning',
+    LPL: 'danger',
+    LCK: 'primary',
+    LEC: 'success',
+    LCS: 'warning',
   }
-  return types[formatted] || 'info'
+  return (region ? types[region] : 'info') as 'danger' | 'primary' | 'success' | 'warning' | 'info'
+}
+
+const getAgeClass = (age: number) => {
+  if (age <= 20) return 'age-young'
+  if (age >= 28) return 'age-old'
+  return 'age-prime'
+}
+
+const getAbilityClass = (ability: number) => {
+  if (ability >= 90) return 'ability-elite'
+  if (ability >= 80) return 'ability-high'
+  if (ability >= 70) return 'ability-medium'
+  return 'ability-low'
 }
 
 const getAbilityColor = (ability: number) => {
-  if (ability >= 90) return '#ef4444'
-  if (ability >= 80) return '#f59e0b'
-  if (ability >= 70) return '#3b82f6'
-  return '#22c55e'
-}
-
-const formatValue = (value: number) => {
-  // 身价单位已经是万
-  if (value >= 10000) return `${(value / 10000).toFixed(1)}亿`
-  if (value >= 1) return `${Math.round(value)}万`
-  return `${value}万`
-}
-
-const formatSalary = (salary: number) => {
-  // 薪资单位已经是万
-  if (salary >= 10000) return `${(salary / 10000).toFixed(1)}亿`
-  return `${Math.round(salary)}万`
-}
-
-const sortByValue = (a: PlayerMarketInfo, b: PlayerMarketInfo) => {
-  const va = a.calculated_market_value || a.base_market_value
-  const vb = b.calculated_market_value || b.base_market_value
-  return va - vb
+  if (ability >= 90) return '#e6a23c'
+  if (ability >= 80) return '#409eff'
+  if (ability >= 70) return '#67c23a'
+  return '#909399'
 }
 
 const getContractClass = (endSeason: number | null) => {
-  if (!endSeason) return 'contract-expired'
-  const season = currentSeason.value
-  if (endSeason <= season) return 'contract-expired'
-  if (endSeason === season + 1) return 'contract-expiring'
-  return ''
+  if (!endSeason) return 'contract-none'
+  const currentSeason = gameStore.currentSave?.current_season || 1
+  if (endSeason <= currentSeason) return 'contract-expired'
+  if (endSeason <= currentSeason + 1) return 'contract-expiring'
+  return 'contract-active'
 }
 
-const isExpiringSoon = (endSeason: number | null) => {
-  if (!endSeason) return true
-  return endSeason <= currentSeason.value + 1
-}
-
-const getSatisfactionColor = (value: number) => {
-  if (value >= 70) return '#67c23a'
-  if (value >= 40) return '#e6a23c'
+const getSatisfactionColor = (satisfaction: number) => {
+  if (satisfaction >= 70) return '#67c23a'
+  if (satisfaction >= 40) return '#e6a23c'
   return '#f56c6c'
 }
 
-const getSatisfactionClass = (value: number) => {
-  if (value >= 70) return 'stat-high'
-  if (value >= 40) return 'stat-mid'
-  return 'stat-low'
-}
-
-const getLoyaltyColor = (value: number) => {
-  if (value >= 70) return '#409eff'
-  if (value >= 40) return '#909399'
+const getLoyaltyColor = (loyalty: number) => {
+  if (loyalty >= 70) return '#409eff'
+  if (loyalty >= 40) return '#e6a23c'
   return '#f56c6c'
 }
 
-const getLoyaltyClass = (value: number) => {
-  if (value >= 70) return 'loyalty-high'
-  if (value >= 40) return 'loyalty-mid'
-  return 'loyalty-low'
-}
-
-// 打开AI策略弹窗
-const openStrategyDialog = (row: PlayerMarketInfo) => {
-  strategyPlayerId.value = row.player_id
-  strategyPlayerName.value = row.player_name
-  strategyDialogVisible.value = true
-}
-
-// 策略生成完成回调
-const onStrategyGenerated = (playerId: number) => {
-  playersWithStrategy.value.add(playerId)
-}
-
-// 查看离队意向列表
-const showDepartureCandidates = async () => {
-  isLoadingStrategies.value = true
-  departureCandidatesVisible.value = true
-  try {
-    departureCandidates.value = await aiTransferApi.getAllPlayerStrategies()
-  } catch (e) {
-    console.error('Failed to load departure candidates:', e)
-    ElMessage.error('加载离队意向列表失败')
-  } finally {
-    isLoadingStrategies.value = false
+const getStatusTagType = (status: string) => {
+  const types: Record<string, string> = {
+    ACTIVE: 'success',
+    INJURED: 'danger',
+    SUSPENDED: 'warning',
+    RETIRED: 'info',
   }
+  return (types[status] || 'info') as 'success' | 'danger' | 'warning' | 'info'
 }
 
-// 从离队列表查看详情
-const viewStrategyFromList = (row: PlayerTransferStrategyInfo) => {
-  strategyPlayerId.value = row.player_id
-  strategyPlayerName.value = row.player_name
-  strategyDialogVisible.value = true
+const getStatusLabel = (status: string) => {
+  const labels: Record<string, string> = {
+    ACTIVE: '活跃',
+    INJURED: '受伤',
+    SUSPENDED: '停赛',
+    RETIRED: '退役',
+  }
+  return labels[status] || status
 }
 
-// 批量生成AI策略
-const batchGenerateStrategies = async () => {
-  // 只为有球队的选手生成策略
-  const playersWithTeam = players.value.filter(p => p.team_id !== null)
-
-  if (playersWithTeam.length === 0) {
-    ElMessage.warning('没有可生成策略的选手')
-    return
-  }
-
-  try {
-    await ElMessageBox.confirm(
-      `将为 ${playersWithTeam.length} 名选手生成AI策略，这可能需要一些时间。是否继续？`,
-      '批量生成确认',
-      {
-        confirmButtonText: '开始生成',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    )
-  } catch {
-    return // 用户取消
-  }
-
-  isBatchGenerating.value = true
-  batchProgress.value = { current: 0, total: playersWithTeam.length }
-
-  let successCount = 0
-  let failCount = 0
-
-  for (let i = 0; i < playersWithTeam.length; i++) {
-    const player = playersWithTeam[i]
-    batchProgress.value.current = i + 1
-
-    try {
-      await aiTransferApi.generatePlayerTransferStrategy(player.player_id)
-      // 更新已生成策略的集合
-      playersWithStrategy.value.add(player.player_id)
-      successCount++
-    } catch (e) {
-      console.error(`Failed to generate strategy for ${player.player_name}:`, e)
-      failCount++
-    }
-
-    // 每10个显示一次进度
-    if ((i + 1) % 10 === 0) {
-      ElMessage.info(`进度: ${i + 1}/${playersWithTeam.length}`)
-    }
-  }
-
-  isBatchGenerating.value = false
-
-  if (failCount === 0) {
-    ElMessage.success(`成功为 ${successCount} 名选手生成策略`)
-  } else {
-    ElMessage.warning(`生成完成: 成功 ${successCount} 人, 失败 ${failCount} 人`)
-  }
-}
-
-// 初始化加载
+// 生命周期
 onMounted(() => {
-  loadPlayerList()
+  loadPlayers()
 })
 </script>
 
 <style scoped>
-.player-market-view {
+.contract-center {
   padding: 0;
 }
 
+/* 页面标题 */
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 20px;
+  padding: 24px;
+  background: linear-gradient(135deg, #1e3a5f 0%, #2d5a7b 100%);
+  border-radius: 12px;
+  color: white;
 }
 
-.page-header h1 {
+.header-content h1 {
   font-size: 24px;
   font-weight: 700;
-  color: #303133;
   margin: 0 0 8px 0;
 }
 
-.page-header p {
+.header-content p {
   font-size: 14px;
-  color: #909399;
+  opacity: 0.8;
   margin: 0;
 }
 
-.filter-bar {
+.header-stats {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding: 16px;
-  background: #f5f7fa;
-  border-radius: 8px;
+  gap: 32px;
 }
 
-.player-table-card {
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.stat-label {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 4px;
+}
+
+/* 筛选卡片 */
+.filter-card {
+  margin-bottom: 16px;
   border-radius: 12px;
 }
 
-.player-table-card :deep(.clickable-row) {
-  cursor: pointer;
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
 }
 
-.player-table-card :deep(.clickable-row:hover) {
-  background-color: #ecf5ff !important;
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.player-cell {
+.filter-group label {
+  font-size: 12px;
+  color: #909399;
+  font-weight: 500;
+}
+
+/* 表格卡片 */
+.table-card {
+  border-radius: 12px;
+}
+
+/* 修复固定列溢出问题 */
+.table-card :deep(.el-table__fixed),
+.table-card :deep(.el-table__fixed-right) {
+  z-index: 10;
+}
+
+.table-card :deep(.el-table__fixed-right-patch) {
+  z-index: 10;
+}
+
+.table-card :deep(.el-table .el-table__cell) {
+  overflow: hidden;
+}
+
+/* 选手信息 */
+.player-info {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
 .player-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  font-size: 12px;
   font-weight: 700;
-  font-size: 10px;
-  flex-shrink: 0;
+  color: white;
+  background: #909399;
 }
 
-.player-avatar.top { background: linear-gradient(135deg, #ef4444, #dc2626); }
-.player-avatar.jug { background: linear-gradient(135deg, #22c55e, #16a34a); }
-.player-avatar.mid { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.player-avatar.adc { background: linear-gradient(135deg, #f59e0b, #d97706); }
-.player-avatar.sup { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+.player-avatar.position-top { background: linear-gradient(135deg, #f56c6c, #e6a23c); }
+.player-avatar.position-jug { background: linear-gradient(135deg, #67c23a, #85ce61); }
+.player-avatar.position-mid { background: linear-gradient(135deg, #409eff, #66b1ff); }
+.player-avatar.position-adc { background: linear-gradient(135deg, #e6a23c, #f7ba2a); }
+.player-avatar.position-sup { background: linear-gradient(135deg, #909399, #b4b4b4); }
 
-.player-name-text {
+.player-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.player-name {
   font-weight: 600;
+  font-size: 14px;
   color: #303133;
 }
 
-.team-cell {
+.player-team {
+  font-size: 12px;
+}
+
+/* 年龄样式 */
+.age-young { color: #67c23a; font-weight: 600; }
+.age-prime { color: #303133; }
+.age-old { color: #f56c6c; }
+
+/* 能力值样式 */
+.ability-display, .stat-cell {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
-.no-team {
+.stat-cell .stat-value {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.ability-value, .potential-value {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.ability-elite { color: #e6a23c; }
+.ability-high { color: #409eff; }
+.ability-medium { color: #67c23a; }
+.ability-low { color: #909399; }
+
+/* 合同信息 */
+.contract-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.contract-salary, .contract-duration {
+  display: flex;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.contract-salary .label, .contract-duration .label {
   color: #909399;
-  font-style: italic;
 }
 
-.value-text {
+.contract-salary .value {
+  font-weight: 500;
+  color: #67c23a;
+}
+
+.contract-active { color: #67c23a; }
+.contract-expiring { color: #e6a23c; font-weight: 600; }
+.contract-expired { color: #f56c6c; }
+.contract-none { color: #909399; }
+
+/* 身价 */
+.market-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.current-value {
   font-weight: 600;
   color: #409eff;
 }
 
-.contract-expired {
-  color: #f56c6c;
-  font-weight: 600;
+.base-value {
+  font-size: 11px;
+  color: #909399;
 }
 
-.contract-expiring {
-  color: #e6a23c;
-}
-
-.expire-warning {
-  color: #e6a23c;
-  margin-left: 4px;
-}
-
-.stat-high { color: #67c23a; font-weight: 600; }
-.stat-mid { color: #e6a23c; }
-.stat-low { color: #f56c6c; font-weight: 600; }
-
-.loyalty-high { color: #409eff; font-weight: 600; }
-.loyalty-mid { color: #909399; }
-.loyalty-low { color: #f56c6c; font-weight: 600; }
-
-.pagination-container {
+/* 分页 */
+.pagination-wrapper {
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
 }
 
-.header-actions {
+/* 详情弹窗 */
+.player-detail-dialog {
   display: flex;
-  gap: 12px;
-  align-items: center;
+  flex-direction: column;
+  gap: 24px;
 }
 
-.reason-tags {
+.detail-section h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.detail-item {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 4px;
 }
 
-.more-teams {
+.detail-item .label {
   font-size: 12px;
   color: #909399;
-  margin-left: 4px;
 }
 
-.no-data {
-  color: #c0c4cc;
-  font-style: italic;
+.detail-item .value {
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
+}
+
+.detail-item .value.ability { color: #409eff; font-size: 18px; }
+.detail-item .value.potential { color: #67c23a; font-size: 18px; }
+.detail-item .value.salary { color: #67c23a; }
+.detail-item .value.market-value { color: #409eff; }
+
+.value-with-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.value-with-progress .value {
+  font-weight: 600;
+}
+
+/* 响应式 */
+@media (max-width: 1200px) {
+  .page-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .header-stats {
+    width: 100%;
+    justify-content: space-around;
+  }
+
+  .filter-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-group {
+    width: 100%;
+  }
+
+  .detail-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 </style>

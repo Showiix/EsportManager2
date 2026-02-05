@@ -487,3 +487,35 @@ pub struct PlayerListing {
     pub sold_to_team_id: Option<i64>,
     pub actual_price: Option<i64>,
 }
+
+// ============================================
+// 选手合同中心
+// ============================================
+
+/// 选手合同信息（用于合同中心页面）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerContractInfo {
+    // 基本信息
+    pub player_id: i64,
+    pub player_name: String,
+    pub position: Option<String>,
+    pub age: i64,
+    pub ability: i64,
+    pub potential: i64,
+    // 战队信息
+    pub team_id: Option<i64>,
+    pub team_name: Option<String>,
+    pub region_code: Option<String>,
+    // 合同信息
+    pub salary: i64,
+    pub contract_end_season: Option<i64>,
+    pub join_season: Option<i64>,
+    // 身价信息
+    pub base_market_value: i64,
+    pub calculated_market_value: i64,
+    // 状态信息
+    pub satisfaction: i64,
+    pub loyalty: i64,
+    pub is_starter: bool,
+    pub status: String,
+}

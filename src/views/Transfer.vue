@@ -289,11 +289,12 @@ onMounted(() => {
 .intro-card {
   margin-bottom: 24px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  overflow: hidden;
 }
 
 .intro-card :deep(.el-card__body) {
   padding: 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .intro-content {
