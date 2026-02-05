@@ -87,6 +87,7 @@
             <el-menu-item index="/transfer/gm-config" :disabled="isMenuDisabled('/transfer/gm-config')">🤖 GM性格配置</el-menu-item>
             <el-menu-item index="/transfer/player-market" :disabled="isMenuDisabled('/transfer/player-market')">👤 选手合同中心</el-menu-item>
             <el-menu-item index="/transfer/team-evaluation" :disabled="isMenuDisabled('/transfer/team-evaluation')">📋 战队评估中心</el-menu-item>
+            <el-menu-item index="/transfer/player-evaluation" :disabled="isMenuDisabled('/transfer/player-evaluation')">👥 选手评估中心</el-menu-item>
           </el-sub-menu>
 
           <el-menu-item index="/rankings" :disabled="isMenuDisabled('/rankings')">

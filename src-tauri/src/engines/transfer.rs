@@ -596,19 +596,26 @@ impl TransferEngine {
 
             // 上赛季前4
             (3..=4, ..=-1) => 95,    // 进步：稳定
-            (3..=4, 0..=2) => 80,    // 维持：稳定
-            (3..=4, 3..=5) => 50,    // 下滑：警惕
-            (3..=4, 6..) => 25,      // 大幅下滑：必须调整
+            (3..=4, 0..=2) => 85,    // 维持：稳定
+            (3..=4, 3..=5) => 55,    // 下滑：警惕
+            (3..=4, 6..) => 30,      // 大幅下滑：必须调整
 
             // 上赛季5-8名
             (5..=8, ..=-3) => 95,    // 大幅上升：稳定
-            (5..=8, -2..=2) => 75,   // 维持：稳定
-            (5..=8, 3..) => 45,      // 下滑：考虑调整
+            (5..=8, -2..=2) => 80,   // 维持：稳定
+            (5..=8, 3..) => 50,      // 下滑：考虑调整
+
+            // 上赛季9-14名（中下游队伍）
+            (9..=14, ..=-4) => 95,   // 大幅进步：稳定
+            (9..=14, -3..=-1) => 85, // 进步：稳定
+            (9..=14, 0..=2) => 75,   // 维持：基本稳定
+            (9..=14, 3..) => 45,     // 下滑：考虑调整
 
             // 其他情况
             (_, ..=-3) => 90,        // 大幅进步
-            (_, -2..=2) => 60,       // 维持
-            (_, 3..) => 35,          // 下滑
+            (_, -2..=-1) => 80,      // 进步
+            (_, 0..=1) => 70,        // 维持
+            (_, 2..) => 40,          // 下滑
         }
     }
 
@@ -1000,20 +1007,20 @@ impl TransferEngine {
         pool: &Pool<Sqlite>,
         save_id: &str,
         team_id: i64,
-        season_id: i64,
+        _season_id: i64,
     ) -> Result<i32, String> {
+        // 从 teams 表读取 annual_points 计算排名
         let row: Option<(i32,)> = sqlx::query_as(
             r#"SELECT COALESCE(
-                (SELECT COUNT(*) + 1 FROM team_annual_points t2
-                 WHERE t2.save_id = t1.save_id AND t2.season_id = t1.season_id
-                 AND t2.total_points > t1.total_points),
-                99
+                (SELECT COUNT(*) + 1 FROM teams t2
+                 WHERE t2.save_id = t1.save_id
+                 AND t2.annual_points > t1.annual_points),
+                1
             ) as rank
-            FROM team_annual_points t1
-            WHERE t1.save_id = ? AND t1.season_id = ? AND t1.team_id = ?"#
+            FROM teams t1
+            WHERE t1.save_id = ? AND t1.id = ?"#
         )
         .bind(save_id)
-        .bind(season_id)
         .bind(team_id)
         .fetch_optional(pool)
         .await
@@ -1046,7 +1053,7 @@ impl TransferEngine {
         Ok(count.0 > 0)
     }
 
-    /// 估算选手市场薪资
+    /// 估算选手市场薪资（单位：万元）
     fn estimate_market_salary(&self, ability: u8, age: u8) -> i64 {
         // 基础薪资（万元）
         let base = match ability {
@@ -1068,7 +1075,7 @@ impl TransferEngine {
             _ => 0.6,
         };
 
-        ((base as f64 * age_factor) * 10000.0) as i64  // 转换为元
+        (base as f64 * age_factor) as i64  // 返回万元
     }
 
     // ============================================

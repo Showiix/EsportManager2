@@ -85,6 +85,7 @@ use commands::{
     get_player_market_list,
     get_team_evaluations, get_team_position_needs,
     get_player_listing_evaluations, get_player_stay_evaluations,
+    clear_evaluation_data,
     // 日志系统命令
     log_frontend_event, log_frontend_error, get_log_files, read_log_file, cleanup_logs,
     // 应用状态
@@ -315,6 +316,7 @@ pub fn run() {
             get_team_position_needs,
             get_player_listing_evaluations,
             get_player_stay_evaluations,
+            clear_evaluation_data,
             // 日志系统命令
             log_frontend_event,
             log_frontend_error,

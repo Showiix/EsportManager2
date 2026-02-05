@@ -521,6 +521,7 @@ pub struct TeamSeasonEvaluationInfo {
     pub evaluation_id: i64,
     pub team_id: i64,
     pub team_name: String,
+    pub team_short_name: String,
     pub region_code: String,
     pub season_id: i64,
     pub current_rank: i32,
@@ -541,11 +542,12 @@ pub struct TeamSeasonEvaluationInfo {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PositionNeedInfo {
     pub position: String,
-    pub current_count: i32,
-    pub target_count: i32,
-    pub gap: i32,
-    pub current_avg_ability: f64,
-    pub priority: String,
+    pub current_starter_name: Option<String>,
+    pub current_starter_ability: Option<i32>,
+    pub current_starter_age: Option<i32>,
+    pub need_level: String,
+    pub min_ability_target: Option<i32>,
+    pub reason: Option<String>,
 }
 
 /// 选手挂牌评估信息
@@ -626,19 +628,24 @@ pub async fn get_team_evaluations(
             e.id as evaluation_id,
             e.team_id,
             t.name as team_name,
+            COALESCE(t.short_name, t.name) as team_short_name,
             r.short_name as region_code,
             e.season_id,
             e.current_rank,
-            e.last_rank,
+            COALESCE(e.last_season_rank, e.current_rank) as last_rank,
             e.stability_score,
             e.strategy,
             e.urgency_level,
             e.roster_power,
             e.roster_count,
-            e.avg_age,
-            e.avg_ability,
+            e.roster_age_avg as avg_age,
+            COALESCE((
+                SELECT AVG(p.ability)
+                FROM players p
+                WHERE p.team_id = e.team_id AND p.is_starter = 1
+            ), 0) as avg_ability,
             e.budget_remaining,
-            e.evaluation_reason,
+            COALESCE(e.strategy_reason, '') as evaluation_reason,
             e.created_at
         FROM team_season_evaluations e
         JOIN teams t ON e.team_id = t.id
@@ -659,6 +666,7 @@ pub async fn get_team_evaluations(
             evaluation_id: row.get("evaluation_id"),
             team_id: row.get("team_id"),
             team_name: row.get("team_name"),
+            team_short_name: row.get("team_short_name"),
             region_code: row.get("region_code"),
             season_id: row.get("season_id"),
             current_rank: row.get("current_rank"),
@@ -737,15 +745,16 @@ pub async fn get_team_position_needs(
         r#"
         SELECT
             position,
-            current_count,
-            target_count,
-            gap,
-            current_avg_ability,
-            priority
+            current_starter_name,
+            current_starter_ability,
+            current_starter_age,
+            need_level,
+            min_ability_target,
+            reason
         FROM team_position_needs
         WHERE evaluation_id = ?
         ORDER BY
-            CASE priority
+            CASE need_level
                 WHEN 'CRITICAL' THEN 1
                 WHEN 'HIGH' THEN 2
                 WHEN 'MEDIUM' THEN 3
@@ -762,11 +771,12 @@ pub async fn get_team_position_needs(
         .iter()
         .map(|row| PositionNeedInfo {
             position: row.get("position"),
-            current_count: row.get("current_count"),
-            target_count: row.get("target_count"),
-            gap: row.get("gap"),
-            current_avg_ability: row.get("current_avg_ability"),
-            priority: row.get("priority"),
+            current_starter_name: row.get("current_starter_name"),
+            current_starter_ability: row.get("current_starter_ability"),
+            current_starter_age: row.get("current_starter_age"),
+            need_level: row.get::<Option<String>, _>("need_level").unwrap_or_else(|| "LOW".to_string()),
+            min_ability_target: row.get("min_ability_target"),
+            reason: row.get("reason"),
         })
         .collect();
 
@@ -893,7 +903,7 @@ pub async fn get_player_stay_evaluations(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
     };
 
-    // 获取赛季ID
+    // 获取赛季对应的 window_id
     let target_season = match season_id {
         Some(s) => s,
         None => {
@@ -904,6 +914,21 @@ pub async fn get_player_stay_evaluations(
                 .map_err(|e| e.to_string())?;
             save_row.get("current_season")
         }
+    };
+
+    // 查找对应的 window_id
+    let window_row = sqlx::query(
+        "SELECT id FROM transfer_windows WHERE save_id = ? AND season_id = ?"
+    )
+    .bind(&save_id)
+    .bind(target_season)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let window_id: i64 = match window_row {
+        Some(row) => row.get("id"),
+        None => return Ok(CommandResult::ok(vec![])),
     };
 
     // 构建查询
@@ -925,13 +950,13 @@ pub async fn get_player_stay_evaluations(
         FROM player_season_evaluations se
         JOIN players p ON se.player_id = p.id
         JOIN teams t ON se.team_id = t.id
-        WHERE se.save_id = ? AND se.season_id = ?
+        WHERE se.save_id = ? AND se.window_id = ?
     "#;
 
     let rows = if let Some(tid) = team_id {
         sqlx::query(&format!("{} AND se.team_id = ? ORDER BY se.stay_score ASC, p.ability DESC", base_query))
             .bind(&save_id)
-            .bind(target_season)
+            .bind(window_id)
             .bind(tid)
             .fetch_all(&pool)
             .await
@@ -939,7 +964,7 @@ pub async fn get_player_stay_evaluations(
     } else {
         sqlx::query(&format!("{} ORDER BY se.stay_score ASC, p.ability DESC", base_query))
             .bind(&save_id)
-            .bind(target_season)
+            .bind(window_id)
             .fetch_all(&pool)
             .await
             .map_err(|e| e.to_string())?
@@ -965,4 +990,82 @@ pub async fn get_player_stay_evaluations(
         .collect();
 
     Ok(CommandResult::ok(evaluations))
+}
+
+/// 清除评估数据（用于重新生成）
+#[tauri::command]
+pub async fn clear_evaluation_data(
+    state: State<'_, AppState>,
+    season_id: Option<i64>,
+) -> Result<CommandResult<i64>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取赛季ID
+    let target_season = match season_id {
+        Some(s) => s,
+        None => {
+            let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+                .bind(&save_id)
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            save_row.get("current_season")
+        }
+    };
+
+    // 获取 window_id
+    let window_row = sqlx::query(
+        "SELECT id FROM transfer_windows WHERE save_id = ? AND season_id = ?"
+    )
+    .bind(&save_id)
+    .bind(target_season)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut deleted_count: i64 = 0;
+
+    if let Some(row) = window_row {
+        let window_id: i64 = row.get("id");
+
+        // 删除选手评估
+        let result1 = sqlx::query("DELETE FROM player_season_evaluations WHERE window_id = ?")
+            .bind(window_id)
+            .execute(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        deleted_count += result1.rows_affected() as i64;
+
+        // 删除战队评估（会级联删除 team_position_needs 和 team_listing_evaluations）
+        let result2 = sqlx::query("DELETE FROM team_season_evaluations WHERE window_id = ?")
+            .bind(window_id)
+            .execute(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        deleted_count += result2.rows_affected() as i64;
+
+        // 重置转会期到第1轮
+        sqlx::query("UPDATE transfer_windows SET current_round = 1 WHERE id = ?")
+            .bind(window_id)
+            .execute(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(CommandResult::ok(deleted_count))
 }

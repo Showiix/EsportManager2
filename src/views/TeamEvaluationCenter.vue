@@ -72,11 +72,24 @@
         <el-button type="primary" :icon="Refresh" @click="loadEvaluations" :loading="loading">
           刷新数据
         </el-button>
+        <el-button type="danger" :icon="Delete" @click="handleClearData" :loading="clearing" plain>
+          清除评估数据
+        </el-button>
       </div>
     </el-card>
 
+    <!-- 空状态提示 -->
+    <el-card v-if="!loading && evaluations.length === 0" class="empty-card">
+      <el-empty description="还未开始转会期">
+        <template #image>
+          <el-icon :size="80" color="#c0c4cc"><Calendar /></el-icon>
+        </template>
+        <p class="empty-hint">战队评估数据将在转会期开始后生成</p>
+      </el-empty>
+    </el-card>
+
     <!-- 数据表格 -->
-    <el-card class="table-card">
+    <el-card v-else class="table-card">
       <el-table
         :data="filteredEvaluations"
         v-loading="loading"
@@ -91,9 +104,9 @@
           <template #default="{ row }">
             <div class="team-info">
               <el-tag size="small" :type="getRegionTagType(row.region_code)">
-                {{ row.region_code }}
+                {{ normalizeRegionCode(row.region_code) }}
               </el-tag>
-              <span class="team-name">{{ row.team_name }}</span>
+              <span class="team-name">{{ row.team_short_name }}</span>
             </div>
           </template>
         </el-table-column>
@@ -198,132 +211,132 @@
     <!-- 战队详情弹窗 -->
     <el-dialog
       v-model="detailDialogVisible"
-      :title="`战队评估详情 - ${selectedTeam?.team_name || ''}`"
-      width="700px"
+      width="800px"
       :close-on-click-modal="true"
+      class="team-detail-modal"
     >
-      <div v-if="selectedTeam" class="team-detail-dialog">
-        <!-- 基本评估 -->
-        <div class="detail-section">
-          <h4>赛季评估</h4>
-          <div class="detail-grid">
-            <div class="detail-item">
-              <span class="label">当前排名</span>
-              <span class="value">第 {{ selectedTeam.current_rank }} 名</span>
+      <template #header>
+        <div class="dialog-header">
+          <div class="team-title">
+            <el-tag :type="getRegionTagType(selectedTeam?.region_code || '')" size="large">
+              {{ normalizeRegionCode(selectedTeam?.region_code || '') }}
+            </el-tag>
+            <h3>{{ selectedTeam?.team_short_name }}</h3>
+          </div>
+          <div class="team-badges">
+            <el-tag :type="getStrategyTagType(selectedTeam?.strategy || '')" effect="dark" size="large">
+              {{ getStrategyLabel(selectedTeam?.strategy || '') }}
+            </el-tag>
+            <el-tag :type="getUrgencyTagType(selectedTeam?.urgency_level || '')" size="large">
+              {{ getUrgencyLabel(selectedTeam?.urgency_level || '') }}
+            </el-tag>
+          </div>
+        </div>
+      </template>
+
+      <div v-if="selectedTeam" class="team-detail-content">
+        <!-- 核心指标卡片 -->
+        <div class="metrics-row">
+          <div class="metric-card">
+            <div class="metric-icon rank">
+              <span class="rank-value">{{ selectedTeam.current_rank }}</span>
             </div>
-            <div class="detail-item">
-              <span class="label">上赛季排名</span>
-              <span class="value">第 {{ selectedTeam.last_rank }} 名</span>
-            </div>
-            <div class="detail-item">
-              <span class="label">稳定性评分</span>
-              <span class="value" :class="getStabilityClass(selectedTeam.stability_score)">
-                {{ selectedTeam.stability_score }}
+            <div class="metric-info">
+              <span class="metric-label">当前排名</span>
+              <span class="metric-change" :class="getRankChangeClass(selectedTeam.current_rank, selectedTeam.last_rank)">
+                {{ getRankChangeText(selectedTeam.current_rank, selectedTeam.last_rank) }} 上赛季第{{ selectedTeam.last_rank }}名
               </span>
             </div>
-            <div class="detail-item">
-              <span class="label">评估结论</span>
-              <span class="value">{{ selectedTeam.evaluation_reason }}</span>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon stability" :class="getStabilityClass(selectedTeam.stability_score)">
+              {{ selectedTeam.stability_score }}
+            </div>
+            <div class="metric-info">
+              <span class="metric-label">稳定性评分</span>
+              <el-progress
+                :percentage="selectedTeam.stability_score"
+                :stroke-width="6"
+                :show-text="false"
+                :color="getStabilityColor(selectedTeam.stability_score)"
+              />
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon power">
+              {{ selectedTeam.roster_power.toFixed(1) }}
+            </div>
+            <div class="metric-info">
+              <span class="metric-label">阵容实力</span>
+              <span class="metric-sub">{{ selectedTeam.roster_count }}人 · {{ selectedTeam.avg_age.toFixed(1) }}岁</span>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon budget" :class="getBudgetClass(selectedTeam.budget_remaining)">
+              {{ formatMoney(selectedTeam.budget_remaining) }}
+            </div>
+            <div class="metric-info">
+              <span class="metric-label">剩余预算</span>
+              <span class="metric-sub">可用于转会</span>
             </div>
           </div>
         </div>
 
-        <!-- 战略决策 -->
-        <div class="detail-section">
-          <h4>战略决策</h4>
-          <div class="detail-grid">
-            <div class="detail-item">
-              <span class="label">战略类型</span>
-              <el-tag :type="getStrategyTagType(selectedTeam.strategy)" effect="dark" size="large">
-                {{ getStrategyLabel(selectedTeam.strategy) }}
-              </el-tag>
-            </div>
-            <div class="detail-item">
-              <span class="label">调整紧迫度</span>
-              <el-tag :type="getUrgencyTagType(selectedTeam.urgency_level)">
-                {{ getUrgencyLabel(selectedTeam.urgency_level) }}
-              </el-tag>
-            </div>
+        <!-- 战略说明 -->
+        <div class="strategy-section" v-if="selectedTeam.evaluation_reason">
+          <div class="strategy-icon" :class="selectedTeam.strategy.toLowerCase()">
+            <el-icon :size="20"><TrendCharts /></el-icon>
           </div>
-          <div class="strategy-description">
-            <p>{{ getStrategyDescription(selectedTeam.strategy) }}</p>
-          </div>
-        </div>
-
-        <!-- 阵容信息 -->
-        <div class="detail-section">
-          <h4>阵容信息</h4>
-          <div class="detail-grid">
-            <div class="detail-item">
-              <span class="label">阵容实力</span>
-              <span class="value power">{{ selectedTeam.roster_power.toFixed(1) }}</span>
-            </div>
-            <div class="detail-item">
-              <span class="label">阵容人数</span>
-              <span class="value">{{ selectedTeam.roster_count }} 人</span>
-            </div>
-            <div class="detail-item">
-              <span class="label">平均年龄</span>
-              <span class="value" :class="getAgeClass(selectedTeam.avg_age)">
-                {{ selectedTeam.avg_age.toFixed(1) }} 岁
-              </span>
-            </div>
-            <div class="detail-item">
-              <span class="label">平均能力</span>
-              <span class="value" :class="getAbilityClass(selectedTeam.avg_ability)">
-                {{ selectedTeam.avg_ability.toFixed(1) }}
-              </span>
-            </div>
-            <div class="detail-item">
-              <span class="label">剩余预算</span>
-              <span class="value" :class="getBudgetClass(selectedTeam.budget_remaining)">
-                {{ formatMoney(selectedTeam.budget_remaining) }}
-              </span>
-            </div>
+          <div class="strategy-text">
+            <span class="strategy-title">{{ getStrategyDescription(selectedTeam.strategy) }}</span>
+            <span class="strategy-reason">{{ selectedTeam.evaluation_reason }}</span>
           </div>
         </div>
 
         <!-- 位置需求 -->
-        <div class="detail-section" v-if="positionNeeds.length > 0">
-          <h4>位置需求</h4>
-          <el-table :data="positionNeeds" size="small" stripe>
-            <el-table-column prop="position" label="位置" width="80" align="center">
-              <template #default="{ row }">
-                <el-tag :type="getPositionTagType(row.position)" size="small">
-                  {{ getPositionLabel(row.position) }}
+        <div class="section-card" v-if="positionNeeds.length > 0">
+          <div class="section-header">
+            <h4>位置需求分析</h4>
+            <span class="section-badge">{{ positionNeeds.length }}个位置</span>
+          </div>
+          <div class="position-grid">
+            <div
+              v-for="need in positionNeeds"
+              :key="need.position"
+              class="position-card"
+              :class="need.need_level.toLowerCase()"
+            >
+              <div class="position-header">
+                <el-tag :type="getPositionTagType(need.position)" effect="dark">
+                  {{ getPositionLabel(need.position) }}
                 </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="current_count" label="现有" width="60" align="center" />
-            <el-table-column prop="target_count" label="目标" width="60" align="center" />
-            <el-table-column prop="gap" label="缺口" width="60" align="center">
-              <template #default="{ row }">
-                <span :class="row.gap < 0 ? 'gap-negative' : 'gap-positive'">
-                  {{ row.gap > 0 ? '+' : '' }}{{ row.gap }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="current_avg_ability" label="现有能力" width="90" align="center">
-              <template #default="{ row }">
-                {{ row.current_avg_ability.toFixed(1) }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="priority" label="优先级" align="center">
-              <template #default="{ row }">
-                <el-tag :type="getPriorityTagType(row.priority)" size="small">
-                  {{ getPriorityLabel(row.priority) }}
+                <el-tag :type="getNeedLevelTagType(need.need_level)" size="small">
+                  {{ getNeedLevelLabel(need.need_level) }}
                 </el-tag>
-              </template>
-            </el-table-column>
-          </el-table>
+              </div>
+              <div class="position-body">
+                <div v-if="need.current_starter_name" class="current-starter">
+                  <span class="starter-name">{{ need.current_starter_name }}</span>
+                  <span class="starter-stats">{{ need.current_starter_ability }} · {{ need.current_starter_age }}岁</span>
+                </div>
+                <div v-else class="no-starter">
+                  <span>暂无首发</span>
+                </div>
+                <div class="position-reason" v-if="need.reason">{{ need.reason }}</div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- 选手评估 -->
-        <div class="detail-section" v-if="playerEvaluations.length > 0">
-          <h4>选手去留评估</h4>
-          <el-table :data="playerEvaluations" size="small" stripe max-height="250">
+        <div class="section-card" v-if="playerEvaluations.length > 0">
+          <div class="section-header">
+            <h4>选手去留评估</h4>
+            <span class="section-badge">{{ playerEvaluations.filter(p => p.wants_to_leave).length }}人想离开</span>
+          </div>
+          <el-table :data="playerEvaluations" size="small" stripe max-height="300">
             <el-table-column prop="player_name" label="选手" width="100" />
-            <el-table-column prop="position" label="位置" width="60" align="center">
+            <el-table-column prop="position" label="位置" width="70" align="center">
               <template #default="{ row }">
                 <el-tag :type="getPositionTagType(row.position)" size="small">
                   {{ row.position }}
@@ -331,16 +344,23 @@
               </template>
             </el-table-column>
             <el-table-column prop="ability" label="能力" width="60" align="center" />
-            <el-table-column prop="stay_score" label="留队意愿" width="90" align="center">
+            <el-table-column prop="stay_score" label="留队意愿" width="100" align="center">
               <template #default="{ row }">
-                <span :class="getStayScoreClass(row.stay_score)">
+                <el-progress
+                  :percentage="Math.min(row.stay_score, 100)"
+                  :stroke-width="8"
+                  :show-text="false"
+                  :color="getStayScoreColor(row.stay_score)"
+                  style="width: 60px; display: inline-block;"
+                />
+                <span :class="getStayScoreClass(row.stay_score)" style="margin-left: 4px;">
                   {{ row.stay_score.toFixed(0) }}
                 </span>
               </template>
             </el-table-column>
-            <el-table-column prop="wants_to_leave" label="状态" width="100" align="center">
+            <el-table-column prop="wants_to_leave" label="状态" width="90" align="center">
               <template #default="{ row }">
-                <el-tag v-if="row.wants_to_leave" type="danger" size="small">想离开</el-tag>
+                <el-tag v-if="row.wants_to_leave" type="danger" size="small" effect="dark">想离开</el-tag>
                 <el-tag v-else type="success" size="small">愿留队</el-tag>
               </template>
             </el-table-column>
@@ -363,17 +383,19 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Refresh } from '@element-plus/icons-vue'
+import { Search, Refresh, Calendar, TrendCharts, Delete } from '@element-plus/icons-vue'
+import { ElMessageBox } from 'element-plus'
 import {
   transferWindowApi,
   type TeamSeasonEvaluationInfo,
   type PositionNeedInfo,
   type PlayerStayEvaluationInfo,
 } from '@/api/tauri'
-import { formatMoneyFromWan } from '@/utils'
+import { formatBudget } from '@/utils'
 
 // 状态
 const loading = ref(false)
+const clearing = ref(false)
 const evaluations = ref<TeamSeasonEvaluationInfo[]>([])
 const positionNeeds = ref<PositionNeedInfo[]>([])
 const playerEvaluations = ref<PlayerStayEvaluationInfo[]>([])
@@ -434,6 +456,34 @@ async function loadEvaluations() {
   }
 }
 
+async function handleClearData() {
+  try {
+    await ElMessageBox.confirm(
+      '确定要清除当前赛季的评估数据吗？清除后可重新执行转会期生成新的评估。',
+      '确认清除',
+      {
+        confirmButtonText: '确认清除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+
+    clearing.value = true
+    const count = await transferWindowApi.clearEvaluationData()
+    ElMessage.success(`已清除 ${count} 条评估数据`)
+    evaluations.value = []
+    positionNeeds.value = []
+    playerEvaluations.value = []
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('清除评估数据失败')
+      console.error(error)
+    }
+  } finally {
+    clearing.value = false
+  }
+}
+
 function handleRowClick(row: TeamSeasonEvaluationInfo) {
   showDetail(row)
 }
@@ -460,18 +510,32 @@ async function showDetail(team: TeamSeasonEvaluationInfo) {
 }
 
 function formatMoney(value: number): string {
-  return formatMoneyFromWan(value)
+  return formatBudget(value)
 }
 
 // 样式辅助函数
 function getRegionTagType(region: string): string {
   const types: Record<string, string> = {
     LPL: 'danger',
+    CN: 'danger',
     LCK: 'primary',
+    KR: 'primary',
     LEC: 'success',
+    EU: 'success',
     LCS: 'warning',
+    NA: 'warning',
   }
   return types[region] || 'info'
+}
+
+function normalizeRegionCode(region: string): string {
+  const mapping: Record<string, string> = {
+    CN: 'LPL',
+    KR: 'LCK',
+    EU: 'LEC',
+    NA: 'LCS',
+  }
+  return mapping[region] || region
 }
 
 function getRankChangeClass(current: number, last: number): string {
@@ -610,10 +674,36 @@ function getPriorityLabel(priority: string): string {
   return labels[priority] || priority
 }
 
+function getNeedLevelTagType(level: string): string {
+  const types: Record<string, string> = {
+    CRITICAL: 'danger',
+    HIGH: 'warning',
+    MEDIUM: 'info',
+    LOW: 'success',
+  }
+  return types[level] || 'info'
+}
+
+function getNeedLevelLabel(level: string): string {
+  const labels: Record<string, string> = {
+    CRITICAL: '紧急需求',
+    HIGH: '高需求',
+    MEDIUM: '中等需求',
+    LOW: '低需求',
+  }
+  return labels[level] || level
+}
+
 function getStayScoreClass(score: number): string {
   if (score >= 70) return 'stay-high'
   if (score >= 40) return 'stay-medium'
   return 'stay-low'
+}
+
+function getStayScoreColor(score: number): string {
+  if (score >= 70) return '#67c23a'
+  if (score >= 40) return '#e6a23c'
+  return '#f56c6c'
 }
 
 // 初始化
@@ -710,8 +800,9 @@ onMounted(() => {
 
 .rank-change {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
+  gap: 6px;
 }
 
 .rank-number {
@@ -802,6 +893,19 @@ onMounted(() => {
   color: #f56c6c;
 }
 
+/* 空状态样式 */
+.empty-card {
+  margin-bottom: 20px;
+  text-align: center;
+  padding: 40px 0;
+}
+
+.empty-hint {
+  color: #909399;
+  font-size: 14px;
+  margin-top: 12px;
+}
+
 /* 弹窗样式 */
 .team-detail-dialog {
   max-height: 70vh;
@@ -888,5 +992,298 @@ onMounted(() => {
 .reason-text {
   font-size: 12px;
   color: #606266;
+}
+
+.empty-text {
+  color: #c0c4cc;
+  font-style: italic;
+}
+
+/* 新弹窗样式 */
+.team-detail-modal :deep(.el-dialog__header) {
+  padding: 16px 20px;
+  border-bottom: 1px solid #ebeef5;
+  margin-right: 0;
+}
+
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.team-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.team-title h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.team-badges {
+  display: flex;
+  gap: 8px;
+}
+
+.team-detail-content {
+  max-height: 65vh;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+/* 核心指标卡片 */
+.metrics-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.metric-card {
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.metric-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: white;
+  background: linear-gradient(135deg, #409eff 0%, #66b1ff 100%);
+  flex-shrink: 0;
+}
+
+.metric-icon.rank {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.metric-icon.stability {
+  background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
+}
+
+.metric-icon.stability.stability-medium {
+  background: linear-gradient(135deg, #e6a23c 0%, #f0c78a 100%);
+}
+
+.metric-icon.stability.stability-low {
+  background: linear-gradient(135deg, #f56c6c 0%, #f89898 100%);
+}
+
+.metric-icon.power {
+  background: linear-gradient(135deg, #409eff 0%, #66b1ff 100%);
+}
+
+.metric-icon.budget {
+  background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
+  font-size: 12px;
+}
+
+.metric-icon.budget.budget-medium {
+  background: linear-gradient(135deg, #e6a23c 0%, #f0c78a 100%);
+}
+
+.metric-icon.budget.budget-low {
+  background: linear-gradient(135deg, #f56c6c 0%, #f89898 100%);
+}
+
+.rank-value {
+  font-size: 20px;
+}
+
+.metric-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.metric-label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.metric-change {
+  font-size: 11px;
+  color: #909399;
+}
+
+.metric-sub {
+  font-size: 11px;
+  color: #909399;
+}
+
+/* 战略说明 */
+.strategy-section {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: linear-gradient(135deg, #ecf5ff 0%, #f0f9eb 100%);
+  border-radius: 10px;
+  margin-bottom: 20px;
+  align-items: flex-start;
+}
+
+.strategy-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.strategy-icon.dynasty {
+  background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
+}
+
+.strategy-icon.maintain {
+  background: linear-gradient(135deg, #409eff 0%, #66b1ff 100%);
+}
+
+.strategy-icon.upgrade {
+  background: linear-gradient(135deg, #e6a23c 0%, #f0c78a 100%);
+}
+
+.strategy-icon.rebuild {
+  background: linear-gradient(135deg, #f56c6c 0%, #f89898 100%);
+}
+
+.strategy-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.strategy-title {
+  font-size: 14px;
+  color: #303133;
+  font-weight: 500;
+}
+
+.strategy-reason {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.5;
+}
+
+/* Section Card */
+.section-card {
+  background: white;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.section-header h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.section-badge {
+  font-size: 12px;
+  color: #909399;
+  background: #f5f7fa;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+/* 位置需求网格 */
+.position-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+
+.position-card {
+  background: #f5f7fa;
+  border-radius: 8px;
+  padding: 10px;
+  border-left: 3px solid #c0c4cc;
+}
+
+.position-card.critical {
+  border-left-color: #f56c6c;
+  background: linear-gradient(135deg, #fef0f0 0%, #fdf5f5 100%);
+}
+
+.position-card.high {
+  border-left-color: #e6a23c;
+  background: linear-gradient(135deg, #fdf6ec 0%, #fefaf4 100%);
+}
+
+.position-card.medium {
+  border-left-color: #409eff;
+  background: linear-gradient(135deg, #ecf5ff 0%, #f4f9ff 100%);
+}
+
+.position-card.low {
+  border-left-color: #67c23a;
+  background: linear-gradient(135deg, #f0f9eb 0%, #f7fbf4 100%);
+}
+
+.position-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.position-body {
+  font-size: 12px;
+}
+
+.current-starter {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.starter-name {
+  color: #303133;
+  font-weight: 500;
+}
+
+.starter-stats {
+  color: #909399;
+  font-size: 11px;
+}
+
+.no-starter {
+  color: #c0c4cc;
+  font-style: italic;
+}
+
+.position-reason {
+  margin-top: 6px;
+  color: #606266;
+  font-size: 11px;
+  line-height: 1.4;
 }
 </style>

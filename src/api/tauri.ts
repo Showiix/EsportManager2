@@ -2797,6 +2797,7 @@ export interface TeamSeasonEvaluationInfo {
   evaluation_id: number
   team_id: number
   team_name: string
+  team_short_name: string
   region_code: string
   season_id: number
   current_rank: number
@@ -2816,11 +2817,12 @@ export interface TeamSeasonEvaluationInfo {
 /** 位置需求信息 */
 export interface PositionNeedInfo {
   position: string
-  current_count: number
-  target_count: number
-  gap: number
-  current_avg_ability: number
-  priority: string
+  current_starter_name: string | null
+  current_starter_ability: number | null
+  current_starter_age: number | null
+  need_level: string
+  min_ability_target: number | null
+  reason: string | null
 }
 
 /** 选手挂牌评估信息 */
@@ -2911,6 +2913,10 @@ export const transferWindowApi = {
   // 获取选手留队评估
   getPlayerStayEvaluations: (teamId?: number, seasonId?: number) =>
     invokeCommand<PlayerStayEvaluationInfo[]>('get_player_stay_evaluations', { teamId, seasonId }),
+
+  // 清除评估数据（用于重新生成）
+  clearEvaluationData: (seasonId?: number) =>
+    invokeCommand<number>('clear_evaluation_data', { seasonId }),
 }
 
 export default tauriApi

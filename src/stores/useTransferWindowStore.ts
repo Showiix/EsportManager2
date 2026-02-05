@@ -174,6 +174,38 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
     currentRegionCode.value = regionCode
   }
 
+  /** 初始化转会期（页面加载时恢复状态） */
+  async function initTransferWindow() {
+    // 如果已经有状态，不需要重新初始化
+    if (windowInfo.value) {
+      return windowInfo.value
+    }
+
+    isLoading.value = true
+    error.value = null
+
+    try {
+      // 调用 start_transfer_window，它会返回已存在的转会期
+      const response = await transferWindowApi.startTransferWindow()
+      windowInfo.value = response
+
+      // 如果转会期已经在进行中或已完成，加载已有的事件
+      if (response.current_round > 0) {
+        const existingEvents = await transferWindowApi.getTransferEvents(response.window_id)
+        events.value = existingEvents
+      }
+
+      return response
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      // 初始化失败不抛出错误，只记录
+      logger.warn('初始化转会期失败', { error: e })
+      return null
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   /** 开始转会期 */
   async function startTransferWindow() {
     isLoading.value = true
@@ -422,6 +454,7 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
     // Actions
     clearState,
     setRegion,
+    initTransferWindow,
     startTransferWindow,
     executeRound,
     fastForward,

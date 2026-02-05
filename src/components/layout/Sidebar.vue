@@ -42,6 +42,7 @@ const menuItems: MenuItem[] = [
       { name: 'GM性格配置', path: '/transfer/gm-config', icon: 'robot' },
       { name: '选手合同中心', path: '/transfer/player-market', icon: 'market' },
       { name: '战队评估中心', path: '/transfer/team-evaluation', icon: 'chart' },
+      { name: '选手评估中心', path: '/transfer/player-evaluation', icon: 'user' },
     ]
   },
   { name: '积分排名', path: '/rankings', icon: 'chart' },

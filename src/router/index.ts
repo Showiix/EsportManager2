@@ -186,6 +186,12 @@ const router = createRouter({
       meta: { title: '战队评估中心' }
     },
     {
+      path: '/transfer/player-evaluation',
+      name: 'PlayerEvaluationCenter',
+      component: () => import('@/views/PlayerEvaluationCenter.vue'),
+      meta: { title: '选手评估中心' }
+    },
+    {
       path: '/rankings',
       name: 'Rankings',
       component: () => import('@/views/Rankings.vue'),

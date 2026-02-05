@@ -306,7 +306,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -617,6 +617,11 @@ function getEventDescription(event: TransferEvent): string {
       return event.reason || ''
   }
 }
+
+// 页面加载时恢复转会期状态
+onMounted(async () => {
+  await transferStore.initTransferWindow()
+})
 </script>
 
 <style scoped>
