@@ -255,6 +255,9 @@ impl DatabaseManager {
         // 迁移10: 创建选手合同历史表
         self.run_player_contracts_migration(pool).await?;
 
+        // 迁移11: 创建选秀池持久化表
+        self.run_draft_pool_migration(pool).await?;
+
         Ok(())
     }
 
@@ -1608,6 +1611,68 @@ impl DatabaseManager {
             .map_err(|e| DatabaseError::Migration(e.to_string()))?;
 
             log::info!("✅ 选手合同历史表创建成功");
+        }
+
+        Ok(())
+    }
+
+    /// 迁移11: 创建选秀池持久化表 (draft_pool)
+    /// 将选秀大池子(每赛区50人)与当届选秀名单(draft_players)分离
+    async fn run_draft_pool_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        let tables: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='draft_pool'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if tables.is_empty() {
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS draft_pool (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    region_id INTEGER NOT NULL,
+                    game_id TEXT NOT NULL,
+                    real_name TEXT,
+                    nationality TEXT,
+                    age INTEGER NOT NULL,
+                    ability INTEGER NOT NULL,
+                    potential INTEGER NOT NULL,
+                    position TEXT NOT NULL,
+                    tag TEXT NOT NULL DEFAULT 'Normal',
+                    status TEXT NOT NULL DEFAULT 'available',
+                    drafted_season INTEGER,
+                    drafted_by_team_id INTEGER,
+                    created_season INTEGER NOT NULL,
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pool_save_region ON draft_pool(save_id, region_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pool_status ON draft_pool(save_id, region_id, status)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 迁移现有存档: 将 draft_players 中 is_picked=0 的数据复制到 draft_pool
+            sqlx::query(r#"
+                INSERT INTO draft_pool (save_id, region_id, game_id, real_name, nationality, age, ability, potential, position, tag, status, created_season)
+                SELECT save_id, region_id, game_id, real_name, nationality, age, ability, potential, position, tag, 'available', season_id
+                FROM draft_players
+                WHERE is_picked = 0
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            log::info!("✅ 选秀池持久化表创建成功");
         }
 
         Ok(())

@@ -683,23 +683,15 @@ const drawDraftRoster = async () => {
     const regionId = await getRegionId(selectedRegion.value)
     currentRegionId.value = regionId
 
-    // 从选秀池获取可用选手
-    const players = await draftApi.getAvailableDraftPlayers(regionId)
+    // 调用后端 generateDraftPool，从 draft_pool 表随机抽取14人写入 draft_players
+    const players = await draftApi.generateDraftPool(regionId, 14)
 
-    // 如果选秀池为空，提示用户先导入数据
-    if (players.length === 0) {
+    if (!players || players.length === 0) {
       ElMessage.warning('选秀池为空，请先在选手池管理中导入或生成新秀数据')
       return
     }
 
-    if (players.length < 14) {
-      ElMessage.warning(`选秀池人数不足，当前仅有 ${players.length} 人，需要至少14人`)
-      return
-    }
-
-    // 按能力值排序并转换格式（取前14名作为选秀名单）
-    const sorted = players.sort((a, b) => b.ability - a.ability).slice(0, 14)
-    draftPool.value = sorted.map((p, index) => ({
+    draftPool.value = players.map((p, index) => ({
       id: p.id,
       rank: index + 1,
       title: index === 0 ? '状元' : index === 1 ? '榜眼' : index === 2 ? '探花' : `第${index + 1}顺位`,
@@ -713,9 +705,9 @@ const drawDraftRoster = async () => {
     hasDraftRoster.value = true
     currentStep.value = 1
     ElMessage.success('选秀名单抽取完成！')
-  } catch (e) {
+  } catch (e: any) {
     logger.error('Failed to draw draft roster:', e)
-    ElMessage.error('抽取选秀名单失败')
+    ElMessage.error(e?.message || '抽取选秀名单失败')
   } finally {
     isLoading.value = false
   }
@@ -1583,24 +1575,27 @@ const completeDraft = () => {
 /* 完成横幅 */
 .completion-banner {
   text-align: center;
-  padding: 48px 24px;
+  padding: 40px 24px;
   margin-bottom: 32px;
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border-radius: 12px;
+  border: 1px solid #bbf7d0;
 
   .completion-icon {
     color: #22c55e;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
   }
 
   .completion-title {
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 700;
-    color: #1f2937;
+    color: #166534;
     margin: 0 0 8px 0;
   }
 
   .completion-desc {
-    font-size: 15px;
-    color: #6b7280;
+    font-size: 14px;
+    color: #4ade80;
     margin: 0 0 24px 0;
   }
 }
@@ -1620,28 +1615,32 @@ const completeDraft = () => {
 
 .result-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
 }
 
 .result-card {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 10px 14px;
   background: #f9fafb;
   border-radius: 10px;
+  border: 1px solid #f3f4f6;
 
   &.gold {
     background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    border-color: #fde68a;
   }
 
   &.silver {
     background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+    border-color: #e5e7eb;
   }
 
   &.bronze {
     background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+    border-color: #fdba74;
   }
 
   .result-order {
@@ -1655,6 +1654,7 @@ const completeDraft = () => {
     color: #374151;
     font-size: 13px;
     font-weight: 700;
+    flex-shrink: 0;
   }
 
   .result-content {
@@ -1676,6 +1676,9 @@ const completeDraft = () => {
       gap: 4px;
       font-size: 12px;
       color: #6b7280;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
   }
 
@@ -1683,6 +1686,7 @@ const completeDraft = () => {
     font-size: 16px;
     font-weight: 700;
     color: #22c55e;
+    flex-shrink: 0;
   }
 }
 

@@ -1,10 +1,8 @@
 use crate::commands::save_commands::{AppState, CommandResult};
 use crate::engines::DraftEngine;
-use crate::services::draft_pool_data::{get_draft_pool, get_region_nationality};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::State;
-use std::collections::HashMap;
 
 /// 选秀球员信息
 #[derive(Debug, Serialize, Deserialize)]
@@ -46,12 +44,14 @@ pub struct DraftPickInfo {
     pub potential: u8,
 }
 
-/// 生成选秀球员池
+/// 生成选秀球员池（从 draft_pool 表随机抽取）
 #[tauri::command]
 pub async fn generate_draft_pool(
     state: State<'_, AppState>,
     region_id: u64,
+    pool_size: Option<u32>,
 ) -> Result<CommandResult<Vec<DraftPlayerInfo>>, String> {
+    let pool_size = pool_size.unwrap_or(14) as i64;
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
         Some(db) => db,
@@ -88,30 +88,63 @@ pub async fn generate_draft_pool(
     .await
     .map_err(|e| e.to_string())?;
 
-    // 获取预定义的选秀选手数据
-    let predefined_players = get_draft_pool(region_id);
-    let nationality = get_region_nationality(region_id);
+    // 从 draft_pool 中随机抽取 pool_size 名 available 的选手
+    let available_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM draft_pool WHERE save_id = ? AND region_id = ? AND status = 'available'"
+    )
+    .bind(&save_id)
+    .bind(region_id as i64)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
-    let mut draft_players: Vec<DraftPlayerInfo> = predefined_players
+    if available_count == 0 {
+        return Ok(CommandResult::err("选秀池为空，没有可用的选秀选手"));
+    }
+
+    if available_count < pool_size {
+        return Ok(CommandResult::err(format!(
+            "选秀池人数不足，当前仅有 {} 人，需要至少 {} 人",
+            available_count, pool_size
+        )));
+    }
+
+    let pool_rows = sqlx::query(
+        r#"
+        SELECT id, game_id, real_name, nationality, age, ability, potential, position, tag
+        FROM draft_pool
+        WHERE save_id = ? AND region_id = ? AND status = 'available'
+        ORDER BY RANDOM()
+        LIMIT ?
+        "#
+    )
+    .bind(&save_id)
+    .bind(region_id as i64)
+    .bind(pool_size)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // 按综合评分排名（决定顺位价值）
+    let mut draft_players: Vec<DraftPlayerInfo> = pool_rows
         .iter()
-        .map(|p| {
+        .map(|row| {
             DraftPlayerInfo {
                 id: 0,
-                game_id: p.game_id.to_string(),
-                real_name: Some(p.real_name.to_string()),
-                nationality: Some(nationality.to_string()),
-                age: p.age,
-                ability: p.ability,
-                potential: p.potential,
-                position: p.position.to_string(),
-                tag: p.tag.to_string(),
-                draft_rank: 0, // 后面会根据评分排序
+                game_id: row.get("game_id"),
+                real_name: row.get("real_name"),
+                nationality: row.get("nationality"),
+                age: row.get::<i64, _>("age") as u8,
+                ability: row.get::<i64, _>("ability") as u8,
+                potential: row.get::<i64, _>("potential") as u8,
+                position: row.get("position"),
+                tag: row.get("tag"),
+                draft_rank: 0,
                 is_picked: false,
             }
         })
         .collect();
 
-    // 按潜力和能力综合评分排序
     draft_players.sort_by(|a, b| {
         let score_a = a.ability as f64 * 0.4 + a.potential as f64 * 0.6;
         let score_b = b.ability as f64 * 0.4 + b.potential as f64 * 0.6;
@@ -123,7 +156,7 @@ pub async fn generate_draft_pool(
         player.draft_rank = (i + 1) as u32;
     }
 
-    // 保存到数据库
+    // 保存到 draft_players 表
     for player in &mut draft_players {
         let result = sqlx::query(
             r#"
@@ -453,6 +486,24 @@ pub async fn make_draft_pick(
         .await
         .map_err(|e| e.to_string())?;
 
+    // 同步更新 draft_pool 状态：标记为 drafted
+    let draft_game_id: String = player_row.get("game_id");
+    sqlx::query(
+        r#"
+        UPDATE draft_pool
+        SET status = 'drafted', drafted_season = ?, drafted_by_team_id = ?
+        WHERE save_id = ? AND region_id = ? AND game_id = ? AND status = 'available'
+        "#
+    )
+    .bind(current_season)
+    .bind(team_id as i64)
+    .bind(&save_id)
+    .bind(region_id)
+    .bind(&draft_game_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
     // 根据赛区计算 region_loyalty 默认值
     // LPL(1)=75-90, LCK(2)=55-75, LEC(3)=45-65, LCS(4)=40-60
     let region_loyalty: i64 = match region_id {
@@ -582,7 +633,7 @@ pub async fn ai_auto_draft(
 
     // 获取选秀顺位
     let order_rows = sqlx::query(
-        "SELECT team_id, pick_number FROM draft_orders WHERE save_id = ? AND season_id = ? AND region_id = ? ORDER BY draft_position"
+        "SELECT team_id, draft_position FROM draft_orders WHERE save_id = ? AND season_id = ? AND region_id = ? ORDER BY draft_position"
     )
     .bind(&save_id)
     .bind(current_season)
@@ -599,7 +650,7 @@ pub async fn ai_auto_draft(
 
     for order_row in order_rows {
         let team_id: i64 = order_row.get("team_id");
-        let pick_number: i64 = order_row.get("pick_number");
+        let _pick_number: i64 = order_row.get("draft_position");
 
         // 重新获取锁
         let guard = state.db.read().await;

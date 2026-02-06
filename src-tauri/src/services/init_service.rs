@@ -648,7 +648,7 @@ impl InitService {
         Ok(())
     }
 
-    /// 创建初始选秀池（四大赛区各50人）
+    /// 创建初始选秀池（四大赛区各50人，写入 draft_pool 表）
     async fn create_initial_draft_pool(
         pool: &Pool<Sqlite>,
         save_id: &str,
@@ -656,7 +656,7 @@ impl InitService {
         region_ids: &[u64],
     ) -> Result<(), String> {
         // 先清空该存档的所有选秀池数据（确保初始化时是干净的）
-        sqlx::query("DELETE FROM draft_players WHERE save_id = ?")
+        sqlx::query("DELETE FROM draft_pool WHERE save_id = ?")
             .bind(save_id)
             .execute(pool)
             .await
@@ -668,17 +668,16 @@ impl InitService {
             let draft_players = get_draft_pool(config_region_id);
             let nationality = get_region_nationality(config_region_id);
 
-            for (rank, player_config) in draft_players.iter().enumerate() {
+            for player_config in draft_players.iter() {
                 sqlx::query(
                     r#"
-                    INSERT INTO draft_players (
-                        save_id, season_id, region_id, game_id, real_name, nationality,
-                        age, ability, potential, position, tag, draft_rank, is_picked
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    INSERT INTO draft_pool (
+                        save_id, region_id, game_id, real_name, nationality,
+                        age, ability, potential, position, tag, status, created_season
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?)
                     "#
                 )
                 .bind(save_id)
-                .bind(current_season as i64)
                 .bind(region_id as i64)
                 .bind(player_config.game_id)
                 .bind(player_config.real_name)
@@ -688,10 +687,10 @@ impl InitService {
                 .bind(player_config.potential as i64)
                 .bind(player_config.position)
                 .bind(player_config.tag)
-                .bind((rank + 1) as i64) // draft_rank 从 1 开始
+                .bind(current_season as i64)
                 .execute(pool)
                 .await
-                .map_err(|e| format!("Failed to insert draft player {}: {}", player_config.game_id, e))?;
+                .map_err(|e| format!("Failed to insert draft pool player {}: {}", player_config.game_id, e))?;
             }
         }
 

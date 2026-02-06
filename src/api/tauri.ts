@@ -642,7 +642,7 @@ export const draftApi = {
   generateDraftPool: (regionId: number, poolSize?: number) =>
     invokeCommand<DraftPlayer[]>('generate_draft_pool', {
       regionId,
-      poolSize: poolSize ?? 30
+      poolSize: poolSize ?? 14
     }),
 
   runDraftLottery: (regionId: number) =>
