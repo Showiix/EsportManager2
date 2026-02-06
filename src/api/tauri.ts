@@ -5,6 +5,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { createLogger } from '@/utils/logger'
+import { usePerformanceStoreRaw } from '@/stores/usePerformanceStore'
 
 const logger = createLogger('TauriAPI')
 
@@ -20,14 +21,39 @@ export async function invokeCommand<T>(
   command: string,
   args?: Record<string, unknown>
 ): Promise<T> {
+  const perfStore = usePerformanceStoreRaw()
+  const startTime = perfStore.isMonitoring ? performance.now() : 0
+
   try {
     const result = await invoke<CommandResult<T>>(command, args)
     logger.debug('Tauri命令执行成功', { command, result: JSON.stringify(result) })
+
+    if (perfStore.isMonitoring && startTime > 0) {
+      const duration = Math.round(performance.now() - startTime)
+      perfStore.recordInvoke({
+        command,
+        duration,
+        success: result.success,
+        error: result.success ? undefined : (result.error || undefined),
+        timestamp: Date.now(),
+      })
+    }
+
     if (result.success) {
       return result.data as T
     }
     throw new Error(result.error || 'Unknown error')
   } catch (error) {
+    if (perfStore.isMonitoring && startTime > 0) {
+      const duration = Math.round(performance.now() - startTime)
+      perfStore.recordInvoke({
+        command,
+        duration,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now(),
+      })
+    }
     logger.error('Tauri命令执行失败', { command, error })
     throw error
   }
@@ -38,9 +64,35 @@ export async function invokeCommandRaw<T>(
   command: string,
   args?: Record<string, unknown>
 ): Promise<CommandResult<T>> {
+  const perfStore = usePerformanceStoreRaw()
+  const startTime = perfStore.isMonitoring ? performance.now() : 0
+
   try {
-    return await invoke<CommandResult<T>>(command, args)
+    const result = await invoke<CommandResult<T>>(command, args)
+
+    if (perfStore.isMonitoring && startTime > 0) {
+      const duration = Math.round(performance.now() - startTime)
+      perfStore.recordInvoke({
+        command,
+        duration,
+        success: result.success,
+        error: result.success ? undefined : (result.error || undefined),
+        timestamp: Date.now(),
+      })
+    }
+
+    return result
   } catch (error) {
+    if (perfStore.isMonitoring && startTime > 0) {
+      const duration = Math.round(performance.now() - startTime)
+      perfStore.recordInvoke({
+        command,
+        duration,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now(),
+      })
+    }
     logger.error('Tauri命令执行失败', { command, error })
     return {
       success: false,
@@ -1881,6 +1933,7 @@ export interface FastForwardResult {
   phases_advanced: number
   matches_simulated: number
   message: string
+  skipped_phases?: string[]
 }
 
 /** 赛季结算结果 */

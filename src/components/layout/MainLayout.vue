@@ -120,6 +120,11 @@
             <span>荣誉殿堂</span>
           </el-menu-item>
 
+          <el-menu-item index="/performance">
+            <el-icon><Odometer /></el-icon>
+            <span>性能监测</span>
+          </el-menu-item>
+
           <el-menu-item index="/settings">
             <el-icon><Setting /></el-icon>
             <span>系统设置</span>
@@ -168,7 +173,6 @@ import {
   Star,
   Clock,
   Wallet,
-  Tools,
   GoldMedal,
 } from '@element-plus/icons-vue'
 import { useGameStore } from '@/stores/useGameStore'
@@ -216,6 +220,7 @@ const breadcrumbs = computed(() => {
     'annual-top': 'IM年度评选',
     'annual-awards': '年度颁奖典礼',
     honors: '荣誉殿堂',
+    performance: '性能监测',
     settings: '系统设置',
     lpl: 'LPL 中国赛区',
     lck: 'LCK 韩国赛区',

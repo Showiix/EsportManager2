@@ -1,6 +1,7 @@
 use crate::db::{DatabaseManager, SaveRepository};
 use crate::models::Save;
 use crate::services::InitService;
+use crate::services::perf_service::PerfCollector;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
@@ -10,6 +11,7 @@ use tokio::sync::RwLock;
 pub struct AppState {
     pub db: Arc<RwLock<Option<DatabaseManager>>>,
     pub current_save_id: Arc<RwLock<Option<String>>>,
+    pub perf: PerfCollector,
 }
 
 impl AppState {
@@ -17,6 +19,7 @@ impl AppState {
         Self {
             db: Arc::new(RwLock::new(None)),
             current_save_id: Arc::new(RwLock::new(None)),
+            perf: PerfCollector::new(),
         }
     }
 }

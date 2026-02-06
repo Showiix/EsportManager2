@@ -42,6 +42,7 @@
 | 积分系统 | [points-system.md](./03-core-systems/points-system.md) | `engines/points_calculation.rs` |
 | 数据中心 | [data-center.md](./03-core-systems/data-center.md) | `db/repository/stats_repository.rs` |
 | 选秀系统 | [draft-system.md](./03-core-systems/draft-system.md) | `engines/draft.rs` |
+| 性能监测 | [performance-monitoring.md](./03-core-systems/performance-monitoring.md) | `services/perf_service.rs` |
 
 ## 04-technical 技术文档
 

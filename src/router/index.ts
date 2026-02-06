@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import { usePerformanceStoreRaw } from '@/stores/usePerformanceStore'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -258,6 +259,12 @@ const router = createRouter({
       meta: { title: '战队荣誉榜' }
     },
     {
+      path: '/performance',
+      name: 'PerformanceMonitor',
+      component: () => import('@/views/PerformanceMonitor.vue'),
+      meta: { title: '性能监测' }
+    },
+    {
       path: '/settings',
       name: 'Settings',
       component: () => import('@/views/Settings.vue'),
@@ -265,5 +272,41 @@ const router = createRouter({
     },
   ]
 });
+
+// ========================================
+// 性能监测：路由导航计时
+// ========================================
+
+let navigationStart = 0
+
+router.beforeEach((_to, _from) => {
+  const perfStore = usePerformanceStoreRaw()
+  if (perfStore.isMonitoring) {
+    navigationStart = performance.now()
+  }
+})
+
+router.afterEach((to, from) => {
+  if (navigationStart > 0) {
+    const capturedStart = navigationStart
+    navigationStart = 0
+    // 等待两帧渲染完成后记录
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const totalDuration = Math.round(performance.now() - capturedStart)
+        const perfStore = usePerformanceStoreRaw()
+        if (perfStore.isMonitoring) {
+          perfStore.recordNavigation({
+            from: from.path,
+            to: to.path,
+            routeName: String(to.name || to.path),
+            duration: totalDuration,
+            timestamp: Date.now(),
+          })
+        }
+      })
+    })
+  }
+})
 
 export default router;

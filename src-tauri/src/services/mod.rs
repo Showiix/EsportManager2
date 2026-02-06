@@ -7,6 +7,7 @@ pub mod draft_pool_data;
 pub mod honor_service;
 pub mod draft_ai_service;
 pub mod logging_service;
+pub mod perf_service;
 
 pub use league_service::*;
 pub use tournament_service::*;
