@@ -691,26 +691,6 @@ function getPositionTagType(position: string): string {
   return types[position] || 'info'
 }
 
-function getPriorityTagType(priority: string): string {
-  const types: Record<string, string> = {
-    CRITICAL: 'danger',
-    HIGH: 'warning',
-    MEDIUM: 'info',
-    LOW: 'success',
-  }
-  return types[priority] || 'info'
-}
-
-function getPriorityLabel(priority: string): string {
-  const labels: Record<string, string> = {
-    CRITICAL: '紧急',
-    HIGH: '高',
-    MEDIUM: '中',
-    LOW: '低',
-  }
-  return labels[priority] || priority
-}
-
 function getNeedLevelTagType(level: string): string {
   const types: Record<string, string> = {
     CRITICAL: 'danger',

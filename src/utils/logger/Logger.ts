@@ -255,32 +255,32 @@ export class Logger {
     }
   }
 
-  trace(message: string, data?: unknown) {
-    const entry = this.createEntry(message, data)
+  trace(message: string, ...args: unknown[]) {
+    const entry = this.createEntry(message, args.length <= 1 ? args[0] : args)
     entry.level = 'TRACE'
     this.service.log(entry, LogLevel.TRACE)
   }
 
-  debug(message: string, data?: unknown) {
-    const entry = this.createEntry(message, data)
+  debug(message: string, ...args: unknown[]) {
+    const entry = this.createEntry(message, args.length <= 1 ? args[0] : args)
     entry.level = 'DEBUG'
     this.service.log(entry, LogLevel.DEBUG)
   }
 
-  info(message: string, data?: unknown) {
-    const entry = this.createEntry(message, data)
+  info(message: string, ...args: unknown[]) {
+    const entry = this.createEntry(message, args.length <= 1 ? args[0] : args)
     entry.level = 'INFO'
     this.service.log(entry, LogLevel.INFO)
   }
 
-  warn(message: string, data?: unknown) {
-    const entry = this.createEntry(message, data)
+  warn(message: string, ...args: unknown[]) {
+    const entry = this.createEntry(message, args.length <= 1 ? args[0] : args)
     entry.level = 'WARN'
     this.service.log(entry, LogLevel.WARN)
   }
 
-  error(message: string, data?: unknown) {
-    const entry = this.createEntry(message, data)
+  error(message: string, ...args: unknown[]) {
+    const entry = this.createEntry(message, args.length <= 1 ? args[0] : args)
     entry.level = 'ERROR'
     this.service.log(entry, LogLevel.ERROR)
   }

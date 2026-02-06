@@ -1075,39 +1075,6 @@ const getHonorTagType = (position: string) => {
   return types[position] || 'primary'
 }
 
-// 状态值样式
-const _getConditionClass = (condition: number) => {
-  if (condition >= 5) return 'excellent'
-  if (condition >= 2) return 'good'
-  if (condition >= 0) return 'normal'
-  if (condition >= -3) return 'poor'
-  return 'terrible'
-}
-
-// 动能值样式
-const _getMomentumClass = (momentum: number) => {
-  if (momentum >= 3) return 'hot'
-  if (momentum >= 1) return 'warming'
-  if (momentum <= -3) return 'cold'
-  if (momentum <= -1) return 'cooling'
-  return 'neutral'
-}
-
-// 格式化发挥值
-const _formatPerformance = (perf: number) => {
-  if (perf > 0) return `+${perf.toFixed(1)}`
-  return perf.toFixed(1)
-}
-
-// 发挥值样式
-const _getPerformanceClass = (perf: number) => {
-  if (perf >= 5) return 'excellent'
-  if (perf >= 2) return 'good'
-  if (perf >= 0) return 'normal'
-  if (perf >= -3) return 'poor'
-  return 'terrible'
-}
-
 // ==================== 特性详情相关 ====================
 
 // 打开特性详情弹窗
@@ -1406,23 +1373,6 @@ const getAbilityMultiplier = (ability: number): number => {
   if (ability >= 70) return 4
   if (ability >= 60) return 2
   return 1
-}
-
-// 获取年龄描述
-const getAgeDescription = (age: number): string => {
-  if (age <= 19) return '超新星溢价'
-  if (age <= 22) return '年轻潜力股'
-  if (age <= 25) return '黄金年龄'
-  if (age <= 27) return '巅峰末期'
-  if (age <= 29) return '开始下滑'
-  return '老将'
-}
-
-// 获取潜力描述
-const getPotentialDescription = (diff: number): string => {
-  if (diff > 10) return '高成长空间'
-  if (diff >= 5) return '有成长空间'
-  return '接近上限'
 }
 
 // 获取荣誉描述

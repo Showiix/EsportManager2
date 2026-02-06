@@ -157,7 +157,7 @@
               :key="team.teamId"
               class="loser-item loser-r2"
             >
-              <div class="rank-badge"><span class="rank-number">{{ 5 + index }}</span></div>
+              <div class="rank-badge"><span class="rank-number">{{ 5 + Number(index) }}</span></div>
               <div class="team-name">{{ team.teamName }}</div>
               <div class="points">+{{ currentBracket.pointsDistribution.loserRound2 }}分</div>
             </div>
@@ -173,7 +173,7 @@
               :key="team.teamId"
               class="loser-item loser-r1"
             >
-              <div class="rank-badge"><span class="rank-number">{{ 7 + index }}</span></div>
+              <div class="rank-badge"><span class="rank-number">{{ 7 + Number(index) }}</span></div>
               <div class="team-name">{{ team.teamName }}</div>
               <div class="points">+{{ currentBracket.pointsDistribution.loserRound1 }}分</div>
             </div>
@@ -210,7 +210,6 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Trophy,
@@ -234,7 +233,6 @@ import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('ShanghaiDetail')
 
-const _router = useRouter()
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
 const gameStore = useGameStore()

@@ -318,7 +318,7 @@ export const useTimeStore = defineStore('time', () => {
 
       logger.info('赛季结算完成', {
         season: result.season,
-        retiredCount: result.retired_players?.length || 0
+        retiredCount: result.players_retired
       })
       return result
     } catch (e) {

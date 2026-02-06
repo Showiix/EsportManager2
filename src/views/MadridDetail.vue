@@ -400,11 +400,6 @@ const convertBracketToMadridFormat = () => {
   const hasRealKnockout = knockoutMatches.length > 0 &&
     knockoutMatches.some(m => m.home_team?.id || m.away_team?.id)
 
-  // 检查小组赛是否完成
-  const groupMatches = bracketData.value.matches.filter(m => m.stage.startsWith('GROUP_'))
-  const _allGroupComplete = groupMatches.length > 0 &&
-    groupMatches.every(m => m.status && isMatchCompleted(m.status))
-
   if (grandFinalMatch?.status && isMatchCompleted(grandFinalMatch.status)) {
     madridBracket.status = 'completed'
   } else if (hasRealKnockout) {

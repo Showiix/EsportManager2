@@ -2047,44 +2047,6 @@ const loadICPData = async () => {
 }
 
 /**
- * 转换后端对阵数据到ICP格式
- */
-const _convertBracketToICPFormat = (bracket: BracketInfo) => {
-  if (!bracket.matches) return
-
-  // 按阶段分类比赛
-  const groupMatches = bracket.matches.filter(m => m.stage === 'group' || m.stage === 'Group')
-  const knockoutMatches = bracket.matches.filter(m => m.stage !== 'group' && m.stage !== 'Group')
-
-  // 更新种子组比赛数据
-  groupMatches.forEach(match => {
-    // 找到对应的前端比赛
-    for (const group of icpTournament.seedGroups) {
-      const frontendMatch = group.matches.find(m => {
-        // 使用正确的字段名：home_team 和 away_team
-        const homeTeamName = match.home_team?.name || match.home_team?.short_name || ''
-        const awayTeamName = match.away_team?.name || match.away_team?.short_name || ''
-        return (m.teamAName === homeTeamName && m.teamBName === awayTeamName) ||
-               (m.teamAName === awayTeamName && m.teamBName === homeTeamName)
-      })
-
-      if (frontendMatch && match.winner_id) {
-        frontendMatch.status = 'completed'
-        frontendMatch.scoreA = match.home_score || 0
-        frontendMatch.scoreB = match.away_score || 0
-        frontendMatch.winnerId = match.winner_id.toString()
-      }
-    }
-  })
-
-  // 处理淘汰赛阶段
-  if (knockoutMatches.length > 0) {
-    // 如果有淘汰赛比赛，说明已进入赛区对决阶段
-    icpTournament.status = 'region_battle'
-  }
-}
-
-/**
  * 从后端数据初始化种子组
  */
 const initializeSeedGroupsFromBackend = (bracket: BracketInfo, standings: GroupStandingInfo[]) => {
@@ -2334,83 +2296,6 @@ const getRegionDisplayName = (regionCode: string): string => {
     'LCS': 'LCS (北美)'
   }
   return nameMap[regionCode] || regionCode
-}
-
-/**
- * 从后端更新积分榜
- */
-const _updateICPStandingsFromBackend = (standings: GroupStandingInfo[]) => {
-  // 如果 seedGroups 为空，说明还没初始化，直接返回
-  if (icpTournament.seedGroups.length === 0) {
-    logger.warn('[ICP] seedGroups 为空，跳过更新积分榜')
-    return
-  }
-
-  // 遍历每个组的积分榜
-  standings.forEach(groupStanding => {
-    // 处理 group_name 格式
-    let groupName = groupStanding.group_name || 'A'
-    groupName = groupName.replace('ICP_GROUP_', '').replace('ICP_', '').replace('GROUP_', '')
-
-    const group = icpTournament.seedGroups.find(g => g.groupName === groupName)
-    if (!group) {
-      logger.warn('[ICP] 找不到组:', groupName)
-      return
-    }
-
-    // 遍历该组的队伍统计
-    if (groupStanding.teams) {
-      groupStanding.teams.forEach(teamStats => {
-        const frontendStanding = group.standings.find(s => s.teamId === String(teamStats.team_id))
-
-        if (frontendStanding) {
-          frontendStanding.matchesPlayed = (teamStats.wins || 0) + (teamStats.losses || 0)
-          frontendStanding.wins = teamStats.wins || 0
-          frontendStanding.losses = teamStats.losses || 0
-          frontendStanding.points = teamStats.points || 0
-          frontendStanding.roundsWon = teamStats.games_won || 0
-          frontendStanding.roundsLost = teamStats.games_lost || 0
-          frontendStanding.roundDifferential = (teamStats.games_won || 0) - (teamStats.games_lost || 0)
-        }
-      })
-    }
-
-    // 重新排序
-    group.standings.sort((a, b) => {
-      if (b.points !== a.points) return b.points - a.points
-      if (b.roundDifferential !== a.roundDifferential) return b.roundDifferential - a.roundDifferential
-      if (b.wins !== a.wins) return b.wins - a.wins
-      // 使用 teamId 作为最终 tiebreaker 确保稳定排序
-      return parseInt(String(a.teamId)) - parseInt(String(b.teamId))
-    })
-
-    // 更新排名和徽章
-    group.standings.forEach((s, idx) => {
-      s.position = idx + 1
-      s.hasBadge = idx < 2
-    })
-
-    // 检查组是否完成
-    group.isComplete = group.matches.every(m => m.status === 'completed')
-  })
-
-  // 更新赛区徽章统计
-  icpTournament.seedGroups.forEach(group => {
-    if (group.isComplete) {
-      group.standings.forEach(standing => {
-        if (standing.hasBadge) {
-          const region = icpTournament.regionStats.find(r => r.region === standing.region)
-          if (region) {
-            const team = region.teams.find(t => t.id === standing.teamId)
-            if (team && team.badges === 0) {
-              team.badges = 1
-              region.totalBadges++
-            }
-          }
-        }
-      })
-    }
-  })
 }
 
 /**
@@ -2776,19 +2661,6 @@ const restoreRegionBattleFromBackend = (bracket: BracketInfo) => {
   }
 
   logger.debug('[ICP] 赛区对决状态恢复完成, status:', icpTournament.status)
-}
-
-/**
- * 检查ICP赛事完成状态
- */
-const _checkICPCompletion = () => {
-  // 检查所有种子组是否完成
-  const allGroupsComplete = icpTournament.seedGroups.every(g => g.isComplete)
-
-  if (allGroupsComplete && icpTournament.status === 'group_stage') {
-    // 种子组赛已完成，可以进入赛区对决
-    checkGroupCompletion()
-  }
 }
 
 // 生命周期钩子

@@ -156,7 +156,7 @@
               :key="team.teamId"
               class="loser-item loser-r2"
             >
-              <div class="rank-badge"><span class="rank-number">{{ 5 + index }}</span></div>
+              <div class="rank-badge"><span class="rank-number">{{ 5 + Number(index) }}</span></div>
               <div class="team-name">{{ team.teamName }}</div>
               <div class="points">+{{ currentMSIBracket.pointsDistribution.loserRound2 }}分</div>
             </div>
@@ -172,7 +172,7 @@
               :key="team.teamId"
               class="loser-item loser-r1"
             >
-              <div class="rank-badge"><span class="rank-number">{{ 7 + index }}</span></div>
+              <div class="rank-badge"><span class="rank-number">{{ 7 + Number(index) }}</span></div>
               <div class="team-name">{{ team.teamName }}</div>
               <div class="points">+{{ currentMSIBracket.pointsDistribution.loserRound1 }}分</div>
             </div>
@@ -830,17 +830,6 @@ const updateMatchesFromBackend = (matches: MatchBracketInfo[]) => {
       }
     }
   })
-}
-
-/**
- * 根据后端 match_id 获取前端比赛对象
- */
-const _findFrontendMatchByBackendId = (backendMatchId: number): any | null => {
-  for (const round of mockMSIBracket.rounds) {
-    const match = round.matches.find((m: any) => m.backendMatchId === backendMatchId)
-    if (match) return match
-  }
-  return null
 }
 
 /**

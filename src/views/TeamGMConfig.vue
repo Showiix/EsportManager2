@@ -188,7 +188,7 @@ import {
   Check,
 } from '@element-plus/icons-vue'
 import { useTransferWindowStore, PERSONALITY_CONFIG } from '@/stores/useTransferWindowStore'
-import { queryApi, transferWindowApi } from '@/api/tauri'
+import { queryApi } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('TeamGMConfig')
@@ -202,7 +202,7 @@ interface Region {
 interface Team {
   id: number
   name: string
-  short_name: string
+  short_name: string | null
   region_id: number
 }
 

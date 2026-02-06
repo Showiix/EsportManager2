@@ -35,7 +35,7 @@ pub struct Player {
     pub status: PlayerStatus,      // 状态
     pub position: Option<Position>,// 位置
     pub team_id: Option<u64>,      // 所属队伍
-    pub salary: u64,               // 薪资 (万元/赛季)
+    pub salary: u64,               // 薪资 (元/赛季)
     pub market_value: u64,         // 基础身价
     pub calculated_market_value: u64, // 计算后身价
     pub contract_end_season: Option<u32>, // 合同到期赛季
@@ -108,17 +108,17 @@ full_value = base_value × region_factor × honor_factor
 
 ### 身价系数表
 
-#### 能力基础系数 (单位: 万元)
+#### 能力基础系数 (单位: 元)
 | 能力范围 | 系数 | 示例身价 |
 |----------|------|----------|
-| 95-100 | 50 | 4750-5000万 |
-| 90-94 | 35 | 3150-3290万 |
-| 85-89 | 20 | 1700-1780万 |
-| 80-84 | 12 | 960-1008万 |
-| 75-79 | 7 | 525-553万 |
-| 70-74 | 4 | 280-296万 |
-| 60-69 | 2 | 120-138万 |
-| <60 | 1 | <60万 |
+| 95-100 | 500000 | 4750万-5000万 |
+| 90-94 | 350000 | 3150万-3290万 |
+| 85-89 | 200000 | 1700万-1780万 |
+| 80-84 | 120000 | 960万-1008万 |
+| 75-79 | 70000 | 525万-553万 |
+| 70-74 | 40000 | 280万-296万 |
+| 60-69 | 20000 | 120万-138万 |
+| <60 | 10000 | <60万 |
 
 #### 年龄系数
 | 年龄 | 系数 | 说明 |
@@ -189,6 +189,9 @@ impl Player {
 ## 成长与衰退规则
 
 ### 能力成长
+
+**代码位置**: `src-tauri/src/engines/transfer.rs` — `execute_season_settlement()` 函数
+
 - **30岁前**: `new_ability = min(ability + tag_growth, potential, 100)`
 - **30岁后**: `new_ability = max(ability - 1, 50)` (每赛季-1)
 
@@ -279,3 +282,12 @@ player.update_loyalty(-15);
 2. **年龄增长**: 每个赛季开始时 `age + 1`
 3. **合同到期**: `contract_end_season` 与当前赛季相同时，选手变为自由球员
 4. **首发位置**: 每队每位置最多1名首发 (`is_starter = true`)
+5. **金额单位**: 薪资和身价在后端统一以**元**存储和传递，前端使用 `formatMoney` 系列函数格式化显示（参见 `financial-units` 技能）
+6. **标签字符串匹配必须大小写不敏感**: 数据库中 `tag` 字段存储为首字母大写形式（`"Normal"`, `"Genius"`, `"Ordinary"`），而非全大写。在 Rust 代码中对 tag 字符串做 `match` 时，**必须**先调用 `.to_uppercase()` 再匹配全大写常量，否则所有选手都会落入 `_ =>` 默认分支。已知正确写法：
+   ```rust
+   match tag.to_uppercase().as_str() {
+       "GENIUS" => 3,
+       "NORMAL" => 2,
+       _ => 1, // ORDINARY
+   }
+   ```

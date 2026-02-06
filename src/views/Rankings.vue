@@ -709,7 +709,6 @@ const selectedTeamDetail = computed(() => {
   details.forEach(detail => {
     const tournamentType = detail.tournament_type || ''
     const rankDesc = detail.final_rank ? `第${detail.final_rank}名` : ''
-    const _tournamentName = detail.tournament_name || ''
 
     if (tournamentType.includes('SpringPlayoffs') || tournamentType.includes('SpringRegular')) {
       if (!result.spring) {
@@ -753,22 +752,6 @@ const selectedTeamDetail = computed(() => {
   })
 
   return result
-})
-
-// 检查是否有任何可见的积分详情
-const _hasAnyVisibleDetail = computed(() => {
-  const detail = selectedTeamDetail.value
-  return (
-    detail.spring ||
-    (detail.msi && detail.msi.total > 0) ||
-    (detail.madrid && detail.madrid.total > 0) ||
-    detail.summer ||
-    (detail.claude && detail.claude.total > 0) ||
-    (detail.worlds && detail.worlds.total > 0) ||
-    (detail.shanghai && detail.shanghai.total > 0) ||
-    (detail.icp && detail.icp.total > 0) ||
-    (detail.super && detail.super.total > 0)
-  )
 })
 
 // 方法

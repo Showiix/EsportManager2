@@ -18,7 +18,7 @@ export interface GlobalError {
   message: string
   details?: string
   canRetry: boolean
-  retryFn?: () => Promise<void>
+  retryFn?: () => Promise<unknown>
 }
 
 /**
@@ -28,7 +28,7 @@ export interface HandleErrorOptions {
   /** 是否可以重试 */
   canRetry?: boolean
   /** 重试函数 */
-  retryFn?: () => Promise<void>
+  retryFn?: () => Promise<unknown>
   /** 静默处理，不显示弹窗 */
   silent?: boolean
   /** 错误发生的组件 */

@@ -372,24 +372,9 @@ const isAnnualAwardsPhase = computed(() => {
   return phaseDisplayName.value === '年度颁奖典礼'
 })
 
-// 计算当前阶段索引 (保留以备后用)
-const _currentPhaseIndex = computed(() => {
-  const idx = allPhases.value.findIndex(p => p.status === 'current')
-  return idx >= 0 ? idx : 0
-})
-
 // 判断是否可以执行某个操作
 const canDoAction = (action: TimeAction) => {
   return availableActions.value.includes(action)
-}
-
-// 获取阶段步骤状态 (保留以备后用)
-const _getPhaseStepStatus = (status: string) => {
-  switch (status) {
-    case 'completed': return 'success'
-    case 'current': return 'process'
-    default: return 'wait'
-  }
 }
 
 // 获取阶段项样式类

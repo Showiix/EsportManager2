@@ -1,9 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { createLogger } from '@/utils/logger'
 import { handleError } from '@/utils/errors'
-
-const logger = createLogger('SettingsStore')
 
 export interface SystemSettings {
   // 基础设置

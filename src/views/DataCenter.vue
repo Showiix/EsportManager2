@@ -372,20 +372,12 @@ const syncData = async () => {
     const result = await devApi.syncPlayerGamesPlayed(seasonNum)
     logger.debug('[DataCenter] 同步结果:', result)
 
-    // 处理两种可能的返回格式
-    if ('success' in result) {
-      // DevCommandResult 格式
-      if (result.success) {
-        ElMessage.success(`数据同步成功: ${result.data?.updated_count || 0} 条记录已更新`)
-      } else {
-        ElMessage.error(`同步失败: ${result.error || result.message || '未知错误'}`)
-        return
-      }
-    } else if ('updated_count' in result) {
-      // 直接返回 SyncResult 格式
-      ElMessage.success(`数据同步成功: ${result.updated_count} 条记录已更新`)
+    // 处理返回结果
+    if (result.success) {
+      ElMessage.success(`数据同步成功: ${result.data?.updated_count || 0} 条记录已更新`)
     } else {
-      ElMessage.warning('同步完成，但返回格式未知')
+      ElMessage.error(`同步失败: ${result.error || result.message || '未知错误'}`)
+      return
     }
 
     await fetchRankings()

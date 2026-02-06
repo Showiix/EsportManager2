@@ -780,7 +780,7 @@ const processFile = async (file: File) => {
     }
   } catch (error) {
     ElMessage.error('文件解析失败，请检查文件格式')
-    logger.error(error)
+    logger.error('文件解析失败', error)
   }
 }
 
