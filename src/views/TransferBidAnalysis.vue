@@ -3,7 +3,12 @@
     <!-- 页面标题 -->
     <div class="page-header">
       <div class="header-content">
-        <h1>竞价分析中心</h1>
+        <h1>
+          竞价分析中心
+          <span class="formula-trigger" @click="showFormulaDialog = true" title="意愿度计算说明">
+            <el-icon :size="16"><QuestionFilled /></el-icon>
+          </span>
+        </h1>
         <p>S{{ seasonId }} 赛季 · R4/R5 竞价过程透明化</p>
       </div>
       <div class="header-stats" v-if="overview">
@@ -235,6 +240,132 @@
       <el-icon class="is-loading" :size="32"><Loading /></el-icon>
       <span>加载竞价数据中...</span>
     </div>
+
+    <!-- 意愿度公式弹窗 -->
+    <el-dialog v-model="showFormulaDialog" width="620px" :show-close="false" append-to-body class="formula-dialog">
+      <template #header>
+        <div class="formula-dialog-header">
+          <div class="formula-dialog-icon">
+            <el-icon :size="20"><QuestionFilled /></el-icon>
+          </div>
+          <div>
+            <h3>意愿度计算公式</h3>
+            <p>选手是否接受报价的核心判定逻辑</p>
+          </div>
+        </div>
+      </template>
+
+      <div class="formula-content">
+        <!-- Step 1 -->
+        <div class="formula-card">
+          <div class="formula-card-header">
+            <span class="step-badge">1</span>
+            <span class="step-title">薪资满意度</span>
+            <span class="weight-badge blue">权重 40%</span>
+          </div>
+          <div class="formula-card-body">
+            <p class="formula-hint">报价薪资 / 当前薪资 = 薪资比</p>
+            <div class="score-bar-list">
+              <div class="score-bar-item" v-for="item in salaryTiers" :key="item.label">
+                <span class="score-bar-label">{{ item.label }}</span>
+                <div class="score-bar-track">
+                  <div class="score-bar-fill" :style="{ width: item.score + '%', background: item.color }" />
+                </div>
+                <span class="score-bar-value" :style="{ color: item.color }">{{ item.score }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="formula-card">
+          <div class="formula-card-header">
+            <span class="step-badge">2</span>
+            <span class="step-title">忠诚度影响</span>
+            <span class="weight-badge purple">权重 30%</span>
+          </div>
+          <div class="formula-card-body">
+            <p class="formula-hint">忠诚度越高，转会意愿越低</p>
+            <div class="code-block">
+              <span class="code-keyword">loyalty_impact</span> = (100 - loyalty) &times; 0.5
+            </div>
+            <div class="example-row">
+              <div class="example-item">
+                <span class="example-label">loyalty = 30</span>
+                <span class="example-arrow">&rarr;</span>
+                <span class="example-value good">35</span>
+              </div>
+              <div class="example-item">
+                <span class="example-label">loyalty = 70</span>
+                <span class="example-arrow">&rarr;</span>
+                <span class="example-value mid">15</span>
+              </div>
+              <div class="example-item">
+                <span class="example-label">loyalty = 90</span>
+                <span class="example-arrow">&rarr;</span>
+                <span class="example-value bad">5</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="formula-card">
+          <div class="formula-card-header">
+            <span class="step-badge">3</span>
+            <span class="step-title">基础意愿合成</span>
+          </div>
+          <div class="formula-card-body">
+            <div class="code-block">
+              <span class="code-keyword">base</span> = salary_score &times; <span class="code-num">0.4</span>
+              + loyalty_impact &times; <span class="code-num">0.3</span>
+              + <span class="code-num">15</span>
+              + random(<span class="code-num">-5</span>, <span class="code-num">5</span>)
+            </div>
+            <p class="formula-hint" style="margin-top: 8px">固定基础分 15 保证最低意愿底线，随机波动 &plusmn;5 模拟心态</p>
+          </div>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="formula-card">
+          <div class="formula-card-header">
+            <span class="step-badge">4</span>
+            <span class="step-title">跨赛区惩罚</span>
+            <span class="weight-badge orange">核心机制</span>
+          </div>
+          <div class="formula-card-body">
+            <div class="code-block">
+              <div><span class="code-comment">// 本赛区转会</span></div>
+              <div><span class="code-keyword">最终意愿</span> = base &times; <span class="code-num">1.0</span></div>
+              <div style="margin-top: 4px"><span class="code-comment">// 跨赛区转会</span></div>
+              <div><span class="code-keyword">最终意愿</span> = base &times; (100 - region_loyalty) / 100</div>
+            </div>
+            <div class="region-grid">
+              <div class="region-item" v-for="r in regionData" :key="r.name">
+                <div class="region-flag">{{ r.flag }}</div>
+                <div class="region-name">{{ r.name }}</div>
+                <div class="region-loyalty">loyalty {{ r.range }}</div>
+                <div class="region-factor" :style="{ color: r.color }">{{ r.factor }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 5 -->
+        <div class="formula-card threshold">
+          <div class="formula-card-body" style="text-align: center; padding: 16px">
+            <div class="threshold-text">
+              意愿度 <span class="threshold-op">&ge;</span> <span class="threshold-num">40</span> <span class="threshold-arrow">&rarr;</span> 接受签约
+            </div>
+            <p class="formula-hint" style="margin-top: 6px">低于 40 的报价将被选手拒绝</p>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button type="primary" @click="showFormulaDialog = false">我知道了</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -244,7 +375,7 @@ import { useRoute } from 'vue-router'
 import { transferWindowApi } from '@/api/tauri'
 import type { BidOverview, PlayerBidAnalysis } from '@/api/tauri'
 import { formatMoney } from '@/utils/format'
-import { Search, Loading } from '@element-plus/icons-vue'
+import { Search, Loading, QuestionFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
 
@@ -256,6 +387,23 @@ const filterPosition = ref('')
 const filterOutcome = ref('')
 const windowId = ref<number>(0)
 const seasonId = ref<number>(0)
+const showFormulaDialog = ref(false)
+
+// 弹窗静态数据
+const salaryTiers = [
+  { label: '&ge; 1.2', score: 100, color: '#67c23a' },
+  { label: '&ge; 1.0', score: 80, color: '#409eff' },
+  { label: '&ge; 0.8', score: 60, color: '#e6a23c' },
+  { label: '&ge; 0.6', score: 40, color: '#f56c6c' },
+  { label: '< 0.6', score: 20, color: '#909399' },
+]
+
+const regionData = [
+  { name: 'LPL', flag: '🇨🇳', range: '75~90', factor: '0.10 ~ 0.25', color: '#f56c6c' },
+  { name: 'LCK', flag: '🇰🇷', range: '55~75', factor: '0.25 ~ 0.45', color: '#e6a23c' },
+  { name: 'LEC', flag: '🇪🇺', range: '45~65', factor: '0.35 ~ 0.55', color: '#409eff' },
+  { name: 'LCS', flag: '🇺🇸', range: '40~60', factor: '0.40 ~ 0.60', color: '#67c23a' },
+]
 
 // 分页
 const pagination = reactive({
@@ -647,6 +795,318 @@ onMounted(async () => {
   gap: 12px;
   padding: 80px 0;
   color: var(--el-text-color-secondary);
+}
+
+/* ========== 公式触发器 ========== */
+.formula-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  vertical-align: middle;
+  margin-left: 8px;
+  transition: all 0.2s;
+}
+
+.formula-trigger:hover {
+  background: rgba(255, 255, 255, 0.4);
+  transform: scale(1.1);
+}
+
+/* ========== 公式弹窗 ========== */
+/* ========== 公式弹窗（穿透 el-dialog） ========== */
+:deep(.formula-dialog .el-dialog__header) {
+  padding: 0;
+  margin: 0;
+}
+
+:deep(.formula-dialog .el-dialog__body) {
+  padding: 20px 24px;
+}
+
+:deep(.formula-dialog .el-dialog) {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.formula-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, #2d3a4e, #3a5068);
+  border-radius: 8px 8px 0 0;
+  color: white;
+}
+
+.formula-dialog-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.formula-dialog-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.formula-dialog-header p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.formula-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 卡片 */
+.formula-card {
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: box-shadow 0.2s;
+}
+
+.formula-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.formula-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #fafbfc;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.step-badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #303133;
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.step-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.weight-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.weight-badge.blue {
+  color: #409eff;
+  background: rgba(64, 158, 255, 0.1);
+}
+
+.weight-badge.purple {
+  color: #9467bd;
+  background: rgba(148, 103, 189, 0.1);
+}
+
+.weight-badge.orange {
+  color: #e6a23c;
+  background: rgba(230, 162, 60, 0.1);
+}
+
+.formula-card-body {
+  padding: 14px 16px;
+}
+
+.formula-hint {
+  font-size: 12px;
+  color: #909399;
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+
+/* 薪资进度条 */
+.score-bar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.score-bar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.score-bar-label {
+  font-size: 12px;
+  color: #606266;
+  min-width: 48px;
+  text-align: right;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+}
+
+.score-bar-track {
+  flex: 1;
+  height: 8px;
+  background: #f0f2f5;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.score-bar-value {
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 28px;
+  text-align: right;
+}
+
+/* 代码块 */
+.code-block {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.code-keyword { color: #89b4fa; font-weight: 600; }
+.code-num { color: #fab387; }
+.code-comment { color: #6c7086; font-style: italic; }
+
+/* 忠诚度示例 */
+.example-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.example-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.example-label {
+  color: #909399;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+}
+
+.example-arrow {
+  color: #c0c4cc;
+}
+
+.example-value {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.example-value.good { color: #67c23a; }
+.example-value.mid { color: #e6a23c; }
+.example-value.bad { color: #f56c6c; }
+
+/* 赛区网格 */
+.region-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.region-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 6px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.region-flag {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.region-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #303133;
+}
+
+.region-loyalty {
+  font-size: 11px;
+  color: #909399;
+}
+
+.region-factor {
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+/* 阈值卡片 */
+.formula-card.threshold {
+  border-color: #b3e19d;
+  background: linear-gradient(135deg, rgba(103, 194, 58, 0.04), rgba(103, 194, 58, 0.1));
+}
+
+.threshold-text {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.threshold-op {
+  color: #67c23a;
+}
+
+.threshold-num {
+  font-size: 24px;
+  font-weight: 800;
+  color: #67c23a;
+}
+
+.threshold-arrow {
+  color: #67c23a;
+  margin: 0 4px;
 }
 
 /* ========== 响应式 ========== */

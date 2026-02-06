@@ -623,7 +623,10 @@ impl TransferEngine {
                 let roll: f64 = rng.gen();
                 if roll < renewal_chance {
                     // 续约成功
-                    let new_contract_years = if age <= 24 { 3 } else if age <= 28 { 2 } else { 1 };
+                    // 续约合同年限：基于年龄 + 随机浮动，范围 1-4 年
+                    let base_years: i64 = if age <= 22 { 3 } else if age <= 25 { 2 } else if age <= 28 { 2 } else { 1 };
+                    let random_adj: i64 = if rng.gen::<f64>() < 0.4 { 1 } else if rng.gen::<f64>() < 0.3 { -1 } else { 0 };
+                    let new_contract_years = (base_years + random_adj).clamp(1, 4);
                     let new_salary = (expected_salary as f64 * 0.95) as i64; // 续约有小折扣
 
                     sqlx::query(
@@ -1449,7 +1452,12 @@ impl TransferEngine {
                     base_mult * random_factor
                 };
                 let offered_salary = (expected_salary as f64 * salary_multiplier) as i64;
-                let contract_years = if age <= 24 && weights.long_term_focus > 0.5 { 3 } else if age <= 28 { 2 } else { 1 };
+                let contract_years = {
+                    let base: i64 = if age <= 22 { 3 } else if age <= 25 { 2 } else if age <= 28 { 2 } else { 1 };
+                    let personality_adj: i64 = if weights.long_term_focus > 0.7 { 1 } else if weights.short_term_focus > 0.7 { -1 } else { 0 };
+                    let random_adj: i64 = if rng.gen::<f64>() < 0.3 { 1 } else if rng.gen::<f64>() < 0.25 { -1 } else { 0 };
+                    (base + personality_adj + random_adj).clamp(1, 4)
+                };
                 let target_region_id = cache.team_region_ids.get(&team_id).copied().flatten();
 
                 offers.push(TransferOffer {
@@ -1716,7 +1724,12 @@ impl TransferEngine {
                     base_mult * random_factor
                 };
                 let expected_salary = (base_salary as f64 * salary_multiplier) as i64;
-                let contract_years = if age <= 24 { 3 } else if age <= 28 { 2 } else { 1 };
+                let contract_years = {
+                    let base: i64 = if age <= 22 { 3 } else if age <= 25 { 2 } else if age <= 28 { 2 } else { 1 };
+                    let personality_adj: i64 = if weights.long_term_focus > 0.7 { 1 } else if weights.short_term_focus > 0.7 { -1 } else { 0 };
+                    let random_adj: i64 = if rng.gen::<f64>() < 0.3 { 1 } else if rng.gen::<f64>() < 0.25 { -1 } else { 0 };
+                    (base + personality_adj + random_adj).clamp(1, 4)
+                };
                 let target_region_id = cache.team_region_ids.get(&team_id).copied().flatten();
 
                 all_bids.push((team_id, team_name, bid_price, expected_salary, contract_years, target_region_id, match_score));
@@ -2036,7 +2049,8 @@ impl TransferEngine {
                     let age: i64 = player.get("age");
 
                     let salary = self.calculate_expected_salary(ability as u8, age as u8);
-                    let contract_years = 1i64;
+                    // 紧急补人给短合同 1-2 年
+                    let contract_years: i64 = if age <= 25 && rand::random::<f64>() < 0.4 { 2 } else { 1 };
 
                     sqlx::query(
                         "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = 40, satisfaction = 50 WHERE id = ?"
@@ -2566,9 +2580,14 @@ impl TransferEngine {
             _ => 30.0,
         };
 
-        ability_score * 0.4 * weights.short_term_focus
-            + age_score * 0.3 * weights.youth_preference.max(weights.short_term_focus)
-            + finance_score * 0.3
+        // 根据 AI 性格动态调整各项权重比例（总和归一化到 1.0）
+        let w_ability = 0.3 + 0.2 * weights.short_term_focus;       // 0.3 ~ 0.5
+        let w_age = 0.2 + 0.2 * weights.youth_preference.max(weights.short_term_focus); // 0.2 ~ 0.4
+        let w_finance = 0.15 + 0.15 * weights.bargain_hunting;      // 0.15 ~ 0.3
+        let total_w = w_ability + w_age + w_finance;
+
+        // 归一化后加权求和，结果范围 0-100
+        (ability_score * w_ability + age_score * w_age + finance_score * w_finance) / total_w
     }
 
     /// 写入一条竞价记录到 transfer_bids 表
