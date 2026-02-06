@@ -176,11 +176,11 @@ pub async fn get_team_finance_summary(
     let status = engine.get_financial_status(&team, total_salary as u64);
 
     // 确定财务状态文本
-    let financial_status = if balance > 1000 {
+    let financial_status = if balance > 10_000_000 {
         "Wealthy"
-    } else if balance >= 500 {
+    } else if balance >= 5_000_000 {
         "Healthy"
-    } else if balance >= 100 {
+    } else if balance >= 1_000_000 {
         "Tight"
     } else if balance >= 0 {
         "Deficit"
@@ -332,11 +332,11 @@ pub async fn get_all_teams_finance(
 
         let status = engine.get_financial_status(&team, total_salary as u64);
 
-        let financial_status = if balance > 1000 {
+        let financial_status = if balance > 10_000_000 {
             "Wealthy"
-        } else if balance >= 500 {
+        } else if balance >= 5_000_000 {
             "Healthy"
-        } else if balance >= 100 {
+        } else if balance >= 1_000_000 {
             "Tight"
         } else if balance >= 0 {
             "Deficit"
@@ -672,11 +672,11 @@ pub async fn get_season_finance_report(
     let net_change = total_income as i64 - total_expense as i64;
     let opening_balance = balance - net_change;
 
-    let financial_status = if balance > 1000 {
+    let financial_status = if balance > 10_000_000 {
         "Wealthy"
-    } else if balance >= 500 {
+    } else if balance >= 5_000_000 {
         "Healthy"
-    } else if balance >= 100 {
+    } else if balance >= 1_000_000 {
         "Tight"
     } else if balance >= 0 {
         "Deficit"

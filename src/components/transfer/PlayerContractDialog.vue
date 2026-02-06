@@ -222,7 +222,7 @@ import { ElMessage } from 'element-plus'
 import { Document, Money, Sunny, Medal, Warning, TrendCharts, Switch } from '@element-plus/icons-vue'
 import { transferApi, type PlayerContractDetail } from '@/api/tauri'
 import { useGameStore } from '@/stores/useGameStore'
-import { formatMoneyFromWan as formatValue, formatMoneyFromWan as formatSalary } from '@/utils'
+import { formatValue, formatSalary } from '@/utils/format'
 import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('PlayerContractDialog')

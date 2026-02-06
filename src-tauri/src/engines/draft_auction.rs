@@ -867,11 +867,12 @@ mod tests {
 
     #[test]
     fn test_financial_status_from_balance() {
-        assert_eq!(FinancialStatus::from_balance(10000_0000), FinancialStatus::Wealthy);
-        assert_eq!(FinancialStatus::from_balance(3000_0000), FinancialStatus::Healthy);
-        assert_eq!(FinancialStatus::from_balance(1000_0000), FinancialStatus::Tight);
-        assert_eq!(FinancialStatus::from_balance(100_0000), FinancialStatus::Deficit);
-        assert_eq!(FinancialStatus::from_balance(-100_0000), FinancialStatus::Bankrupt);
+        // 阈值（元）：Wealthy > 10_000_000, Healthy > 5_000_000, Tight > 1_000_000, Deficit >= 0, Bankrupt < 0
+        assert_eq!(FinancialStatus::from_balance(20_000_000), FinancialStatus::Wealthy);
+        assert_eq!(FinancialStatus::from_balance(8_000_000), FinancialStatus::Healthy);
+        assert_eq!(FinancialStatus::from_balance(3_000_000), FinancialStatus::Tight);
+        assert_eq!(FinancialStatus::from_balance(500_000), FinancialStatus::Deficit);
+        assert_eq!(FinancialStatus::from_balance(-1_000_000), FinancialStatus::Bankrupt);
     }
 
     #[test]

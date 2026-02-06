@@ -256,7 +256,7 @@ import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading, ArrowRight, Check } from '@element-plus/icons-vue'
 import { aiTransferApi, type PlayerTransferStrategy } from '@/api/tauri'
-import { formatMoneyFromWan } from '@/utils'
+import { formatMoney } from '@/utils'
 import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('PlayerStrategyDialog')
@@ -326,8 +326,8 @@ const generateStrategy = async () => {
   }
 }
 
-// 此处薪资输入是万，使用 formatMoneyFromWan
-const formatSalary = (salary: number) => formatMoneyFromWan(salary)
+// 薪资单位为元，使用 formatMoney
+const formatSalary = (salary: number) => formatMoney(salary)
 
 const formatDate = (dateStr: string) => {
   const date = new Date(dateStr)

@@ -91,7 +91,7 @@
     <!-- 数据表格 -->
     <el-card v-else class="table-card">
       <el-table
-        :data="filteredEvaluations"
+        :data="paginatedEvaluations"
         v-loading="loading"
         stripe
         style="width: 100%"
@@ -206,6 +206,19 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 分页 -->
+      <div v-if="filteredEvaluations.length > pageSize" class="pagination-wrapper">
+        <el-pagination
+          v-model:current-page="currentPage"
+          :page-size="pageSize"
+          :page-sizes="[20, 50, 100]"
+          :total="filteredEvaluations.length"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="handlePageChange"
+        />
+      </div>
     </el-card>
 
     <!-- 战队详情弹窗 -->
@@ -381,7 +394,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, Calendar, TrendCharts, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
@@ -401,6 +414,8 @@ const positionNeeds = ref<PositionNeedInfo[]>([])
 const playerEvaluations = ref<PlayerStayEvaluationInfo[]>([])
 const detailDialogVisible = ref(false)
 const selectedTeam = ref<TeamSeasonEvaluationInfo | null>(null)
+const currentPage = ref(1)
+const pageSize = ref(20)
 
 // 筛选条件
 const filters = reactive({
@@ -442,6 +457,28 @@ const filteredEvaluations = computed(() => {
     return true
   })
 })
+
+// 分页后的数据
+const paginatedEvaluations = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  const end = start + pageSize.value
+  return filteredEvaluations.value.slice(start, end)
+})
+
+// 筛选变化时重置分页
+watch([() => filters.search, () => filters.region, () => filters.strategy, () => filters.urgency], () => {
+  currentPage.value = 1
+})
+
+// 分页处理
+function handleSizeChange(size: number) {
+  pageSize.value = size
+  currentPage.value = 1
+}
+
+function handlePageChange(page: number) {
+  currentPage.value = page
+}
 
 // 方法
 async function loadEvaluations() {
@@ -904,6 +941,16 @@ onMounted(() => {
   color: #909399;
   font-size: 14px;
   margin-top: 12px;
+}
+
+/* 分页 */
+.pagination-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+  padding: 16px;
+  background: white;
+  border-radius: 8px;
 }
 
 /* 弹窗样式 */

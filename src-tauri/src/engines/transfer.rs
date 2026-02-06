@@ -1053,9 +1053,9 @@ impl TransferEngine {
         Ok(count.0 > 0)
     }
 
-    /// 估算选手市场薪资（单位：万元）
+    /// 估算选手市场薪资（单位：元）
     fn estimate_market_salary(&self, ability: u8, age: u8) -> i64 {
-        // 基础薪资（万元）
+        // 基础薪资（万元基数）
         let base = match ability {
             95..=100 => 300,
             90..=94 => 200,
@@ -1075,7 +1075,7 @@ impl TransferEngine {
             _ => 0.6,
         };
 
-        (base as f64 * age_factor) as i64  // 返回万元
+        ((base as f64 * age_factor) * 10000.0) as i64  // 返回元
     }
 
     // ============================================

@@ -375,9 +375,9 @@ impl InitService {
         base.clamp(60.0, 95.0) as u8
     }
 
-    /// 计算初始薪资（返回实际金额，单位：元）
+    /// 计算初始薪资（单位：元）
     fn calculate_initial_salary(ability: u8, _potential: u8, tag: PlayerTag) -> u64 {
-        // base 单位为万元
+        // base 单位为万元（基数）
         let base = match ability {
             90..=100 => 150,
             85..=89 => 100,
@@ -393,11 +393,11 @@ impl InitService {
             PlayerTag::Ordinary => 0.8,
         };
 
-        // 返回万元
-        ((base as f64) * tag_multiplier) as u64
+        // 返回元
+        ((base as f64) * tag_multiplier * 10000.0) as u64
     }
 
-    /// 计算市场价值（单位：万元）
+    /// 计算市场价值（单位：元）
     /// 使用与 Player::calculate_base_market_value 相同的公式
     fn calculate_market_value(ability: u8, potential: u8, age: u8, tag: PlayerTag, position: Position) -> u64 {
         // 基础身价系数（与 player.rs 保持一致）
@@ -412,7 +412,7 @@ impl InitService {
             _ => 1,          // 青训
         };
 
-        // 基础身价 = 能力值 × 系数（单位：万元）
+        // 基础身价 = 能力值 × 系数
         let base = ability as u64 * multiplier;
 
         // 年龄因素
@@ -441,8 +441,8 @@ impl InitService {
         // 位置系数
         let position_factor = position.market_value_factor();
 
-        // 返回万元
-        ((base as f64) * age_factor * potential_factor * tag_factor * position_factor) as u64
+        // 返回元
+        ((base as f64) * age_factor * potential_factor * tag_factor * position_factor * 10000.0) as u64
     }
 
     /// 初始化所有数据

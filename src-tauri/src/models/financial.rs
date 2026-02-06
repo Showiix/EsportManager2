@@ -85,9 +85,9 @@ pub struct TeamSeasonFinance {
     pub id: u64,
     pub team_id: u64,
     pub season_id: u64,
-    /// 期初余额 (万元)
+    /// 期初余额 (元)
     pub opening_balance: i64,
-    /// 期末余额 (万元)
+    /// 期末余额 (元)
     pub closing_balance: i64,
     /// 总收入
     pub total_income: u64,
@@ -102,13 +102,13 @@ pub struct TeamSeasonFinance {
 /// 财务配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FinancialConfig {
-    /// 联盟分成 (万元/赛季)
+    /// 联盟分成 (元/赛季)
     pub league_share: u64,
-    /// 运营成本 (万元/赛季)
+    /// 运营成本 (元/赛季)
     pub operating_cost: u64,
-    /// 薪资上限 (万元/赛季)
+    /// 薪资上限 (元/赛季)
     pub salary_cap: u64,
-    /// 单人薪资上限 (万元/赛季)
+    /// 单人薪资上限 (元/赛季)
     pub individual_salary_cap: u64,
     /// 奢侈税比例
     pub luxury_tax_rate: f64,
@@ -117,59 +117,59 @@ pub struct FinancialConfig {
 impl Default for FinancialConfig {
     fn default() -> Self {
         Self {
-            league_share: 500,
-            operating_cost: 100,
-            salary_cap: 1500,
-            individual_salary_cap: 400,
+            league_share: 5_000_000,
+            operating_cost: 1_000_000,
+            salary_cap: 15_000_000,
+            individual_salary_cap: 4_000_000,
             luxury_tax_rate: 1.5,
         }
     }
 }
 
-/// 排名奖金配置
+/// 排名奖金配置（单位：元）
 pub fn ranking_bonus_config() -> Vec<(u32, u64)> {
     vec![
-        (1, 200),   // 第1名
-        (2, 150),   // 第2名
-        (3, 120),   // 第3名
-        (4, 100),   // 第4名
-        (5, 80),    // 第5-6名
-        (6, 80),
-        (7, 60),    // 第7-8名
-        (8, 60),
-        (9, 40),    // 第9-10名
-        (10, 40),
-        (11, 20),   // 第11-14名
-        (12, 20),
-        (13, 20),
-        (14, 20),
+        (1, 2_000_000),   // 第1名 200万
+        (2, 1_500_000),   // 第2名 150万
+        (3, 1_200_000),   // 第3名 120万
+        (4, 1_000_000),   // 第4名 100万
+        (5, 800_000),     // 第5-6名 80万
+        (6, 800_000),
+        (7, 600_000),     // 第7-8名 60万
+        (8, 600_000),
+        (9, 400_000),     // 第9-10名 40万
+        (10, 400_000),
+        (11, 200_000),    // 第11-14名 20万
+        (12, 200_000),
+        (13, 200_000),
+        (14, 200_000),
     ]
 }
 
-/// 季后赛奖金配置
+/// 季后赛奖金配置（单位：元）
 pub fn playoff_bonus_config() -> Vec<(&'static str, u64)> {
     vec![
-        ("CHAMPION", 300),
-        ("RUNNER_UP", 200),
-        ("THIRD", 150),
-        ("FOURTH", 100),
+        ("CHAMPION", 3_000_000),    // 冠军 300万
+        ("RUNNER_UP", 2_000_000),   // 亚军 200万
+        ("THIRD", 1_500_000),       // 季军 150万
+        ("FOURTH", 1_000_000),      // 殿军 100万
     ]
 }
 
-/// 国际赛奖金配置
+/// 国际赛奖金配置（单位：元）
 pub fn international_bonus_config() -> Vec<(&'static str, &'static str, u64)> {
     vec![
         // MSI
-        ("MSI", "CHAMPION", 400),
-        ("MSI", "RUNNER_UP", 250),
-        ("MSI", "SEMI_FINAL", 150),
-        ("MSI", "QUARTER_FINAL", 80),
-        ("MSI", "GROUP_STAGE", 50),
+        ("MSI", "CHAMPION", 4_000_000),         // 400万
+        ("MSI", "RUNNER_UP", 2_500_000),         // 250万
+        ("MSI", "SEMI_FINAL", 1_500_000),        // 150万
+        ("MSI", "QUARTER_FINAL", 800_000),       // 80万
+        ("MSI", "GROUP_STAGE", 500_000),          // 50万
         // 世界赛
-        ("WORLDS", "CHAMPION", 500),
-        ("WORLDS", "RUNNER_UP", 350),
-        ("WORLDS", "SEMI_FINAL", 200),
-        ("WORLDS", "QUARTER_FINAL", 120),
-        ("WORLDS", "GROUP_STAGE", 80),
+        ("WORLDS", "CHAMPION", 5_000_000),       // 500万
+        ("WORLDS", "RUNNER_UP", 3_500_000),       // 350万
+        ("WORLDS", "SEMI_FINAL", 2_000_000),     // 200万
+        ("WORLDS", "QUARTER_FINAL", 1_200_000),  // 120万
+        ("WORLDS", "GROUP_STAGE", 800_000),       // 80万
     ]
 }

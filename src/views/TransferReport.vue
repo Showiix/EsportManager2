@@ -253,7 +253,7 @@ import {
   Calendar,
 } from '@element-plus/icons-vue'
 import { transferWindowApi, type TransferReport, type TransferEvent } from '@/api/tauri'
-import { formatMoneyFromWan } from '@/utils'
+import { formatMoney } from '@/utils'
 import { EVENT_TYPE_NAMES, EVENT_LEVEL_CONFIG } from '@/stores/useTransferWindowStore'
 import { createLogger } from '@/utils/logger'
 
@@ -287,9 +287,9 @@ async function loadReport() {
   }
 }
 
-// 格式化金额 - 使用统一工具（输入单位为万）
+// 格式化金额 - 使用统一工具（输入单位为元）
 function formatAmount(amount: number): string {
-  return formatMoneyFromWan(amount)
+  return formatMoney(amount)
 }
 
 // 获取类型名称

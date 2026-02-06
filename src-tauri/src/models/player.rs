@@ -214,17 +214,17 @@ impl Player {
     }
 
     /// 获取基础身价系数（按能力值分档）
-    /// 返回值单位：万元
+    /// 返回值单位：元
     fn base_value_multiplier(ability: u8) -> u64 {
         match ability {
-            95..=100 => 50,  // 顶级选手：4750-5000万
-            90..=94 => 35,   // 世界级：3150-3290万
-            85..=89 => 20,   // 顶尖：1700-1780万
-            80..=84 => 12,   // 优秀：960-1008万
-            75..=79 => 7,    // 合格首发：525-553万
-            70..=74 => 4,    // 替补级：280-296万
-            60..=69 => 2,    // 新人：120-138万
-            _ => 1,          // 青训：<60万
+            95..=100 => 50,  // 顶级选手：4750-5000万元
+            90..=94 => 35,   // 世界级：3150-3290万元
+            85..=89 => 20,   // 顶尖：1700-1780万元
+            80..=84 => 12,   // 优秀：960-1008万元
+            75..=79 => 7,    // 合格首发：525-553万元
+            70..=74 => 4,    // 替补级：280-296万元
+            60..=69 => 2,    // 新人：120-138万元
+            _ => 1,          // 青训：<60万元
         }
     }
 
@@ -253,7 +253,7 @@ impl Player {
     }
 
     /// 计算基础身价（不含荣誉加成）
-    /// 返回值单位：万元
+    /// 返回值单位：元
     pub fn calculate_base_market_value(&self) -> u64 {
         let base_value = self.ability as u64 * Self::base_value_multiplier(self.ability);
         let age_factor = Self::age_value_factor(self.age);
@@ -261,14 +261,14 @@ impl Player {
         let tag_factor = self.tag.market_value_factor();
         let position_factor = self.position.map(|p| p.market_value_factor()).unwrap_or(1.0);
 
-        (base_value as f64 * age_factor * potential_factor * tag_factor * position_factor) as u64
+        (base_value as f64 * age_factor * potential_factor * tag_factor * position_factor * 10000.0) as u64
     }
 
     /// 计算完整身价（含荣誉和赛区加成）
     /// 参数：
     /// - region_code: 赛区代码 (LPL/LCK/LEC/LCS)
     /// - honor_factor: 荣誉系数 (由外部计算传入，范围 1.0 ~ 3.0)
-    /// 返回值单位：万元
+    /// 返回值单位：元
     pub fn calculate_full_market_value(&self, region_code: &str, honor_factor: f64) -> u64 {
         let base_value = self.calculate_base_market_value();
         let region_factor = RegionCode::from_str(region_code).market_value_factor();

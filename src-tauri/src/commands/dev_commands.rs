@@ -1385,8 +1385,8 @@ fn calculate_market_value(ability: u8, potential: u8, age: u8, tag: PlayerTag, p
     let tag_factor = tag.market_value_factor();
     let position_factor = position.market_value_factor();
 
-    // 返回万元
-    ((base as f64) * age_factor * potential_factor * tag_factor * position_factor) as u64
+    // 返回元
+    ((base as f64) * age_factor * potential_factor * tag_factor * position_factor * 10000.0) as u64
 }
 
 /// 自动修复队伍首发阵容

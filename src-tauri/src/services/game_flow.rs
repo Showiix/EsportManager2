@@ -4049,8 +4049,8 @@ impl GameFlowService {
             _ => 1.0,
         };
 
-        // 返回万元
-        (base as f64 * age_factor * potential_factor * tag_factor * position_factor) as u64
+        // 返回元
+        ((base as f64 * age_factor * potential_factor * tag_factor * position_factor) * 10000.0) as u64
     }
 
     /// 完整重算单个选手身价（基础 × 荣誉 × 赛区）

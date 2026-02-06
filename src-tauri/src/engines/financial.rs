@@ -216,7 +216,7 @@ impl FinancialEngine {
             1.0
         };
 
-        (base as f64 * win_rate_bonus * self.config.sponsorship_coefficient) as u64
+        (base as f64 * win_rate_bonus * self.config.sponsorship_coefficient * 10000.0) as u64
     }
 
     /// 计算联赛分成
@@ -231,17 +231,7 @@ impl FinancialEngine {
 
     /// 确定财务状态
     fn determine_financial_status(balance: i64) -> FinancialStatus {
-        if balance > 1000 {
-            FinancialStatus::Wealthy
-        } else if balance >= 500 {
-            FinancialStatus::Healthy
-        } else if balance >= 100 {
-            FinancialStatus::Tight
-        } else if balance >= 0 {
-            FinancialStatus::Deficit
-        } else {
-            FinancialStatus::Bankrupt
-        }
+        FinancialStatus::from_balance(balance)
     }
 
     /// 生成赛季财务报告
@@ -434,21 +424,21 @@ mod tests {
         let engine = FinancialEngine::new();
 
         let msi_champion = engine.calculate_prize_money(TournamentType::Msi, "CHAMPION");
-        assert_eq!(msi_champion, 2000); // 4000 * 0.50
+        assert_eq!(msi_champion, 20_000_000); // 4000万 * 0.50 = 2000万元
 
         let worlds_champion = engine.calculate_prize_money(TournamentType::WorldChampionship, "CHAMPION");
-        assert_eq!(worlds_champion, 5000); // 12000 * 0.4167
+        assert_eq!(worlds_champion, 50_004_000); // 1.2亿 * 0.4167 = 5000.4万元
 
         let super_champion = engine.calculate_prize_money(TournamentType::SuperIntercontinental, "CHAMPION");
-        assert_eq!(super_champion, 6000); // 15000 * 0.40 - 最高奖金
+        assert_eq!(super_champion, 60_000_000); // 1.5亿 * 0.40 = 6000万元
     }
 
     #[test]
     fn test_sponsorship() {
         let engine = FinancialEngine::new();
 
-        let strong_team = create_test_team(1, 1000, 92.0, 0.75);
-        let weak_team = create_test_team(2, 500, 68.0, 0.40);
+        let strong_team = create_test_team(1, 10_000_000, 92.0, 0.75);
+        let weak_team = create_test_team(2, 5_000_000, 68.0, 0.40);
 
         let strong_sponsor = engine.calculate_sponsorship(&strong_team);
         let weak_sponsor = engine.calculate_sponsorship(&weak_team);
@@ -460,8 +450,8 @@ mod tests {
     fn test_financial_crisis() {
         let engine = FinancialEngine::new();
 
-        let rich_team = create_test_team(1, 1000, 75.0, 0.5);
-        let poor_team = create_test_team(2, 100, 75.0, 0.5);
+        let rich_team = create_test_team(1, 10_000_000, 75.0, 0.5);
+        let poor_team = create_test_team(2, 1_000_000, 75.0, 0.5);
 
         assert!(!engine.is_in_financial_crisis(&rich_team));
         assert!(engine.is_in_financial_crisis(&poor_team));
@@ -471,9 +461,9 @@ mod tests {
     fn test_transfer_budget() {
         let engine = FinancialEngine::new();
 
-        let team = create_test_team(1, 1000, 75.0, 0.5);
+        let team = create_test_team(1, 10_000_000, 75.0, 0.5);
         let budget = engine.suggest_transfer_budget(&team);
 
-        assert_eq!(budget, 300); // 1000 * 0.3
+        assert_eq!(budget, 3_000_000); // 10_000_000 * 0.3
     }
 }

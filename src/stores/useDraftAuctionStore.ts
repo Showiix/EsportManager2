@@ -88,14 +88,14 @@ export const useDraftAuctionStore = defineStore('draftAuction', () => {
     listings.value.filter(l => l.status === 'EXPIRED')
   )
 
-  // 总成交额(万)
+  // 总成交额(元)
   const totalRevenue = computed(() =>
-    Math.floor((auctionStatus.value?.total_revenue ?? 0) / 10000)
+    auctionStatus.value?.total_revenue ?? 0
   )
 
-  // 总佣金(万)
+  // 总佣金(元)
   const totalCommission = computed(() =>
-    Math.floor((auctionStatus.value?.total_commission ?? 0) / 10000)
+    auctionStatus.value?.total_commission ?? 0
   )
 
   // 显示的事件列表

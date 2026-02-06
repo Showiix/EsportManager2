@@ -93,7 +93,7 @@
               <el-icon :size="24"><Money /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-number">{{ formatMoneyFromWan(auctionStats.totalRevenue) }}</div>
+              <div class="stat-number">{{ formatMoney(auctionStats.totalRevenue) }}</div>
               <div class="stat-label">总成交额</div>
             </div>
           </div>
@@ -106,7 +106,7 @@
               <el-icon :size="24"><Coin /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-number">{{ formatMoneyFromWan(auctionStats.totalCommission) }}</div>
+              <div class="stat-number">{{ formatMoney(auctionStats.totalCommission) }}</div>
               <div class="stat-label">联盟佣金</div>
             </div>
           </div>
@@ -333,7 +333,7 @@ import {
 import { useDraftAuctionStore } from '@/stores/useDraftAuctionStore'
 import { useGameStore } from '@/stores/useGameStore'
 import { queryApi } from '@/api/tauri'
-import { formatMoneyFromWan } from '@/utils'
+import { formatMoney } from '@/utils'
 import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('DraftAuction')

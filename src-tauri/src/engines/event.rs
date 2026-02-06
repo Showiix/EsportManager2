@@ -621,10 +621,13 @@ mod tests {
             team_id: Some(1),
             salary: 100,
             market_value: 500,
+            calculated_market_value: 500,
             contract_end_season: Some(5),
             join_season: 1,
             retire_season: None,
             is_starter: true,
+            loyalty: 50,
+            satisfaction: 50,
         }
     }
 
@@ -649,10 +652,13 @@ mod tests {
             team_id: Some(1),
             salary: 100,
             market_value: 500,
+            calculated_market_value: 500,
             contract_end_season: contract_end,
             join_season: 1,
             retire_season: None,
             is_starter: true,
+            loyalty: 50,
+            satisfaction: 50,
         }
     }
 

@@ -104,6 +104,7 @@ export function formatMoney(amount: number, options: FormatMoneyOptions = {}): s
 }
 
 /**
+ * @deprecated 使用 formatMoney() 代替。所有后端金额现已统一为元。
  * 格式化金额（输入单位：万元）
  *
  * 用于后端返回数据单位为「万元」的场景

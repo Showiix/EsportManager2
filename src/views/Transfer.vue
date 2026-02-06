@@ -47,7 +47,16 @@
         </div>
 
         <div class="action-status">
-          <template v-if="!gmConfigured">
+          <template v-if="transferInProgress">
+            <el-tag type="success" size="large" class="status-tag">
+              <span class="tag-content"><el-icon><VideoPlay /></el-icon> 转会期进行中 (第{{ transferStore.currentRound }}轮)</span>
+            </el-tag>
+            <el-button type="success" size="large" @click="continueTransfer">
+              <el-icon><VideoPlay /></el-icon>
+              继续转会期
+            </el-button>
+          </template>
+          <template v-else-if="!gmConfigured">
             <el-tag type="warning" size="large" class="status-tag">
               <span class="tag-content"><el-icon><Warning /></el-icon> 需配置 {{ unconfiguredGMCount }} 队GM</span>
             </el-tag>
@@ -208,6 +217,10 @@ const gmConfigured = computed(() => {
   return allConfigured
 })
 
+const transferInProgress = computed(() => {
+  return transferStore.isWindowStarted && !transferStore.isWindowCompleted
+})
+
 const unconfiguredGMCount = computed(() => {
   let count = 0
   gmStatusByRegion.value.forEach(status => {
@@ -254,6 +267,11 @@ function startTransfer() {
   router.push('/transfer/window')
 }
 
+// 继续转会期（不清除状态）
+function continueTransfer() {
+  router.push('/transfer/window')
+}
+
 // 加载数据
 async function loadData() {
   isLoading.value = true
@@ -289,8 +307,10 @@ async function loadData() {
   }
 }
 
-onMounted(() => {
-  loadData()
+onMounted(async () => {
+  await loadData()
+  // 初始化转会期状态（检查是否有进行中的转会期）
+  await transferStore.initTransferWindow()
 })
 </script>
 

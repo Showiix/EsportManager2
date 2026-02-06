@@ -62,6 +62,9 @@ impl DatabaseManager {
 
     /// 运行数据库迁移
     async fn run_migrations(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        // 修补旧表缺失列（必须在 SCHEMA_SQL 之前，否则索引创建会失败）
+        self.patch_legacy_tables(pool).await?;
+
         // 创建基础表结构
         sqlx::query(SCHEMA_SQL)
             .execute(pool)
@@ -70,6 +73,64 @@ impl DatabaseManager {
 
         // 运行增量迁移
         self.run_incremental_migrations(pool).await?;
+
+        Ok(())
+    }
+
+    /// 修补旧版表缺失的列，确保 SCHEMA_SQL 索引创建不会失败
+    async fn patch_legacy_tables(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        // 检查 transfer_events 表是否存在
+        let tables: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='transfer_events'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if !tables.is_empty() {
+            let cols: Vec<(String,)> = sqlx::query_as(
+                "SELECT name FROM pragma_table_info('transfer_events')"
+            )
+            .fetch_all(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            let col_names: Vec<&str> = cols.iter().map(|c| c.0.as_str()).collect();
+
+            if !col_names.contains(&"save_id") {
+                sqlx::query("ALTER TABLE transfer_events ADD COLUMN save_id TEXT NOT NULL DEFAULT ''")
+                    .execute(pool)
+                    .await
+                    .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+                // 从关联的 transfer_windows 表回填 save_id
+                sqlx::query(r#"
+                    UPDATE transfer_events SET save_id = (
+                        SELECT tw.save_id FROM transfer_windows tw WHERE tw.id = transfer_events.window_id
+                    ) WHERE save_id = ''
+                "#)
+                .execute(pool)
+                .await
+                .ok();
+            }
+
+            if !col_names.contains(&"season_id") {
+                sqlx::query("ALTER TABLE transfer_events ADD COLUMN season_id INTEGER NOT NULL DEFAULT 0")
+                    .execute(pool)
+                    .await
+                    .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+                // 从关联的 transfer_windows 表回填 season_id
+                sqlx::query(r#"
+                    UPDATE transfer_events SET season_id = (
+                        SELECT tw.season_id FROM transfer_windows tw WHERE tw.id = transfer_events.window_id
+                    ) WHERE season_id = 0
+                "#)
+                .execute(pool)
+                .await
+                .ok();
+            }
+        }
 
         Ok(())
     }
@@ -184,6 +245,9 @@ impl DatabaseManager {
 
         // 迁移7: 运行 010_transfer_system.sql 的表创建
         self.run_transfer_system_migration(pool).await?;
+
+        // 迁移8: 统一金额单位为元
+        self.run_unify_money_to_yuan_migration(pool).await?;
 
         Ok(())
     }
@@ -1319,6 +1383,93 @@ impl DatabaseManager {
 
             log::info!("✅ 转会系统表创建成功");
         }
+
+        Ok(())
+    }
+
+    /// 迁移: 统一金额单位为元
+    /// 旧存档中 salary、calculated_market_value 等字段存储的是万元，需要 × 10000 转为元
+    async fn run_unify_money_to_yuan_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        // 创建 schema_migrations 表（如不存在）
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                migration_name TEXT PRIMARY KEY,
+                applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )"
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        // 检查迁移是否已执行
+        let already_applied: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM schema_migrations WHERE migration_name = 'unify_money_to_yuan_v1'"
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+        if already_applied > 0 {
+            return Ok(());
+        }
+
+        // 检测旧数据：如果 MAX(salary) < 10000 且 > 0，说明是万元单位
+        let max_salary: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(salary), 0) FROM players WHERE status = 'Active'"
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+        if max_salary > 0 && max_salary < 10000 {
+            log::info!("🔄 检测到旧存档金额单位为万元 (max_salary={}), 开始迁移为元...", max_salary);
+
+            // 薪资: 万元 → 元
+            sqlx::query("UPDATE players SET salary = salary * 10000 WHERE salary > 0")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // calculated_market_value: 仅转换小于 1000000 的值（万元范围）
+            sqlx::query("UPDATE players SET calculated_market_value = calculated_market_value * 10000 WHERE calculated_market_value > 0 AND calculated_market_value < 1000000")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 转会策略表的期望薪资
+            let strategy_tables: Vec<(String,)> = sqlx::query_as(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='player_transfer_strategies'"
+            )
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+            if !strategy_tables.is_empty() {
+                let max_expected: i64 = sqlx::query_scalar(
+                    "SELECT COALESCE(MAX(expected_salary), 0) FROM player_transfer_strategies"
+                )
+                .fetch_one(pool)
+                .await
+                .unwrap_or(0);
+
+                if max_expected > 0 && max_expected < 10000 {
+                    sqlx::query(
+                        "UPDATE player_transfer_strategies SET expected_salary = expected_salary * 10000, expected_min_salary = expected_min_salary * 10000 WHERE expected_salary > 0"
+                    )
+                    .execute(pool)
+                    .await
+                    .ok();
+                }
+            }
+
+            log::info!("✅ 金额单位迁移完成：万元 → 元");
+        }
+
+        // 标记迁移完成
+        sqlx::query("INSERT INTO schema_migrations (migration_name) VALUES ('unify_money_to_yuan_v1')")
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
 
         Ok(())
     }
