@@ -724,19 +724,67 @@ impl TransferEngine {
                     events.push(event);
                 }
 
-                // 5. 如果选手想离开但战队不想放人，记录矛盾事件
+                // 5. 如果选手想离开但战队不想放人，根据忠诚度+满意度决定是否强制挂牌
                 if player_eval.wants_to_leave && !player_eval.should_list {
-                    let event = self.record_event(
-                        pool, window_id, 2,
-                        TransferEventType::PlayerRequestTransfer,
-                        EventLevel::from_ability_and_fee(player.ability as u8, 0),
-                        player.id, &player.game_id, player.ability,
-                        Some(team_id), Some(&team_name),
-                        None, None,
-                        0, player.salary, 0,
-                        &format!("{}向{}提出转会申请，原因：{}", player.game_id, team_name, player_eval.leave_reason),
-                    ).await?;
-                    events.push(event);
+                    // 综合分 = (忠诚度 + 满意度) / 2，越低越容易强制挂牌
+                    let combined = (player.loyalty + player.satisfaction) as f64 / 2.0;
+                    // 强制挂牌概率: combined<30 → 90%, 30-50 → 60%, 50-70 → 30%, 70-90 → 10%, >90 → 0%
+                    let force_list_prob = if combined < 30.0 {
+                        0.90
+                    } else if combined < 50.0 {
+                        0.60
+                    } else if combined < 70.0 {
+                        0.30
+                    } else if combined < 90.0 {
+                        0.10
+                    } else {
+                        0.0
+                    };
+
+                    let mut rng = rand::rngs::StdRng::from_entropy();
+                    let roll: f64 = rng.gen();
+
+                    if roll < force_list_prob {
+                        // 强制挂牌：选手坚持要走，战队被迫同意
+                        let listing_price = self.calculate_market_value_simple(player.ability as u8, player.age as u8);
+
+                        sqlx::query(
+                            "INSERT INTO player_listings (player_id, window_id, listed_by_team_id, listing_price, min_accept_price, status) VALUES (?, ?, ?, ?, ?, 'ACTIVE')"
+                        )
+                        .bind(player.id)
+                        .bind(window_id)
+                        .bind(team_id)
+                        .bind(listing_price)
+                        .bind((listing_price as f64 * 0.7) as i64)  // 被迫挂牌，最低接受价更低(70%)
+                        .execute(pool)
+                        .await
+                        .map_err(|e| format!("创建强制挂牌失败: {}", e))?;
+
+                        let event = self.record_event(
+                            pool, window_id, 2,
+                            TransferEventType::PlayerListed,
+                            EventLevel::from_ability_and_fee(player.ability as u8, 0),
+                            player.id, &player.game_id, player.ability,
+                            Some(team_id), Some(&team_name),
+                            None, None,
+                            listing_price, player.salary, 0,
+                            &format!("{}坚持要求离队，{}被迫同意挂牌，标价{}万", player.game_id, team_name, listing_price / 10000),
+                        ).await?;
+                        events.push(event);
+                    } else {
+                        // 战队拒绝放人
+                        let event = self.record_event(
+                            pool, window_id, 2,
+                            TransferEventType::PlayerRequestTransfer,
+                            EventLevel::from_ability_and_fee(player.ability as u8, 0),
+                            player.id, &player.game_id, player.ability,
+                            Some(team_id), Some(&team_name),
+                            None, None,
+                            0, player.salary, 0,
+                            &format!("{}向{}提出转会申请，原因：{}，但战队拒绝放人", player.game_id, team_name, player_eval.leave_reason),
+                        ).await?;
+                        events.push(event);
+                    }
                 }
             }
         }
