@@ -154,9 +154,9 @@
         </el-table-column>
 
         <!-- 当前薪资 -->
-        <el-table-column prop="salary" label="薪资(万)" width="100" sortable align="center">
+        <el-table-column prop="salary" label="薪资" width="120" sortable align="center">
           <template #default="{ row }">
-            <span class="salary-value">{{ row.salary }}</span>
+            <span class="salary-value">{{ formatSalary(row.salary, false) }}</span>
           </template>
         </el-table-column>
 
@@ -206,6 +206,7 @@ import {
   transferWindowApi,
   type PlayerStayEvaluationInfo,
 } from '@/api/tauri'
+import { formatSalary } from '@/utils/format'
 
 // 状态
 const loading = ref(false)

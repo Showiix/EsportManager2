@@ -5,10 +5,283 @@
 use rand::Rng;
 use rand::SeedableRng;
 use sqlx::{Pool, Row, Sqlite};
+use std::collections::{HashMap, HashSet};
 
 use crate::models::transfer::*;
 use crate::models::player::Position;
 use crate::models::team::FinancialStatus;
+
+/// 缓存的选手信息（避免反复查询 SqliteRow）
+#[derive(Debug, Clone)]
+pub struct CachedPlayer {
+    pub id: i64,
+    pub game_id: String,
+    pub ability: i64,
+    pub potential: i64,
+    pub age: i64,
+    pub salary: i64,
+    pub loyalty: i64,
+    pub satisfaction: i64,
+    pub position: String,
+    pub tag: String,
+    pub team_id: Option<i64>,
+    pub is_starter: bool,
+    pub home_region_id: Option<i64>,
+    pub region_loyalty: i64,
+    pub contract_end_season: Option<i64>,
+    pub status: String,
+}
+
+impl CachedPlayer {
+    fn from_row(row: &sqlx::sqlite::SqliteRow) -> Self {
+        Self {
+            id: row.get("id"),
+            game_id: row.get("game_id"),
+            ability: row.get("ability"),
+            potential: row.try_get("potential").unwrap_or(0),
+            age: row.get("age"),
+            salary: row.try_get("salary").unwrap_or(0),
+            loyalty: row.try_get("loyalty").unwrap_or(70),
+            satisfaction: row.try_get("satisfaction").unwrap_or(70),
+            position: row.try_get("position").unwrap_or_default(),
+            tag: row.try_get("tag").unwrap_or_else(|_| "NORMAL".to_string()),
+            team_id: row.try_get("team_id").ok(),
+            is_starter: row.try_get("is_starter").unwrap_or(false),
+            home_region_id: row.try_get("home_region_id").ok(),
+            region_loyalty: row.try_get("region_loyalty").unwrap_or(70),
+            contract_end_season: row.try_get("contract_end_season").ok(),
+            status: row.try_get("status").unwrap_or_else(|_| "Active".to_string()),
+        }
+    }
+}
+
+/// 转会期间的内存缓存，避免 N+1 查询
+pub struct TransferCache {
+    pub team_names: HashMap<i64, String>,
+    pub team_balances: HashMap<i64, i64>,
+    pub team_region_ids: HashMap<i64, Option<i64>>,
+    pub team_rosters: HashMap<i64, Vec<CachedPlayer>>,
+    pub team_personalities: HashMap<i64, TeamPersonalityConfig>,
+    pub player_recent_honors: HashSet<i64>,
+    pub team_annual_ranks: HashMap<i64, i32>,
+}
+
+impl TransferCache {
+    /// 批量构建缓存（替代数百次单独查询）
+    pub async fn build(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: i64,
+    ) -> Result<Self, String> {
+        // 1. 批量加载所有球队信息
+        let team_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            "SELECT * FROM teams WHERE save_id = ?"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("缓存: 查询球队失败: {}", e))?;
+
+        let mut team_names = HashMap::new();
+        let mut team_balances = HashMap::new();
+        let mut team_region_ids = HashMap::new();
+
+        for row in &team_rows {
+            let id: i64 = row.get("id");
+            let name: String = row.get("name");
+            let balance: i64 = row.get("balance");
+            let region_id: Option<i64> = row.try_get("region_id").ok();
+            team_names.insert(id, name);
+            team_balances.insert(id, balance);
+            team_region_ids.insert(id, region_id);
+        }
+
+        // 2. 批量加载所有活跃选手，按 team_id 分组
+        let player_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            "SELECT * FROM players WHERE save_id = ? AND status = 'Active'"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("缓存: 查询选手失败: {}", e))?;
+
+        let mut team_rosters: HashMap<i64, Vec<CachedPlayer>> = HashMap::new();
+        for row in &player_rows {
+            let player = CachedPlayer::from_row(row);
+            if let Some(tid) = player.team_id {
+                team_rosters.entry(tid).or_default().push(player);
+            }
+        }
+
+        // 3. 批量加载所有球队AI性格配置
+        let personality_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            "SELECT * FROM team_personality_configs WHERE save_id = ?"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let mut team_personalities = HashMap::new();
+        for r in &personality_rows {
+            let config = TeamPersonalityConfig {
+                id: r.get("id"),
+                team_id: r.get("team_id"),
+                save_id: r.get("save_id"),
+                personality: r.try_get("personality").unwrap_or_else(|_| "BALANCED".to_string()),
+                short_term_focus: r.try_get("short_term_focus").unwrap_or(0.5),
+                long_term_focus: r.try_get("long_term_focus").unwrap_or(0.5),
+                risk_tolerance: r.try_get("risk_tolerance").unwrap_or(0.5),
+                youth_preference: r.try_get("youth_preference").unwrap_or(0.5),
+                star_chasing: r.try_get("star_chasing").unwrap_or(0.5),
+                bargain_hunting: r.try_get("bargain_hunting").unwrap_or(0.5),
+                updated_at: r.try_get("updated_at").unwrap_or_default(),
+            };
+            team_personalities.insert(config.team_id, config);
+        }
+
+        // 4. 批量加载近2赛季有荣誉的选手ID
+        let honor_rows: Vec<(i64,)> = sqlx::query_as(
+            r#"SELECT DISTINCT player_id FROM honors
+               WHERE save_id = ? AND player_id IS NOT NULL
+               AND season_id >= ?
+               AND honor_type IN ('CHAMPION', 'MVP', 'FINALS_MVP', 'YEARLY_MVP', 'YEARLY_TOP20')"#
+        )
+        .bind(save_id)
+        .bind(season_id - 1)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let player_recent_honors: HashSet<i64> = honor_rows.into_iter().map(|(id,)| id).collect();
+
+        // 5. 批量计算所有球队年度积分排名（窗口函数）
+        let rank_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            r#"SELECT id, RANK() OVER (ORDER BY annual_points DESC) as rank
+               FROM teams WHERE save_id = ?"#
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let mut team_annual_ranks = HashMap::new();
+        for r in &rank_rows {
+            let id: i64 = r.get("id");
+            let rank: i32 = r.try_get("rank").unwrap_or(99);
+            team_annual_ranks.insert(id, rank);
+        }
+
+        Ok(Self {
+            team_names,
+            team_balances,
+            team_region_ids,
+            team_rosters,
+            team_personalities,
+            player_recent_honors,
+            team_annual_ranks,
+        })
+    }
+
+    /// 获取球队名称
+    pub fn get_team_name(&self, team_id: i64) -> String {
+        self.team_names.get(&team_id).cloned().unwrap_or_default()
+    }
+
+    /// 获取球队阵容
+    pub fn get_roster(&self, team_id: i64) -> Vec<CachedPlayer> {
+        self.team_rosters.get(&team_id).cloned().unwrap_or_default()
+    }
+
+    /// 获取球队AI性格权重
+    pub fn get_weights(&self, team_id: i64) -> AIDecisionWeights {
+        self.team_personalities
+            .get(&team_id)
+            .map(|p| p.get_weights())
+            .unwrap_or_default()
+    }
+
+    /// 检查选手是否有近期荣誉
+    pub fn has_recent_honor(&self, player_id: i64) -> bool {
+        self.player_recent_honors.contains(&player_id)
+    }
+
+    /// 获取球队年度排名
+    pub fn get_team_rank(&self, team_id: i64) -> i32 {
+        self.team_annual_ranks.get(&team_id).copied().unwrap_or(99)
+    }
+
+    /// 转会后更新缓存：将选手从旧队移到新队
+    pub fn transfer_player(&mut self, player_id: i64, from_team_id: Option<i64>, to_team_id: Option<i64>, updates: Option<PlayerCacheUpdate>) {
+        let mut player = None;
+
+        // 从旧队移除
+        if let Some(from_id) = from_team_id {
+            if let Some(roster) = self.team_rosters.get_mut(&from_id) {
+                if let Some(pos) = roster.iter().position(|p| p.id == player_id) {
+                    player = Some(roster.remove(pos));
+                }
+            }
+        }
+
+        // 添加到新队
+        if let Some(to_id) = to_team_id {
+            if let Some(mut p) = player {
+                p.team_id = Some(to_id);
+                if let Some(upd) = updates {
+                    if let Some(s) = upd.salary { p.salary = s; }
+                    if let Some(l) = upd.loyalty { p.loyalty = l; }
+                    if let Some(sat) = upd.satisfaction { p.satisfaction = sat; }
+                    if let Some(ces) = upd.contract_end_season { p.contract_end_season = Some(ces); }
+                }
+                self.team_rosters.entry(to_id).or_default().push(p);
+            }
+        }
+    }
+
+    /// 更新球队余额缓存
+    pub fn update_balance(&mut self, team_id: i64, delta: i64) {
+        if let Some(balance) = self.team_balances.get_mut(&team_id) {
+            *balance += delta;
+        }
+    }
+
+    /// 将选手标记为退役（从阵容中移除）
+    pub fn retire_player(&mut self, player_id: i64, team_id: Option<i64>) {
+        if let Some(tid) = team_id {
+            if let Some(roster) = self.team_rosters.get_mut(&tid) {
+                roster.retain(|p| p.id != player_id);
+            }
+        }
+    }
+
+    /// 更新选手属性（年龄/能力）
+    pub fn update_player_stats(&mut self, player_id: i64, team_id: Option<i64>, new_age: i64, new_ability: i64) {
+        if let Some(tid) = team_id {
+            if let Some(roster) = self.team_rosters.get_mut(&tid) {
+                if let Some(p) = roster.iter_mut().find(|p| p.id == player_id) {
+                    p.age = new_age;
+                    p.ability = new_ability;
+                }
+            }
+        }
+    }
+
+    /// 释放选手（从队伍移除，变为自由球员）
+    pub fn release_player(&mut self, player_id: i64, team_id: i64) {
+        if let Some(roster) = self.team_rosters.get_mut(&team_id) {
+            roster.retain(|p| p.id != player_id);
+        }
+    }
+}
+
+/// 选手缓存更新参数
+pub struct PlayerCacheUpdate {
+    pub salary: Option<i64>,
+    pub loyalty: Option<i64>,
+    pub satisfaction: Option<i64>,
+    pub contract_end_season: Option<i64>,
+}
 
 /// 转会引擎
 pub struct TransferEngine {
@@ -72,14 +345,17 @@ impl TransferEngine {
         let window = self.get_window(pool, window_id).await?;
         let save_id = &window.save_id;
 
+        // 构建缓存（替代每轮数百次单独查询）
+        let mut cache = TransferCache::build(pool, save_id, window.season_id).await?;
+
         let result = match round {
-            1 => self.execute_season_settlement(pool, window_id, save_id, window.season_id).await?,
-            2 => self.execute_bidirectional_evaluation(pool, window_id, save_id, window.season_id).await?,
-            3 => self.execute_renewal_negotiations(pool, window_id, save_id, window.season_id).await?,
-            4 => self.execute_free_agent_bidding(pool, window_id, save_id, window.season_id).await?,
-            5 => self.execute_contracted_player_transfer(pool, window_id, save_id, window.season_id).await?,
-            6 => self.execute_financial_adjustment(pool, window_id, save_id, window.season_id).await?,
-            7 => self.execute_final_remedy(pool, window_id, save_id, window.season_id).await?,
+            1 => self.execute_season_settlement(pool, window_id, save_id, window.season_id, &mut cache).await?,
+            2 => self.execute_bidirectional_evaluation(pool, window_id, save_id, window.season_id, &mut cache).await?,
+            3 => self.execute_renewal_negotiations(pool, window_id, save_id, window.season_id, &mut cache).await?,
+            4 => self.execute_free_agent_bidding(pool, window_id, save_id, window.season_id, &mut cache).await?,
+            5 => self.execute_contracted_player_transfer(pool, window_id, save_id, window.season_id, &mut cache).await?,
+            6 => self.execute_financial_adjustment(pool, window_id, save_id, window.season_id, &mut cache).await?,
+            7 => self.execute_final_remedy(pool, window_id, save_id, window.season_id, &mut cache).await?,
             8 => self.execute_draft_pick_auction_round(pool, window_id, save_id, window.season_id).await?,
             _ => return Err(format!("无效轮次: {}", round)),
         };
@@ -137,20 +413,23 @@ impl TransferEngine {
         window_id: i64,
         save_id: &str,
         _season_id: i64,
+        cache: &mut TransferCache,
     ) -> Result<RoundResult, String> {
         let mut events = Vec::new();
 
-        // 获取所有活跃选手
-        let players = self.get_active_players(pool, save_id).await?;
+        // 使用缓存获取所有活跃选手（遍历所有队伍阵容）
+        let all_players: Vec<CachedPlayer> = cache.team_rosters.values()
+            .flat_map(|roster| roster.iter().cloned())
+            .collect();
 
-        for player in &players {
-            let player_id: i64 = player.get("id");
-            let age: i64 = player.get("age");
-            let ability: i64 = player.get("ability");
-            let potential: i64 = player.get("potential");
-            let tag: String = player.get("tag");
-            let game_id: String = player.get("game_id");
-            let team_id: Option<i64> = player.try_get("team_id").ok();
+        for player in &all_players {
+            let player_id = player.id;
+            let age = player.age;
+            let ability = player.ability;
+            let potential = player.potential;
+            let tag = &player.tag;
+            let game_id = &player.game_id;
+            let team_id = player.team_id;
 
             let new_age = age + 1;
 
@@ -164,13 +443,12 @@ impl TransferEngine {
             let new_ability = if new_age <= 30 && ability < potential {
                 (ability + growth).min(potential).min(100)
             } else if new_age > 30 {
-                // 30岁以上开始衰退
                 (ability - 1).max(50)
             } else {
                 ability
             };
 
-            // 更新选手
+            // 更新选手（数据库）
             sqlx::query(
                 "UPDATE players SET age = ?, ability = ? WHERE id = ? AND save_id = ?"
             )
@@ -182,7 +460,9 @@ impl TransferEngine {
             .await
             .map_err(|e| format!("更新选手年龄/能力失败: {}", e))?;
 
-            // 生成赛季结算事件（显示年龄和能力变化）
+            // 更新缓存
+            cache.update_player_stats(player_id, team_id, new_age, new_ability);
+
             let ability_change = new_ability - ability;
             let change_desc = if ability_change > 0 {
                 format!("+{}", ability_change)
@@ -192,13 +472,13 @@ impl TransferEngine {
                 "不变".to_string()
             };
 
+            // 使用缓存获取队名
             let from_team_name = if let Some(tid) = team_id {
-                self.get_team_name(pool, tid).await.unwrap_or_default()
+                cache.get_team_name(tid)
             } else {
                 "自由球员".to_string()
             };
 
-            // 根据能力变化确定事件等级
             let level = if ability_change >= 3 {
                 EventLevel::A
             } else if ability_change >= 2 {
@@ -211,7 +491,7 @@ impl TransferEngine {
                 pool, window_id, 1,
                 TransferEventType::SeasonSettlement,
                 level,
-                player_id, &game_id, new_ability,
+                player_id, game_id, new_ability,
                 team_id, if from_team_name.is_empty() { None } else { Some(&from_team_name) },
                 team_id, if from_team_name.is_empty() { None } else { Some(&from_team_name) },
                 0, 0, 0,
@@ -230,17 +510,14 @@ impl TransferEngine {
                 .await
                 .map_err(|e| format!("更新退役状态失败: {}", e))?;
 
-                let from_team_name = if let Some(tid) = team_id {
-                    self.get_team_name(pool, tid).await.unwrap_or_default()
-                } else {
-                    String::new()
-                };
+                // 更新缓存
+                cache.retire_player(player_id, team_id);
 
                 let event = self.record_event(
                     pool, window_id, 1,
                     TransferEventType::PlayerRetirement,
                     EventLevel::from_ability_and_fee(new_ability as u8, 0),
-                    player_id, &game_id, new_ability as i64,
+                    player_id, game_id, new_ability as i64,
                     team_id, if from_team_name.is_empty() { None } else { Some(&from_team_name) },
                     None, None,
                     0, 0, 0,
@@ -248,11 +525,9 @@ impl TransferEngine {
                 ).await?;
                 events.push(event);
             }
-
-            // 合同年限减少（通过 contract_end_season 管理）
         }
 
-        // 更新所有球队战力
+        // 更新所有球队战力（单条SQL优化）
         self.recalculate_team_powers(pool, save_id).await?;
 
         Ok(RoundResult {
