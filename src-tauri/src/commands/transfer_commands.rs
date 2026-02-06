@@ -61,7 +61,7 @@ pub async fn start_transfer_window(
 
     // 检查是否已有转会期（任何状态）
     let existing = sqlx::query(
-        "SELECT id, status, current_round FROM transfer_windows WHERE save_id = ? AND season_id = ?"
+        "SELECT id, status, current_round FROM transfer_windows WHERE save_id = ? AND season_id = ? ORDER BY id DESC LIMIT 1"
     )
     .bind(&save_id)
     .bind(current_season)
@@ -262,6 +262,59 @@ pub async fn get_transfer_window_status(
             }))
         }
         None => Ok(CommandResult::err("转会期不存在")),
+    }
+}
+
+/// 查询当前赛季的转会窗口（纯查询，不创建）
+#[tauri::command]
+pub async fn get_current_transfer_window(
+    state: State<'_, AppState>,
+) -> Result<CommandResult<Option<TransferWindowResponse>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取当前赛季
+    let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+        .bind(&save_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let current_season: i64 = save_row.get("current_season");
+
+    // 查找当前赛季的转会窗口（取最新一条）
+    let row = sqlx::query(
+        "SELECT id, season_id, status, current_round FROM transfer_windows WHERE save_id = ? AND season_id = ? ORDER BY id DESC LIMIT 1"
+    )
+    .bind(&save_id)
+    .bind(current_season)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match row {
+        Some(r) => {
+            Ok(CommandResult::ok(Some(TransferWindowResponse {
+                window_id: r.get("id"),
+                season_id: r.get("season_id"),
+                status: r.get("status"),
+                current_round: r.get("current_round"),
+            })))
+        }
+        None => Ok(CommandResult::ok(None)),
     }
 }
 
@@ -1026,23 +1079,23 @@ pub async fn get_transfer_market_listings(
         .map_err(|e| e.to_string())?;
     let current_season: i64 = save_row.get("current_season");
 
-    // 查找最近的转会窗口
+    // 查找最近的转会窗口（优先当前赛季，否则取最新一个）
     let window_row = sqlx::query(
-        "SELECT id, status, current_round FROM transfer_windows WHERE save_id = ? AND season_id = ? ORDER BY id DESC LIMIT 1"
+        "SELECT id, season_id, status, current_round FROM transfer_windows WHERE save_id = ? ORDER BY season_id DESC, id DESC LIMIT 1"
     )
     .bind(&save_id)
-    .bind(current_season)
     .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
-    let (window_id, window_status, current_round) = match &window_row {
+    let (window_id, window_season, window_status, current_round) = match &window_row {
         Some(row) => (
             Some(row.get::<i64, _>("id")),
+            row.get::<i64, _>("season_id"),
             Some(row.get::<String, _>("status")),
             Some(row.get::<i64, _>("current_round")),
         ),
-        None => (None, None, None),
+        None => (None, current_season, None, None),
     };
 
     // 查询挂牌选手
@@ -1152,7 +1205,7 @@ pub async fn get_transfer_market_listings(
         window_status,
         window_id,
         current_round,
-        season_id: current_season,
+        season_id: window_season,
     }))
 }
 

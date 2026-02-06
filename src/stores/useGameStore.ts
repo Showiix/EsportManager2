@@ -7,6 +7,7 @@ import { ref, computed } from 'vue'
 import { saveApi, type SaveInfo, type GameState } from '@/api/tauri'
 import { usePlayerStore } from './usePlayerStore'
 import { useMatchDetailStore } from './useMatchDetailStore'
+import { useTransferWindowStore } from './useTransferWindowStore'
 import { createLogger } from '@/utils/logger'
 import { handleError } from '@/utils/errors'
 
@@ -181,8 +182,10 @@ export const useGameStore = defineStore('game', () => {
       // 清除旧存档的缓存数据
       const playerStore = usePlayerStore()
       const matchDetailStore = useMatchDetailStore()
+      const transferWindowStore = useTransferWindowStore()
       playerStore.clearAll()
       matchDetailStore.clearAll()
+      transferWindowStore.clearState()
       logger.debug('已清除旧存档缓存')
 
       currentSave.value = await logger.timed('加载存档', () => saveApi.loadSave(saveId))

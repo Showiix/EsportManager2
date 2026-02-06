@@ -365,6 +365,7 @@ impl TransferEngine {
         sqlx::query("UPDATE transfer_windows SET current_round = ?, status = ? WHERE id = ?")
             .bind(round)
             .bind(new_status)
+            .bind(window_id)
             .execute(pool)
             .await
             .map_err(|e| format!("更新转会期状态失败: {}", e))?;

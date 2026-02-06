@@ -2986,6 +2986,10 @@ export const transferWindowApi = {
   getTransferWindowStatus: (windowId: number) =>
     invokeCommand<TransferWindowResponse>('get_transfer_window_status', { windowId }),
 
+  // 查询当前赛季的转会窗口（纯查询，不创建）
+  getCurrentTransferWindow: () =>
+    invokeCommand<TransferWindowResponse | null>('get_current_transfer_window'),
+
   // 获取球队AI性格
   getTeamPersonality: (teamId: number) =>
     invokeCommand<TeamPersonalityConfig | null>('get_team_personality', { teamId }),

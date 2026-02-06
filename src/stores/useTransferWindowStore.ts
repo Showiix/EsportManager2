@@ -174,7 +174,7 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
     currentRegionCode.value = regionCode
   }
 
-  /** 初始化转会期（页面加载时恢复状态） */
+  /** 初始化转会期（页面加载时恢复状态，纯查询不创建） */
   async function initTransferWindow() {
     // 如果已经有状态，不需要重新初始化
     if (windowInfo.value) {
@@ -185,8 +185,14 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
     error.value = null
 
     try {
-      // 调用 start_transfer_window，它会返回已存在的转会期
-      const response = await transferWindowApi.startTransferWindow()
+      // 纯查询当前赛季是否有转会窗口（不会创建新的）
+      const response = await transferWindowApi.getCurrentTransferWindow()
+
+      if (!response) {
+        // 当前赛季没有转会窗口
+        return null
+      }
+
       windowInfo.value = response
 
       // 如果转会期已经在进行中或已完成，加载已有的事件

@@ -87,6 +87,7 @@ use commands::{
     get_player_listing_evaluations, get_player_stay_evaluations,
     clear_evaluation_data,
     get_transfer_market_listings,
+    get_current_transfer_window,
     // 日志系统命令
     log_frontend_event, log_frontend_error, get_log_files, read_log_file, cleanup_logs,
     // 性能监控命令
@@ -321,6 +322,7 @@ pub fn run() {
             get_player_stay_evaluations,
             clear_evaluation_data,
             get_transfer_market_listings,
+            get_current_transfer_window,
             // 日志系统命令
             log_frontend_event,
             log_frontend_error,
