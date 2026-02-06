@@ -638,6 +638,26 @@ export interface DraftPick {
   player: DraftPlayer
 }
 
+export interface DraftResultItem {
+  pick_number: number
+  team_id: number
+  team_name: string
+  player_id: number
+  player_name: string
+  position: string
+  ability: number
+  potential: number
+}
+
+export interface DraftRegionStatus {
+  status: 'not_started' | 'roster_drawn' | 'lottery_done' | 'completed'
+  draft_players: DraftPlayer[]
+  draft_results: DraftResultItem[]
+  draft_orders: DraftOrder[]
+  total_players: number
+  picked_count: number
+}
+
 export interface DraftPoolPlayer {
   id: number
   game_id: string
@@ -704,6 +724,10 @@ export const draftApi = {
 
   deleteDraftPoolPlayers: (regionId: number, playerIds?: number[]) =>
     invokeCommand<number>('delete_draft_pool_players', { regionId, playerIds }),
+
+  // 选秀状态查询
+  getDraftRegionStatus: (regionId: number) =>
+    invokeCommand<DraftRegionStatus>('get_draft_region_status', { regionId }),
 }
 
 // ========================================

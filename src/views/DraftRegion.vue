@@ -501,58 +501,56 @@ const restoreDraftState = async () => {
     const regionId = await getRegionId(selectedRegion.value)
     currentRegionId.value = regionId
 
-    // 1. 尝试加载已有的选秀名单
-    const players = await draftApi.getAvailableDraftPlayers(regionId)
-    if (players && players.length > 0) {
-      draftPool.value = players.map((p, idx) => ({
-        rank: idx + 1,
-        title: idx === 0 ? '状元' : idx === 1 ? '榜眼' : idx === 2 ? '探花' : `第${idx + 1}顺位`,
-        gameId: p.game_id,
-        ability: p.ability,
-        potential: p.potential,
-        tag: p.tag,
-        position: p.position,
-      }))
-      hasDraftRoster.value = true
+    const status = await draftApi.getDraftRegionStatus(regionId)
 
-      // 2. 尝试加载已有的抽签结果
-      const draftOrder = await draftApi.getDraftOrder(regionId)
-      if (draftOrder && draftOrder.length > 0) {
-        backendLotteryCache.value = draftOrder
-
-        // 2a. 构建抽签展示（original_team_id → 原始队伍）
-        draftOrder.forEach((order) => {
-          const matchId = order.original_team_id ?? order.team_id
-          const team = lotteryResults.value.find(t => t.teamId === matchId)
-          if (team) {
-            team.pickOrder = order.draft_position
-          }
-        })
-
-        // 2b. 构建分配列表（team_id → 拍卖后的实际拥有者）
-        const allPicked = players.every(p => p.is_picked)
-        assignmentList.value = draftOrder
-          .sort((a, b) => a.draft_position - b.draft_position)
-          .map((order) => ({
-            pickOrder: order.draft_position,
-            teamId: order.team_id,
-            teamName: order.team_name,
-            assigned: allPicked,
-          }))
-
-        if (allPicked) {
-          // 选秀已完成 → 步骤 5
-          currentStep.value = 5
-        } else {
-          // 抽签完成，进入拍卖或分配步骤
-          currentStep.value = 2
-        }
-      } else {
-        // 有选秀名单但没抽签 → 步骤 1
-        currentStep.value = 1
-      }
+    if (status.status === 'not_started') {
+      currentStep.value = 0
+      return
     }
-    // 没有选秀名单 → 步骤 0（默认）
+
+    // 有选秀名单 → 构建 draftPool（包含已选和未选的全部球员）
+    draftPool.value = status.draft_players.map((p, idx) => ({
+      rank: idx + 1,
+      title: idx === 0 ? '状元' : idx === 1 ? '榜眼' : idx === 2 ? '探花' : `第${idx + 1}顺位`,
+      gameId: p.game_id,
+      ability: p.ability,
+      potential: p.potential,
+      tag: p.tag,
+      position: p.position,
+    }))
+    hasDraftRoster.value = true
+
+    if (status.status === 'roster_drawn') {
+      currentStep.value = 1
+      return
+    }
+
+    // lottery_done 或 completed → 恢复抽签结果和分配列表
+    backendLotteryCache.value = status.draft_orders
+
+    status.draft_orders.forEach((order) => {
+      const matchId = order.original_team_id ?? order.team_id
+      const team = lotteryResults.value.find(t => t.teamId === matchId)
+      if (team) {
+        team.pickOrder = order.draft_position
+      }
+    })
+
+    const isCompleted = status.status === 'completed'
+    assignmentList.value = [...status.draft_orders]
+      .sort((a, b) => a.draft_position - b.draft_position)
+      .map((order) => ({
+        pickOrder: order.draft_position,
+        teamId: order.team_id,
+        teamName: order.team_name,
+        assigned: isCompleted,
+      }))
+
+    if (isCompleted) {
+      currentStep.value = 5
+    } else {
+      currentStep.value = 2
+    }
   } catch (e) {
     logger.error('恢复选秀状态失败:', e)
   }

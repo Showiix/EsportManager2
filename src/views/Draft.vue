@@ -185,7 +185,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import {
@@ -201,6 +201,8 @@ import {
 import { useDraftStoreTauri } from '@/stores/useDraftStoreTauri'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
 import { useGameStore } from '@/stores/useGameStore'
+import { draftApi } from '@/api/tauri'
+import type { DraftRegionStatus } from '@/api/tauri'
 
 const router = useRouter()
 const draftStore = useDraftStoreTauri()
@@ -211,20 +213,34 @@ const gameStore = useGameStore()
 const { isLoading } = storeToRefs(draftStore)
 const { regions } = storeToRefs(teamStore)
 
+// 各赛区选秀状态
+const regionStatuses = ref<Record<number, DraftRegionStatus>>({})
+
 // 初始化
 onMounted(async () => {
   // 先刷新游戏状态，确保显示最新的阶段信息
   await gameStore.refreshGameState()
   await teamStore.loadRegions()
+
+  // 并行加载各赛区选秀状态
+  const statusPromises = regions.value.map(async (region) => {
+    try {
+      const status = await draftApi.getDraftRegionStatus(region.id)
+      regionStatuses.value[region.id] = status
+    } catch (e) {
+      // 忽略单个赛区加载失败
+    }
+  })
+  await Promise.all(statusPromises)
 })
 
 // 计算属性 - 带状态的赛区列表
 const regionsWithStatus = computed(() => {
   return regions.value.map(region => ({
     ...region,
-    completed: false, // TODO: 从后端获取选秀完成状态
-    teamCount: 14, // TODO: 从后端获取实际队伍数
-    prospectCount: 14, // TODO: 从后端获取实际新秀数
+    completed: regionStatuses.value[region.id]?.status === 'completed',
+    teamCount: 14,
+    prospectCount: regionStatuses.value[region.id]?.total_players ?? 14,
   }))
 })
 

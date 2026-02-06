@@ -944,6 +944,188 @@ pub async fn update_draft_pool_player(
     Ok(CommandResult::ok(()))
 }
 
+/// 选秀赛区状态（用于持久化恢复）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DraftRegionStatus {
+    pub status: String, // "not_started" | "roster_drawn" | "lottery_done" | "completed"
+    pub draft_players: Vec<DraftPlayerInfo>,
+    pub draft_results: Vec<DraftPickInfo>,
+    pub draft_orders: Vec<DraftOrderInfo>,
+    pub total_players: u32,
+    pub picked_count: u32,
+}
+
+/// 获取选秀赛区状态（含全量数据，用于恢复选秀进度）
+#[tauri::command]
+pub async fn get_draft_region_status(
+    state: State<'_, AppState>,
+    region_id: u64,
+) -> Result<CommandResult<DraftRegionStatus>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+        .bind(&save_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let current_season: i64 = save_row.get("current_season");
+
+    // 1. 查询全部 draft_players（不过滤 is_picked）
+    let player_rows = sqlx::query(
+        r#"
+        SELECT * FROM draft_players
+        WHERE save_id = ? AND season_id = ? AND region_id = ?
+        ORDER BY draft_rank ASC
+        "#,
+    )
+    .bind(&save_id)
+    .bind(current_season)
+    .bind(region_id as i64)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let draft_players: Vec<DraftPlayerInfo> = player_rows
+        .iter()
+        .map(|row| DraftPlayerInfo {
+            id: row.get::<i64, _>("id") as u64,
+            game_id: row.get("game_id"),
+            real_name: row.get("real_name"),
+            nationality: row.get("nationality"),
+            age: row.get::<i64, _>("age") as u8,
+            ability: row.get::<i64, _>("ability") as u8,
+            potential: row.get::<i64, _>("potential") as u8,
+            position: row.get("position"),
+            tag: row.get("tag"),
+            draft_rank: row.get::<i64, _>("draft_rank") as u32,
+            is_picked: row.get::<i64, _>("is_picked") != 0,
+        })
+        .collect();
+
+    let total_players = draft_players.len() as u32;
+    let picked_count = draft_players.iter().filter(|p| p.is_picked).count() as u32;
+
+    // 无 draft_players → not_started
+    if total_players == 0 {
+        return Ok(CommandResult::ok(DraftRegionStatus {
+            status: "not_started".to_string(),
+            draft_players: vec![],
+            draft_results: vec![],
+            draft_orders: vec![],
+            total_players: 0,
+            picked_count: 0,
+        }));
+    }
+
+    // 2. 查询 draft_orders
+    let order_rows = sqlx::query(
+        r#"
+        SELECT do.team_id, do.original_team_id, do.summer_rank, do.draft_position, do.lottery_result, t.name as team_name
+        FROM draft_orders do
+        JOIN teams t ON do.team_id = t.id
+        WHERE do.save_id = ? AND do.season_id = ? AND do.region_id = ?
+        ORDER BY do.draft_position ASC
+        "#,
+    )
+    .bind(&save_id)
+    .bind(current_season)
+    .bind(region_id as i64)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let draft_orders: Vec<DraftOrderInfo> = order_rows
+        .iter()
+        .map(|row| {
+            let original_team_id: Option<i64> = row.get("original_team_id");
+            DraftOrderInfo {
+                team_id: row.get::<i64, _>("team_id") as u64,
+                team_name: row.get("team_name"),
+                original_team_id: original_team_id.map(|id| id as u64),
+                summer_rank: row.get::<i64, _>("summer_rank") as u32,
+                draft_position: row.get::<i64, _>("draft_position") as u32,
+                lottery_result: row.get("lottery_result"),
+            }
+        })
+        .collect();
+
+    // 有 draft_players 但无 draft_orders → roster_drawn
+    if draft_orders.is_empty() {
+        return Ok(CommandResult::ok(DraftRegionStatus {
+            status: "roster_drawn".to_string(),
+            draft_players,
+            draft_results: vec![],
+            draft_orders: vec![],
+            total_players,
+            picked_count,
+        }));
+    }
+
+    // 3. 查询 draft_results
+    let result_rows = sqlx::query(
+        r#"
+        SELECT dr.pick_number, dr.team_id, t.name as team_name,
+               dr.player_id, dp.game_id as player_name, dp.position, dp.ability, dp.potential
+        FROM draft_results dr
+        JOIN teams t ON dr.team_id = t.id
+        JOIN draft_players dp ON dr.draft_player_id = dp.id
+        WHERE dr.save_id = ? AND dr.season_id = ? AND dr.region_id = ?
+        ORDER BY dr.pick_number ASC
+        "#,
+    )
+    .bind(&save_id)
+    .bind(current_season)
+    .bind(region_id as i64)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let draft_results: Vec<DraftPickInfo> = result_rows
+        .iter()
+        .map(|row| DraftPickInfo {
+            pick_number: row.get::<i64, _>("pick_number") as u32,
+            team_id: row.get::<i64, _>("team_id") as u64,
+            team_name: row.get("team_name"),
+            player_id: row.get::<i64, _>("player_id") as u64,
+            player_name: row.get("player_name"),
+            position: row.get("position"),
+            ability: row.get::<i64, _>("ability") as u8,
+            potential: row.get::<i64, _>("potential") as u8,
+        })
+        .collect();
+
+    // 推断状态
+    let status = if picked_count >= total_players {
+        "completed".to_string()
+    } else {
+        "lottery_done".to_string()
+    };
+
+    Ok(CommandResult::ok(DraftRegionStatus {
+        status,
+        draft_players,
+        draft_results,
+        draft_orders,
+        total_players,
+        picked_count,
+    }))
+}
+
 /// 删除选秀池选手（支持单个/批量/清空）
 #[tauri::command]
 pub async fn delete_draft_pool_players(
