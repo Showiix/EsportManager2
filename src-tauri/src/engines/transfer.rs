@@ -608,7 +608,7 @@ impl TransferEngine {
                     .map_err(|e| format!("续约更新失败: {}", e))?;
 
                     let event = self.record_event(
-                        pool, window_id, 2,
+                        pool, window_id, 3,
                         TransferEventType::ContractRenewal,
                         EventLevel::from_ability_and_fee(ability as u8, 0),
                         player_id, &game_id, ability,
@@ -637,7 +637,7 @@ impl TransferEngine {
                 cache.release_player(player_id, team_id);
 
                 let event = self.record_event(
-                    pool, window_id, 2,
+                    pool, window_id, 3,
                     TransferEventType::ContractTermination,
                     EventLevel::from_ability_and_fee(ability as u8, 0),
                     player_id, &game_id, ability,
@@ -651,7 +651,7 @@ impl TransferEngine {
         }
 
         Ok(RoundResult {
-            round: 2,
+            round: 3,
             round_name: "续约谈判".to_string(),
             events,
             summary: "已完成续约谈判：处理到期合同选手".to_string(),

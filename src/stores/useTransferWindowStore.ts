@@ -241,7 +241,7 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
       )
 
       // 更新状态
-      windowInfo.value.current_round = response.round
+      windowInfo.value.current_round = nextRound
       if (response.next_round === null) {
         windowInfo.value.status = 'COMPLETED'
       }
