@@ -44,6 +44,7 @@ const menuItems: MenuItem[] = [
       { name: '转会挂牌市场', path: '/transfer/market-listings', icon: 'list' },
       { name: '战队评估中心', path: '/transfer/team-evaluation', icon: 'chart' },
       { name: '选手评估中心', path: '/transfer/player-evaluation', icon: 'user' },
+      { name: '竞价分析', path: '/transfer/bid-analysis', icon: 'chart' },
     ]
   },
   { name: '积分排名', path: '/rankings', icon: 'chart' },

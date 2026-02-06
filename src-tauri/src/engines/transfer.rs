@@ -1438,7 +1438,16 @@ impl TransferEngine {
                     continue;
                 }
 
-                let salary_multiplier = if weights.star_chasing > 0.7 { 1.1 } else if weights.bargain_hunting > 0.7 { 0.85 } else { 1.0 };
+                let salary_multiplier = {
+                    let base_mult = if weights.star_chasing > 0.7 { 1.15 }
+                        else if weights.star_chasing > 0.4 { 1.05 }
+                        else if weights.bargain_hunting > 0.7 { 0.82 }
+                        else if weights.bargain_hunting > 0.4 { 0.90 }
+                        else { 0.95 };
+                    // 加入 ±8% 随机波动
+                    let random_factor = 0.92 + rng.gen::<f64>() * 0.16;
+                    base_mult * random_factor
+                };
                 let offered_salary = (expected_salary as f64 * salary_multiplier) as i64;
                 let contract_years = if age <= 24 && weights.long_term_focus > 0.5 { 3 } else if age <= 28 { 2 } else { 1 };
                 let target_region_id = cache.team_region_ids.get(&team_id).copied().flatten();
@@ -1695,7 +1704,18 @@ impl TransferEngine {
                 }
 
                 let team_name = cache.get_team_name(team_id);
-                let expected_salary = self.calculate_expected_salary(ability as u8, age as u8);
+                let base_salary = self.calculate_expected_salary(ability as u8, age as u8);
+                // 根据球队AI性格和随机波动调整报价薪资
+                let salary_multiplier = {
+                    let base_mult = if weights.star_chasing > 0.7 { 1.15 }
+                        else if weights.star_chasing > 0.4 { 1.05 }
+                        else if weights.bargain_hunting > 0.7 { 0.82 }
+                        else if weights.bargain_hunting > 0.4 { 0.90 }
+                        else { 0.95 };
+                    let random_factor = 0.92 + rng.gen::<f64>() * 0.16;
+                    base_mult * random_factor
+                };
+                let expected_salary = (base_salary as f64 * salary_multiplier) as i64;
                 let contract_years = if age <= 24 { 3 } else if age <= 28 { 2 } else { 1 };
                 let target_region_id = cache.team_region_ids.get(&team_id).copied().flatten();
 

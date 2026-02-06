@@ -89,6 +89,7 @@
             <el-menu-item index="/transfer/market-listings" :disabled="isMenuDisabled('/transfer/market-listings')">📋 转会挂牌市场</el-menu-item>
             <el-menu-item index="/transfer/team-evaluation" :disabled="isMenuDisabled('/transfer/team-evaluation')">📋 战队评估中心</el-menu-item>
             <el-menu-item index="/transfer/player-evaluation" :disabled="isMenuDisabled('/transfer/player-evaluation')">👥 选手评估中心</el-menu-item>
+            <el-menu-item index="/transfer/bid-analysis" :disabled="isMenuDisabled('/transfer/bid-analysis')">📈 竞价分析</el-menu-item>
           </el-sub-menu>
 
           <el-menu-item index="/rankings" :disabled="isMenuDisabled('/rankings')">
