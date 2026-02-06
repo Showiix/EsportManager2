@@ -687,3 +687,26 @@ pub struct BidOverview {
     pub avg_bids_per_player: f64,
     pub player_analyses: Vec<PlayerBidAnalysis>,
 }
+
+// ============================================
+// 选手合同历史
+// ============================================
+
+/// 选手合同记录
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerContract {
+    pub id: i64,
+    pub save_id: String,
+    pub player_id: i64,
+    pub team_id: i64,
+    pub contract_type: String,      // INITIAL / RENEWAL / FREE_AGENT / TRANSFER / EMERGENCY / DRAFT
+    pub total_salary: i64,          // 总合同薪资（元）
+    pub annual_salary: i64,         // 年薪 = total_salary / contract_years（元）
+    pub contract_years: i64,        // 合同总年数
+    pub start_season: i64,          // 签约赛季
+    pub end_season: i64,            // 合同结束赛季
+    pub transfer_fee: i64,          // 转会费（元，自由球员/续约为0）
+    pub signing_bonus: i64,         // 签约奖金（元）
+    pub is_active: bool,            // 是否为当前生效合同
+    pub created_at: String,
+}

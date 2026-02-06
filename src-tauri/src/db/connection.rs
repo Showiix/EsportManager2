@@ -252,6 +252,9 @@ impl DatabaseManager {
         // 迁移9: 创建转会竞价记录表
         self.run_transfer_bids_migration(pool).await?;
 
+        // 迁移10: 创建选手合同历史表
+        self.run_player_contracts_migration(pool).await?;
+
         Ok(())
     }
 
@@ -1519,6 +1522,92 @@ impl DatabaseManager {
                 .map_err(|e| DatabaseError::Migration(e.to_string()))?;
 
             log::info!("✅ 转会竞价记录表创建成功");
+        }
+
+        Ok(())
+    }
+
+    /// 迁移10: 创建选手合同历史表
+    async fn run_player_contracts_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        let tables: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='player_contracts'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if tables.is_empty() {
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS player_contracts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    player_id INTEGER NOT NULL,
+                    team_id INTEGER NOT NULL,
+                    contract_type TEXT NOT NULL DEFAULT 'INITIAL',
+                    total_salary INTEGER NOT NULL DEFAULT 0,
+                    annual_salary INTEGER NOT NULL DEFAULT 0,
+                    contract_years INTEGER NOT NULL DEFAULT 1,
+                    start_season INTEGER NOT NULL,
+                    end_season INTEGER NOT NULL,
+                    transfer_fee INTEGER NOT NULL DEFAULT 0,
+                    signing_bonus INTEGER NOT NULL DEFAULT 0,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    FOREIGN KEY (player_id) REFERENCES players(id),
+                    FOREIGN KEY (team_id) REFERENCES teams(id)
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_contracts_save_player ON player_contracts(save_id, player_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_contracts_save_team ON player_contracts(save_id, team_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_contracts_active ON player_contracts(is_active)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            // 回填初始数据（用 join_season 估算合同总年数，比剩余年数更准确）
+            sqlx::query(r#"
+                INSERT INTO player_contracts (save_id, player_id, team_id, contract_type, total_salary, annual_salary, contract_years, start_season, end_season, is_active)
+                SELECT
+                    p.save_id,
+                    p.id,
+                    p.team_id,
+                    'INITIAL',
+                    p.salary,
+                    CASE
+                        WHEN p.contract_end_season - COALESCE(p.join_season, s.current_season) > 0
+                        THEN p.salary / (p.contract_end_season - COALESCE(p.join_season, s.current_season))
+                        ELSE p.salary
+                    END,
+                    CASE
+                        WHEN p.contract_end_season - COALESCE(p.join_season, s.current_season) > 0
+                        THEN p.contract_end_season - COALESCE(p.join_season, s.current_season)
+                        ELSE 1
+                    END,
+                    COALESCE(p.join_season, s.current_season),
+                    p.contract_end_season,
+                    1
+                FROM players p
+                JOIN saves s ON p.save_id = s.id
+                WHERE p.status = 'Active' AND p.team_id IS NOT NULL
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            log::info!("✅ 选手合同历史表创建成功");
         }
 
         Ok(())

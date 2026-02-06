@@ -509,6 +509,22 @@ pub async fn make_draft_pick(
     .await
     .map_err(|e| e.to_string())?;
 
+    // 记录选秀合同历史
+    sqlx::query(
+        r#"INSERT INTO player_contracts (save_id, player_id, team_id, contract_type, total_salary, annual_salary, contract_years, start_season, end_season, is_active)
+           VALUES (?, ?, ?, 'DRAFT', ?, ?, 2, ?, ?, 1)"#
+    )
+    .bind(&save_id)
+    .bind(new_player_id)
+    .bind(team_id as i64)
+    .bind(20i64)   // total_salary = 20
+    .bind(10i64)   // annual_salary = 20 / 2 = 10
+    .bind(current_season)
+    .bind(current_season + 2)
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("记录选秀合同失败: {}", e))?;
+
     // 获取队伍名称
     let team_row = sqlx::query("SELECT name FROM teams WHERE id = ?")
         .bind(team_id as i64)
