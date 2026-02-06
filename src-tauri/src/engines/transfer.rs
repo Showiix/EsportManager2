@@ -1463,20 +1463,59 @@ impl TransferEngine {
             // 按匹配度排序
             offers.sort_by(|a, b| b.match_score.partial_cmp(&a.match_score).unwrap_or(std::cmp::Ordering::Equal));
 
-            // 球员选择报价
-            let mut best_offer: Option<&TransferOffer> = None;
-            for offer in &offers {
+            // 对所有 offers 计算 willingness，收集竞价数据
+            struct BidRecord {
+                offer_idx: usize,
+                willingness: f64,
+                team_name: String,
+                target_region_id: Option<i64>,
+            }
+            let mut bid_records: Vec<BidRecord> = Vec::new();
+
+            for (idx, offer) in offers.iter().enumerate() {
                 let willingness = self.calculate_willingness(
                     ability as u8, loyalty as u8, age as u8,
                     offer.offered_salary, expected_salary,
                     home_region_id, offer.target_region_id, region_loyalty,
                     &mut rng,
                 );
-                if willingness >= 40.0 {
-                    best_offer = Some(offer);
-                    break;
-                }
+                let team_name = cache.get_team_name(offer.team_id);
+                bid_records.push(BidRecord {
+                    offer_idx: idx,
+                    willingness,
+                    team_name,
+                    target_region_id: offer.target_region_id,
+                });
             }
+
+            // 选出最佳报价：match_score 最高（已排序）且 willingness >= 40
+            let winner_idx = bid_records.iter()
+                .find(|r| r.willingness >= 40.0)
+                .map(|r| r.offer_idx);
+
+            // 写入所有竞价记录
+            for record in &bid_records {
+                let offer = &offers[record.offer_idx];
+                let is_winner = Some(record.offer_idx) == winner_idx;
+                let reject_reason = if is_winner {
+                    None
+                } else if record.willingness < 40.0 {
+                    Some("willingness_too_low")
+                } else {
+                    Some("outbid")
+                };
+                let _ = Self::insert_bid(
+                    pool, window_id, 4,
+                    player_id, &game_id, ability, age, &position,
+                    None, None,
+                    offer.team_id, &record.team_name, record.target_region_id,
+                    offer.offered_salary, offer.contract_years, 0, offer.signing_bonus,
+                    offer.match_score, record.willingness, is_winner, reject_reason,
+                ).await;
+            }
+
+            // 执行签约（如果有赢家）
+            let best_offer = winner_idx.map(|idx| &offers[idx]);
 
             if let Some(offer) = best_offer {
                 let to_team_id = offer.team_id;
@@ -1610,7 +1649,8 @@ impl TransferEngine {
             let home_region_id: Option<i64> = listing.try_get("home_region_id").ok();
             let region_loyalty: i64 = listing.try_get("region_loyalty").unwrap_or(70);
 
-            let mut best_bid: Option<(i64, String, i64, i64, i64, Option<i64>)> = None;
+            let mut all_bids: Vec<(i64, String, i64, i64, i64, Option<i64>, f64)> = Vec::new();
+            // (team_id, team_name, bid_price, expected_salary, contract_years, target_region_id, match_score)
 
             for &team_id in &team_ids {
                 if team_id == from_team_id {
@@ -1659,23 +1699,61 @@ impl TransferEngine {
                 let contract_years = if age <= 24 { 3 } else if age <= 28 { 2 } else { 1 };
                 let target_region_id = cache.team_region_ids.get(&team_id).copied().flatten();
 
-                if best_bid.is_none() || bid_price > best_bid.as_ref().unwrap().2 {
-                    best_bid = Some((team_id, team_name, bid_price, expected_salary, contract_years, target_region_id));
-                }
+                all_bids.push((team_id, team_name, bid_price, expected_salary, contract_years, target_region_id, match_score));
             }
 
-            if let Some((to_team_id, to_team_name, bid_price, new_salary, contract_years, target_region_id)) = best_bid {
-                // 球员意愿检查
+            if all_bids.is_empty() {
+                continue;
+            }
+
+            // 按出价金额降序排列
+            all_bids.sort_by(|a, b| b.2.cmp(&a.2));
+
+            // 对所有竞标计算 willingness
+            struct R5BidRecord {
+                idx: usize,
+                willingness: f64,
+            }
+            let mut bid_records: Vec<R5BidRecord> = Vec::new();
+
+            for (idx, bid) in all_bids.iter().enumerate() {
                 let willingness = self.calculate_willingness(
                     ability as u8, loyalty as u8, age as u8,
-                    new_salary, salary,
-                    home_region_id, target_region_id, region_loyalty,
+                    bid.3, salary,
+                    home_region_id, bid.5, region_loyalty,
                     &mut rng,
                 );
+                bid_records.push(R5BidRecord { idx, willingness });
+            }
 
-                if willingness < 40.0 {
-                    continue;
-                }
+            // 按 bid_price 降序遍历，第一个 willingness >= 40 的中标（允许次高出价中标）
+            let winner_idx = bid_records.iter()
+                .find(|r| r.willingness >= 40.0)
+                .map(|r| r.idx);
+
+            // 写入所有竞价记录
+            for record in &bid_records {
+                let bid = &all_bids[record.idx];
+                let is_winner = Some(record.idx) == winner_idx;
+                let reject_reason = if is_winner {
+                    None
+                } else if record.willingness < 40.0 {
+                    Some("willingness_too_low")
+                } else {
+                    Some("outbid")
+                };
+                let _ = Self::insert_bid(
+                    pool, window_id, 5,
+                    player_id, &game_id, ability, age, &position,
+                    Some(from_team_id), Some(&from_team_name),
+                    bid.0, &bid.1, bid.5,
+                    bid.3, bid.4, bid.2, 0,
+                    bid.6, record.willingness, is_winner, reject_reason,
+                ).await;
+            }
+
+            if let Some(widx) = winner_idx {
+                let (to_team_id, ref to_team_name, bid_price, new_salary, contract_years, _target_region_id, _match_score) = all_bids[widx];
 
                 // 执行转会
                 sqlx::query(
@@ -2471,6 +2549,64 @@ impl TransferEngine {
         ability_score * 0.4 * weights.short_term_focus
             + age_score * 0.3 * weights.youth_preference.max(weights.short_term_focus)
             + finance_score * 0.3
+    }
+
+    /// 写入一条竞价记录到 transfer_bids 表
+    async fn insert_bid(
+        pool: &Pool<Sqlite>,
+        window_id: i64,
+        round: i64,
+        player_id: i64,
+        player_name: &str,
+        ability: i64,
+        age: i64,
+        position: &str,
+        from_team_id: Option<i64>,
+        from_team_name: Option<&str>,
+        bid_team_id: i64,
+        bid_team_name: &str,
+        bid_team_region_id: Option<i64>,
+        offered_salary: i64,
+        contract_years: i64,
+        transfer_fee: i64,
+        signing_bonus: i64,
+        match_score: f64,
+        willingness: f64,
+        is_winner: bool,
+        reject_reason: Option<&str>,
+    ) -> Result<(), String> {
+        sqlx::query(
+            r#"INSERT INTO transfer_bids
+               (window_id, round, player_id, player_name, player_ability, player_age, player_position,
+                from_team_id, from_team_name, bid_team_id, bid_team_name, bid_team_region_id,
+                offered_salary, contract_years, transfer_fee, signing_bonus,
+                match_score, willingness, is_winner, reject_reason)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#
+        )
+        .bind(window_id)
+        .bind(round)
+        .bind(player_id)
+        .bind(player_name)
+        .bind(ability)
+        .bind(age)
+        .bind(position)
+        .bind(from_team_id)
+        .bind(from_team_name)
+        .bind(bid_team_id)
+        .bind(bid_team_name)
+        .bind(bid_team_region_id)
+        .bind(offered_salary)
+        .bind(contract_years)
+        .bind(transfer_fee)
+        .bind(signing_bonus)
+        .bind(match_score)
+        .bind(willingness)
+        .bind(is_winner as i32)
+        .bind(reject_reason)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("写入竞价记录失败: {}", e))?;
+        Ok(())
     }
 
     /// 计算球员转会意愿（0-100）

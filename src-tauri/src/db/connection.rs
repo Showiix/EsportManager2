@@ -249,6 +249,9 @@ impl DatabaseManager {
         // 迁移8: 统一金额单位为元
         self.run_unify_money_to_yuan_migration(pool).await?;
 
+        // 迁移9: 创建转会竞价记录表
+        self.run_transfer_bids_migration(pool).await?;
+
         Ok(())
     }
 
@@ -1455,6 +1458,67 @@ impl DatabaseManager {
                 .execute(pool)
                 .await
                 .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// 迁移: 创建转会竞价记录表（用于竞价分析页面）
+    async fn run_transfer_bids_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        let tables: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='transfer_bids'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if tables.is_empty() {
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS transfer_bids (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    window_id INTEGER NOT NULL,
+                    round INTEGER NOT NULL,
+                    player_id INTEGER NOT NULL,
+                    player_name TEXT NOT NULL,
+                    player_ability INTEGER NOT NULL,
+                    player_age INTEGER NOT NULL,
+                    player_position TEXT,
+                    from_team_id INTEGER,
+                    from_team_name TEXT,
+                    bid_team_id INTEGER NOT NULL,
+                    bid_team_name TEXT NOT NULL,
+                    bid_team_region_id INTEGER,
+                    offered_salary INTEGER NOT NULL,
+                    contract_years INTEGER NOT NULL,
+                    transfer_fee INTEGER NOT NULL DEFAULT 0,
+                    signing_bonus INTEGER NOT NULL DEFAULT 0,
+                    match_score REAL NOT NULL,
+                    willingness REAL NOT NULL,
+                    is_winner INTEGER NOT NULL DEFAULT 0,
+                    reject_reason TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_transfer_bids_window ON transfer_bids(window_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_transfer_bids_round ON transfer_bids(window_id, round)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_transfer_bids_player ON transfer_bids(player_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            log::info!("✅ 转会竞价记录表创建成功");
         }
 
         Ok(())

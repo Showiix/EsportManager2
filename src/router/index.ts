@@ -199,6 +199,12 @@ const router = createRouter({
       meta: { title: '选手评估中心' }
     },
     {
+      path: '/transfer/bid-analysis',
+      name: 'TransferBidAnalysis',
+      component: () => import('@/views/TransferBidAnalysis.vue'),
+      meta: { title: '竞价分析' }
+    },
+    {
       path: '/rankings',
       name: 'Rankings',
       component: () => import('@/views/Rankings.vue'),

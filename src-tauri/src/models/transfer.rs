@@ -609,3 +609,63 @@ pub struct PlayerEvaluation {
     pub should_list: bool,
     pub list_reason: String,
 }
+
+// ============================================
+// 竞价分析
+// ============================================
+
+/// 单条竞价记录
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferBid {
+    pub id: i64,
+    pub window_id: i64,
+    pub round: i64,
+    pub player_id: i64,
+    pub player_name: String,
+    pub player_ability: i64,
+    pub player_age: i64,
+    pub player_position: Option<String>,
+    pub from_team_id: Option<i64>,
+    pub from_team_name: Option<String>,
+    pub bid_team_id: i64,
+    pub bid_team_name: String,
+    pub bid_team_region_id: Option<i64>,
+    pub offered_salary: i64,
+    pub contract_years: i64,
+    pub transfer_fee: i64,
+    pub signing_bonus: i64,
+    pub match_score: f64,
+    pub willingness: f64,
+    pub is_winner: bool,
+    pub reject_reason: Option<String>,
+}
+
+/// 单个选手的竞价分析
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerBidAnalysis {
+    pub player_id: i64,
+    pub player_name: String,
+    pub player_ability: i64,
+    pub player_age: i64,
+    pub player_position: Option<String>,
+    pub from_team_id: Option<i64>,
+    pub from_team_name: Option<String>,
+    pub round: i64,
+    pub total_bids: i64,
+    pub bids: Vec<TransferBid>,
+    pub winner_team_name: Option<String>,
+    pub outcome: String,
+}
+
+/// 竞价总览
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BidOverview {
+    pub window_id: i64,
+    pub round: Option<i64>,
+    pub total_players: i64,
+    pub total_bids: i64,
+    pub successful_signings: i64,
+    pub failed_signings: i64,
+    pub avg_bids_per_player: f64,
+    pub player_analyses: Vec<PlayerBidAnalysis>,
+}

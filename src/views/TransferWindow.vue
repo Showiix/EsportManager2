@@ -168,6 +168,15 @@
         <el-icon><DataAnalysis /></el-icon>
         查看转会报告
       </el-button>
+      <el-button
+        v-if="currentRound >= 5 || isWindowCompleted"
+        type="primary"
+        size="large"
+        @click="goToBidAnalysis"
+      >
+        <el-icon><TrendCharts /></el-icon>
+        竞价分析
+      </el-button>
       <el-button @click="$router.push('/transfer')">
         <el-icon><Back /></el-icon>
         返回
@@ -328,6 +337,7 @@ import {
   Sell,
   Calendar,
   Wallet,
+  TrendCharts,
 } from '@element-plus/icons-vue'
 import { useTransferWindowStore, ROUND_NAMES, EVENT_TYPE_NAMES, EVENT_LEVEL_CONFIG } from '@/stores/useTransferWindowStore'
 import { useGameStore } from '@/stores/useGameStore'
@@ -552,6 +562,19 @@ async function handleFastForward() {
 function goToReport() {
   if (windowInfo.value) {
     router.push(`/transfer/report/${windowInfo.value.window_id}`)
+  }
+}
+
+// 查看竞价分析
+function goToBidAnalysis() {
+  if (windowInfo.value) {
+    router.push({
+      path: '/transfer/bid-analysis',
+      query: {
+        windowId: String(windowInfo.value.window_id),
+        seasonId: String(windowInfo.value.season_id),
+      },
+    })
   }
 }
 

@@ -2892,6 +2892,61 @@ export interface TransferMarketData {
   season_id: number
 }
 
+// ========== 竞价分析类型 ==========
+
+/** 单条竞价记录 */
+export interface TransferBid {
+  id: number
+  window_id: number
+  round: number
+  player_id: number
+  player_name: string
+  player_ability: number
+  player_age: number
+  player_position: string | null
+  from_team_id: number | null
+  from_team_name: string | null
+  bid_team_id: number
+  bid_team_name: string
+  bid_team_region_id: number | null
+  offered_salary: number
+  contract_years: number
+  transfer_fee: number
+  signing_bonus: number
+  match_score: number
+  willingness: number
+  is_winner: boolean
+  reject_reason: string | null
+}
+
+/** 单个选手的竞价分析 */
+export interface PlayerBidAnalysis {
+  player_id: number
+  player_name: string
+  player_ability: number
+  player_age: number
+  player_position: string | null
+  from_team_id: number | null
+  from_team_name: string | null
+  round: number
+  total_bids: number
+  bids: TransferBid[]
+  winner_team_name: string | null
+  outcome: string
+}
+
+/** 竞价总览 */
+export interface BidOverview {
+  window_id: number
+  round: number | null
+  total_players: number
+  total_bids: number
+  successful_signings: number
+  failed_signings: number
+  avg_bids_per_player: number
+  player_analyses: PlayerBidAnalysis[]
+}
+
 // ========== 评估系统类型 ==========
 
 /** 战队赛季评估信息 */
@@ -3027,6 +3082,16 @@ export const transferWindowApi = {
   // 获取转会挂牌市场数据
   getTransferMarketListings: () =>
     invokeCommand<TransferMarketData>('get_transfer_market_listings'),
+
+  // ========== 竞价分析 ==========
+
+  // 获取竞价总览
+  getTransferBidsOverview: (windowId: number, round?: number) =>
+    invokeCommand<BidOverview>('get_transfer_bids_overview', { windowId, round }),
+
+  // 获取单个选手的竞价记录
+  getPlayerBids: (windowId: number, playerId: number) =>
+    invokeCommand<PlayerBidAnalysis>('get_player_bids', { windowId, playerId }),
 }
 
 export default tauriApi
