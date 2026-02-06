@@ -625,7 +625,7 @@ pub async fn get_season_finance_report(
     .unwrap_or(0);
 
     let transfer_income: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(amount), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND transaction_type = 'TransferIncome'"
+        "SELECT COALESCE(SUM(amount), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND transaction_type = 'TransferIn'"
     )
     .bind(&save_id)
     .bind(team_id as i64)
@@ -635,7 +635,7 @@ pub async fn get_season_finance_report(
     .unwrap_or(0);
 
     let transfer_expense: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(ABS(amount)), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND transaction_type = 'TransferExpense'"
+        "SELECT COALESCE(SUM(ABS(amount)), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND transaction_type = 'TransferOut'"
     )
     .bind(&save_id)
     .bind(team_id as i64)

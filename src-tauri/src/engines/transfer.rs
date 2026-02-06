@@ -301,6 +301,34 @@ impl TransferEngine {
         Self::default()
     }
 
+    async fn record_financial_transaction(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: i64,
+        team_id: i64,
+        transaction_type: &str,
+        amount: i64,
+        description: &str,
+        related_player_id: i64,
+    ) -> Result<(), String> {
+        sqlx::query(
+            r#"INSERT INTO financial_transactions (
+                save_id, team_id, season_id, transaction_type, amount, description, related_player_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)"#
+        )
+        .bind(save_id)
+        .bind(team_id)
+        .bind(season_id)
+        .bind(transaction_type)
+        .bind(amount)
+        .bind(description)
+        .bind(related_player_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("记录财务交易失败: {}", e))?;
+        Ok(())
+    }
+
     // ============================================
     // 主流程
     // ============================================
@@ -1474,6 +1502,15 @@ impl TransferEngine {
                     .await
                     .map_err(|e| format!("扣除资金失败: {}", e))?;
 
+                // 记录财务交易：签约奖金支出
+                Self::record_financial_transaction(
+                    pool, save_id, season_id, to_team_id,
+                    "TransferOut",
+                    -(offer.signing_bonus),
+                    &format!("自由球员签约: {}", game_id),
+                    player_id,
+                ).await?;
+
                 // 更新缓存
                 cache.update_balance(to_team_id, -offer.signing_bonus);
                 // 将自由球员添加到目标队伍缓存
@@ -1530,7 +1567,7 @@ impl TransferEngine {
         &self,
         pool: &Pool<Sqlite>,
         window_id: i64,
-        _save_id: &str,
+        save_id: &str,
         season_id: i64,
         cache: &mut TransferCache,
     ) -> Result<RoundResult, String> {
@@ -1666,6 +1703,24 @@ impl TransferEngine {
                     .execute(pool)
                     .await
                     .map_err(|e| format!("卖方收款失败: {}", e))?;
+
+                // 记录财务交易：买方转会费支出
+                Self::record_financial_transaction(
+                    pool, save_id, season_id, to_team_id,
+                    "TransferOut",
+                    -(bid_price),
+                    &format!("转会费支出: 买入{}", game_id),
+                    player_id,
+                ).await?;
+
+                // 记录财务交易：卖方转会费收入
+                Self::record_financial_transaction(
+                    pool, save_id, season_id, from_team_id,
+                    "TransferIn",
+                    bid_price,
+                    &format!("转会费收入: 卖出{}", game_id),
+                    player_id,
+                ).await?;
 
                 // 更新缓存
                 cache.transfer_player(player_id, Some(from_team_id), Some(to_team_id), Some(PlayerCacheUpdate {
