@@ -440,7 +440,9 @@ pub async fn simulate_match_detailed(
     .await
     .map_err(|e| e.to_string())?;
 
-    // 保存小局详情（使用正确的表结构，包含 save_id）
+    // 保存小局详情（使用事务批量写入，减少磁盘 fsync）
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
     for game in &games {
         let game_id = format!("{}_{}", match_id, game.game_number);
         let loser_id = if game.winner_id == home_team_id as u64 {
@@ -478,7 +480,7 @@ pub async fn simulate_match_detailed(
         .bind(game.duration_minutes as i64)
         .bind(mvp_player_id)
         .bind(mvp_player_id) // key_player 暂时与 mvp 相同
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .ok();
 
@@ -531,11 +533,13 @@ pub async fn simulate_match_detailed(
             .bind(player.damage_dealt as i64)
             .bind(player.damage_taken as i64)
             .bind(player.vision_score as i64)
-            .execute(&pool)
+            .execute(&mut *tx)
             .await
             .ok();
         }
     }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     // 更新选手状态因子（比赛后动态调整）
     let home_won = winner_id == home_team_id as u64;
@@ -1428,6 +1432,8 @@ async fn update_player_form_factors(
     won: bool,
     avg_performance: f64,
 ) -> Result<(), String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
     for player in players {
         // 使用 ConditionEngine 更新状态因子
         let updated_factors = ConditionEngine::update_form_factors(
@@ -1456,11 +1462,12 @@ async fn update_player_form_factors(
         .bind(updated_factors.last_performance)
         .bind(if updated_factors.last_match_won { 1i64 } else { 0i64 })
         .bind(updated_factors.games_since_rest as i64)
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     }
 
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
 

@@ -1401,42 +1401,31 @@ impl DatabaseManager {
         .await
         .map_err(|e| DatabaseError::Migration(e.to_string()))?;
 
-        // 检查迁移是否已执行
-        let already_applied: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM schema_migrations WHERE migration_name = 'unify_money_to_yuan_v1'"
+        // v2 迁移：按值范围直接转换（修复 v1 用 MAX 检测导致混合数据跳过的问题）
+        let v2_applied: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM schema_migrations WHERE migration_name = 'unify_money_to_yuan_v2'"
         )
         .fetch_one(pool)
         .await
         .unwrap_or(0);
 
-        if already_applied > 0 {
-            return Ok(());
-        }
+        if v2_applied == 0 {
+            // 直接按值范围转换：< 10000 的正数值一定是万元格式
+            let salary_updated = sqlx::query(
+                "UPDATE players SET salary = salary * 10000 WHERE salary > 0 AND salary < 10000"
+            )
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
 
-        // 检测旧数据：如果 MAX(salary) < 10000 且 > 0，说明是万元单位
-        let max_salary: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(salary), 0) FROM players WHERE status = 'Active'"
-        )
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+            let cmv_updated = sqlx::query(
+                "UPDATE players SET calculated_market_value = calculated_market_value * 10000 WHERE calculated_market_value > 0 AND calculated_market_value < 10000"
+            )
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
 
-        if max_salary > 0 && max_salary < 10000 {
-            log::info!("🔄 检测到旧存档金额单位为万元 (max_salary={}), 开始迁移为元...", max_salary);
-
-            // 薪资: 万元 → 元
-            sqlx::query("UPDATE players SET salary = salary * 10000 WHERE salary > 0")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            // calculated_market_value: 仅转换小于 1000000 的值（万元范围）
-            sqlx::query("UPDATE players SET calculated_market_value = calculated_market_value * 10000 WHERE calculated_market_value > 0 AND calculated_market_value < 1000000")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            // 转会策略表的期望薪资
+            // 转会策略表
             let strategy_tables: Vec<(String,)> = sqlx::query_as(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='player_transfer_strategies'"
             )
@@ -1445,31 +1434,28 @@ impl DatabaseManager {
             .unwrap_or_default();
 
             if !strategy_tables.is_empty() {
-                let max_expected: i64 = sqlx::query_scalar(
-                    "SELECT COALESCE(MAX(expected_salary), 0) FROM player_transfer_strategies"
+                sqlx::query(
+                    "UPDATE player_transfer_strategies SET expected_salary = expected_salary * 10000, expected_min_salary = expected_min_salary * 10000 WHERE expected_salary > 0 AND expected_salary < 10000"
                 )
-                .fetch_one(pool)
+                .execute(pool)
                 .await
-                .unwrap_or(0);
-
-                if max_expected > 0 && max_expected < 10000 {
-                    sqlx::query(
-                        "UPDATE player_transfer_strategies SET expected_salary = expected_salary * 10000, expected_min_salary = expected_min_salary * 10000 WHERE expected_salary > 0"
-                    )
-                    .execute(pool)
-                    .await
-                    .ok();
-                }
+                .ok();
             }
 
-            log::info!("✅ 金额单位迁移完成：万元 → 元");
-        }
+            let total = salary_updated.rows_affected() + cmv_updated.rows_affected();
+            if total > 0 {
+                log::info!("🔄 金额单位迁移 v2: 修复了 {} 条 salary, {} 条 calculated_market_value",
+                    salary_updated.rows_affected(), cmv_updated.rows_affected());
+            }
 
-        // 标记迁移完成
-        sqlx::query("INSERT INTO schema_migrations (migration_name) VALUES ('unify_money_to_yuan_v1')")
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            // 标记 v1 和 v2 都完成
+            sqlx::query("INSERT OR IGNORE INTO schema_migrations (migration_name) VALUES ('unify_money_to_yuan_v1')")
+                .execute(pool).await.ok();
+            sqlx::query("INSERT INTO schema_migrations (migration_name) VALUES ('unify_money_to_yuan_v2')")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
 
         Ok(())
     }
@@ -2088,4 +2074,10 @@ CREATE INDEX IF NOT EXISTS idx_transfer_events_save ON transfer_events(save_id, 
 CREATE INDEX IF NOT EXISTS idx_transfer_events_round ON transfer_events(round);
 CREATE INDEX IF NOT EXISTS idx_player_transfer_strategies_save ON player_transfer_strategies(save_id, season_id);
 CREATE INDEX IF NOT EXISTS idx_player_transfer_strategies_player ON player_transfer_strategies(player_id);
+
+-- 性能优化：补充缺失索引
+CREATE INDEX IF NOT EXISTS idx_honors_save_id ON honors(save_id);
+CREATE INDEX IF NOT EXISTS idx_player_listings_window_status ON player_listings(window_id, status);
+CREATE INDEX IF NOT EXISTS idx_financial_transactions_team_season ON financial_transactions(team_id, season_id);
+CREATE INDEX IF NOT EXISTS idx_financial_transactions_save_season ON financial_transactions(save_id, season_id);
 "#;

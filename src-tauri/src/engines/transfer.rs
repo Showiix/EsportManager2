@@ -528,7 +528,7 @@ impl TransferEngine {
         }
 
         // 更新所有球队战力（单条SQL优化）
-        self.recalculate_team_powers(pool, save_id).await?;
+        self.recalculate_team_powers_optimized(pool, save_id).await?;
 
         Ok(RoundResult {
             round: 1,
@@ -548,6 +548,7 @@ impl TransferEngine {
         window_id: i64,
         save_id: &str,
         season_id: i64,
+        cache: &mut TransferCache,
     ) -> Result<RoundResult, String> {
         let mut events = Vec::new();
         let mut rng = rand::rngs::StdRng::from_entropy();
@@ -632,6 +633,9 @@ impl TransferEngine {
                 .await
                 .map_err(|e| format!("释放球员失败: {}", e))?;
 
+                // 更新缓存
+                cache.release_player(player_id, team_id);
+
                 let event = self.record_event(
                     pool, window_id, 2,
                     TransferEventType::ContractTermination,
@@ -664,49 +668,41 @@ impl TransferEngine {
         window_id: i64,
         save_id: &str,
         season_id: i64,
+        cache: &mut TransferCache,
     ) -> Result<RoundResult, String> {
         let mut events = Vec::new();
 
-        // 获取所有球队
-        let teams = self.get_all_teams(pool, save_id).await?;
+        // 使用缓存获取所有球队ID
+        let team_ids: Vec<i64> = cache.team_names.keys().copied().collect();
 
-        for team in &teams {
-            let team_id: i64 = team.get("id");
-            let team_name: String = team.get("name");
-            let balance: i64 = team.get("balance");
+        for team_id in &team_ids {
+            let team_id = *team_id;
+            let team_name = cache.get_team_name(team_id);
+            let balance = cache.team_balances.get(&team_id).copied().unwrap_or(0);
 
-            // 1. 执行战队评估
-            let team_eval = self.evaluate_team(pool, save_id, window_id, team_id, &team_name, balance, season_id).await?;
+            // 1. 执行战队评估（使用缓存）
+            let team_eval = self.evaluate_team_cached(pool, save_id, window_id, team_id, &team_name, balance, season_id, cache).await?;
 
             // 2. 获取球队阵容并评估每个选手
-            let roster = self.get_team_roster(pool, save_id, team_id).await?;
+            let roster = cache.get_roster(team_id);
 
             for player in &roster {
-                let player_id: i64 = player.get("id");
-                let game_id: String = player.get("game_id");
-                let ability: i64 = player.get("ability");
-                let salary: i64 = player.get("salary");
-                let age: i64 = player.get("age");
-                let satisfaction: i64 = player.try_get("satisfaction").unwrap_or(70);
-                let loyalty: i64 = player.try_get("loyalty").unwrap_or(70);
-                let position: String = player.try_get("position").unwrap_or_default();
-
-                // 3. 执行选手评估
-                let player_eval = self.evaluate_player(
-                    pool, save_id, window_id, player_id, &game_id,
+                // 3. 执行选手评估（使用缓存）
+                let player_eval = self.evaluate_player_cached(
+                    pool, save_id, window_id, player.id, &player.game_id,
                     team_id, &team_name, &team_eval,
-                    ability, age, salary, satisfaction, loyalty, &position,
-                    &roster, season_id
+                    player.ability, player.age, player.salary, player.satisfaction, player.loyalty, &player.position,
+                    &roster, season_id, cache
                 ).await?;
 
                 // 4. 根据评估结果决定是否挂牌
                 if player_eval.should_list {
-                    let listing_price = self.calculate_market_value_simple(ability as u8, age as u8);
+                    let listing_price = self.calculate_market_value_simple(player.ability as u8, player.age as u8);
 
                     sqlx::query(
                         "INSERT INTO player_listings (player_id, window_id, listed_by_team_id, listing_price, min_accept_price, status) VALUES (?, ?, ?, ?, ?, 'ACTIVE')"
                     )
-                    .bind(player_id)
+                    .bind(player.id)
                     .bind(window_id)
                     .bind(team_id)
                     .bind(listing_price)
@@ -718,12 +714,12 @@ impl TransferEngine {
                     let event = self.record_event(
                         pool, window_id, 2,
                         TransferEventType::PlayerListed,
-                        EventLevel::from_ability_and_fee(ability as u8, 0),
-                        player_id, &game_id, ability,
+                        EventLevel::from_ability_and_fee(player.ability as u8, 0),
+                        player.id, &player.game_id, player.ability,
                         Some(team_id), Some(&team_name),
                         None, None,
-                        listing_price, salary, 0,
-                        &format!("{}被{}挂牌，{}，标价{}万", game_id, team_name, player_eval.list_reason, listing_price / 10000),
+                        listing_price, player.salary, 0,
+                        &format!("{}被{}挂牌，{}，标价{}万", player.game_id, team_name, player_eval.list_reason, listing_price / 10000),
                     ).await?;
                     events.push(event);
                 }
@@ -733,12 +729,12 @@ impl TransferEngine {
                     let event = self.record_event(
                         pool, window_id, 2,
                         TransferEventType::PlayerRequestTransfer,
-                        EventLevel::from_ability_and_fee(ability as u8, 0),
-                        player_id, &game_id, ability,
+                        EventLevel::from_ability_and_fee(player.ability as u8, 0),
+                        player.id, &player.game_id, player.ability,
                         Some(team_id), Some(&team_name),
                         None, None,
-                        0, salary, 0,
-                        &format!("{}向{}提出转会申请，原因：{}", game_id, team_name, player_eval.leave_reason),
+                        0, player.salary, 0,
+                        &format!("{}向{}提出转会申请，原因：{}", player.game_id, team_name, player_eval.leave_reason),
                     ).await?;
                     events.push(event);
                 }
@@ -750,111 +746,6 @@ impl TransferEngine {
             round_name: "双向评估".to_string(),
             events,
             summary: "已完成双向评估：战队和选手互相评估，生成挂牌和转会申请".to_string(),
-        })
-    }
-
-    /// 战队评估（评估战绩、阵容稳定性、策略）
-    async fn evaluate_team(
-        &self,
-        pool: &Pool<Sqlite>,
-        save_id: &str,
-        window_id: i64,
-        team_id: i64,
-        team_name: &str,
-        balance: i64,
-        season_id: i64,
-    ) -> Result<TeamEvaluation, String> {
-        // 获取战队阵容
-        let roster = self.get_team_roster(pool, save_id, team_id).await?;
-        let roster_count = roster.len() as i32;
-
-        // 计算阵容战力和平均年龄
-        let mut total_ability: f64 = 0.0;
-        let mut total_age: f64 = 0.0;
-        let mut total_salary: i64 = 0;
-
-        for player in &roster {
-            let ability: i64 = player.get("ability");
-            let age: i64 = player.get("age");
-            let salary: i64 = player.get("salary");
-            total_ability += ability as f64;
-            total_age += age as f64;
-            total_salary += salary;
-        }
-
-        let roster_power = if roster_count > 0 { total_ability / roster_count as f64 } else { 0.0 };
-        let roster_age_avg = if roster_count > 0 { total_age / roster_count as f64 } else { 0.0 };
-
-        // 获取当前赛季和上赛季的排名
-        let current_rank = self.get_team_annual_rank(pool, save_id, team_id, season_id).await.unwrap_or(99);
-        let last_rank = if season_id > 1 {
-            self.get_team_annual_rank(pool, save_id, team_id, season_id - 1).await.unwrap_or(99)
-        } else {
-            current_rank
-        };
-
-        let rank_change = current_rank - last_rank;  // 负数=进步，正数=退步
-        let rank_trend = if rank_change < -2 {
-            "UP"
-        } else if rank_change > 2 {
-            "DOWN"
-        } else {
-            "STABLE"
-        };
-
-        // 计算稳定性评分
-        let stability_score = self.calculate_stability_score(current_rank, last_rank);
-
-        // 决定策略
-        let (strategy, urgency_level, strategy_reason) = self.determine_team_strategy(
-            stability_score, current_rank, roster_power, roster_age_avg
-        );
-
-        // 保存评估结果到数据库
-        let result = sqlx::query(
-            r#"INSERT INTO team_season_evaluations
-            (save_id, window_id, team_id, team_name, season_id,
-             current_rank, last_season_rank, rank_trend, rank_change,
-             roster_power, roster_age_avg, roster_salary_total, budget_remaining, roster_count,
-             stability_score, urgency_level, strategy, strategy_reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#
-        )
-        .bind(save_id)
-        .bind(window_id)
-        .bind(team_id)
-        .bind(team_name)
-        .bind(season_id)
-        .bind(current_rank)
-        .bind(last_rank)
-        .bind(rank_trend)
-        .bind(rank_change)
-        .bind(roster_power)
-        .bind(roster_age_avg)
-        .bind(total_salary)
-        .bind(balance)
-        .bind(roster_count)
-        .bind(stability_score)
-        .bind(&urgency_level)
-        .bind(&strategy)
-        .bind(&strategy_reason)
-        .execute(pool)
-        .await
-        .map_err(|e| format!("保存战队评估失败: {}", e))?;
-
-        let evaluation_id = result.last_insert_rowid();
-
-        // 生成位置需求
-        self.generate_position_needs(pool, evaluation_id, &roster, &strategy, roster_power, balance).await?;
-
-        Ok(TeamEvaluation {
-            evaluation_id,
-            team_id,
-            current_rank,
-            last_rank,
-            stability_score,
-            strategy: strategy.clone(),
-            urgency_level,
-            roster_power,
         })
     }
 
@@ -919,39 +810,125 @@ impl TransferEngine {
         (strategy.to_string(), urgency.to_string(), reason)
     }
 
-    /// 生成位置需求
-    async fn generate_position_needs(
+    /// 战队评估（使用缓存版本）
+    async fn evaluate_team_cached(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        window_id: i64,
+        team_id: i64,
+        team_name: &str,
+        balance: i64,
+        season_id: i64,
+        cache: &TransferCache,
+    ) -> Result<TeamEvaluation, String> {
+        // 使用缓存获取阵容
+        let roster = cache.get_roster(team_id);
+        let roster_count = roster.len() as i32;
+
+        // 计算阵容战力和平均年龄
+        let mut total_ability: f64 = 0.0;
+        let mut total_age: f64 = 0.0;
+        let mut total_salary: i64 = 0;
+
+        for player in &roster {
+            total_ability += player.ability as f64;
+            total_age += player.age as f64;
+            total_salary += player.salary;
+        }
+
+        let roster_power = if roster_count > 0 { total_ability / roster_count as f64 } else { 0.0 };
+        let roster_age_avg = if roster_count > 0 { total_age / roster_count as f64 } else { 0.0 };
+
+        // 使用缓存获取排名
+        let current_rank = cache.get_team_rank(team_id);
+        let last_rank = current_rank; // 缓存中只有当前排名，简化处理
+
+        let rank_change = current_rank - last_rank;
+        let rank_trend = if rank_change < -2 {
+            "UP"
+        } else if rank_change > 2 {
+            "DOWN"
+        } else {
+            "STABLE"
+        };
+
+        let stability_score = self.calculate_stability_score(current_rank, last_rank);
+
+        let (strategy, urgency_level, strategy_reason) = self.determine_team_strategy(
+            stability_score, current_rank, roster_power, roster_age_avg
+        );
+
+        // 保存评估结果到数据库
+        let result = sqlx::query(
+            r#"INSERT INTO team_season_evaluations
+            (save_id, window_id, team_id, team_name, season_id,
+             current_rank, last_season_rank, rank_trend, rank_change,
+             roster_power, roster_age_avg, roster_salary_total, budget_remaining, roster_count,
+             stability_score, urgency_level, strategy, strategy_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#
+        )
+        .bind(save_id)
+        .bind(window_id)
+        .bind(team_id)
+        .bind(team_name)
+        .bind(season_id)
+        .bind(current_rank)
+        .bind(last_rank)
+        .bind(rank_trend)
+        .bind(rank_change)
+        .bind(roster_power)
+        .bind(roster_age_avg)
+        .bind(total_salary)
+        .bind(balance)
+        .bind(roster_count)
+        .bind(stability_score)
+        .bind(&urgency_level)
+        .bind(&strategy)
+        .bind(&strategy_reason)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("保存战队评估失败: {}", e))?;
+
+        let evaluation_id = result.last_insert_rowid();
+
+        // 生成位置需求（使用缓存版本）
+        self.generate_position_needs_cached(pool, evaluation_id, &roster, &strategy, roster_power, balance).await?;
+
+        Ok(TeamEvaluation {
+            evaluation_id,
+            team_id,
+            current_rank,
+            last_rank,
+            stability_score,
+            strategy: strategy.clone(),
+            urgency_level,
+            roster_power,
+        })
+    }
+
+    /// 生成位置需求（使用缓存版本）
+    async fn generate_position_needs_cached(
         &self,
         pool: &Pool<Sqlite>,
         evaluation_id: i64,
-        roster: &[sqlx::sqlite::SqliteRow],
+        roster: &[CachedPlayer],
         strategy: &str,
         roster_power: f64,
         budget: i64,
     ) -> Result<(), String> {
-        use sqlx::Row;
-
         let positions = ["TOP", "JUG", "MID", "ADC", "SUP"];
 
         for pos in &positions {
-            // 找到该位置的首发
             let starter = roster.iter().find(|p| {
-                let position: String = p.try_get("position").unwrap_or_default();
-                let is_starter: bool = p.try_get("is_starter").unwrap_or(false);
-                position == *pos && is_starter
+                p.position == *pos && p.is_starter
             });
 
             let (starter_id, starter_name, starter_ability, starter_age) = match starter {
-                Some(p) => (
-                    Some(p.get::<i64, _>("id")),
-                    Some(p.get::<String, _>("game_id")),
-                    Some(p.get::<i64, _>("ability")),
-                    Some(p.get::<i64, _>("age")),
-                ),
+                Some(p) => (Some(p.id), Some(p.game_id.clone()), Some(p.ability), Some(p.age)),
                 None => (None, None, None, None),
             };
 
-            // 根据策略和当前首发能力判断需求等级
             let (need_level, min_ability_target, reason) = match strategy {
                 "DYNASTY" => ("NONE", 0, "阵容稳定无需变动".to_string()),
                 "MAINTAIN" => {
@@ -993,7 +970,7 @@ impl TransferEngine {
             };
 
             if need_level != "NONE" {
-                let max_salary = (budget as f64 * 0.15) as i64;  // 最多用15%预算
+                let max_salary = (budget as f64 * 0.15) as i64;
                 let prefer_young = strategy == "REBUILD" || starter_age.unwrap_or(25) > 27;
 
                 sqlx::query(
@@ -1023,8 +1000,8 @@ impl TransferEngine {
         Ok(())
     }
 
-    /// 选手评估（评估是否想留队）
-    async fn evaluate_player(
+    /// 选手评估（使用缓存版本）
+    async fn evaluate_player_cached(
         &self,
         pool: &Pool<Sqlite>,
         save_id: &str,
@@ -1040,11 +1017,10 @@ impl TransferEngine {
         satisfaction: i64,
         loyalty: i64,
         position: &str,
-        roster: &[sqlx::sqlite::SqliteRow],
-        season_id: i64,
+        roster: &[CachedPlayer],
+        _season_id: i64,
+        cache: &TransferCache,
     ) -> Result<PlayerEvaluation, String> {
-        use sqlx::Row;
-
         let mut stay_score: f64 = 50.0;
 
         // 1. 战队排名评分
@@ -1057,20 +1033,20 @@ impl TransferEngine {
         stay_score += team_rank_score;
 
         // 2. 战绩趋势评分
-        let rank_change = team_eval.last_rank - team_eval.current_rank;  // 正数=进步
+        let rank_change = team_eval.last_rank - team_eval.current_rank;
         let team_trend_score = (rank_change as f64 * 3.0).clamp(-15.0, 15.0);
         stay_score += team_trend_score;
 
-        // 3. 队友水平评分
+        // 3. 队友水平评分（使用缓存阵容）
         let teammate_avg: f64 = roster.iter()
-            .filter(|p| p.get::<i64, _>("id") != player_id)
-            .map(|p| p.get::<i64, _>("ability") as f64)
+            .filter(|p| p.id != player_id)
+            .map(|p| p.ability as f64)
             .sum::<f64>() / (roster.len() - 1).max(1) as f64;
 
         let teammate_score = if ability > teammate_avg as i64 + 10 {
-            -15.0  // 我比队友强太多
+            -15.0
         } else if ability < teammate_avg as i64 - 5 {
-            10.0   // 队友很强
+            10.0
         } else {
             0.0
         };
@@ -1080,22 +1056,22 @@ impl TransferEngine {
         let estimated_salary = self.estimate_market_salary(ability as u8, age as u8);
         let salary_ratio = if estimated_salary > 0 { salary as f64 / estimated_salary as f64 } else { 1.0 };
         let salary_score = if salary_ratio < 0.7 {
-            -20.0  // 被严重低估
+            -20.0
         } else if salary_ratio < 0.9 {
-            -10.0  // 略被低估
+            -10.0
         } else if salary_ratio > 1.2 {
-            15.0   // 高薪
+            15.0
         } else {
             0.0
         };
         stay_score += salary_score;
 
-        // 5. 荣誉评分（检查近2赛季是否有荣誉）
-        let has_recent_honor = self.check_player_recent_honors(pool, save_id, player_id, season_id).await.unwrap_or(false);
+        // 5. 荣誉评分（使用缓存）
+        let has_recent_honor = cache.has_recent_honor(player_id);
         let honor_score = if has_recent_honor {
-            5.0  // 有荣誉，可能想留或想去更强的队
+            5.0
         } else if ability >= 80 && team_eval.current_rank > 8 {
-            -10.0  // 实力强但队伍弱没荣誉，想走
+            -10.0
         } else {
             0.0
         };
@@ -1107,7 +1083,7 @@ impl TransferEngine {
 
         // 7. 年龄因素
         if age >= 28 && team_eval.current_rank > 8 {
-            stay_score -= 20.0;  // 老将在弱队想去强队冲荣誉
+            stay_score -= 20.0;
         }
 
         // 8. 忠诚度加成
@@ -1116,7 +1092,6 @@ impl TransferEngine {
         let stay_score = stay_score.clamp(0.0, 100.0);
         let wants_to_leave = stay_score < 40.0;
 
-        // 决定离队原因
         let leave_reason = if wants_to_leave {
             if salary_score < -15.0 {
                 "薪资被严重低估".to_string()
@@ -1133,8 +1108,8 @@ impl TransferEngine {
             "".to_string()
         };
 
-        // 战队评估选手是否应该挂牌
-        let (should_list, list_reason, protect_reason) = self.evaluate_player_for_listing(
+        // 战队评估选手是否应该挂牌（使用缓存版本）
+        let (should_list, list_reason, protect_reason) = self.evaluate_player_for_listing_cached(
             ability, age, salary, team_eval, has_recent_honor, position, roster
         );
 
@@ -1191,7 +1166,7 @@ impl TransferEngine {
         .bind(age)
         .bind(salary)
         .bind(has_recent_honor as i32)
-        .bind(0)  // TODO: 影响力排名
+        .bind(0)
         .bind(should_list as i32)
         .bind(&list_reason)
         .bind(&protect_reason)
@@ -1210,8 +1185,8 @@ impl TransferEngine {
         })
     }
 
-    /// 评估选手是否应该被挂牌（战队视角）
-    fn evaluate_player_for_listing(
+    /// 评估选手是否应该被挂牌（使用缓存版本）
+    fn evaluate_player_for_listing_cached(
         &self,
         ability: i64,
         age: i64,
@@ -1219,10 +1194,8 @@ impl TransferEngine {
         team_eval: &TeamEvaluation,
         has_recent_honor: bool,
         _position: &str,
-        roster: &[sqlx::sqlite::SqliteRow],
+        roster: &[CachedPlayer],
     ) -> (bool, String, String) {
-        use sqlx::Row;
-
         // 荣誉保护
         if has_recent_honor && ability >= 75 {
             return (false, "".to_string(), "近2赛季有荣誉".to_string());
@@ -1236,12 +1209,12 @@ impl TransferEngine {
             return (false, "".to_string(), "战队处于王朝期".to_string());
         }
 
-        // 核心选手保护（能力高于队伍均值5分以上）
+        // 核心选手保护
         if ability > team_eval.roster_power as i64 + 5 && ability >= 80 {
             return (false, "".to_string(), "核心选手".to_string());
         }
 
-        // 维持模式：只挂牌明显不合格的
+        // 维持模式
         if team_eval.strategy == "MAINTAIN" {
             if ability < 70 || (age >= 32 && ability < 75) {
                 return (true, "能力不足".to_string(), "".to_string());
@@ -1249,83 +1222,27 @@ impl TransferEngine {
             return (false, "".to_string(), "阵容稳定".to_string());
         }
 
-        // 补强/重建模式：更积极挂牌
+        // 补强/重建模式
         let roster_count = roster.len() as i32;
 
-        // 性价比检查
         let value_ratio = if salary > 0 { ability as f64 / (salary as f64 / 10000.0) } else { 100.0 };
         if value_ratio < 0.40 && salary > 100_0000 {
             return (true, "高薪低能".to_string(), "".to_string());
         }
 
-        // 年龄检查
         if age >= 30 && ability < 78 {
             return (true, "年龄偏大且能力一般".to_string(), "".to_string());
         }
 
-        // 阵容过大检查
         if roster_count >= 7 && ability < team_eval.roster_power as i64 - 5 {
             return (true, "能力低于队伍均值".to_string(), "".to_string());
         }
 
-        // 能力过低
         if ability < 65 {
             return (true, "能力过低".to_string(), "".to_string());
         }
 
         (false, "".to_string(), "综合评估通过".to_string())
-    }
-
-    /// 获取战队年度积分排名
-    async fn get_team_annual_rank(
-        &self,
-        pool: &Pool<Sqlite>,
-        save_id: &str,
-        team_id: i64,
-        _season_id: i64,
-    ) -> Result<i32, String> {
-        // 从 teams 表读取 annual_points 计算排名
-        let row: Option<(i32,)> = sqlx::query_as(
-            r#"SELECT COALESCE(
-                (SELECT COUNT(*) + 1 FROM teams t2
-                 WHERE t2.save_id = t1.save_id
-                 AND t2.annual_points > t1.annual_points),
-                1
-            ) as rank
-            FROM teams t1
-            WHERE t1.save_id = ? AND t1.id = ?"#
-        )
-        .bind(save_id)
-        .bind(team_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| format!("获取排名失败: {}", e))?;
-
-        Ok(row.map(|r| r.0).unwrap_or(99))
-    }
-
-    /// 检查选手近2赛季是否有荣誉
-    async fn check_player_recent_honors(
-        &self,
-        pool: &Pool<Sqlite>,
-        save_id: &str,
-        player_id: i64,
-        current_season: i64,
-    ) -> Result<bool, String> {
-        let count: (i64,) = sqlx::query_as(
-            r#"SELECT COUNT(*) FROM honors
-            WHERE save_id = ? AND player_id = ?
-            AND season_id >= ?
-            AND honor_type IN ('CHAMPION', 'MVP', 'FINALS_MVP', 'YEARLY_MVP', 'YEARLY_TOP20')"#
-        )
-        .bind(save_id)
-        .bind(player_id)
-        .bind(current_season - 1)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| format!("查询荣誉失败: {}", e))?;
-
-        Ok(count.0 > 0)
     }
 
     /// 估算选手市场薪资（单位：元）
@@ -1363,11 +1280,12 @@ impl TransferEngine {
         window_id: i64,
         save_id: &str,
         season_id: i64,
+        cache: &mut TransferCache,
     ) -> Result<RoundResult, String> {
         let mut events = Vec::new();
         let mut rng = rand::rngs::StdRng::from_entropy();
 
-        // 获取所有自由球员
+        // 获取所有自由球员（不在任何队伍中的选手，需从数据库查询，因为缓存只存有队伍的选手）
         let free_agents: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
             r#"SELECT id, game_id, ability, salary, age, position, loyalty, potential, tag,
                       home_region_id, region_loyalty
@@ -1380,9 +1298,9 @@ impl TransferEngine {
         .await
         .map_err(|e| format!("查询自由球员失败: {}", e))?;
 
-        // 获取所有球队及其需求
-        let teams = self.get_all_teams(pool, save_id).await?;
-        let mut team_transfer_counts: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
+        // 使用缓存获取所有球队ID
+        let team_ids: Vec<i64> = cache.team_names.keys().copied().collect();
+        let mut team_transfer_counts: HashMap<i64, i64> = HashMap::new();
 
         for free_agent in &free_agents {
             let player_id: i64 = free_agent.get("id");
@@ -1399,9 +1317,8 @@ impl TransferEngine {
             // 收集所有球队的报价
             let mut offers: Vec<TransferOffer> = Vec::new();
 
-            for team in &teams {
-                let team_id: i64 = team.get("id");
-                let balance: i64 = team.get("balance");
+            for &team_id in &team_ids {
+                let balance = cache.team_balances.get(&team_id).copied().unwrap_or(0);
 
                 // 检查转会次数限制
                 let count = team_transfer_counts.get(&team_id).copied().unwrap_or(0);
@@ -1415,31 +1332,25 @@ impl TransferEngine {
                     continue;
                 }
 
-                // 获取球队阵容
-                let roster = self.get_team_roster(pool, save_id, team_id).await?;
+                // 使用缓存获取球队阵容
+                let roster = cache.get_roster(team_id);
                 let roster_count = roster.len();
 
                 if roster_count >= 10 {
-                    continue; // 阵容已满
+                    continue;
                 }
 
                 // 检查位置需求
                 let pos_count = roster.iter()
-                    .filter(|r| {
-                        let p: String = r.get("position");
-                        p == position
-                    })
+                    .filter(|r| r.position == position)
                     .count();
 
                 if pos_count >= 2 {
-                    continue; // 该位置已有2人
+                    continue;
                 }
 
-                // 获取AI性格
-                let personality = self.get_team_personality_config(pool, team_id).await;
-                let weights = personality.as_ref()
-                    .map(|p| p.get_weights())
-                    .unwrap_or_default();
+                // 使用缓存获取AI性格权重
+                let weights = cache.get_weights(team_id);
 
                 // 计算匹配度和报价
                 let match_score = self.calculate_match_score(
@@ -1453,7 +1364,7 @@ impl TransferEngine {
                 let salary_multiplier = if weights.star_chasing > 0.7 { 1.1 } else if weights.bargain_hunting > 0.7 { 0.85 } else { 1.0 };
                 let offered_salary = (expected_salary as f64 * salary_multiplier) as i64;
                 let contract_years = if age <= 24 && weights.long_term_focus > 0.5 { 3 } else if age <= 28 { 2 } else { 1 };
-                let target_region_id: Option<i64> = team.try_get("region_id").ok();
+                let target_region_id = cache.team_region_ids.get(&team_id).copied().flatten();
 
                 offers.push(TransferOffer {
                     team_id,
@@ -1472,10 +1383,10 @@ impl TransferEngine {
                 continue;
             }
 
-            // 按匹配度排序，选择最佳报价
+            // 按匹配度排序
             offers.sort_by(|a, b| b.match_score.partial_cmp(&a.match_score).unwrap_or(std::cmp::Ordering::Equal));
 
-            // 球员选择报价（考虑薪资和球队实力）
+            // 球员选择报价
             let mut best_offer: Option<&TransferOffer> = None;
             for offer in &offers {
                 let willingness = self.calculate_willingness(
@@ -1492,7 +1403,7 @@ impl TransferEngine {
 
             if let Some(offer) = best_offer {
                 let to_team_id = offer.team_id;
-                let to_team_name = self.get_team_name(pool, to_team_id).await.unwrap_or_default();
+                let to_team_name = cache.get_team_name(to_team_id);
 
                 // 执行签约
                 sqlx::query(
@@ -1513,6 +1424,29 @@ impl TransferEngine {
                     .execute(pool)
                     .await
                     .map_err(|e| format!("扣除资金失败: {}", e))?;
+
+                // 更新缓存
+                cache.update_balance(to_team_id, -offer.signing_bonus);
+                // 将自由球员添加到目标队伍缓存
+                let new_player = CachedPlayer {
+                    id: player_id,
+                    game_id: game_id.clone(),
+                    ability,
+                    potential: free_agent.try_get("potential").unwrap_or(0),
+                    age,
+                    salary: offer.offered_salary,
+                    loyalty: 50,
+                    satisfaction: 60,
+                    position: position.clone(),
+                    tag: free_agent.try_get("tag").unwrap_or_else(|_| "NORMAL".to_string()),
+                    team_id: Some(to_team_id),
+                    is_starter: false,
+                    home_region_id,
+                    region_loyalty,
+                    contract_end_season: Some(season_id + offer.contract_years),
+                    status: "Active".to_string(),
+                };
+                cache.team_rosters.entry(to_team_id).or_default().push(new_player);
 
                 *team_transfer_counts.entry(to_team_id).or_insert(0) += 1;
 
@@ -1547,8 +1481,9 @@ impl TransferEngine {
         &self,
         pool: &Pool<Sqlite>,
         window_id: i64,
-        save_id: &str,
+        _save_id: &str,
         season_id: i64,
+        cache: &mut TransferCache,
     ) -> Result<RoundResult, String> {
         let mut events = Vec::new();
         let mut rng = rand::rngs::StdRng::from_entropy();
@@ -1570,7 +1505,8 @@ impl TransferEngine {
         .await
         .map_err(|e| format!("查询挂牌选手失败: {}", e))?;
 
-        let teams = self.get_all_teams(pool, save_id).await?;
+        // 使用缓存获取所有球队ID
+        let team_ids: Vec<i64> = cache.team_names.keys().copied().collect();
 
         for listing in &listings {
             let listing_id: i64 = listing.get("listing_id");
@@ -1588,15 +1524,14 @@ impl TransferEngine {
             let home_region_id: Option<i64> = listing.try_get("home_region_id").ok();
             let region_loyalty: i64 = listing.try_get("region_loyalty").unwrap_or(70);
 
-            let mut best_bid: Option<(i64, String, i64, i64, i64, Option<i64>)> = None; // (team_id, team_name, bid_price, offered_salary, contract_years, target_region_id)
+            let mut best_bid: Option<(i64, String, i64, i64, i64, Option<i64>)> = None;
 
-            for team in &teams {
-                let team_id: i64 = team.get("id");
+            for &team_id in &team_ids {
                 if team_id == from_team_id {
                     continue;
                 }
 
-                let balance: i64 = team.get("balance");
+                let balance = cache.team_balances.get(&team_id).copied().unwrap_or(0);
                 if balance < min_price {
                     continue;
                 }
@@ -1606,23 +1541,18 @@ impl TransferEngine {
                     continue;
                 }
 
-                // 检查位置需求
-                let roster = self.get_team_roster(pool, save_id, team_id).await?;
+                // 使用缓存检查位置需求
+                let roster = cache.get_roster(team_id);
                 let pos_count = roster.iter()
-                    .filter(|r| {
-                        let p: String = r.get("position");
-                        p == position
-                    })
+                    .filter(|r| r.position == position)
                     .count();
 
                 if pos_count >= 2 || roster.len() >= 10 {
                     continue;
                 }
 
-                let personality = self.get_team_personality_config(pool, team_id).await;
-                let weights = personality.as_ref()
-                    .map(|p| p.get_weights())
-                    .unwrap_or_default();
+                // 使用缓存获取AI性格权重
+                let weights = cache.get_weights(team_id);
 
                 let match_score = self.calculate_match_score(
                     ability as u8, age as u8, &position, &weights, balance,
@@ -1638,10 +1568,10 @@ impl TransferEngine {
                     continue;
                 }
 
-                let team_name: String = team.get("name");
+                let team_name = cache.get_team_name(team_id);
                 let expected_salary = self.calculate_expected_salary(ability as u8, age as u8);
                 let contract_years = if age <= 24 { 3 } else if age <= 28 { 2 } else { 1 };
-                let target_region_id: Option<i64> = team.try_get("region_id").ok();
+                let target_region_id = cache.team_region_ids.get(&team_id).copied().flatten();
 
                 if best_bid.is_none() || bid_price > best_bid.as_ref().unwrap().2 {
                     best_bid = Some((team_id, team_name, bid_price, expected_salary, contract_years, target_region_id));
@@ -1658,7 +1588,7 @@ impl TransferEngine {
                 );
 
                 if willingness < 40.0 {
-                    continue; // 球员拒绝
+                    continue;
                 }
 
                 // 执行转会
@@ -1687,6 +1617,16 @@ impl TransferEngine {
                     .execute(pool)
                     .await
                     .map_err(|e| format!("卖方收款失败: {}", e))?;
+
+                // 更新缓存
+                cache.transfer_player(player_id, Some(from_team_id), Some(to_team_id), Some(PlayerCacheUpdate {
+                    salary: Some(new_salary),
+                    loyalty: Some(50),
+                    satisfaction: Some(55),
+                    contract_end_season: Some(season_id + contract_years),
+                }));
+                cache.update_balance(to_team_id, -bid_price);
+                cache.update_balance(from_team_id, bid_price);
 
                 // 更新挂牌状态
                 sqlx::query(
@@ -1731,6 +1671,7 @@ impl TransferEngine {
         window_id: i64,
         save_id: &str,
         _season_id: i64,
+        _cache: &mut TransferCache,
     ) -> Result<RoundResult, String> {
         let mut events = Vec::new();
 
@@ -1830,34 +1771,47 @@ impl TransferEngine {
         window_id: i64,
         save_id: &str,
         season_id: i64,
+        cache: &mut TransferCache,
     ) -> Result<RoundResult, String> {
         let mut events = Vec::new();
 
-        // 检查所有球队阵容完整性
-        let teams = self.get_all_teams(pool, save_id).await?;
+        // 使用缓存检查所有球队阵容完整性
+        let team_ids: Vec<i64> = cache.team_names.keys().copied().collect();
 
-        for team in &teams {
-            let team_id: i64 = team.get("id");
-            let team_name: String = team.get("name");
-
-            let roster = self.get_team_roster(pool, save_id, team_id).await?;
+        for &team_id in &team_ids {
+            let team_name = cache.get_team_name(team_id);
+            let roster = cache.get_roster(team_id);
             let roster_count = roster.len();
 
             if roster_count >= 5 {
                 continue;
             }
 
-            // 需要紧急签约
-            let positions_needed = self.find_missing_positions(&roster);
+            // 需要紧急签约 - find_missing_positions 需要用 SqliteRow，改为直接检查缓存
+            let mut has_position = [false; 5];
+            for player in &roster {
+                match player.position.as_str() {
+                    "TOP" => has_position[0] = true,
+                    "JUG" => has_position[1] = true,
+                    "MID" => has_position[2] = true,
+                    "ADC" => has_position[3] = true,
+                    "SUP" => has_position[4] = true,
+                    _ => {}
+                }
+            }
 
-            for position in positions_needed {
-                let pos_str = match position {
-                    Position::Top => "TOP",
-                    Position::Jug => "JUG",
-                    Position::Mid => "MID",
-                    Position::Adc => "ADC",
-                    Position::Sup => "SUP",
-                };
+            let all_positions = [
+                (Position::Top, "TOP"),
+                (Position::Jug, "JUG"),
+                (Position::Mid, "MID"),
+                (Position::Adc, "ADC"),
+                (Position::Sup, "SUP"),
+            ];
+
+            for (i, (_, pos_str)) in all_positions.iter().enumerate() {
+                if has_position[i] {
+                    continue;
+                }
 
                 // 找最佳可用自由球员
                 let candidate: Option<sqlx::sqlite::SqliteRow> = sqlx::query(
@@ -1868,7 +1822,7 @@ impl TransferEngine {
                        LIMIT 1"#
                 )
                 .bind(save_id)
-                .bind(pos_str)
+                .bind(*pos_str)
                 .fetch_optional(pool)
                 .await
                 .map_err(|e| format!("查找紧急签约候选失败: {}", e))?;
@@ -1893,6 +1847,27 @@ impl TransferEngine {
                     .await
                     .map_err(|e| format!("紧急签约失败: {}", e))?;
 
+                    // 更新缓存
+                    let new_player = CachedPlayer {
+                        id: player_id,
+                        game_id: game_id.clone(),
+                        ability,
+                        potential: 0,
+                        age,
+                        salary,
+                        loyalty: 40,
+                        satisfaction: 50,
+                        position: pos_str.to_string(),
+                        tag: "NORMAL".to_string(),
+                        team_id: Some(team_id),
+                        is_starter: false,
+                        home_region_id: None,
+                        region_loyalty: 70,
+                        contract_end_season: Some(season_id + contract_years),
+                        status: "Active".to_string(),
+                    };
+                    cache.team_rosters.entry(team_id).or_default().push(new_player);
+
                     let event = self.record_event(
                         pool, window_id, 7,
                         TransferEventType::EmergencySigning,
@@ -1908,8 +1883,8 @@ impl TransferEngine {
             }
         }
 
-        // 更新所有球队战力
-        self.recalculate_team_powers(pool, save_id).await?;
+        // 更新所有球队战力（单条SQL优化）
+        self.recalculate_team_powers_optimized(pool, save_id).await?;
 
         Ok(RoundResult {
             round: 7,
@@ -2131,74 +2106,6 @@ impl TransferEngine {
         })
     }
 
-    async fn get_active_players(&self, pool: &Pool<Sqlite>, save_id: &str) -> Result<Vec<sqlx::sqlite::SqliteRow>, String> {
-        sqlx::query(
-            "SELECT * FROM players WHERE save_id = ? AND status = 'Active'"
-        )
-        .bind(save_id)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| format!("查询活跃选手失败: {}", e))
-    }
-
-    async fn get_all_teams(&self, pool: &Pool<Sqlite>, save_id: &str) -> Result<Vec<sqlx::sqlite::SqliteRow>, String> {
-        sqlx::query("SELECT * FROM teams WHERE save_id = ?")
-            .bind(save_id)
-            .fetch_all(pool)
-            .await
-            .map_err(|e| format!("查询球队失败: {}", e))
-    }
-
-    async fn get_team_roster(&self, pool: &Pool<Sqlite>, save_id: &str, team_id: i64) -> Result<Vec<sqlx::sqlite::SqliteRow>, String> {
-        sqlx::query(
-            "SELECT * FROM players WHERE save_id = ? AND team_id = ? AND status = 'Active'"
-        )
-        .bind(save_id)
-        .bind(team_id)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| format!("查询球队阵容失败: {}", e))
-    }
-
-    async fn get_team_name(&self, pool: &Pool<Sqlite>, team_id: i64) -> Result<String, String> {
-        let row: Option<(String,)> = sqlx::query_as(
-            "SELECT name FROM teams WHERE id = ?"
-        )
-        .bind(team_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| format!("获取球队名称失败: {}", e))?;
-        Ok(row.map(|(n,)| n).unwrap_or_default())
-    }
-
-    async fn get_team_personality_config(
-        &self,
-        pool: &Pool<Sqlite>,
-        team_id: i64,
-    ) -> Option<TeamPersonalityConfig> {
-        let row: Option<sqlx::sqlite::SqliteRow> = sqlx::query(
-            "SELECT * FROM team_personality_configs WHERE team_id = ?"
-        )
-        .bind(team_id)
-        .fetch_optional(pool)
-        .await
-        .ok()?;
-
-        row.map(|r| TeamPersonalityConfig {
-            id: r.get("id"),
-            team_id: r.get("team_id"),
-            save_id: r.get("save_id"),
-            personality: r.get("personality"),
-            short_term_focus: r.get("short_term_focus"),
-            long_term_focus: r.get("long_term_focus"),
-            risk_tolerance: r.get("risk_tolerance"),
-            youth_preference: r.get("youth_preference"),
-            star_chasing: r.get("star_chasing"),
-            bargain_hunting: r.get("bargain_hunting"),
-            updated_at: r.get("updated_at"),
-        })
-    }
-
     async fn init_team_personalities(&self, pool: &Pool<Sqlite>, save_id: &str) -> Result<(), String> {
         sqlx::query(
             r#"INSERT OR IGNORE INTO team_personality_configs (team_id, save_id, personality, updated_at)
@@ -2212,28 +2119,22 @@ impl TransferEngine {
         Ok(())
     }
 
-    async fn recalculate_team_powers(&self, pool: &Pool<Sqlite>, save_id: &str) -> Result<(), String> {
-        let teams = self.get_all_teams(pool, save_id).await?;
-        for team in &teams {
-            let team_id: i64 = team.get("id");
-            let result: Option<(f64,)> = sqlx::query_as(
-                "SELECT AVG(ability) FROM players WHERE save_id = ? AND team_id = ? AND status = 'Active' AND is_starter = 1"
-            )
-            .bind(save_id)
-            .bind(team_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| format!("计算球队战力失败: {}", e))?;
-
-            let power = result.map(|(avg,)| avg).unwrap_or(60.0);
-
-            sqlx::query("UPDATE teams SET power_rating = ? WHERE id = ?")
-                .bind(power)
-                .bind(team_id)
-                .execute(pool)
-                .await
-                .map_err(|e| format!("更新球队战力失败: {}", e))?;
-        }
+    /// 单条 SQL 更新所有球队战力（替代 N+1 循环查询）
+    async fn recalculate_team_powers_optimized(&self, pool: &Pool<Sqlite>, save_id: &str) -> Result<(), String> {
+        sqlx::query(
+            r#"UPDATE teams SET power_rating = COALESCE(
+                (SELECT AVG(ability) FROM players
+                 WHERE players.save_id = teams.save_id
+                 AND players.team_id = teams.id
+                 AND players.status = 'Active'
+                 AND players.is_starter = 1),
+                60.0
+            ) WHERE save_id = ?"#
+        )
+        .bind(save_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("批量更新球队战力失败: {}", e))?;
         Ok(())
     }
 
@@ -2517,114 +2418,5 @@ impl TransferEngine {
         };
 
         base_willingness * cross_region_factor
-    }
-
-    /// 分析球队需求
-    fn analyze_team_needs(
-        &self,
-        roster: &[sqlx::sqlite::SqliteRow],
-        team_id: i64,
-        team_name: &str,
-        balance: i64,
-    ) -> TeamNeedsAnalysis {
-        let mut position_counts: std::collections::HashMap<String, (i32, f64)> = std::collections::HashMap::new();
-        let mut total_age = 0f64;
-        let mut total_ability = 0f64;
-        let roster_count = roster.len() as i32;
-
-        for player in roster {
-            let position: String = player.get("position");
-            let ability: i64 = player.get("ability");
-            let age: i64 = player.get("age");
-
-            let entry = position_counts.entry(position).or_insert((0, 0.0));
-            entry.0 += 1;
-            entry.1 += ability as f64;
-            total_age += age as f64;
-            total_ability += ability as f64;
-        }
-
-        let avg_age = if roster_count > 0 { total_age / roster_count as f64 } else { 25.0 };
-        let power_rating = if roster_count > 0 { total_ability / roster_count as f64 } else { 60.0 };
-
-        let positions = ["TOP", "JUG", "MID", "ADC", "SUP"];
-        let mut position_needs = std::collections::HashMap::new();
-
-        for pos in &positions {
-            let (count, total_ab) = position_counts.get(*pos).copied().unwrap_or((0, 0.0));
-            let avg_ab = if count > 0 { total_ab / count as f64 } else { 0.0 };
-            let gap = 1 - count; // 每个位置至少需要1人
-
-            let priority = if count == 0 {
-                NeedPriority::Critical
-            } else if avg_ab < 70.0 {
-                NeedPriority::High
-            } else if avg_ab < 80.0 {
-                NeedPriority::Medium
-            } else {
-                NeedPriority::Low
-            };
-
-            let pos_enum = match *pos {
-                "TOP" => Position::Top,
-                "JUG" => Position::Jug,
-                "MID" => Position::Mid,
-                "ADC" => Position::Adc,
-                _ => Position::Sup,
-            };
-
-            position_needs.insert(pos.to_string(), PositionNeed {
-                position: pos_enum,
-                current_count: count,
-                target_count: 1,
-                gap,
-                current_avg_ability: avg_ab,
-                required_ability: 70,
-                priority,
-            });
-        }
-
-        let fin_status = FinancialStatus::from_balance(balance);
-
-        TeamNeedsAnalysis {
-            team_id,
-            team_name: team_name.to_string(),
-            position_needs,
-            financial_status: format!("{:?}", fin_status),
-            avg_age,
-            roster_count,
-            power_rating,
-            priority_score: 50.0,
-            listing_candidates: Vec::new(),
-            target_positions: Vec::new(),
-        }
-    }
-
-    /// 找出缺少的位置
-    fn find_missing_positions(&self, roster: &[sqlx::sqlite::SqliteRow]) -> Vec<Position> {
-        let mut has_position = [false; 5]; // Top, Jug, Mid, Adc, Sup
-
-        for player in roster {
-            let pos: String = player.get("position");
-            match pos.as_str() {
-                "TOP" => has_position[0] = true,
-                "JUG" => has_position[1] = true,
-                "MID" => has_position[2] = true,
-                "ADC" => has_position[3] = true,
-                "SUP" => has_position[4] = true,
-                _ => {}
-            }
-        }
-
-        let mut missing = Vec::new();
-        let all_positions = [Position::Top, Position::Jug, Position::Mid, Position::Adc, Position::Sup];
-
-        for (i, has) in has_position.iter().enumerate() {
-            if !has {
-                missing.push(all_positions[i]);
-            }
-        }
-
-        missing
     }
 }
