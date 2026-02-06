@@ -111,7 +111,7 @@
       <div class="filter-row">
         <div class="filter-left">
           <el-radio-group v-model="selectedRegion" @change="handleRegionChange">
-            <el-radio-button :value="null">全部赛区</el-radio-button>
+            <el-radio-button :value="0">全部赛区</el-radio-button>
             <el-radio-button :value="1">LPL</el-radio-button>
             <el-radio-button :value="2">LCK</el-radio-button>
             <el-radio-button :value="3">LEC</el-radio-button>
@@ -243,7 +243,7 @@ const financeStore = useFinanceStore()
 const { loading, filteredTeams, stats } = storeToRefs(financeStore)
 
 // 筛选状态
-const selectedRegion = ref<number | null>(null)
+const selectedRegion = ref<number>(0)
 const searchQuery = ref('')
 const sortOption = ref('balance')
 
@@ -271,8 +271,8 @@ function getLeagueName(regionCode: string): string {
 }
 
 // 赛区筛选
-function handleRegionChange(regionId: number | null) {
-  financeStore.setFilter(regionId)
+function handleRegionChange(regionId: number) {
+  financeStore.setFilter(regionId === 0 ? null : regionId)
 }
 
 // 搜索

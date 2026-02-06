@@ -104,12 +104,69 @@ pub struct BidOverview { ... }           // 汇总统计 + 所有选手分析列
 
 **R5 行为变更**：原来最高出价被拒即整个交易流产，现在允许回退到次高出价者。
 
-### 意愿度计算公式
+### 匹配度计算公式 (match_score)
+
+球队 AI 对选手的匹配评分，决定 R4 中哪支球队的 offer 优先。
+
+**分项评分**（各项 0-100）：
+
+| 分项 | 评分规则 |
+|------|----------|
+| `ability_score` | 90+ → 100, 85-89 → 90, 80-84 → 80, 75-79 → 70, 70-74 → 60, <70 → 40 |
+| `age_score` | 根据 AI 性格偏好分段：青训型看重年轻、短期型看重巅峰期、平衡型范围宽 |
+| `finance_score` | Wealthy → 100, Healthy → 80, Tight → 60, 其他 → 30 |
+
+**归一化加权公式**：
+
+```
+w_ability = 0.3 + 0.2 × short_term_focus       // 0.3 ~ 0.5
+w_age     = 0.2 + 0.2 × max(youth_pref, short_term_focus)  // 0.2 ~ 0.4
+w_finance = 0.15 + 0.15 × bargain_hunting       // 0.15 ~ 0.3
+total_w   = w_ability + w_age + w_finance
+
+match_score = (ability × w_ability + age × w_age + finance × w_finance) / total_w
+```
+
+各性格球队的权重偏向不同，但**结果范围始终为 0-100**（归一化保证）。
+
+| 性格类型 | 能力权重 | 年龄权重 | 财务权重 | 侧重 |
+|----------|---------|---------|---------|------|
+| Aggressive | 高 | 中 | 低 | 看重即战力 |
+| Youth | 中 | 高 | 低 | 看重年轻潜力 |
+| Bargain | 中 | 中 | 高 | 看重性价比 |
+| Balanced | 中 | 中 | 中 | 均衡 |
+
+### 合同年限规则
+
+合同年限范围 **1-4 年**，由年龄、AI 性格、随机性三因素决定：
+
+```
+base_years = age <= 22 → 3, age 23-28 → 2, age 29+ → 1
+
+personality_adj:
+  long_term_focus > 0.7 → +1（长期型偏好长合同）
+  short_term_focus > 0.7 → -1（短期型偏好短合同）
+  其他 → 0
+
+random_adj:
+  30% 概率 +1, 25% 概率 -1, 45% 概率 0
+
+contract_years = clamp(base + personality_adj + random_adj, 1, 4)
+```
+
+| 轮次 | 受 AI 性格影响 | 说明 |
+|------|---------------|------|
+| R3 续约 | 否（仅年龄+随机） | 续约时不考虑球队偏好 |
+| R4 自由球员 | 是 | 完整三因素 |
+| R5 合同转会 | 是 | 完整三因素 |
+| R7 紧急补人 | 否 | 固定 1 年，≤25 岁有 40% 概率 2 年 |
+
+### 意愿度计算公式 (willingness)
 
 ```
 salary_score = 基于 offered_salary / current_salary 的分段评分
 loyalty_impact = (100 - loyalty) * 0.5
-base = salary_score * 0.4 + loyalty_impact * 0.3 + 50 * 0.3 + random(-5, 5)
+base = salary_score * 0.4 + loyalty_impact * 0.3 + 15 + random(-5, 5)
 
 跨赛区惩罚:
   cross_region_factor = (100 - region_loyalty) / 100  （跨赛区时）
