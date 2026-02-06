@@ -433,8 +433,8 @@ impl TransferEngine {
 
             let new_age = age + 1;
 
-            // 能力增长
-            let growth = match tag.as_str() {
+            // 能力增长（tag 大小写不敏感匹配）
+            let growth = match tag.to_uppercase().as_str() {
                 "GENIUS" => 3i64,
                 "NORMAL" => 2,
                 _ => 1, // ORDINARY
