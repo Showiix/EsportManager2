@@ -155,9 +155,41 @@ const newSeason = await timeApi.startNewSeason()
 | 赛事阶段 | NOT_INITIALIZED | InitializePhase |
 | 赛事阶段 | IN_PROGRESS | SimulateNextMatch, SimulateAllMatches |
 | 赛事阶段 | COMPLETED | CompleteAndAdvance |
-| 转会期 | - | StartTransferWindow, ExecuteTransferRound |
-| 选秀期 | - | StartDraft |
+| 转会期 | NOT_INITIALIZED | StartTransferWindow |
+| 转会期 | IN_PROGRESS | ExecuteTransferRound |
+| 转会期 | COMPLETED | CompleteAndAdvance |
+| 选秀期 | NOT_INITIALIZED / IN_PROGRESS | StartDraft |
+| 选秀期 | COMPLETED | CompleteAndAdvance |
 | 赛季结束 | - | ExecuteSeasonSettlement, StartNewSeason |
+
+### 非赛事阶段状态判断
+
+非赛事阶段（转会期、选秀、年度颁奖、赛季结束）的状态不再默认返回 Completed，而是查询数据库实际状态：
+
+**转会期 (TransferWindow)**：
+
+| 数据库状态 | PhaseStatus | 说明 |
+|-----------|-------------|------|
+| 无 transfer_window 记录 | NotInitialized | 转会期未开始 |
+| status=IN_PROGRESS, round > 0 | InProgress | 轮次执行中 |
+| status=COMPLETED | Completed | 已确认关闭 |
+
+**选秀期 (Draft)**：
+
+| 条件 | PhaseStatus | 说明 |
+|------|-------------|------|
+| 非选秀年 | Completed | 自动跳过 |
+| 选秀年，无 draft_results | NotInitialized | 未开始 |
+| 选秀年，部分赛区完成 | InProgress | 执行中 |
+| 选秀年，4 赛区完成 | Completed | 可推进 |
+
+**年度颁奖 / 赛季结束**：始终返回 Completed，可立即推进。
+
+### 推进验证
+
+`complete_and_advance` 在推进前会进行额外验证：
+
+- **转会期**：必须确认转会窗口已关闭（status=COMPLETED），否则拒绝推进
 
 ## 快进功能
 
