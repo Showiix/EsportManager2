@@ -79,9 +79,9 @@ impl SeasonPhase {
         }
     }
 
-    /// 是否是选秀年份
-    pub fn is_draft_year(season: u32) -> bool {
-        season >= 2 && (season - 2) % 4 == 0
+    /// 是否是选秀年份（每年都有选秀）
+    pub fn is_draft_year(_season: u32) -> bool {
+        true
     }
 }
 

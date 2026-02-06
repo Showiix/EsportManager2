@@ -192,7 +192,7 @@
             <span class="team-name">{{ team.teamName }}</span>
           </div>
           <div class="lottery-result">
-            <template v-if="team.pickOrder">
+            <template v-if="team.pickOrder !== null">
               <div class="pick-badge" :class="getPickClass(team.pickOrder)">
                 第 {{ team.pickOrder }} 顺位
               </div>
@@ -279,25 +279,25 @@
 
       <div class="assignment-list">
         <div
-          v-for="team in sortedLotteryResults"
-          :key="team.teamId"
+          v-for="item in assignmentList"
+          :key="`${item.pickOrder}-${item.teamId}`"
           class="assignment-row"
-          :class="{ 'is-assigned': team.assigned }"
+          :class="{ 'is-assigned': item.assigned }"
         >
           <div class="assignment-order">
-            <div class="order-badge" :class="getPickClass(team.pickOrder)">
-              {{ team.pickOrder }}
+            <div class="order-badge" :class="getPickClass(item.pickOrder)">
+              {{ item.pickOrder }}
             </div>
           </div>
           <div class="assignment-player">
-            <span class="player-tag" :class="getPickLabelClass(team.pickOrder || 0)">
-              {{ draftPool[(team.pickOrder || 1) - 1]?.title }}
+            <span class="player-tag" :class="getPickLabelClass(item.pickOrder || 0)">
+              {{ draftPool[(item.pickOrder || 1) - 1]?.title }}
             </span>
             <div class="player-info">
-              <span class="player-name">{{ draftPool[(team.pickOrder || 1) - 1]?.gameId }}</span>
+              <span class="player-name">{{ draftPool[(item.pickOrder || 1) - 1]?.gameId }}</span>
               <span class="player-stats">
-                能力 {{ draftPool[(team.pickOrder || 1) - 1]?.ability }} ·
-                潜力 {{ draftPool[(team.pickOrder || 1) - 1]?.potential }}
+                能力 {{ draftPool[(item.pickOrder || 1) - 1]?.ability }} ·
+                潜力 {{ draftPool[(item.pickOrder || 1) - 1]?.potential }}
               </span>
             </div>
           </div>
@@ -306,12 +306,12 @@
           </div>
           <div class="assignment-team">
             <div class="team-avatar large" :class="selectedRegion">
-              {{ team.teamName.substring(0, 2) }}
+              {{ item.teamName.substring(0, 2) }}
             </div>
-            <span class="team-name">{{ team.teamName }}</span>
+            <span class="team-name">{{ item.teamName }}</span>
           </div>
           <div class="assignment-status">
-            <span v-if="team.assigned" class="status-done">
+            <span v-if="item.assigned" class="status-done">
               <el-icon><Check /></el-icon>
               已分配
             </span>
@@ -349,21 +349,21 @@
         <h3 class="result-title">选秀结果摘要</h3>
         <div class="result-grid">
           <div
-            v-for="team in sortedLotteryResults"
-            :key="team.teamId"
+            v-for="item in assignmentList"
+            :key="`result-${item.pickOrder}-${item.teamId}`"
             class="result-card"
-            :class="getPickClass(team.pickOrder)"
+            :class="getPickClass(item.pickOrder)"
           >
-            <div class="result-order">{{ team.pickOrder }}</div>
+            <div class="result-order">{{ item.pickOrder }}</div>
             <div class="result-content">
-              <div class="result-player">{{ draftPool[(team.pickOrder || 1) - 1]?.gameId }}</div>
+              <div class="result-player">{{ draftPool[(item.pickOrder || 1) - 1]?.gameId }}</div>
               <div class="result-team">
                 <el-icon><ArrowRight /></el-icon>
-                {{ team.teamName }}
+                {{ item.teamName }}
               </div>
             </div>
             <div class="result-ability">
-              {{ draftPool[(team.pickOrder || 1) - 1]?.ability }}
+              {{ draftPool[(item.pickOrder || 1) - 1]?.ability }}
             </div>
           </div>
         </div>
@@ -405,7 +405,7 @@ const gameStore = useGameStore()
 const { currentSeason: gameSeason, currentPhase } = storeToRefs(gameStore)
 
 // 是否处于选秀阶段
-const isDraftPhase = computed(() => currentPhase.value === 'DRAFT')
+const isDraftPhase = computed(() => currentPhase.value === 'Draft')
 
 // 状态
 const selectedRegion = ref((route.params.region as string)?.toLowerCase() || 'lpl')
@@ -451,6 +451,11 @@ const draftPool = ref<any[]>([])
 // 抽签结果
 const lotteryResults = ref<any[]>([])
 
+// 后端抽签结果缓存（用于单个揭示）
+const backendLotteryCache = ref<any[]>([])
+
+// 分配列表（position-centric，拍卖后的实际签位归属）
+const assignmentList = ref<any[]>([])
 // 获取赛区ID
 const getRegionId = async (regionCode: string): Promise<number> => {
   try {
@@ -487,7 +492,71 @@ const loadTeams = async () => {
 // 初始化
 onMounted(async () => {
   await loadTeams()
+  await restoreDraftState()
 })
+
+// 恢复已有的选秀状态
+const restoreDraftState = async () => {
+  try {
+    const regionId = await getRegionId(selectedRegion.value)
+    currentRegionId.value = regionId
+
+    // 1. 尝试加载已有的选秀名单
+    const players = await draftApi.getAvailableDraftPlayers(regionId)
+    if (players && players.length > 0) {
+      draftPool.value = players.map((p, idx) => ({
+        rank: idx + 1,
+        title: idx === 0 ? '状元' : idx === 1 ? '榜眼' : idx === 2 ? '探花' : `第${idx + 1}顺位`,
+        gameId: p.game_id,
+        ability: p.ability,
+        potential: p.potential,
+        tag: p.tag,
+        position: p.position,
+      }))
+      hasDraftRoster.value = true
+
+      // 2. 尝试加载已有的抽签结果
+      const draftOrder = await draftApi.getDraftOrder(regionId)
+      if (draftOrder && draftOrder.length > 0) {
+        backendLotteryCache.value = draftOrder
+
+        // 2a. 构建抽签展示（original_team_id → 原始队伍）
+        draftOrder.forEach((order) => {
+          const matchId = order.original_team_id ?? order.team_id
+          const team = lotteryResults.value.find(t => t.teamId === matchId)
+          if (team) {
+            team.pickOrder = order.draft_position
+          }
+        })
+
+        // 2b. 构建分配列表（team_id → 拍卖后的实际拥有者）
+        const allPicked = players.every(p => p.is_picked)
+        assignmentList.value = draftOrder
+          .sort((a, b) => a.draft_position - b.draft_position)
+          .map((order) => ({
+            pickOrder: order.draft_position,
+            teamId: order.team_id,
+            teamName: order.team_name,
+            assigned: allPicked,
+          }))
+
+        if (allPicked) {
+          // 选秀已完成 → 步骤 5
+          currentStep.value = 5
+        } else {
+          // 抽签完成，进入拍卖或分配步骤
+          currentStep.value = 2
+        }
+      } else {
+        // 有选秀名单但没抽签 → 步骤 1
+        currentStep.value = 1
+      }
+    }
+    // 没有选秀名单 → 步骤 0（默认）
+  } catch (e) {
+    logger.error('恢复选秀状态失败:', e)
+  }
+}
 
 // 监听路由参数变化
 watch(
@@ -506,8 +575,11 @@ const resetDraftState = async () => {
   currentStep.value = 0
   hasDraftRoster.value = false
   draftPool.value = []
+  backendLotteryCache.value = []
+  assignmentList.value = []
   // 重新加载队伍数据
   await loadTeams()
+  await restoreDraftState()
 }
 
 // 计算属性
@@ -516,14 +588,9 @@ const hasUndrawnTeams = computed(() => {
 })
 
 const isAssigned = computed(() => {
-  return lotteryResults.value.every(r => r.assigned)
+  return assignmentList.value.length > 0 && assignmentList.value.every(r => r.assigned)
 })
 
-const sortedLotteryResults = computed(() => {
-  return [...lotteryResults.value]
-    .filter(r => r.pickOrder !== null)
-    .sort((a, b) => (a.pickOrder || 0) - (b.pickOrder || 0))
-})
 
 // 方法
 const handleRegionChange = (region: string) => {
@@ -584,8 +651,29 @@ const goToAuction = () => {
 }
 
 // 跳过拍卖，直接进入分配
-const skipAuction = () => {
+const skipAuction = async () => {
+  await buildAssignmentList()
   currentStep.value = 4
+}
+
+// 从 draft_orders 构建分配列表（使用拍卖后的实际拥有者）
+const buildAssignmentList = async () => {
+  try {
+    const draftOrder = await draftApi.getDraftOrder(currentRegionId.value)
+    if (draftOrder && draftOrder.length > 0) {
+      backendLotteryCache.value = draftOrder
+      assignmentList.value = draftOrder
+        .sort((a, b) => a.draft_position - b.draft_position)
+        .map((order) => ({
+          pickOrder: order.draft_position,
+          teamId: order.team_id,
+          teamName: order.team_name,
+          assigned: false,
+        }))
+    }
+  } catch (e) {
+    logger.error('构建分配列表失败:', e)
+  }
 }
 
 // 抽取选秀名单
@@ -633,17 +721,24 @@ const drawDraftRoster = async () => {
   }
 }
 
-// 执行后端抽签
+// 辅助函数：根据 draft order 匹配 lotteryResults 中的原始队伍
+// 拍卖后 team_id 变成买家，需要用 original_team_id 匹配
+const findTeamByOrder = (order: { team_id: number; original_team_id?: number | null }) => {
+  const matchId = order.original_team_id ?? order.team_id
+  return lotteryResults.value.find(t => t.teamId === matchId)
+}
+
+// 执行后端抽签（一次性生成所有结果，缓存起来）
 const runBackendLottery = async () => {
   isLoading.value = true
   try {
     const draftOrder = await draftApi.runDraftLottery(currentRegionId.value)
-
-    // 将后端返回的抽签结果映射到前端数据结构
+    backendLotteryCache.value = draftOrder
+    // 一键抽签：直接全部显示
     draftOrder.forEach((order) => {
-      const team = lotteryResults.value.find(t => t.teamId === order.team_id)
+      const team = findTeamByOrder(order)
       if (team) {
-        team.pickOrder = order.pick_number
+        team.pickOrder = order.draft_position
       }
     })
 
@@ -657,19 +752,56 @@ const runBackendLottery = async () => {
 }
 
 const drawSinglePick = async () => {
-  // 如果还没有开始抽签，先执行后端抽签
-  const hasAnyDrawn = lotteryResults.value.some(r => r.pickOrder !== null)
-  if (!hasAnyDrawn) {
-    await runBackendLottery()
-    return
+  // 如果还没有后端抽签结果，先调后端生成
+  if (backendLotteryCache.value.length === 0) {
+    isLoading.value = true
+    try {
+      const draftOrder = await draftApi.runDraftLottery(currentRegionId.value)
+      backendLotteryCache.value = draftOrder
+    } catch (e) {
+      logger.error('Failed to run draft lottery:', e)
+      ElMessage.error('抽签失败')
+      isLoading.value = false
+      return
+    } finally {
+      isLoading.value = false
+    }
   }
 
-  // 如果已经有部分抽签结果，显示提示
-  ElMessage.info('请使用一键抽签完成剩余抽签')
+  // 找到下一个未揭示的队伍（按 draft_position 从大到小逐个揭示，即末位先揭示）
+  const revealedTeamIds = new Set(
+    lotteryResults.value.filter(t => t.pickOrder !== null).map(t => t.teamId)
+  )
+  // 按 draft_position 降序排列，逐个揭示
+  const unrevealed = backendLotteryCache.value
+    .filter(o => {
+      const matchId = o.original_team_id ?? o.team_id
+      return !revealedTeamIds.has(matchId)
+    })
+    .sort((a, b) => b.draft_position - a.draft_position)
+
+  if (unrevealed.length > 0) {
+    const next = unrevealed[0]
+    const team = findTeamByOrder(next)
+    if (team) {
+      team.pickOrder = next.draft_position
+    }
+  }
 }
 
 const drawAllPicks = async () => {
-  await runBackendLottery()
+  if (backendLotteryCache.value.length > 0) {
+    // 已有缓存，直接全部揭示
+    backendLotteryCache.value.forEach((order) => {
+      const team = findTeamByOrder(order)
+      if (team) {
+        team.pickOrder = order.draft_position
+      }
+    })
+    ElMessage.success('抽签完成!')
+  } else {
+    await runBackendLottery()
+  }
 }
 
 // 分配选手到队伍 - 调用后端API
@@ -679,16 +811,13 @@ const assignPlayers = async () => {
     // 使用后端AI自动选秀完成分配
     const draftPicks = await draftApi.aiAutoDraft(currentRegionId.value)
 
-    // 更新前端状态
+    // 更新分配列表状态
     draftPicks.forEach((pick) => {
-      const team = lotteryResults.value.find(t => t.teamId === pick.team_id)
-      if (team) {
-        team.assigned = true
+      const item = assignmentList.value.find(a => a.teamId === pick.team_id)
+      if (item) {
+        item.assigned = true
       }
     })
-
-    // 如果有手动选秀的需求，也可以遍历每个队伍单独调用 makeDraftPick
-    // 这里使用 aiAutoDraft 简化流程
 
     currentStep.value = 5
     ElMessage.success('选手分配完成!')

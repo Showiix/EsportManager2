@@ -3191,6 +3191,9 @@ impl GameFlowService {
         // 判断阶段状态
         let phase_status = if phase_progress.total_matches == 0 && !is_non_tournament_phase(current_phase) {
             PhaseStatus::NotInitialized
+        } else if current_phase == SeasonPhase::Draft && phase_progress.total_matches == 0 && phase_progress.completed_matches == 0 {
+            // 选秀阶段：未开始选秀 → InProgress（等待用户在选秀页面操作）
+            PhaseStatus::InProgress
         } else if phase_progress.completed_matches >= phase_progress.total_matches {
             PhaseStatus::Completed
         } else {
@@ -3349,52 +3352,40 @@ impl GameFlowService {
                     }
                 }
                 SeasonPhase::Draft => {
-                    // 检查是否为选秀年
-                    let is_draft_year = (season_id as i64 - 2) % 4 == 0;
-                    if !is_draft_year {
-                        // 非选秀年 → 自动跳过（完成状态）
+                    // 选秀每年都有：检查各赛区是否完成选秀
+                    let draft_regions: i64 = sqlx::query_scalar(
+                        "SELECT COUNT(DISTINCT region_id) FROM draft_results WHERE save_id = ? AND season_id = ?"
+                    )
+                    .bind(save_id)
+                    .bind(season_id as i64)
+                    .fetch_one(pool)
+                    .await
+                    .map_err(|e| format!("查询选秀结果失败: {}", e))?;
+
+                    if draft_regions >= 4 {
+                        // 4赛区都完成
                         Ok(PhaseProgress {
                             tournaments: Vec::new(),
                             total_matches: 1,
                             completed_matches: 1,
                             percentage: 100.0,
                         })
+                    } else if draft_regions > 0 {
+                        // 部分完成
+                        Ok(PhaseProgress {
+                            tournaments: Vec::new(),
+                            total_matches: 1,
+                            completed_matches: 0,
+                            percentage: 0.0,
+                        })
                     } else {
-                        // 选秀年：检查各赛区是否完成选秀
-                        let draft_regions: i64 = sqlx::query_scalar(
-                            "SELECT COUNT(DISTINCT region_id) FROM draft_results WHERE save_id = ? AND season_id = ?"
-                        )
-                        .bind(save_id)
-                        .bind(season_id as i64)
-                        .fetch_one(pool)
-                        .await
-                        .map_err(|e| format!("查询选秀结果失败: {}", e))?;
-
-                        if draft_regions >= 4 {
-                            // 4赛区都完成
-                            Ok(PhaseProgress {
-                                tournaments: Vec::new(),
-                                total_matches: 1,
-                                completed_matches: 1,
-                                percentage: 100.0,
-                            })
-                        } else if draft_regions > 0 {
-                            // 部分完成
-                            Ok(PhaseProgress {
-                                tournaments: Vec::new(),
-                                total_matches: 1,
-                                completed_matches: 0,
-                                percentage: 0.0,
-                            })
-                        } else {
-                            // 未开始
-                            Ok(PhaseProgress {
-                                tournaments: Vec::new(),
-                                total_matches: 0,
-                                completed_matches: 0,
-                                percentage: 0.0,
-                            })
-                        }
+                        // 未开始
+                        Ok(PhaseProgress {
+                            tournaments: Vec::new(),
+                            total_matches: 0,
+                            completed_matches: 0,
+                            percentage: 0.0,
+                        })
                     }
                 }
                 _ => {

@@ -455,8 +455,8 @@ const filteredAnalyses = computed(() => {
   // 排序
   const sorted = [...list]
   sorted.sort((a, b) => {
-    const aVal = (a as Record<string, unknown>)[sortConfig.prop] as number
-    const bVal = (b as Record<string, unknown>)[sortConfig.prop] as number
+    const aVal = (a as unknown as Record<string, unknown>)[sortConfig.prop] as number
+    const bVal = (b as unknown as Record<string, unknown>)[sortConfig.prop] as number
     return sortConfig.order === 'ascending' ? aVal - bVal : bVal - aVal
   })
 

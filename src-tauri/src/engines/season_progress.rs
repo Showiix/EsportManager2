@@ -300,11 +300,12 @@ mod tests {
 
     #[test]
     fn test_draft_year() {
-        assert!(!SeasonPhase::is_draft_year(1));
+        // 每年都有选秀
+        assert!(SeasonPhase::is_draft_year(1));
         assert!(SeasonPhase::is_draft_year(2));
-        assert!(!SeasonPhase::is_draft_year(3));
-        assert!(!SeasonPhase::is_draft_year(4));
-        assert!(!SeasonPhase::is_draft_year(5));
+        assert!(SeasonPhase::is_draft_year(3));
+        assert!(SeasonPhase::is_draft_year(4));
+        assert!(SeasonPhase::is_draft_year(5));
         assert!(SeasonPhase::is_draft_year(6));
     }
 

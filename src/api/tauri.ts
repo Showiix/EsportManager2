@@ -623,9 +623,12 @@ export interface DraftPlayer {
 }
 
 export interface DraftOrder {
-  pick_number: number
   team_id: number
   team_name: string
+  original_team_id: number | null
+  summer_rank: number
+  draft_position: number
+  lottery_result: string | null
 }
 
 export interface DraftPick {

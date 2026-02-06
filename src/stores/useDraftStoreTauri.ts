@@ -78,7 +78,7 @@ export const useDraftStoreTauri = defineStore('draftTauri', () => {
 
   // 当前选秀队伍
   const currentTeam = computed(() => {
-    return draftOrder.value.find(o => o.pick_number === currentPick.value) ?? null
+    return draftOrder.value.find(o => o.draft_position === currentPick.value) ?? null
   })
 
   // 选秀是否完成

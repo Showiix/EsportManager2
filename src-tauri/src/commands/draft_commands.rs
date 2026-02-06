@@ -27,6 +27,7 @@ pub struct DraftPlayerInfo {
 pub struct DraftOrderInfo {
     pub team_id: u64,
     pub team_name: String,
+    pub original_team_id: Option<u64>,
     pub summer_rank: u32,
     pub draft_position: u32,
     pub lottery_result: Option<String>,
@@ -247,6 +248,7 @@ pub async fn run_draft_lottery(
             DraftOrderInfo {
                 team_id: o.team_id,
                 team_name,
+                original_team_id: None,
                 summer_rank: o.summer_rank,
                 draft_position: o.draft_position,
                 lottery_result: o.lottery_result,
@@ -289,7 +291,7 @@ pub async fn get_draft_order(
 
     let rows = sqlx::query(
         r#"
-        SELECT do.team_id, do.summer_rank, do.draft_position, do.lottery_result, t.name as team_name
+        SELECT do.team_id, do.original_team_id, do.summer_rank, do.draft_position, do.lottery_result, t.name as team_name
         FROM draft_orders do
         JOIN teams t ON do.team_id = t.id
         WHERE do.save_id = ? AND do.season_id = ? AND do.region_id = ?
@@ -305,12 +307,16 @@ pub async fn get_draft_order(
 
     let infos: Vec<DraftOrderInfo> = rows
         .iter()
-        .map(|row| DraftOrderInfo {
-            team_id: row.get::<i64, _>("team_id") as u64,
-            team_name: row.get("team_name"),
-            summer_rank: row.get::<i64, _>("summer_rank") as u32,
-            draft_position: row.get::<i64, _>("draft_position") as u32,
-            lottery_result: row.get("lottery_result"),
+        .map(|row| {
+            let original_team_id: Option<i64> = row.get("original_team_id");
+            DraftOrderInfo {
+                team_id: row.get::<i64, _>("team_id") as u64,
+                team_name: row.get("team_name"),
+                original_team_id: original_team_id.map(|id| id as u64),
+                summer_rank: row.get::<i64, _>("summer_rank") as u32,
+                draft_position: row.get::<i64, _>("draft_position") as u32,
+                lottery_result: row.get("lottery_result"),
+            }
         })
         .collect();
 
