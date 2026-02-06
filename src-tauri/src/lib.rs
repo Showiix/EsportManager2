@@ -33,6 +33,8 @@ use commands::{
     // 选秀命令
     generate_draft_pool, run_draft_lottery, get_draft_order, get_available_draft_players,
     make_draft_pick, ai_auto_draft,
+    // 选手池管理命令
+    get_draft_pool_players, add_draft_pool_players, update_draft_pool_player, delete_draft_pool_players,
     // 选秀权拍卖命令
     get_draft_pick_prices, start_draft_auction, execute_auction_round, fast_forward_auction,
     get_auction_status, get_auction_events, finalize_auction,
@@ -185,6 +187,11 @@ pub fn run() {
             get_available_draft_players,
             make_draft_pick,
             ai_auto_draft,
+            // 选手池管理命令
+            get_draft_pool_players,
+            add_draft_pool_players,
+            update_draft_pool_player,
+            delete_draft_pool_players,
             // 选秀权拍卖命令
             get_draft_pick_prices,
             start_draft_auction,

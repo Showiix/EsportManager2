@@ -638,6 +638,38 @@ export interface DraftPick {
   player: DraftPlayer
 }
 
+export interface DraftPoolPlayer {
+  id: number
+  game_id: string
+  real_name: string | null
+  nationality: string | null
+  age: number
+  ability: number
+  potential: number
+  position: string
+  tag: string
+  status: string
+}
+
+export interface NewDraftPoolPlayer {
+  game_id: string
+  real_name?: string | null
+  nationality?: string | null
+  age: number
+  ability: number
+  potential: number
+  position: string
+  tag: string
+}
+
+export interface UpdateDraftPoolPlayer {
+  game_id: string
+  ability: number
+  potential: number
+  position: string
+  tag: string
+}
+
 export const draftApi = {
   generateDraftPool: (regionId: number, poolSize?: number) =>
     invokeCommand<DraftPlayer[]>('generate_draft_pool', {
@@ -659,6 +691,19 @@ export const draftApi = {
 
   aiAutoDraft: (regionId: number) =>
     invokeCommand<DraftPick[]>('ai_auto_draft', { regionId }),
+
+  // 选手池管理
+  getDraftPoolPlayers: (regionId: number) =>
+    invokeCommand<DraftPoolPlayer[]>('get_draft_pool_players', { regionId }),
+
+  addDraftPoolPlayers: (regionId: number, players: NewDraftPoolPlayer[]) =>
+    invokeCommand<number>('add_draft_pool_players', { regionId, players }),
+
+  updateDraftPoolPlayer: (playerId: number, data: UpdateDraftPoolPlayer) =>
+    invokeCommand<void>('update_draft_pool_player', { playerId, ...data }),
+
+  deleteDraftPoolPlayers: (regionId: number, playerIds?: number[]) =>
+    invokeCommand<number>('delete_draft_pool_players', { regionId, playerIds }),
 }
 
 // ========================================

@@ -747,3 +747,258 @@ pub async fn ai_auto_draft(
 
     Ok(CommandResult::ok(picks))
 }
+
+// ========================================
+// 选手池管理命令 (draft_pool 表 CRUD)
+// ========================================
+
+/// 选手池选手信息（对应 draft_pool 表）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DraftPoolPlayer {
+    pub id: u64,
+    pub game_id: String,
+    pub real_name: Option<String>,
+    pub nationality: Option<String>,
+    pub age: u8,
+    pub ability: u8,
+    pub potential: u8,
+    pub position: String,
+    pub tag: String,
+    pub status: String,
+}
+
+/// 新增选手池选手的输入结构
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NewDraftPoolPlayer {
+    pub game_id: String,
+    pub real_name: Option<String>,
+    pub nationality: Option<String>,
+    pub age: u8,
+    pub ability: u8,
+    pub potential: u8,
+    pub position: String,
+    pub tag: String,
+}
+
+/// 读取选秀池选手（draft_pool 表中 available 的记录）
+#[tauri::command]
+pub async fn get_draft_pool_players(
+    state: State<'_, AppState>,
+    region_id: u64,
+) -> Result<CommandResult<Vec<DraftPoolPlayer>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let rows = sqlx::query(
+        r#"
+        SELECT id, game_id, real_name, nationality, age, ability, potential, position, tag, status
+        FROM draft_pool
+        WHERE save_id = ? AND region_id = ? AND status = 'available'
+        ORDER BY id
+        "#,
+    )
+    .bind(&save_id)
+    .bind(region_id as i64)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let players: Vec<DraftPoolPlayer> = rows
+        .iter()
+        .map(|row| DraftPoolPlayer {
+            id: row.get::<i64, _>("id") as u64,
+            game_id: row.get("game_id"),
+            real_name: row.get("real_name"),
+            nationality: row.get("nationality"),
+            age: row.get::<i64, _>("age") as u8,
+            ability: row.get::<i64, _>("ability") as u8,
+            potential: row.get::<i64, _>("potential") as u8,
+            position: row.get("position"),
+            tag: row.get("tag"),
+            status: row.get("status"),
+        })
+        .collect();
+
+    Ok(CommandResult::ok(players))
+}
+
+/// 批量添加选手到选秀池
+#[tauri::command]
+pub async fn add_draft_pool_players(
+    state: State<'_, AppState>,
+    region_id: u64,
+    players: Vec<NewDraftPoolPlayer>,
+) -> Result<CommandResult<u64>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取当前赛季作为 created_season
+    let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+        .bind(&save_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let current_season: i64 = save_row.get("current_season");
+
+    let mut count: u64 = 0;
+    for p in &players {
+        sqlx::query(
+            r#"
+            INSERT INTO draft_pool (
+                save_id, region_id, game_id, real_name, nationality,
+                age, ability, potential, position, tag, status, created_season
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?)
+            "#,
+        )
+        .bind(&save_id)
+        .bind(region_id as i64)
+        .bind(&p.game_id)
+        .bind(&p.real_name)
+        .bind(&p.nationality)
+        .bind(p.age as i64)
+        .bind(p.ability as i64)
+        .bind(p.potential as i64)
+        .bind(&p.position)
+        .bind(&p.tag)
+        .bind(current_season)
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        count += 1;
+    }
+
+    Ok(CommandResult::ok(count))
+}
+
+/// 编辑选秀池中的单个选手
+#[tauri::command]
+pub async fn update_draft_pool_player(
+    state: State<'_, AppState>,
+    player_id: u64,
+    game_id: String,
+    ability: u8,
+    potential: u8,
+    position: String,
+    tag: String,
+) -> Result<CommandResult<()>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let result = sqlx::query(
+        r#"
+        UPDATE draft_pool
+        SET game_id = ?, ability = ?, potential = ?, position = ?, tag = ?
+        WHERE id = ? AND status = 'available'
+        "#,
+    )
+    .bind(&game_id)
+    .bind(ability as i64)
+    .bind(potential as i64)
+    .bind(&position)
+    .bind(&tag)
+    .bind(player_id as i64)
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if result.rows_affected() == 0 {
+        return Ok(CommandResult::err("选手不存在或已被选中"));
+    }
+
+    Ok(CommandResult::ok(()))
+}
+
+/// 删除选秀池选手（支持单个/批量/清空）
+#[tauri::command]
+pub async fn delete_draft_pool_players(
+    state: State<'_, AppState>,
+    region_id: u64,
+    player_ids: Option<Vec<u64>>,
+) -> Result<CommandResult<u64>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let rows_affected = match player_ids {
+        Some(ids) => {
+            // 删除指定 id 的选手
+            let mut total: u64 = 0;
+            for id in ids {
+                let result = sqlx::query(
+                    "DELETE FROM draft_pool WHERE id = ? AND save_id = ? AND region_id = ? AND status = 'available'"
+                )
+                .bind(id as i64)
+                .bind(&save_id)
+                .bind(region_id as i64)
+                .execute(&pool)
+                .await
+                .map_err(|e| e.to_string())?;
+                total += result.rows_affected();
+            }
+            total
+        }
+        None => {
+            // 清空该赛区所有 available 的记录
+            let result = sqlx::query(
+                "DELETE FROM draft_pool WHERE save_id = ? AND region_id = ? AND status = 'available'"
+            )
+            .bind(&save_id)
+            .bind(region_id as i64)
+            .execute(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            result.rows_affected()
+        }
+    };
+
+    Ok(CommandResult::ok(rows_affected))
+}

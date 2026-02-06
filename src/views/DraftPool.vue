@@ -99,10 +99,6 @@
           <el-tag type="info">{{ currentPoolData.length }} 名待选新秀</el-tag>
         </div>
         <div class="header-actions">
-          <el-button @click="generateRandomPool">
-            <el-icon><MagicStick /></el-icon>
-            随机生成
-          </el-button>
           <el-button type="danger" @click="clearPool" :disabled="currentPoolData.length === 0">
             <el-icon><Delete /></el-icon>
             清空选手池
@@ -116,7 +112,7 @@
           <el-icon :size="64"><FolderOpened /></el-icon>
         </div>
         <h3>选手池为空</h3>
-        <p>请导入新秀数据或随机生成选手池</p>
+        <p>请导入新秀数据来填充选手池</p>
         <div class="empty-actions">
           <el-button type="primary" @click="handleImportCommand('file')">
             <el-icon><Document /></el-icon>
@@ -125,10 +121,6 @@
           <el-button @click="showImportDialog = true">
             <el-icon><Plus /></el-icon>
             单个添加
-          </el-button>
-          <el-button @click="generateRandomPool">
-            <el-icon><MagicStick /></el-icon>
-            随机生成
           </el-button>
         </div>
       </div>
@@ -436,7 +428,6 @@ import {
   User,
   UserFilled,
   Collection,
-  MagicStick,
   Delete,
   Edit,
   Document,
@@ -446,6 +437,7 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { draftApi, queryApi } from '@/api/tauri'
+import type { DraftPoolPlayer, NewDraftPoolPlayer } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('DraftPool')
@@ -522,15 +514,15 @@ const getRegionId = async (regionCode: string): Promise<number> => {
   }
 }
 
-// 加载选手池数据
+// 加载选手池数据（从 draft_pool 表读取 available 记录）
 const loadPoolData = async (regionCode: string) => {
   isLoading.value = true
   try {
     const regionId = await getRegionId(regionCode)
-    const players = await draftApi.getAvailableDraftPlayers(regionId)
+    const players = await draftApi.getDraftPoolPlayers(regionId)
 
     // 转换后端数据格式为前端格式
-    const regionPlayers = players.map(p => ({
+    const regionPlayers = players.map((p: DraftPoolPlayer) => ({
       id: String(p.id),
       gameId: p.game_id,
       position: p.position,
@@ -616,35 +608,41 @@ const getAbilityColor = (ability: number) => {
   return '#ef4444'
 }
 
-const importPlayer = () => {
+const importPlayer = async () => {
   if (!importForm.value.gameId.trim()) {
     ElMessage.warning('请输入游戏ID')
     return
   }
 
-  const newPlayer: PoolPlayer = {
-    id: Date.now().toString(),
-    gameId: importForm.value.gameId,
-    position: importForm.value.position,
-    ability: importForm.value.ability,
-    potential: importForm.value.potential,
-    tag: importForm.value.tag,
-    region: selectedRegion.value,
+  try {
+    const regionId = await getRegionId(selectedRegion.value)
+    const newPlayer: NewDraftPoolPlayer = {
+      game_id: importForm.value.gameId,
+      age: 18,
+      ability: importForm.value.ability,
+      potential: importForm.value.potential,
+      position: importForm.value.position,
+      tag: importForm.value.tag,
+    }
+
+    await draftApi.addDraftPoolPlayers(regionId, [newPlayer])
+    showImportDialog.value = false
+
+    // 重置表单
+    importForm.value = {
+      gameId: '',
+      position: 'MID',
+      ability: 50,
+      potential: 70,
+      tag: 'NORMAL',
+    }
+
+    await loadPoolData(selectedRegion.value)
+    ElMessage.success('新秀导入成功')
+  } catch (e) {
+    logger.error('Failed to import player:', e)
+    ElMessage.error('导入失败')
   }
-
-  poolData.value.push(newPlayer)
-  showImportDialog.value = false
-
-  // 重置表单
-  importForm.value = {
-    gameId: '',
-    position: 'MID',
-    ability: 50,
-    potential: 70,
-    tag: 'NORMAL',
-  }
-
-  ElMessage.success('新秀导入成功')
 }
 
 const editPlayer = (player: PoolPlayer) => {
@@ -652,12 +650,23 @@ const editPlayer = (player: PoolPlayer) => {
   showEditDialog.value = true
 }
 
-const savePlayer = () => {
-  const index = poolData.value.findIndex(p => p.id === editForm.value.id)
-  if (index !== -1) {
-    poolData.value[index] = { ...editForm.value, region: selectedRegion.value }
+const savePlayer = async () => {
+  try {
+    const playerId = Number(editForm.value.id)
+    await draftApi.updateDraftPoolPlayer(playerId, {
+      game_id: editForm.value.gameId,
+      ability: editForm.value.ability,
+      potential: editForm.value.potential,
+      position: editForm.value.position,
+      tag: editForm.value.tag,
+    })
+
     showEditDialog.value = false
+    await loadPoolData(selectedRegion.value)
     ElMessage.success('保存成功')
+  } catch (e) {
+    logger.error('Failed to save player:', e)
+    ElMessage.error('保存失败')
   }
 }
 
@@ -669,11 +678,10 @@ const removePlayer = async (id: string) => {
       type: 'warning',
     })
 
-    const index = poolData.value.findIndex(p => p.id === id)
-    if (index !== -1) {
-      poolData.value.splice(index, 1)
-      ElMessage.success('已移除')
-    }
+    const regionId = await getRegionId(selectedRegion.value)
+    await draftApi.deleteDraftPoolPlayers(regionId, [Number(id)])
+    await loadPoolData(selectedRegion.value)
+    ElMessage.success('已移除')
   } catch {
     // 取消操作
   }
@@ -687,42 +695,12 @@ const clearPool = async () => {
       type: 'warning',
     })
 
-    poolData.value = poolData.value.filter(p => p.region !== selectedRegion.value)
+    const regionId = await getRegionId(selectedRegion.value)
+    await draftApi.deleteDraftPoolPlayers(regionId)
+    await loadPoolData(selectedRegion.value)
     ElMessage.success('选手池已清空')
   } catch {
     // 取消操作
-  }
-}
-
-// 随机生成选手池 - 调用后端API
-const generateRandomPool = async () => {
-  isLoading.value = true
-  try {
-    const regionId = await getRegionId(selectedRegion.value)
-    // 调用后端API生成选秀池（默认生成30人）
-    const players = await draftApi.generateDraftPool(regionId, 30)
-
-    // 转换后端数据格式为前端格式
-    const regionPlayers = players.map(p => ({
-      id: String(p.id),
-      gameId: p.game_id,
-      position: p.position,
-      ability: p.ability,
-      potential: p.potential,
-      tag: p.tag,
-      region: selectedRegion.value,
-    }))
-
-    // 更新当前赛区的数据
-    poolData.value = poolData.value.filter(p => p.region !== selectedRegion.value)
-    poolData.value.push(...regionPlayers)
-
-    ElMessage.success(`已生成 ${regionPlayers.length} 名新秀`)
-  } catch (e) {
-    logger.error('Failed to generate draft pool:', e)
-    ElMessage.error('生成选手池失败')
-  } finally {
-    isLoading.value = false
   }
 }
 
@@ -889,20 +867,26 @@ const validateAndNormalizePlayers = (players: any[]): Omit<PoolPlayer, 'id' | 'r
 }
 
 // 确认批量导入
-const confirmBatchImport = () => {
-  const playersToImport = parsedPlayers.value
+const confirmBatchImport = async () => {
+  try {
+    const regionId = await getRegionId(selectedRegion.value)
+    const playersToImport: NewDraftPoolPlayer[] = parsedPlayers.value.map(p => ({
+      game_id: p.gameId,
+      age: 18,
+      ability: p.ability,
+      potential: p.potential,
+      position: p.position,
+      tag: p.tag,
+    }))
 
-  playersToImport.forEach((player, index) => {
-    const newPlayer: PoolPlayer = {
-      id: Date.now().toString() + index,
-      ...player,
-      region: selectedRegion.value,
-    }
-    poolData.value.push(newPlayer)
-  })
-
-  ElMessage.success(`成功导入 ${playersToImport.length} 名新秀`)
-  closeBatchImportDialog()
+    const count = await draftApi.addDraftPoolPlayers(regionId, playersToImport)
+    await loadPoolData(selectedRegion.value)
+    ElMessage.success(`成功导入 ${count} 名新秀`)
+    closeBatchImportDialog()
+  } catch (e) {
+    logger.error('Failed to batch import:', e)
+    ElMessage.error('批量导入失败')
+  }
 }
 </script>
 
