@@ -9,7 +9,23 @@
             <el-icon :size="16"><QuestionFilled /></el-icon>
           </span>
         </h1>
-        <p>S{{ seasonId }} 赛季 · R4/R5 竞价过程透明化</p>
+        <div class="header-sub-row">
+          <p>S{{ selectedSeason || seasonId }} 赛季 · R4/R5 竞价过程透明化</p>
+          <el-select
+            v-model="selectedSeason"
+            placeholder="选择赛季"
+            @change="onSeasonChange"
+            style="width: 140px"
+            class="season-select"
+          >
+            <el-option
+              v-for="s in seasonStore.availableSeasons"
+              :key="s.id"
+              :label="s.label"
+              :value="s.number"
+            />
+          </el-select>
+        </div>
       </div>
       <div class="header-stats" v-if="overview">
         <div class="stat-item">
@@ -376,8 +392,10 @@ import { transferWindowApi } from '@/api/tauri'
 import type { BidOverview, PlayerBidAnalysis } from '@/api/tauri'
 import { formatMoney } from '@/utils/format'
 import { Search, Loading, QuestionFilled } from '@element-plus/icons-vue'
+import { useSeasonStore } from '@/stores/useSeasonStore'
 
 const route = useRoute()
+const seasonStore = useSeasonStore()
 
 const loading = ref(false)
 const overview = ref<BidOverview | null>(null)
@@ -387,6 +405,7 @@ const filterPosition = ref('')
 const filterOutcome = ref('')
 const windowId = ref<number>(0)
 const seasonId = ref<number>(0)
+const selectedSeason = ref<number>(0)
 const showFormulaDialog = ref(false)
 
 // 弹窗静态数据
@@ -453,17 +472,25 @@ const paginatedData = computed(() => {
 
 // 方法
 async function loadData() {
-  if (!windowId.value) return
   loading.value = true
   try {
     const round = activeTab.value === 0 ? undefined : activeTab.value
-    overview.value = await transferWindowApi.getTransferBidsOverview(windowId.value, round)
+    overview.value = await transferWindowApi.getTransferBidsOverview(
+      windowId.value || undefined, round, selectedSeason.value || undefined
+    )
     pagination.page = 1
   } catch (e) {
     console.error('加载竞价数据失败', e)
   } finally {
     loading.value = false
   }
+}
+
+function onSeasonChange(val: number) {
+  selectedSeason.value = val
+  seasonId.value = val
+  windowId.value = 0
+  loadData()
 }
 
 function handleTabChange() {
@@ -527,23 +554,34 @@ function getWillingnessColor(w: number) {
 }
 
 onMounted(async () => {
-  if (route.query.windowId) {
+  await seasonStore.loadSeasons()
+
+  if (route.query.seasonId) {
+    selectedSeason.value = Number(route.query.seasonId)
+    seasonId.value = selectedSeason.value
+  } else if (route.query.windowId) {
     windowId.value = Number(route.query.windowId)
   }
-  if (route.query.seasonId) {
-    seasonId.value = Number(route.query.seasonId)
-  }
-  if (!windowId.value) {
+
+  if (!windowId.value && !selectedSeason.value) {
     try {
       const tw = await transferWindowApi.getCurrentTransferWindow()
       if (tw) {
         windowId.value = tw.window_id
         seasonId.value = tw.season_id
+        selectedSeason.value = tw.season_id
       }
     } catch (e) {
       console.error('获取当前转会窗口失败', e)
     }
   }
+
+  // 如果仍然没有选中赛季，用当前活跃赛季
+  if (!selectedSeason.value && seasonStore.activeSeason) {
+    selectedSeason.value = seasonStore.activeSeason.number
+    seasonId.value = selectedSeason.value
+  }
+
   await loadData()
 })
 </script>
@@ -575,6 +613,31 @@ onMounted(async () => {
   font-size: 14px;
   opacity: 0.8;
   margin: 0;
+}
+
+.header-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.season-select :deep(.el-input__wrapper) {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: none;
+  color: white;
+}
+
+.season-select :deep(.el-input__inner) {
+  color: white;
+}
+
+.season-select :deep(.el-input__inner::placeholder) {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.season-select :deep(.el-select__suffix) {
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .header-stats {

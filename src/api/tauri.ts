@@ -3108,8 +3108,8 @@ export const transferWindowApi = {
   // ========== 竞价分析 ==========
 
   // 获取竞价总览
-  getTransferBidsOverview: (windowId: number, round?: number) =>
-    invokeCommand<BidOverview>('get_transfer_bids_overview', { windowId, round }),
+  getTransferBidsOverview: (windowId?: number, round?: number, seasonId?: number) =>
+    invokeCommand<BidOverview>('get_transfer_bids_overview', { windowId, round, seasonId }),
 
   // 获取单个选手的竞价记录
   getPlayerBids: (windowId: number, playerId: number) =>

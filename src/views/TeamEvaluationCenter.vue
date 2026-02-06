@@ -4,7 +4,23 @@
     <div class="page-header">
       <div class="header-content">
         <h1>战队评估中心</h1>
-        <p>查看各战队的赛季评估、策略分析与阵容需求</p>
+        <div class="header-sub-row">
+          <p>查看各战队的赛季评估、策略分析与阵容需求</p>
+          <el-select
+            v-model="selectedSeason"
+            placeholder="选择赛季"
+            @change="onSeasonChange"
+            style="width: 140px"
+            class="season-select"
+          >
+            <el-option
+              v-for="s in seasonStore.availableSeasons"
+              :key="s.id"
+              :label="s.label"
+              :value="s.number"
+            />
+          </el-select>
+        </div>
       </div>
       <div class="header-stats">
         <div class="stat-item">
@@ -405,6 +421,7 @@ import {
   type PlayerStayEvaluationInfo,
 } from '@/api/tauri'
 import { formatBudget } from '@/utils'
+import { useSeasonStore } from '@/stores/useSeasonStore'
 
 // 状态
 const loading = ref(false)
@@ -416,6 +433,8 @@ const detailDialogVisible = ref(false)
 const selectedTeam = ref<TeamSeasonEvaluationInfo | null>(null)
 const currentPage = ref(1)
 const pageSize = ref(20)
+const seasonStore = useSeasonStore()
+const selectedSeason = ref<number>(0)
 
 // 筛选条件
 const filters = reactive({
@@ -484,13 +503,19 @@ function handlePageChange(page: number) {
 async function loadEvaluations() {
   loading.value = true
   try {
-    evaluations.value = await transferWindowApi.getTeamEvaluations()
+    evaluations.value = await transferWindowApi.getTeamEvaluations(
+      selectedSeason.value || undefined
+    )
   } catch (error) {
     ElMessage.error('加载战队评估数据失败')
     console.error(error)
   } finally {
     loading.value = false
   }
+}
+
+function onSeasonChange() {
+  loadEvaluations()
 }
 
 async function handleClearData() {
@@ -539,7 +564,10 @@ async function showDetail(team: TeamSeasonEvaluationInfo) {
 
   // 加载选手评估
   try {
-    playerEvaluations.value = await transferWindowApi.getPlayerStayEvaluations(team.team_id)
+    playerEvaluations.value = await transferWindowApi.getPlayerStayEvaluations(
+      team.team_id,
+      selectedSeason.value || undefined
+    )
   } catch (error) {
     console.error('加载选手评估失败', error)
     playerEvaluations.value = []
@@ -724,7 +752,11 @@ function getStayScoreColor(score: number): string {
 }
 
 // 初始化
-onMounted(() => {
+onMounted(async () => {
+  await seasonStore.loadSeasons()
+  if (seasonStore.activeSeason) {
+    selectedSeason.value = seasonStore.activeSeason.number
+  }
   loadEvaluations()
 })
 </script>
@@ -757,6 +789,31 @@ onMounted(() => {
   margin: 0;
   opacity: 0.9;
   font-size: 14px;
+}
+
+.header-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.season-select :deep(.el-input__wrapper) {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: none;
+  color: white;
+}
+
+.season-select :deep(.el-input__inner) {
+  color: white;
+}
+
+.season-select :deep(.el-input__inner::placeholder) {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.season-select :deep(.el-select__suffix) {
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .header-stats {

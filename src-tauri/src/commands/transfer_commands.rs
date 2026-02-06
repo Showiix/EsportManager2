@@ -1320,7 +1320,8 @@ pub async fn confirm_close_transfer_window(
 #[tauri::command]
 pub async fn get_transfer_bids_overview(
     state: State<'_, AppState>,
-    window_id: i64,
+    window_id: Option<i64>,
+    season_id: Option<i64>,
     round: Option<i64>,
 ) -> Result<CommandResult<BidOverview>, String> {
     let guard = state.db.read().await;
@@ -1332,6 +1333,35 @@ pub async fn get_transfer_bids_overview(
     let pool = match db.get_pool().await {
         Ok(p) => p,
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 确定 window_id
+    let resolved_window_id = if let Some(wid) = window_id {
+        wid
+    } else if let Some(sid) = season_id {
+        let current_save = state.current_save_id.read().await;
+        let save_id = match current_save.as_ref() {
+            Some(id) => id.clone(),
+            None => return Ok(CommandResult::err("No save loaded")),
+        };
+        let row = sqlx::query("SELECT id FROM transfer_windows WHERE save_id = ? AND season_id = ? ORDER BY id DESC LIMIT 1")
+            .bind(&save_id).bind(sid)
+            .fetch_optional(&pool).await.map_err(|e| e.to_string())?;
+        match row {
+            Some(r) => r.get::<i64, _>("id"),
+            None => return Ok(CommandResult::ok(BidOverview {
+                window_id: 0,
+                round,
+                total_players: 0,
+                total_bids: 0,
+                successful_signings: 0,
+                failed_signings: 0,
+                avg_bids_per_player: 0.0,
+                player_analyses: vec![],
+            })),
+        }
+    } else {
+        return Ok(CommandResult::err("需要提供 window_id 或 season_id"));
     };
 
     // 查询竞价记录
@@ -1346,7 +1376,7 @@ pub async fn get_transfer_bids_overview(
                WHERE window_id = ? AND round = ?
                ORDER BY player_id, match_score DESC"#
         )
-        .bind(window_id)
+        .bind(resolved_window_id)
         .bind(r)
         .fetch_all(&pool)
         .await
@@ -1362,7 +1392,7 @@ pub async fn get_transfer_bids_overview(
                WHERE window_id = ?
                ORDER BY round, player_id, match_score DESC"#
         )
-        .bind(window_id)
+        .bind(resolved_window_id)
         .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())?
@@ -1444,7 +1474,7 @@ pub async fn get_transfer_bids_overview(
     };
 
     Ok(CommandResult::ok(BidOverview {
-        window_id,
+        window_id: resolved_window_id,
         round,
         total_players,
         total_bids,
