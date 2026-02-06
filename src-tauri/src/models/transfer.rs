@@ -402,7 +402,7 @@ pub struct TransferConfig {
 impl Default for TransferConfig {
     fn default() -> Self {
         Self {
-            max_rounds: 8,
+            max_rounds: 7,
             max_transfers_per_round: 2,
             max_transfers_per_window: 10,
             negotiation_max_rounds: 3,
@@ -430,6 +430,24 @@ pub struct TransferWindowResponse {
     pub current_round: i64,
     pub status: String,
     pub season_id: i64,
+}
+
+/// 转会窗口关闭验证结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferWindowCloseValidation {
+    pub is_valid: bool,
+    pub window_id: i64,
+    pub issues: Vec<TransferCloseIssue>,
+    pub message: String,
+}
+
+/// 转会窗口关闭问题
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferCloseIssue {
+    pub team_id: i64,
+    pub team_name: String,
+    pub issue_type: String,
+    pub detail: String,
 }
 
 /// 轮次执行响应

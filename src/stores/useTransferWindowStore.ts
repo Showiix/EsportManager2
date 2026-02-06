@@ -11,6 +11,7 @@ import {
   type TeamPersonalityConfig,
   type TeamReputation,
   type UpdatePersonalityRequest,
+  type TransferWindowCloseValidation,
 } from '@/api/tauri'
 import { formatMoney } from '@/utils'
 import { createLogger } from '@/utils/logger'
@@ -26,7 +27,6 @@ export const ROUND_NAMES: Record<number, string> = {
   5: '有合同挖角',
   6: '财政调整',
   7: '收尾补救',
-  8: '选秀权拍卖',
 }
 
 /** 事件类型名称 */
@@ -98,11 +98,16 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
     windowInfo.value?.status === 'COMPLETED'
   )
 
+  /** 是否等待确认关闭（所有轮次完成但未确认关闭） */
+  const isAwaitingClose = computed(() =>
+    windowInfo.value?.status === 'IN_PROGRESS' && windowInfo.value?.current_round >= 7
+  )
+
   const currentRound = computed(() =>
     windowInfo.value?.current_round ?? 0
   )
 
-  const totalRounds = computed(() => 8)
+  const totalRounds = computed(() => 7)
 
   const progressPercentage = computed(() =>
     (currentRound.value / totalRounds.value) * 100
@@ -248,9 +253,6 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
 
       // 更新状态
       windowInfo.value.current_round = nextRound
-      if (response.next_round === null) {
-        windowInfo.value.status = 'COMPLETED'
-      }
 
       // 添加新事件
       events.value = [...events.value, ...response.events]
@@ -281,8 +283,7 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
       )
 
       // 更新状态
-      windowInfo.value.current_round = 8
-      windowInfo.value.status = 'COMPLETED'
+      windowInfo.value.current_round = 7
 
       // 合并所有事件
       for (const round of response.rounds) {
@@ -290,6 +291,35 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
       }
 
       return response
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /** 确认关闭转会窗口 */
+  async function confirmCloseWindow(force: boolean = false): Promise<TransferWindowCloseValidation> {
+    if (!windowInfo.value) {
+      throw new Error('转会期未开始')
+    }
+
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const result = await transferWindowApi.confirmCloseTransferWindow(
+        windowInfo.value.window_id,
+        force
+      )
+
+      // 如果成功关闭，更新状态
+      if (result.is_valid || force) {
+        windowInfo.value.status = 'COMPLETED'
+      }
+
+      return result
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       throw e
@@ -449,6 +479,7 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
     isWindowStarted,
     isWindowInProgress,
     isWindowCompleted,
+    isAwaitingClose,
     currentRound,
     totalRounds,
     progressPercentage,
@@ -463,6 +494,7 @@ export const useTransferWindowStore = defineStore('transferWindow', () => {
     initTransferWindow,
     startTransferWindow,
     executeRound,
+    confirmCloseWindow,
     fastForward,
     fetchReport,
     loadEvents,

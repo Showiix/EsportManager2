@@ -3294,13 +3294,119 @@ impl GameFlowService {
                 percentage,
             })
         } else {
-            // 非赛事阶段（转会期、选秀、赛季结束）
-            Ok(PhaseProgress {
-                tournaments: Vec::new(),
-                total_matches: 0,
-                completed_matches: 0,
-                percentage: 0.0,
-            })
+            // 非赛事阶段
+            match phase {
+                SeasonPhase::TransferWindow => {
+                    // 查询转会窗口状态
+                    let window_row = sqlx::query(
+                        "SELECT status, current_round FROM transfer_windows WHERE save_id = ? AND season_id = ? ORDER BY id DESC LIMIT 1"
+                    )
+                    .bind(save_id)
+                    .bind(season_id as i64)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(|e| format!("查询转会窗口失败: {}", e))?;
+
+                    match window_row {
+                        None => {
+                            // 无窗口 → NotInitialized (total=0, completed=0 但不会走到 Completed 判断)
+                            Ok(PhaseProgress {
+                                tournaments: Vec::new(),
+                                total_matches: 0,
+                                completed_matches: 0,
+                                percentage: 0.0,
+                            })
+                        }
+                        Some(row) => {
+                            let status: String = row.get("status");
+                            let current_round: i64 = row.get("current_round");
+                            if status == "COMPLETED" {
+                                // 已完成
+                                Ok(PhaseProgress {
+                                    tournaments: Vec::new(),
+                                    total_matches: 1,
+                                    completed_matches: 1,
+                                    percentage: 100.0,
+                                })
+                            } else if status == "IN_PROGRESS" && current_round > 0 {
+                                // 进行中
+                                Ok(PhaseProgress {
+                                    tournaments: Vec::new(),
+                                    total_matches: 1,
+                                    completed_matches: 0,
+                                    percentage: 0.0,
+                                })
+                            } else {
+                                // PENDING 或其他
+                                Ok(PhaseProgress {
+                                    tournaments: Vec::new(),
+                                    total_matches: 0,
+                                    completed_matches: 0,
+                                    percentage: 0.0,
+                                })
+                            }
+                        }
+                    }
+                }
+                SeasonPhase::Draft => {
+                    // 检查是否为选秀年
+                    let is_draft_year = (season_id as i64 - 2) % 4 == 0;
+                    if !is_draft_year {
+                        // 非选秀年 → 自动跳过（完成状态）
+                        Ok(PhaseProgress {
+                            tournaments: Vec::new(),
+                            total_matches: 1,
+                            completed_matches: 1,
+                            percentage: 100.0,
+                        })
+                    } else {
+                        // 选秀年：检查各赛区是否完成选秀
+                        let draft_regions: i64 = sqlx::query_scalar(
+                            "SELECT COUNT(DISTINCT region_id) FROM draft_results WHERE save_id = ? AND season_id = ?"
+                        )
+                        .bind(save_id)
+                        .bind(season_id as i64)
+                        .fetch_one(pool)
+                        .await
+                        .map_err(|e| format!("查询选秀结果失败: {}", e))?;
+
+                        if draft_regions >= 4 {
+                            // 4赛区都完成
+                            Ok(PhaseProgress {
+                                tournaments: Vec::new(),
+                                total_matches: 1,
+                                completed_matches: 1,
+                                percentage: 100.0,
+                            })
+                        } else if draft_regions > 0 {
+                            // 部分完成
+                            Ok(PhaseProgress {
+                                tournaments: Vec::new(),
+                                total_matches: 1,
+                                completed_matches: 0,
+                                percentage: 0.0,
+                            })
+                        } else {
+                            // 未开始
+                            Ok(PhaseProgress {
+                                tournaments: Vec::new(),
+                                total_matches: 0,
+                                completed_matches: 0,
+                                percentage: 0.0,
+                            })
+                        }
+                    }
+                }
+                _ => {
+                    // AnnualAwards / SeasonEnd → 立即可推进
+                    Ok(PhaseProgress {
+                        tournaments: Vec::new(),
+                        total_matches: 1,
+                        completed_matches: 1,
+                        percentage: 100.0,
+                    })
+                }
+            }
         }
     }
 
@@ -3360,11 +3466,27 @@ impl GameFlowService {
 
         match phase {
             SeasonPhase::TransferWindow => {
-                actions.push(TimeAction::StartTransferWindow);
-                actions.push(TimeAction::ExecuteTransferRound);
+                match status {
+                    PhaseStatus::NotInitialized => {
+                        actions.push(TimeAction::StartTransferWindow);
+                    }
+                    PhaseStatus::InProgress => {
+                        actions.push(TimeAction::ExecuteTransferRound);
+                    }
+                    PhaseStatus::Completed => {
+                        actions.push(TimeAction::CompleteAndAdvance);
+                    }
+                }
             }
             SeasonPhase::Draft => {
-                actions.push(TimeAction::StartDraft);
+                match status {
+                    PhaseStatus::Completed => {
+                        actions.push(TimeAction::CompleteAndAdvance);
+                    }
+                    _ => {
+                        actions.push(TimeAction::StartDraft);
+                    }
+                }
             }
             SeasonPhase::SeasonEnd => {
                 actions.push(TimeAction::ExecuteSeasonSettlement);
@@ -3417,6 +3539,30 @@ impl GameFlowService {
 
         let current_phase = save.current_phase;
         let season_id = save.current_season as u64;
+
+        // 转会期必须已确认关闭才能推进
+        if current_phase == SeasonPhase::TransferWindow {
+            let window_row = sqlx::query(
+                "SELECT status FROM transfer_windows WHERE save_id = ? AND season_id = ? ORDER BY id DESC LIMIT 1"
+            )
+            .bind(save_id)
+            .bind(save.current_season)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| format!("查询转会窗口失败: {}", e))?;
+
+            match window_row {
+                Some(row) => {
+                    let status: String = row.get("status");
+                    if status != "COMPLETED" {
+                        return Err("转会窗口尚未关闭，请先确认关闭转会窗口后再推进".to_string());
+                    }
+                }
+                None => {
+                    return Err("转会窗口未找到，无法推进".to_string());
+                }
+            }
+        }
 
         // 完成当前阶段（颁发荣誉）
         let complete_result = self.complete_phase(pool, save_id, season_id, current_phase).await?;

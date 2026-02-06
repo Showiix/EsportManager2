@@ -35,7 +35,7 @@
       />
       <div class="round-labels">
         <span
-          v-for="round in 8"
+          v-for="round in 7"
           :key="round"
           class="round-label"
           :class="{ active: round <= currentRound, current: round === currentRound + 1 }"
@@ -140,7 +140,7 @@
         开始转会期
       </el-button>
       <el-button
-        v-if="isWindowInProgress"
+        v-if="isWindowInProgress && !isAwaitingClose"
         type="primary"
         size="large"
         :loading="isLoading"
@@ -150,7 +150,7 @@
         执行下一轮
       </el-button>
       <el-button
-        v-if="isWindowInProgress"
+        v-if="isWindowInProgress && !isAwaitingClose"
         type="warning"
         size="large"
         :loading="isLoading"
@@ -158,6 +158,16 @@
       >
         <el-icon><DArrowRight /></el-icon>
         快进完成
+      </el-button>
+      <el-button
+        v-if="isAwaitingClose"
+        type="success"
+        size="large"
+        :loading="isLoading"
+        @click="handleConfirmClose"
+      >
+        <el-icon><CircleCheck /></el-icon>
+        确认关闭转会窗口
       </el-button>
       <el-button
         v-if="isWindowCompleted"
@@ -338,6 +348,7 @@ import {
   Calendar,
   Wallet,
   TrendCharts,
+  CircleCheck,
 } from '@element-plus/icons-vue'
 import { useTransferWindowStore, ROUND_NAMES, EVENT_TYPE_NAMES, EVENT_LEVEL_CONFIG } from '@/stores/useTransferWindowStore'
 import { useGameStore } from '@/stores/useGameStore'
@@ -361,6 +372,7 @@ const {
   isWindowStarted,
   isWindowInProgress,
   isWindowCompleted,
+  isAwaitingClose,
   currentRound,
   totalRounds,
   progressPercentage,
@@ -554,6 +566,42 @@ async function handleFastForward() {
     if (e !== 'cancel') {
       logger.error('Failed to fast forward:', e)
       ElMessage.error('快进失败')
+    }
+  }
+}
+
+// 确认关闭转会窗口
+async function handleConfirmClose() {
+  try {
+    const result = await transferStore.confirmCloseWindow(false)
+
+    if (result.is_valid) {
+      ElMessage.success('转会窗口验证通过，已成功关闭！')
+    } else {
+      // 显示问题列表，让用户选择强制关闭或返回修复
+      const issueList = result.issues.map(
+        (issue) => `${issue.team_name}: ${issue.detail}`
+      ).join('\n')
+
+      await ElMessageBox.confirm(
+        `转会窗口验证未通过，存在以下问题：\n\n${issueList}\n\n是否强制关闭？`,
+        '验证未通过',
+        {
+          confirmButtonText: '强制关闭',
+          cancelButtonText: '返回修复',
+          type: 'warning',
+          dangerouslyUseHTMLString: false,
+        }
+      )
+
+      // 用户选择强制关闭
+      const forceResult = await transferStore.confirmCloseWindow(true)
+      ElMessage.warning(forceResult.message)
+    }
+  } catch (e) {
+    if (e !== 'cancel') {
+      logger.error('Failed to close transfer window:', e)
+      ElMessage.error('关闭转会窗口失败')
     }
   }
 }

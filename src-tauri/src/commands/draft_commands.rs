@@ -481,7 +481,7 @@ pub async fn make_draft_pick(
     .bind(team_id as i64)
     .bind(20i64) // 新秀合同薪资
     .bind(50i64) // 初始市场价值
-    .bind(current_season + 3) // 3年新秀合同
+    .bind(current_season + 2) // 2年新秀合同
     .bind(current_season)
     .bind(region_id)  // home_region_id = 选秀赛区
     .bind(region_loyalty)

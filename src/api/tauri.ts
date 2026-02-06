@@ -2739,6 +2739,22 @@ export interface TransferWindowResponse {
   season_id: number
 }
 
+/** 转会窗口关闭验证结果 */
+export interface TransferWindowCloseValidation {
+  is_valid: boolean
+  window_id: number
+  issues: TransferCloseIssue[]
+  message: string
+}
+
+/** 转会窗口关闭问题 */
+export interface TransferCloseIssue {
+  team_id: number
+  team_name: string
+  issue_type: string
+  detail: string
+}
+
 /** 转会事件 */
 export interface TransferEvent {
   id: number
@@ -3082,6 +3098,12 @@ export const transferWindowApi = {
   // 获取转会挂牌市场数据
   getTransferMarketListings: () =>
     invokeCommand<TransferMarketData>('get_transfer_market_listings'),
+
+  // ========== 转会窗口关闭 ==========
+
+  // 确认关闭转会窗口（含验证）
+  confirmCloseTransferWindow: (windowId: number, force?: boolean) =>
+    invokeCommand<TransferWindowCloseValidation>('confirm_close_transfer_window', { windowId, force }),
 
   // ========== 竞价分析 ==========
 

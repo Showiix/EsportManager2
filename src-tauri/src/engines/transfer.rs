@@ -1,6 +1,6 @@
 //! 转会系统引擎
 //!
-//! 实现完整的8轮转会流程
+//! 实现完整的7轮转会流程
 
 use rand::Rng;
 use rand::SeedableRng;
@@ -384,27 +384,16 @@ impl TransferEngine {
             5 => self.execute_contracted_player_transfer(pool, window_id, save_id, window.season_id, &mut cache).await?,
             6 => self.execute_financial_adjustment(pool, window_id, save_id, window.season_id, &mut cache).await?,
             7 => self.execute_final_remedy(pool, window_id, save_id, window.season_id, &mut cache).await?,
-            8 => self.execute_draft_pick_auction_round(pool, window_id, save_id, window.season_id).await?,
             _ => return Err(format!("无效轮次: {}", round)),
         };
 
-        // 更新转会期轮次
-        let new_status = if round >= self.config.max_rounds { "COMPLETED" } else { "IN_PROGRESS" };
-        sqlx::query("UPDATE transfer_windows SET current_round = ?, status = ? WHERE id = ?")
+        // 更新转会期轮次（不再自动标记 COMPLETED，需要手动确认关闭）
+        sqlx::query("UPDATE transfer_windows SET current_round = ? WHERE id = ?")
             .bind(round)
-            .bind(new_status)
             .bind(window_id)
             .execute(pool)
             .await
-            .map_err(|e| format!("更新转会期状态失败: {}", e))?;
-
-        if round >= self.config.max_rounds {
-            sqlx::query("UPDATE transfer_windows SET completed_at = datetime('now') WHERE id = ?")
-                .bind(window_id)
-                .execute(pool)
-                .await
-                .map_err(|e| format!("更新转会期完成时间失败: {}", e))?;
-        }
+            .map_err(|e| format!("更新转会期轮次失败: {}", e))?;
 
         Ok(result)
     }
@@ -1885,12 +1874,84 @@ impl TransferEngine {
         pool: &Pool<Sqlite>,
         window_id: i64,
         save_id: &str,
-        _season_id: i64,
+        season_id: i64,
         _cache: &mut TransferCache,
     ) -> Result<RoundResult, String> {
         let mut events = Vec::new();
 
-        // 查找财务困难球队
+        // ============================================
+        // 1. 给所有球队发放赛季薪资
+        // ============================================
+        let all_teams: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            "SELECT id, name FROM teams WHERE save_id = ?"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("查询球队失败: {}", e))?;
+
+        let mut salary_paid_count = 0i64;
+        let mut total_salary_paid = 0i64;
+
+        for team in &all_teams {
+            let team_id: i64 = team.get("id");
+            let team_name: String = team.get("name");
+
+            // 计算该队总薪资
+            let team_salary: i64 = sqlx::query_scalar(
+                "SELECT COALESCE(SUM(salary), 0) FROM players WHERE team_id = ? AND save_id = ? AND status = 'Active'"
+            )
+            .bind(team_id)
+            .bind(save_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("计算球队薪资失败: {}", e))?;
+
+            if team_salary <= 0 {
+                continue;
+            }
+
+            // 从余额扣除薪资
+            sqlx::query("UPDATE teams SET balance = balance - ? WHERE id = ? AND save_id = ?")
+                .bind(team_salary)
+                .bind(team_id)
+                .bind(save_id)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("扣除薪资失败: {}", e))?;
+
+            // 记录财务交易
+            sqlx::query(
+                "INSERT INTO financial_transactions (save_id, team_id, season_id, transaction_type, amount, description) VALUES (?, ?, ?, 'Salary', ?, ?)"
+            )
+            .bind(save_id)
+            .bind(team_id)
+            .bind(season_id)
+            .bind(-team_salary)
+            .bind(format!("S{}赛季薪资支出", season_id))
+            .execute(pool)
+            .await
+            .map_err(|e| format!("记录薪资交易失败: {}", e))?;
+
+            salary_paid_count += 1;
+            total_salary_paid += team_salary;
+
+            let event = self.record_event(
+                pool, window_id, 6,
+                TransferEventType::FinancialAdjustment,
+                EventLevel::C,
+                0, &team_name, 0,
+                Some(team_id), Some(&team_name),
+                None, None,
+                0, team_salary, 0,
+                &format!("{}支付赛季薪资{}万", team_name, team_salary / 10000),
+            ).await?;
+            events.push(event);
+        }
+
+        // ============================================
+        // 2. 查找财务困难球队，挂牌出售高薪选手
+        // ============================================
         let teams: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
             "SELECT id, name, balance FROM teams WHERE save_id = ? AND balance < 1000000"
         )
@@ -1972,7 +2033,10 @@ impl TransferEngine {
             round: 6,
             round_name: "财政调整".to_string(),
             events,
-            summary: "已完成财政调整：财务困难球队处理".to_string(),
+            summary: format!(
+                "已完成财政调整：{}支球队支付薪资共{}万，财务困难球队处理完成",
+                salary_paid_count, total_salary_paid / 10000
+            ),
         })
     }
 
@@ -2111,34 +2175,149 @@ impl TransferEngine {
     }
 
     // ============================================
-    // 第8轮：选秀权拍卖
+    // 转会窗口关闭验证
     // ============================================
 
-    async fn execute_draft_pick_auction_round(
+    /// 验证并关闭转会窗口
+    pub async fn validate_and_close_window(
         &self,
         pool: &Pool<Sqlite>,
         window_id: i64,
-        _save_id: &str,
-        _season_id: i64,
-    ) -> Result<RoundResult, String> {
-        // 选秀权拍卖在 Draft 阶段单独处理
-        // 这里只是标记该轮完成
-        let event = self.record_event(
-            pool, window_id, 8,
-            TransferEventType::DraftPickAuction,
-            EventLevel::C,
-            0, "选秀权拍卖", 0,
-            None, None, None, None,
-            0, 0, 0,
-            "选秀权拍卖将在选秀阶段进行",
-        ).await?;
+        force: bool,
+    ) -> Result<TransferWindowCloseValidation, String> {
+        // 1. 验证 window 状态
+        let window_row = sqlx::query(
+            "SELECT id, save_id, season_id, status, current_round FROM transfer_windows WHERE id = ?"
+        )
+        .bind(window_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("查询转会窗口失败: {}", e))?;
 
-        Ok(RoundResult {
-            round: 8,
-            round_name: "选秀权拍卖".to_string(),
-            events: vec![event],
-            summary: "选秀权拍卖阶段完成".to_string(),
-        })
+        let window_row = match window_row {
+            Some(r) => r,
+            None => return Err("转会窗口不存在".to_string()),
+        };
+
+        let status: String = window_row.get("status");
+        let current_round: i64 = window_row.get("current_round");
+        let save_id: String = window_row.get("save_id");
+        let season_id: i64 = window_row.get("season_id");
+
+        if status == "COMPLETED" {
+            return Ok(TransferWindowCloseValidation {
+                is_valid: true,
+                window_id,
+                issues: vec![],
+                message: "转会窗口已关闭".to_string(),
+            });
+        }
+
+        if status != "IN_PROGRESS" {
+            return Err("转会窗口状态不正确，只有进行中的窗口才能关闭".to_string());
+        }
+
+        if current_round < self.config.max_rounds {
+            return Err(format!(
+                "还有未完成的轮次（当前第{}轮，共{}轮），请先完成所有轮次",
+                current_round, self.config.max_rounds
+            ));
+        }
+
+        // 2. 检查所有球队阵容
+        let mut issues: Vec<TransferCloseIssue> = Vec::new();
+
+        let teams = sqlx::query(
+            "SELECT id, name FROM teams WHERE save_id = ?"
+        )
+        .bind(&save_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("查询球队失败: {}", e))?;
+
+        for team_row in &teams {
+            let team_id: i64 = team_row.get("id");
+            let team_name: String = team_row.get("name");
+
+            // 查询活跃选手数量
+            let active_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM players WHERE team_id = ? AND status = 'Active'"
+            )
+            .bind(team_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("查询球队阵容失败: {}", e))?;
+
+            if active_count < 5 {
+                issues.push(TransferCloseIssue {
+                    team_id,
+                    team_name: team_name.clone(),
+                    issue_type: "ROSTER_TOO_SMALL".to_string(),
+                    detail: format!("{}只有{}名活跃选手，最少需要5名", team_name, active_count),
+                });
+            }
+
+            if active_count > 10 {
+                issues.push(TransferCloseIssue {
+                    team_id,
+                    team_name: team_name.clone(),
+                    issue_type: "ROSTER_TOO_LARGE".to_string(),
+                    detail: format!("{}有{}名活跃选手，最多允许10名", team_name, active_count),
+                });
+            }
+
+            // 检查合同有效性
+            let invalid_contracts: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM players WHERE team_id = ? AND status = 'Active' AND contract_end_season <= ?"
+            )
+            .bind(team_id)
+            .bind(season_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("查询合同失败: {}", e))?;
+
+            if invalid_contracts > 0 {
+                issues.push(TransferCloseIssue {
+                    team_id,
+                    team_name: team_name.clone(),
+                    issue_type: "INVALID_CONTRACT".to_string(),
+                    detail: format!("{}有{}名选手合同已过期", team_name, invalid_contracts),
+                });
+            }
+        }
+
+        let is_valid = issues.is_empty();
+
+        // 3. 如果通过验证或强制关闭，则标记 COMPLETED
+        if is_valid || force {
+            sqlx::query(
+                "UPDATE transfer_windows SET status = 'COMPLETED', completed_at = datetime('now') WHERE id = ?"
+            )
+            .bind(window_id)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("关闭转会窗口失败: {}", e))?;
+
+            let message = if is_valid {
+                "转会窗口验证通过，已成功关闭".to_string()
+            } else {
+                format!("转会窗口已强制关闭，存在{}个问题", issues.len())
+            };
+
+            Ok(TransferWindowCloseValidation {
+                is_valid,
+                window_id,
+                issues,
+                message,
+            })
+        } else {
+            Ok(TransferWindowCloseValidation {
+                is_valid: false,
+                window_id,
+                issues,
+                message: "转会窗口验证未通过，请处理以下问题或选择强制关闭".to_string(),
+            })
+        }
     }
 
     // ============================================

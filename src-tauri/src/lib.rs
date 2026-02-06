@@ -90,6 +90,7 @@ use commands::{
     get_current_transfer_window,
     get_transfer_bids_overview,
     get_player_bids,
+    confirm_close_transfer_window,
     // 日志系统命令
     log_frontend_event, log_frontend_error, get_log_files, read_log_file, cleanup_logs,
     // 性能监控命令
@@ -327,6 +328,7 @@ pub fn run() {
             get_current_transfer_window,
             get_transfer_bids_overview,
             get_player_bids,
+            confirm_close_transfer_window,
             // 日志系统命令
             log_frontend_event,
             log_frontend_error,

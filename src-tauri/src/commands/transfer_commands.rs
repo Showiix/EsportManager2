@@ -118,8 +118,8 @@ pub async fn execute_transfer_round(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
     };
 
-    if round < 1 || round > 8 {
-        return Ok(CommandResult::err("轮次必须在1-8之间"));
+    if round < 1 || round > 7 {
+        return Ok(CommandResult::err("轮次必须在1-7之间"));
     }
 
     let engine = TransferEngine::new();
@@ -127,7 +127,7 @@ pub async fn execute_transfer_round(
         .map_err(|e| e.to_string())?;
 
     let event_count = result.events.len() as i64;
-    let next_round = if round < 8 { Some(round + 1) } else { None };
+    let next_round = if round < 7 { Some(round + 1) } else { None };
 
     Ok(CommandResult::ok(RoundExecutionResponse {
         round: result.round,
@@ -158,8 +158,8 @@ pub async fn fast_forward_transfer(
     };
 
     let start_round = from_round.unwrap_or(1);
-    if start_round < 1 || start_round > 8 {
-        return Ok(CommandResult::err("起始轮次必须在1-8之间"));
+    if start_round < 1 || start_round > 7 {
+        return Ok(CommandResult::err("起始轮次必须在1-7之间"));
     }
 
     let engine = TransferEngine::new();
@@ -1285,6 +1285,31 @@ pub async fn clear_evaluation_data(
     }
 
     Ok(CommandResult::ok(deleted_count))
+}
+
+/// 确认关闭转会窗口
+#[tauri::command]
+pub async fn confirm_close_transfer_window(
+    state: State<'_, AppState>,
+    window_id: i64,
+    force: Option<bool>,
+) -> Result<CommandResult<TransferWindowCloseValidation>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let engine = TransferEngine::new();
+    let result = engine.validate_and_close_window(&pool, window_id, force.unwrap_or(false)).await
+        .map_err(|e| e.to_string())?;
+
+    Ok(CommandResult::ok(result))
 }
 
 // ============================================
