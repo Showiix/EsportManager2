@@ -37,6 +37,7 @@
 | 比赛模拟 | [match-simulation.md](./03-core-systems/match-simulation.md) | `engines/match_simulation.rs` |
 | 选手系统 | [player-system.md](./03-core-systems/player-system.md) | `models/player.rs` |
 | 转会系统 | [transfer-system.md](./03-core-systems/transfer-system.md) | `engines/transfer.rs` |
+| 竞价分析 | [transfer-bid-analysis.md](./03-core-systems/transfer-bid-analysis.md) | `engines/transfer.rs` |
 | 财政系统 | [financial-system.md](./03-core-systems/financial-system.md) | `engines/financial.rs` |
 | 荣誉系统 | [honor-system.md](./03-core-systems/honor-system.md) | `engines/honor.rs` |
 | 积分系统 | [points-system.md](./03-core-systems/points-system.md) | `engines/points_calculation.rs` |
@@ -85,4 +86,4 @@ npm run tauri build
 ---
 
 **文档版本**: 2.0
-**最后更新**: 2026-02-05
+**最后更新**: 2026-02-06
