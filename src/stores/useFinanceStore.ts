@@ -57,7 +57,7 @@ export const useFinanceStore = defineStore('finance', () => {
   const teamPrizeDetails = ref<Map<number, TournamentPrizeDetail[]>>(new Map())
 
   // 筛选条件
-  const filterRegionId = ref<number | null>(null)
+  const filterRegionCode = ref<string | null>(null)
   const sortBy = ref<'balance' | 'income' | 'expense' | 'status'>('balance')
   const sortOrder = ref<'asc' | 'desc'>('desc')
   const searchQuery = ref('')
@@ -90,8 +90,8 @@ export const useFinanceStore = defineStore('finance', () => {
     let result = [...teamsFinance.value]
 
     // 赛区筛选
-    if (filterRegionId.value !== null) {
-      result = result.filter(t => t.region_id === filterRegionId.value)
+    if (filterRegionCode.value !== null) {
+      result = result.filter(t => t.region_code === filterRegionCode.value)
     }
 
     // 搜索筛选
@@ -294,8 +294,8 @@ export const useFinanceStore = defineStore('finance', () => {
   /**
    * 设置筛选条件
    */
-  function setFilter(regionId: number | null): void {
-    filterRegionId.value = regionId
+  function setFilter(regionCode: string | null): void {
+    filterRegionCode.value = regionCode
   }
 
   /**
@@ -397,7 +397,7 @@ export const useFinanceStore = defineStore('finance', () => {
     teamTransactions,
     seasonReports,
     teamPrizeDetails,
-    filterRegionId,
+    filterRegionCode,
     sortBy,
     sortOrder,
     searchQuery,
