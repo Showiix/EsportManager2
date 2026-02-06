@@ -181,6 +181,12 @@ const router = createRouter({
       meta: { title: '选手市场' }
     },
     {
+      path: '/transfer/market-listings',
+      name: 'TransferMarketListings',
+      component: () => import('@/views/TransferMarketListings.vue'),
+      meta: { title: '转会挂牌市场' }
+    },
+    {
       path: '/transfer/team-evaluation',
       name: 'TeamEvaluationCenter',
       component: () => import('@/views/TeamEvaluationCenter.vue'),

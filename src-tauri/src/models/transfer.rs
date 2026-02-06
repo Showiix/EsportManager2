@@ -493,6 +493,64 @@ pub struct PlayerListing {
 }
 
 // ============================================
+// 转会挂牌市场
+// ============================================
+
+/// 挂牌选手完整信息（用于挂牌市场页面）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferMarketListingInfo {
+    // 挂牌信息
+    pub listing_id: i64,
+    pub window_id: i64,
+    pub listing_price: Option<i64>,
+    pub min_accept_price: Option<i64>,
+    pub listing_status: String,
+    pub listed_at: String,
+    pub sold_at: Option<String>,
+    pub actual_price: Option<i64>,
+    // 选手信息
+    pub player_id: i64,
+    pub player_name: String,
+    pub position: Option<String>,
+    pub age: i64,
+    pub ability: i64,
+    pub potential: i64,
+    pub calculated_market_value: i64,
+    // 挂牌战队信息
+    pub listed_by_team_id: i64,
+    pub listed_by_team_name: String,
+    pub listed_by_region_code: Option<String>,
+    // 买家战队信息（仅已售出时有值）
+    pub sold_to_team_id: Option<i64>,
+    pub sold_to_team_name: Option<String>,
+    pub sold_to_region_code: Option<String>,
+}
+
+/// 自由球员信息（用于挂牌市场页面）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FreeAgentInfo {
+    pub player_id: i64,
+    pub player_name: String,
+    pub position: Option<String>,
+    pub age: i64,
+    pub ability: i64,
+    pub potential: i64,
+    pub calculated_market_value: i64,
+    pub salary: i64,
+}
+
+/// 转会挂牌市场综合数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferMarketData {
+    pub listings: Vec<TransferMarketListingInfo>,
+    pub free_agents: Vec<FreeAgentInfo>,
+    pub window_status: Option<String>,
+    pub window_id: Option<i64>,
+    pub current_round: Option<i64>,
+    pub season_id: i64,
+}
+
+// ============================================
 // 选手合同中心
 // ============================================
 

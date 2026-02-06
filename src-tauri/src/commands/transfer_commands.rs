@@ -992,6 +992,170 @@ pub async fn get_player_stay_evaluations(
     Ok(CommandResult::ok(evaluations))
 }
 
+// ============================================
+// 转会挂牌市场命令
+// ============================================
+
+/// 获取转会挂牌市场数据（挂牌选手 + 自由球员）
+#[tauri::command]
+pub async fn get_transfer_market_listings(
+    state: State<'_, AppState>,
+) -> Result<CommandResult<TransferMarketData>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取当前赛季
+    let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+        .bind(&save_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let current_season: i64 = save_row.get("current_season");
+
+    // 查找最近的转会窗口
+    let window_row = sqlx::query(
+        "SELECT id, status, current_round FROM transfer_windows WHERE save_id = ? AND season_id = ? ORDER BY id DESC LIMIT 1"
+    )
+    .bind(&save_id)
+    .bind(current_season)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let (window_id, window_status, current_round) = match &window_row {
+        Some(row) => (
+            Some(row.get::<i64, _>("id")),
+            Some(row.get::<String, _>("status")),
+            Some(row.get::<i64, _>("current_round")),
+        ),
+        None => (None, None, None),
+    };
+
+    // 查询挂牌选手
+    let listings = if let Some(wid) = window_id {
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                pl.id as listing_id,
+                pl.window_id,
+                pl.listing_price,
+                pl.min_accept_price,
+                pl.status as listing_status,
+                pl.listed_at,
+                pl.sold_at,
+                pl.actual_price,
+                pl.player_id,
+                p.game_id as player_name,
+                p.position,
+                p.age,
+                p.ability,
+                p.potential,
+                p.calculated_market_value,
+                pl.listed_by_team_id,
+                lt.name as listed_by_team_name,
+                lr.short_name as listed_by_region_code,
+                pl.sold_to_team_id,
+                st.name as sold_to_team_name,
+                sr.short_name as sold_to_region_code
+            FROM player_listings pl
+            JOIN players p ON pl.player_id = p.id
+            JOIN teams lt ON pl.listed_by_team_id = lt.id
+            LEFT JOIN regions lr ON lt.region_id = lr.id
+            LEFT JOIN teams st ON pl.sold_to_team_id = st.id
+            LEFT JOIN regions sr ON st.region_id = sr.id
+            WHERE pl.window_id = ? AND pl.status IN ('ACTIVE', 'SOLD')
+            ORDER BY pl.status ASC, p.ability DESC
+            "#
+        )
+        .bind(wid)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        rows.iter().map(|row| TransferMarketListingInfo {
+            listing_id: row.get("listing_id"),
+            window_id: row.get("window_id"),
+            listing_price: row.get("listing_price"),
+            min_accept_price: row.get("min_accept_price"),
+            listing_status: row.get("listing_status"),
+            listed_at: row.get("listed_at"),
+            sold_at: row.get("sold_at"),
+            actual_price: row.get("actual_price"),
+            player_id: row.get("player_id"),
+            player_name: row.get("player_name"),
+            position: row.get("position"),
+            age: row.get("age"),
+            ability: row.get("ability"),
+            potential: row.get("potential"),
+            calculated_market_value: row.get("calculated_market_value"),
+            listed_by_team_id: row.get("listed_by_team_id"),
+            listed_by_team_name: row.get("listed_by_team_name"),
+            listed_by_region_code: row.get("listed_by_region_code"),
+            sold_to_team_id: row.get("sold_to_team_id"),
+            sold_to_team_name: row.get("sold_to_team_name"),
+            sold_to_region_code: row.get("sold_to_region_code"),
+        }).collect()
+    } else {
+        vec![]
+    };
+
+    // 查询自由球员（team_id IS NULL 且非退役）
+    let free_agent_rows = sqlx::query(
+        r#"
+        SELECT
+            p.id as player_id,
+            p.game_id as player_name,
+            p.position,
+            p.age,
+            p.ability,
+            p.potential,
+            p.calculated_market_value,
+            p.salary
+        FROM players p
+        WHERE p.save_id = ? AND p.team_id IS NULL AND p.status != 'RETIRED'
+        ORDER BY p.ability DESC
+        "#
+    )
+    .bind(&save_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let free_agents: Vec<FreeAgentInfo> = free_agent_rows.iter().map(|row| FreeAgentInfo {
+        player_id: row.get("player_id"),
+        player_name: row.get("player_name"),
+        position: row.get("position"),
+        age: row.get("age"),
+        ability: row.get("ability"),
+        potential: row.get("potential"),
+        calculated_market_value: row.get("calculated_market_value"),
+        salary: row.get("salary"),
+    }).collect();
+
+    Ok(CommandResult::ok(TransferMarketData {
+        listings,
+        free_agents,
+        window_status,
+        window_id,
+        current_round,
+        season_id: current_season,
+    }))
+}
+
 /// 清除评估数据（用于重新生成）
 #[tauri::command]
 pub async fn clear_evaluation_data(

@@ -41,6 +41,7 @@ const menuItems: MenuItem[] = [
       { name: '转会总览', path: '/transfer', icon: 'preview' },
       { name: 'GM性格配置', path: '/transfer/gm-config', icon: 'robot' },
       { name: '选手合同中心', path: '/transfer/player-market', icon: 'market' },
+      { name: '转会挂牌市场', path: '/transfer/market-listings', icon: 'list' },
       { name: '战队评估中心', path: '/transfer/team-evaluation', icon: 'chart' },
       { name: '选手评估中心', path: '/transfer/player-evaluation', icon: 'user' },
     ]
@@ -124,6 +125,7 @@ const childIcons: Record<string, string> = {
   market: '👤',
   broadcast: '📺',
   robot: '🤖',
+  list: '📋',
 };
 </script>
 

@@ -2845,6 +2845,55 @@ export interface UpdatePersonalityRequest {
 
 // ========== 评估系统类型 ==========
 
+/** 挂牌选手完整信息 */
+export interface TransferMarketListingInfo {
+  listing_id: number
+  window_id: number
+  listing_price: number | null
+  min_accept_price: number | null
+  listing_status: string
+  listed_at: string
+  sold_at: string | null
+  actual_price: number | null
+  player_id: number
+  player_name: string
+  position: string | null
+  age: number
+  ability: number
+  potential: number
+  calculated_market_value: number
+  listed_by_team_id: number
+  listed_by_team_name: string
+  listed_by_region_code: string | null
+  sold_to_team_id: number | null
+  sold_to_team_name: string | null
+  sold_to_region_code: string | null
+}
+
+/** 自由球员信息 */
+export interface FreeAgentMarketInfo {
+  player_id: number
+  player_name: string
+  position: string | null
+  age: number
+  ability: number
+  potential: number
+  calculated_market_value: number
+  salary: number
+}
+
+/** 转会挂牌市场综合数据 */
+export interface TransferMarketData {
+  listings: TransferMarketListingInfo[]
+  free_agents: FreeAgentMarketInfo[]
+  window_status: string | null
+  window_id: number | null
+  current_round: number | null
+  season_id: number
+}
+
+// ========== 评估系统类型 ==========
+
 /** 战队赛季评估信息 */
 export interface TeamSeasonEvaluationInfo {
   evaluation_id: number
@@ -2970,6 +3019,10 @@ export const transferWindowApi = {
   // 清除评估数据（用于重新生成）
   clearEvaluationData: (seasonId?: number) =>
     invokeCommand<number>('clear_evaluation_data', { seasonId }),
+
+  // 获取转会挂牌市场数据
+  getTransferMarketListings: () =>
+    invokeCommand<TransferMarketData>('get_transfer_market_listings'),
 }
 
 export default tauriApi
