@@ -37,7 +37,7 @@ git log --oneline -5
 
 <body>
 
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 ```
 
 #### Type 类型
@@ -76,7 +76,7 @@ feat: 实现选手合同中心页面
 - 添加 PlayerContractInfo 数据模型
 - 支持多条件筛选、排序和分页功能
 
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 ```
 
 ### Bug 修复
@@ -87,7 +87,7 @@ fix: 修复表格固定列滚动时内容溢出问题
 - 添加 z-index 防止内容层叠
 - 设置 overflow: hidden 截断溢出内容
 
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 ```
 
 ### 多功能混合变更
@@ -100,7 +100,7 @@ feat: 实现转会系统核心功能
 - 添加球队声望计算系统
 - 修复数据库迁移脚本执行顺序问题
 
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 ```
 
 ## 注意事项

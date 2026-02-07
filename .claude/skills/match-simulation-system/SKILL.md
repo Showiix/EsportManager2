@@ -204,7 +204,7 @@ export async function simulateAllMatches(): Promise<number>
 
 ### 与选手系统
 - 队伍战力值 = Σ(首发选手 ability) / 5
-- 选手 `stability` 可影响波动（未来扩展）
+- 选手 `stability` 通过 `traits.rs` / `condition.rs` 影响发挥波动
 
 ### 与荣誉系统
 - 模拟结束后触发冠军/MVP记录

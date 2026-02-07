@@ -183,6 +183,6 @@ pub struct MatchGame {
 |------|------|
 | `src-tauri/src/engines/match_simulation.rs` | 核心模拟引擎 |
 | `src-tauri/src/commands/match_commands.rs` | 比赛命令接口 |
-| `src-tauri/src/services/league.rs` | 联赛服务 |
+| `src-tauri/src/services/league_service.rs` | 联赛服务 |
 | `src/engines/PlayerEngine.ts` | 前端选手计算 |
 | `src/engines/PowerEngine.ts` | 前端战力计算 |

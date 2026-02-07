@@ -93,27 +93,63 @@ src/
 ```
 src-tauri/src/
 ├── commands/                # Tauri Commands (API接口)
-│   ├── time_commands.rs
-│   ├── match_commands.rs
-│   ├── player_commands.rs
-│   └── ...
+│   ├── game_commands.rs     # 核心游戏命令
+│   ├── save_commands.rs     # 存档管理
+│   ├── time_commands.rs     # 时间推进
+│   ├── match_commands.rs    # 比赛模拟
+│   ├── match_detail_commands.rs # 比赛详情
+│   ├── team_commands.rs     # 战队管理
+│   ├── honor_commands.rs    # 荣誉系统
+│   ├── finance_commands.rs  # 财政系统
+│   ├── transfer_commands.rs # 转会系统
+│   ├── draft_commands.rs    # 选秀系统
+│   ├── draft_auction_commands.rs # 选秀权拍卖
+│   ├── points_commands.rs   # 年度积分
+│   ├── stats_commands.rs    # 数据统计
+│   ├── query_commands.rs    # 通用查询
+│   ├── international_commands.rs # 国际赛事
+│   ├── event_commands.rs    # 事件系统
+│   ├── awards_commands.rs   # 颁奖典礼
+│   ├── dev_commands.rs      # 开发调试
+│   ├── log_commands.rs      # 日志系统
+│   └── perf_commands.rs     # 性能监控
 ├── engines/                 # 核心计算引擎
-│   ├── match_simulation.rs
-│   ├── transfer.rs
-│   ├── financial.rs
-│   └── points_calculation.rs
+│   ├── match_simulation.rs  # 比赛模拟
+│   ├── transfer.rs          # 转会引擎
+│   ├── financial.rs         # 财政引擎
+│   ├── points_calculation.rs # 积分计算
+│   ├── honor.rs             # 荣誉引擎
+│   ├── draft.rs             # 选秀引擎
+│   ├── draft_auction.rs     # 选秀权拍卖
+│   ├── market_value.rs      # 身价计算
+│   ├── season_progress.rs   # 赛季进度
+│   ├── power_engine.rs      # 队伍战力
+│   ├── traits.rs            # 选手特性
+│   ├── condition.rs         # 选手状态
+│   ├── satisfaction.rs      # 满意度引擎
+│   ├── player_decision.rs   # AI 选手决策
+│   ├── player_performance.rs # 表现评估
+│   └── event.rs             # 事件引擎
 ├── models/                  # 数据模型
-│   ├── player.rs
-│   ├── team.rs
-│   ├── tournament.rs
-│   └── ...
+│   ├── player.rs            # 选手模型
+│   ├── team.rs              # 战队模型
+│   ├── tournament.rs        # 赛事模型
+│   ├── transfer.rs          # 转会模型
+│   ├── financial.rs         # 财务模型
+│   └── ...                  # (共20个模型文件)
 ├── services/                # 业务服务层
-│   ├── game_flow.rs
-│   ├── league.rs
-│   └── honor.rs
+│   ├── game_flow.rs         # 游戏流程核心
+│   ├── league_service.rs    # 联赛服务
+│   ├── honor_service.rs     # 荣誉服务
+│   ├── tournament_service.rs # 赛事服务
+│   ├── init_service.rs      # 初始化服务
+│   ├── player_data.rs       # 选手初始数据
+│   ├── draft_pool_data.rs   # 选秀池数据
+│   └── ...                  # (共11个服务文件)
 └── db/                      # 数据库操作
-    ├── connection.rs
-    └── repository/
+    ├── connection.rs         # 连接与迁移
+    ├── migrations.rs         # 迁移工具
+    └── repository.rs         # 数据仓库（统一）
 ```
 
 ## 前后端通信

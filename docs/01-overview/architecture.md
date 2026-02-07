@@ -46,12 +46,22 @@
 │  (Player)    │ │ (Financial)  │ │  (Honor)     │
 └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
        │                │                │
-       └────────┬───────┴────────┬───────┘
-                ▼                ▼
-       ┌──────────────┐ ┌──────────────┐
-       │   身价系统    │ │   积分系统    │
-       │(MarketValue) │ │   (Points)   │
-       └──────────────┘ └──────────────┘
+       ├────────┬───────┴────────┬───────┘
+       ▼        ▼                ▼
+┌──────────┐ ┌──────────┐ ┌──────────────┐
+│ 身价系统  │ │ 积分系统  │ │ 选秀权拍卖   │
+│(MarketVal)│ │ (Points) │ │(DraftAuction)│
+└──────────┘ └──────────┘ └──────────────┘
+
+辅助系统:
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│   特性系统    │ │  状态/体力    │ │   满意度     │ │   事件引擎    │
+│  (Traits)    │ │ (Condition)  │ │(Satisfaction)│ │   (Event)    │
+└──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│   战力引擎    │ │  选手决策     │ │  表现评估     │
+│(PowerEngine) │ │(PlayerDecis) │ │(PlayerPerf)  │
+└──────────────┘ └──────────────┘ └──────────────┘
 ```
 
 ## 系统交互关系
@@ -191,21 +201,29 @@ GameFlowService::advance_to_new_season()
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         Pinia Stores                                │
+│                         Pinia Stores (29个)                          │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  useGameStore           useTimeStore          useSeasonStore        │
-│  ┌─────────────┐        ┌─────────────┐       ┌─────────────┐      │
-│  │ currentSave │        │ timeState   │       │ activeSeason│      │
-│  │ isLoading   │        │ phaseStatus │       │ viewSeason  │      │
-│  └─────────────┘        │ availActions│       └─────────────┘      │
-│                         └─────────────┘                             │
+│  核心状态:                                                           │
+│  useGameStore        useTimeStore         useSeasonStore            │
+│  useSettingsStore    useRegionStore       useEventStore             │
 │                                                                     │
-│  usePlayerStore         useMatchDetailStore   useTeamStore          │
-│  ┌─────────────┐        ┌─────────────┐       ┌─────────────┐      │
-│  │ players     │        │ matchDetails│       │ teams       │      │
-│  │ seasonStats │        │ gameDetails │       │ rosters     │      │
-│  └─────────────┘        └─────────────┘       └─────────────┘      │
+│  数据状态:                                                           │
+│  usePlayerStore      useTeamStore         useTeamStoreTauri         │
+│  useMatchDetailStore useScheduleStore     useRankingStore           │
+│  usePointsStore      useHonorHallStore    useFinanceStore           │
+│                                                                     │
+│  赛事状态:                                                           │
+│  useTournamentStoreTauri   useAutoTournamentStore                   │
+│  usePlayoffStore     useMSIStore          useClauchStore            │
+│  useSuperStore       useWorldsStore                                 │
+│                                                                     │
+│  转会/选秀状态:                                                      │
+│  useTransferStoreTauri     useTransferWindowStore                   │
+│  useDraftStoreTauri        useDraftAuctionStore                     │
+│                                                                     │
+│  辅助状态:                                                           │
+│  useAIStrategyStore  usePerformanceStore                            │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -222,6 +240,7 @@ export const tauriApi = {
   tournament: tournamentApi,  // 赛事管理
   honor: honorApi,       // 荣誉查询
   draft: draftApi,       // 选秀系统
+  draftAuction: draftAuctionApi, // 选秀权拍卖
   transfer: transferApi, // 转会系统
   finance: financeApi,   // 财政系统
   query: queryApi,       // 通用查询
@@ -232,5 +251,9 @@ export const tauriApi = {
   time: timeApi,         // 时间推进
   points: pointsApi,     // 年度积分
   matchDetails: matchDetailsApi,  // 比赛详情
+  perf: perfApi,         // 性能监控
+  log: logApi,           // 日志系统
+  awards: awardsApi,     // 颁奖系统
+  dev: devApi,           // 开发工具
 }
 ```

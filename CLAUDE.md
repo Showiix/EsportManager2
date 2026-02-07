@@ -19,22 +19,36 @@ EsportManager 2 是一款电竞经理模拟游戏，采用 **Tauri + Vue 3 + Rus
 EsportManager2-Backend/
 ├── src/                          # 前端源码 (Vue 3 + TypeScript)
 │   ├── api/tauri.ts             # Tauri 命令调用封装
-│   ├── components/              # Vue 组件
+│   ├── components/              # Vue 组件 (28个，含 common/layout/match/msi/worlds/icp/super/clauch/transfer/finance/player/settings/dev)
 │   ├── engines/                 # 前端计算引擎 (PlayerEngine, PowerEngine)
-│   ├── stores/                  # Pinia 状态管理
-│   ├── views/                   # 页面视图
+│   ├── stores/                  # Pinia 状态管理 (29个 Store)
+│   ├── views/                   # 页面视图 (48个)
+│   ├── types/                   # TypeScript 类型定义 (6个)
 │   └── router/                  # Vue Router 路由
 │
 ├── src-tauri/src/               # Rust 后端源码
-│   ├── commands/                # Tauri Commands (API接口层)
-│   ├── engines/                 # 核心计算引擎
+│   ├── commands/                # Tauri Commands (23个命令模块)
+│   ├── engines/                 # 核心计算引擎 (17个引擎)
 │   │   ├── match_simulation.rs # 比赛模拟引擎
 │   │   ├── transfer.rs         # 转会引擎
 │   │   ├── financial.rs        # 财政引擎
-│   │   └── points_calculation.rs # 积分计算引擎
-│   ├── models/                  # 数据模型
-│   ├── services/                # 业务服务层
+│   │   ├── points_calculation.rs # 积分计算引擎
+│   │   ├── traits.rs           # 选手特性系统
+│   │   ├── condition.rs        # 选手状态/体力
+│   │   ├── satisfaction.rs     # 满意度引擎
+│   │   ├── draft_auction.rs    # 选秀权拍卖
+│   │   └── ...
+│   ├── models/                  # 数据模型 (20个)
+│   ├── services/                # 业务服务层 (11个)
+│   │   ├── game_flow.rs        # 游戏流程核心
+│   │   ├── league_service.rs   # 联赛服务
+│   │   ├── honor_service.rs    # 荣誉服务
+│   │   ├── init_service.rs     # 初始化服务
+│   │   ├── player_data.rs      # 选手初始数据
+│   │   └── ...
 │   └── db/                      # 数据库操作 (SQLite)
+│       ├── connection.rs       # 连接与迁移
+│       └── repository.rs       # 数据仓库（统一）
 │
 ├── docs/                        # 项目文档
 └── .claude/skills/              # Claude Code 技能文档
@@ -153,7 +167,7 @@ EsportManager2-Backend/
 
 ### 8. 数据中心系统 (Data Center)
 
-**文件**: `src-tauri/src/db/repository/stats_repository.rs`
+**文件**: `src-tauri/src/db/repository.rs`
 
 记录选手赛季表现：
 - 影响力统计（单局影响力 = 选手发挥 - 队伍平均）
@@ -168,10 +182,17 @@ EsportManager2-Backend/
 - `players`: 选手
 - `tournaments`: 赛事
 - `matches`: 比赛
+- `match_games`: 比赛局数详情
 - `standings`: 积分榜
 - `honors`: 荣誉记录
 - `transfer_events`: 转会事件
+- `transfer_windows`: 转会窗口
 - `financial_transactions`: 财务交易
+- `draft_pool`: 选秀池（持久化）
+- `draft_players`: 当届选秀名单
+- `draft_results`: 选秀结果
+- `annual_points_detail`: 年度积分明细
+- `player_season_stats`: 选手赛季统计
 
 ## 开发命令
 
@@ -200,11 +221,19 @@ npm run tauri build
 | `player-system` | 选手属性/成长/身价修改 |
 | `transfer-system` | 转会规则/AI决策修改 |
 | `financial-system` | 财务规则/奖金配置修改 |
+| `financial-units` | 金额单位规范（元/万元） |
 | `honor-system` | 荣誉类型/MVP计算修改 |
 | `annual-points-system` | 积分规则修改 |
 | `data-center-system` | 统计计算/排行榜修改 |
+| `performance-monitoring-system` | 性能监测/命令计时 |
+| `logging-system` | 日志与错误处理 |
+| `player-contract-center` | 选手合同中心页面 |
+| `menu-manager` | 侧边栏菜单管理 |
 | `commit-generator` | 生成规范的 commit message |
+| `debug-doc-writer` | Bug 修复文档记录 |
+| `doc-writer` | 项目文档编写 |
 | `db-backup` | 数据库备份 |
+| `skill-creator` | 创建新技能 |
 
 ## 常见开发任务
 

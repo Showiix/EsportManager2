@@ -124,5 +124,5 @@ yearly_top_score = 平均影响力 × 0.7 + 冠军分 × 0.3
 |------|------|
 | `src-tauri/src/models/honor.rs` | 荣誉数据模型 |
 | `src-tauri/src/engines/honor.rs` | 荣誉引擎 |
-| `src-tauri/src/services/honor.rs` | 荣誉服务 |
+| `src-tauri/src/services/honor_service.rs` | 荣誉服务 |
 | `src-tauri/src/commands/honor_commands.rs` | 荣誉命令接口 |

@@ -2,17 +2,17 @@
 
 ## 概述
 
-转会系统管理选手的合同、转会和球员交易。采用7轮制的自动转会决策，由AI性格驱动。R7 完成后需手动确认关闭转会窗口。
+转会系统管理选手的合同、转会和球员交易。采用8轮制的自动转会决策，由AI性格驱动。R7 完成后需手动确认关闭转会窗口。
 
 ## 转会窗口
 
 转会窗口在每个赛季结束后开放：
 
 ```
-赛季结束 → 转会窗口开放 → 7轮转会 → 确认关闭 → 选秀 → 新赛季开始
+赛季结束 → 转会窗口开放 → 8轮转会 → 确认关闭 → 选秀 → 新赛季开始
 ```
 
-## 7轮转会流程
+## 8轮转会流程
 
 | 轮次 | 名称 | 说明 |
 |------|------|------|
@@ -23,10 +23,11 @@
 | 5 | 合同选手转会 | 在役选手转会 |
 | 6 | 财务调整 | 处理财务问题 |
 | 7 | 收尾补救 | 阵容不足的球队补强 |
+| 8 | 选秀权拍卖 | 拍卖下届选秀权 |
 
 ## 转会窗口关闭
 
-R7 完成后，系统**不再自动关闭**转会窗口。需要手动确认关闭：
+R8 完成后，系统**不再自动关闭**转会窗口。需要手动确认关闭：
 
 ### 验证检查项
 
@@ -39,7 +40,7 @@ R7 完成后，系统**不再自动关闭**转会窗口。需要手动确认关�
 ### 关闭流程
 
 ```
-R7 完成 → 点击"确认关闭转会窗口" → 验证检查
+R8 完成 → 点击"确认关闭转会窗口" → 验证检查
   ├─ 通过 → 标记 COMPLETED → 可推进到选秀
   └─ 不通过 → 显示问题列表
        ├─ 强制关闭 → 标记 COMPLETED
@@ -118,6 +119,7 @@ contract_years = clamp(base + personality_adj + random_adj, 1, 4)
 | R4 自由球员 | 是 | 1-4 年 |
 | R5 合同转会 | 是 | 1-4 年 |
 | R7 紧急补人 | 否 | 1-2 年 |
+| R8 选秀权拍卖 | 否 | - |
 
 ## AI球队性格系统
 
@@ -202,8 +204,14 @@ pub struct TeamReputation {
 | 文件 | 说明 |
 |------|------|
 | `src-tauri/src/engines/transfer.rs` | 转会引擎（含关闭验证） |
+| `src-tauri/src/engines/draft_auction.rs` | 选秀权拍卖引擎 |
 | `src-tauri/src/commands/transfer_commands.rs` | 转会命令接口 |
+| `src-tauri/src/commands/draft_auction_commands.rs` | 选秀权拍卖命令接口 |
 | `src-tauri/src/models/transfer.rs` | 转会数据模型 |
 | `src-tauri/src/services/game_flow.rs` | 时间引擎（转会期状态判断） |
-| `src/stores/useTransferWindowStore.ts` | 前端转会状态管理 |
+| `src/stores/useTransferWindowStore.ts` | 前端转会窗口状态管理 |
+| `src/stores/useTransferStoreTauri.ts` | 前端转会 Tauri 集成 |
+| `src/stores/useDraftAuctionStore.ts` | 前端选秀权拍卖状态 |
 | `src/views/TransferWindow.vue` | 转会窗口页面 |
+| `src/views/Transfer.vue` | 转会系统页面 |
+| `src/views/DraftAuction.vue` | 选秀权拍卖页面 |

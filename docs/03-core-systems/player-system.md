@@ -9,23 +9,26 @@
 ```rust
 pub struct Player {
     pub id: u64,
-    pub save_id: String,
-    pub game_id: String,           // 游戏ID（显示名称）
-    pub real_name: String,         // 真实姓名
-    pub nationality: String,       // 国籍
-    pub position: Position,        // 位置
-    pub age: u8,                   // 年龄 (16-35)
-    pub ability: u8,               // 能力值 (0-100)
-    pub potential: u8,             // 潜力值 (0-100)
-    pub stability: u8,             // 稳定性 (0-100)
-    pub status: PlayerStatus,      // 状态
-    pub tag: PlayerTag,            // 标签
-    pub loyalty: u8,               // 忠诚度 (0-100)
-    pub team_id: Option<u64>,      // 所属战队
-    pub contract_years: u8,        // 合同剩余年限
-    pub salary: u64,               // 薪资
-    pub home_region_id: u64,       // 出生赛区
-    pub region_loyalty: u8,        // 赛区偏好值
+    pub game_id: String,              // 游戏ID（显示名称）
+    pub real_name: Option<String>,    // 真实姓名
+    pub nationality: Option<String>,  // 国籍
+    pub age: u8,                      // 年龄 (16-35)
+    pub ability: u8,                  // 能力值 (0-100)
+    pub potential: u8,                // 潜力值 (0-100)
+    pub stability: u8,               // 稳定性 (0-100)
+    pub tag: PlayerTag,              // 标签
+    pub status: PlayerStatus,        // 状态 (Active/Retired)
+    pub position: Option<Position>,  // 位置
+    pub team_id: Option<u64>,        // 所属战队
+    pub salary: u64,                 // 薪资（单位：元）
+    pub market_value: u64,           // 基础身价（单位：元）
+    pub calculated_market_value: u64,// 计算后身价（含荣誉和赛区系数）
+    pub contract_end_season: Option<u32>, // 合同到期赛季
+    pub join_season: u32,            // 加入赛季
+    pub retire_season: Option<u32>,  // 退役赛季
+    pub is_starter: bool,            // 是否首发
+    pub loyalty: u8,                 // 忠诚度 (0-100)
+    pub satisfaction: u8,            // 满意度 (0-100)
 }
 ```
 
@@ -45,10 +48,10 @@ pub struct Player {
 ```rust
 pub enum Position {
     Top,     // 上单
-    Jungle,  // 打野
+    Jug,     // 打野
     Mid,     // 中单
     Adc,     // 射手
-    Support, // 辅助
+    Sup,     // 辅助
 }
 ```
 
@@ -139,6 +142,70 @@ pub fn calculate_market_value(player: &Player, honors: &[Honor]) -> u64 {
 | 年龄系数 | 20-24: 1.2, 25: 1.1, 26: 1.0, 每+1岁-0.1 | 0.5-1.2 |
 | 标签系数 | Genius: 1.2, Normal: 1.0, Ordinary: 0.9 | 0.9-1.2 |
 
+## 选手特性系统
+
+特性影响选手在不同情境下的表现，通过修改 ability/stability/condition 实现。
+
+### 特性类型（14种）
+
+**大赛表现类:**
+
+| 特性 | 英文名 | 效果 |
+|------|--------|------|
+| 大赛型 | `Clutch` | 季后赛/国际赛 condition +3 |
+| 慢热型 | `SlowStarter` | 第1局 -2，第3+局 +2 |
+| 快枪手 | `FastStarter` | 第1局 +2，第3+局 -1 |
+
+**稳定性类:**
+
+| 特性 | 英文名 | 效果 |
+|------|--------|------|
+| 爆发型 | `Explosive` | stability -15，能力上限 +5 |
+| 稳定型 | `Consistent` | stability +10，能力上限 -3 |
+
+**心态类:**
+
+| 特性 | 英文名 | 效果 |
+|------|--------|------|
+| 逆风王 | `ComebackKing` | 落后时 condition +3 |
+| 顺风浪 | `Tilter` | 领先 -2，落后 -3 [负面] |
+| 心态大师 | `MentalFortress` | momentum 效果减半 |
+| 玻璃心 | `Fragile` | 输了 momentum -2 [负面] |
+
+**体能类:**
+
+| 特性 | 英文名 | 效果 |
+|------|--------|------|
+| 铁人 | `Ironman` | 无疲劳惩罚 |
+| 状态敏感 | `Volatile` | condition 波动×1.5 [负面] |
+
+**特殊类:**
+
+| 特性 | 英文名 | 效果 |
+|------|--------|------|
+| 新星 | `RisingStar` | 首赛季 ability +3 |
+| 老将风范 | `Veteran` | 30岁后 stability +15 |
+| 团队核心 | `TeamLeader` | 队友 condition +1 |
+
+### 互斥规则
+
+- SlowStarter 与 FastStarter
+- Explosive 与 Consistent
+- ComebackKing 与 Tilter
+- MentalFortress 与 Fragile/Tilter
+
+## 选手满意度
+
+满意度影响选手的转会意愿和续约态度。
+
+| 满意度范围 | 状态 | 影响 |
+|-----------|------|------|
+| 80-100 | 非常满意 | 愿意降薪续约 |
+| 60-79 | 满意 | 正常续约 |
+| 40-59 | 一般 | 可能拒绝续约 |
+| 20-39 | 不满 | 主动求转会 |
+| 0-19 | 非常不满 | 强烈要求离队 |
+
 ## 赛区偏好
 
 选手有出生赛区偏好，影响跨赛区转会意愿：
@@ -170,6 +237,11 @@ willingness = base_willingness × (100 - region_loyalty) / 100
 
 | 文件 | 说明 |
 |------|------|
-| `src-tauri/src/models/player.rs` | 选手数据模型 |
+| `src-tauri/src/models/player.rs` | 选手数据模型（含 Position, PlayerTag, PlayerStatus, LoyaltyType） |
 | `src-tauri/src/engines/market_value.rs` | 身价计算引擎 |
-| `src-tauri/src/commands/player_commands.rs` | 选手命令接口 |
+| `src-tauri/src/engines/traits.rs` | 选手特性系统（TraitType 枚举及效果计算） |
+| `src-tauri/src/engines/condition.rs` | 选手状态/体力系统 |
+| `src-tauri/src/engines/satisfaction.rs` | 选手满意度引擎 |
+| `src-tauri/src/engines/player_decision.rs` | AI 选手决策 |
+| `src-tauri/src/engines/player_performance.rs` | 选手表现评估 |
+| `src-tauri/src/commands/query_commands.rs` | 选手查询命令接口 |

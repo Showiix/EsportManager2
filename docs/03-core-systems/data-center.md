@@ -117,5 +117,5 @@ consistency_score = 100 - (performance_std_dev × 2)
 | 文件 | 说明 |
 |------|------|
 | `src-tauri/src/models/player_stats.rs` | 统计数据模型 |
-| `src-tauri/src/db/repository/stats_repository.rs` | 统计数据仓库 |
+| `src-tauri/src/db/repository.rs` | 数据仓库（含统计数据操作） |
 | `src-tauri/src/commands/stats_commands.rs` | 统计命令接口 |
