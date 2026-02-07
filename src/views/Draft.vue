@@ -394,6 +394,12 @@ const goToPool = () => {
   margin-bottom: 24px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .header-info {
   .page-title {
     font-size: 28px;

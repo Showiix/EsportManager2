@@ -28,7 +28,7 @@
           >
             刷新排名
           </el-button>
-          <SeasonSelector v-model="selectedSeason" width="100px" />
+          <SeasonSelector v-model="selectedSeason" width="140px" />
         </div>
       </div>
     </div>
@@ -282,6 +282,7 @@ import { useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { usePlayerStore } from '@/stores/usePlayerStore'
+import { useSeasonStore } from '@/stores/useSeasonStore'
 import { teamApi, statsApi } from '@/api/tauri'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
 import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
@@ -292,12 +293,13 @@ const logger = createLogger('AnnualTop')
 
 const router = useRouter()
 const playerStore = usePlayerStore()
+const seasonStore = useSeasonStore()
 
 // 本地战队映射表
 const teamsMap = ref<Map<number, string>>(new Map())
 
 // 状态
-const selectedSeason = ref(1)
+const selectedSeason = ref(seasonStore.currentSeason)
 const rankings = ref<PlayerSeasonStats[]>([])
 const loading = ref(false)
 const recalculating = ref(false)
@@ -436,6 +438,14 @@ watch(selectedSeason, () => {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       border-radius: 16px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+
+      .header-actions {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 12px;
+        flex-shrink: 0;
+      }
 
       .banner-content {
         .banner-title {

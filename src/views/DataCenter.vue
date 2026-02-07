@@ -183,6 +183,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { DataLine, Refresh, ArrowRight } from '@element-plus/icons-vue'
 import { usePlayerStore } from '@/stores/usePlayerStore'
+import { useSeasonStore } from '@/stores/useSeasonStore'
 import { teamApi, devApi } from '@/api/tauri'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
 import { ElMessage } from 'element-plus'
@@ -194,12 +195,13 @@ const logger = createLogger('DataCenter')
 
 const router = useRouter()
 const playerStore = usePlayerStore()
+const seasonStore = useSeasonStore()
 
 // 本地战队映射表
 const teamsMap = ref<Map<number, string>>(new Map())
 
 // 状态
-const selectedSeason = ref(1)
+const selectedSeason = ref(seasonStore.currentSeason)
 const selectedPosition = ref('')
 const searchQuery = ref('')
 const loading = ref(false)

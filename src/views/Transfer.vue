@@ -467,6 +467,12 @@ onMounted(async () => {
   margin-bottom: 24px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .page-header h1 {
   font-size: 28px;
   font-weight: 700;
