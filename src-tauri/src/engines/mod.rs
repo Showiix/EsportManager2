@@ -13,6 +13,7 @@ pub mod condition;
 pub mod traits;
 pub mod satisfaction;
 pub mod transfer;
+pub mod meta_engine;
 
 pub use match_simulation::*;
 pub use player_performance::*;
@@ -29,3 +30,4 @@ pub use condition::*;
 pub use traits::*;
 pub use satisfaction::*;
 pub use transfer::*;
+pub use meta_engine::*;

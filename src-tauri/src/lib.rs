@@ -99,6 +99,8 @@ use commands::{
     log_frontend_event, log_frontend_error, get_log_files, read_log_file, cleanup_logs,
     // 性能监控命令
     get_perf_records, get_perf_summary, toggle_perf_monitoring, clear_perf_records,
+    // 版本系统命令
+    get_current_meta, get_meta_history, get_all_meta_types, get_meta_detail,
     // 应用状态
     AppState,
 };
@@ -351,6 +353,11 @@ pub fn run() {
             get_perf_summary,
             toggle_perf_monitoring,
             clear_perf_records,
+            // 版本系统命令
+            get_current_meta,
+            get_meta_history,
+            get_all_meta_types,
+            get_meta_detail,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

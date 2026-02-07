@@ -18,6 +18,7 @@ pub mod player_status;
 pub mod llm_task_log;
 pub mod transfer;
 pub mod init_config;
+pub mod meta;
 
 pub use player::*;
 pub use team::*;
@@ -39,3 +40,4 @@ pub use player_status::*;
 pub use llm_task_log::*;
 pub use transfer::*;
 pub use init_config::*;
+pub use meta::*;

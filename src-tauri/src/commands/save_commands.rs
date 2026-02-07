@@ -9,6 +9,34 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
 
+/// 获取数据库连接池的宏
+#[macro_export]
+macro_rules! get_pool {
+    ($state:expr) => {{
+        let guard = $state.db.read().await;
+        let db = match guard.as_ref() {
+            Some(db) => db,
+            None => return Ok(CommandResult::err("Database not initialized")),
+        };
+        match db.get_pool().await {
+            Ok(p) => p,
+            Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+        }
+    }};
+}
+
+/// 获取当前存档ID的宏
+#[macro_export]
+macro_rules! get_save_id {
+    ($state:expr) => {{
+        let current = $state.current_save_id.read().await;
+        match current.as_ref() {
+            Some(id) => id.clone(),
+            None => return Ok(CommandResult::err("No save loaded")),
+        }
+    }};
+}
+
 /// 应用状态
 pub struct AppState {
     pub db: Arc<RwLock<Option<DatabaseManager>>>,

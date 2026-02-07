@@ -203,8 +203,15 @@ export async function simulateAllMatches(): Promise<number>
 - 选手表现数据用于MVP计算
 
 ### 与选手系统
-- 队伍战力值 = Σ(首发选手 ability) / 5
+- 队伍战力值 = Meta 加权平均 + carry/drag 效应（详见 `meta-system` 技能）
+- 在均衡版本（Balanced）下等价于简单平均 Σ(ability) / 5
 - 选手 `stability` 通过 `traits.rs` / `condition.rs` 影响发挥波动
+
+### 与版本系统 (Meta System)
+- 每赛季的 Meta 决定各位置对战力的贡献权重
+- `simulate_match_detailed()` 在模拟前获取当前 Meta 权重传入
+- `generate_team_stats()` 使用 `MetaEngine::calculate_team_power_weighted()` 替代简单平均
+- **文件**: `src-tauri/src/engines/meta_engine.rs`
 
 ### 与荣誉系统
 - 模拟结束后触发冠军/MVP记录
@@ -261,7 +268,8 @@ duration_minutes = 30 + rand::random::<u32>() % 20  // 30-50分钟
 
 ## 注意事项
 
-1. **战力值来源**: 通常使用队伍5名首发选手的平均能力值
+1. **战力值来源**: 队伍战力 = Meta 加权平均 + carry/drag 效应（均衡版本下等价于简单平均）
 2. **结果一致性**: `MatchResult` 中的 `match_info`、`games`、分数应保持一致
 3. **随机性**: 每次模拟结果不同，无法复现
 4. **表现值意义**: `performance` 值代表该局实际发挥，可用于数据中心记录
+5. **Meta 权重**: 比赛模拟依赖当前赛季 Meta 权重，通过 `MetaEngine::get_current_weights()` 获取

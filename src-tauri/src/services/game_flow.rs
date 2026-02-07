@@ -2,7 +2,8 @@ use crate::db::{
     HonorRepository, MatchRepository, PlayerStatsRepository, PointsRepository, SaveRepository,
     StandingRepository, TeamRepository, TournamentRepository,
 };
-use crate::engines::{FinancialEngine, PointsCalculationEngine};
+use crate::engines::{FinancialEngine, PointsCalculationEngine, MetaEngine, MatchSimulationEngine, MatchPlayerInfo, MatchSimContext, TraitType};
+use std::collections::HashMap;
 use crate::models::{
     HonorType, LeagueStanding, SeasonPhase, Tournament, TournamentStatus,
     TournamentType, GameTimeState, PhaseStatus, PhaseProgress, TournamentProgress,
@@ -3754,6 +3755,28 @@ impl GameFlowService {
         // 检查是否是季后赛阶段
         let is_playoff = matches!(phase, SeasonPhase::SpringPlayoffs | SeasonPhase::SummerPlayoffs);
 
+        // === 特性系统：预加载选手数据 ===
+        let team_players = self.load_team_players(pool, save_id, save.current_season as i64).await?;
+        let meta_weights = MetaEngine::get_current_weights(pool, save_id, save.current_season as i64)
+            .await
+            .unwrap_or_else(|_| crate::engines::MetaWeights::balanced());
+
+        // 构建比赛情境
+        let is_international = matches!(
+            phase,
+            SeasonPhase::Msi | SeasonPhase::MadridMasters |
+            SeasonPhase::ClaudeIntercontinental | SeasonPhase::WorldChampionship |
+            SeasonPhase::ShanghaiMasters | SeasonPhase::IcpIntercontinental |
+            SeasonPhase::SuperIntercontinental
+        );
+        let tournament_type_str = format!("{:?}", t_type).to_lowercase();
+        let sim_ctx = MatchSimContext {
+            is_playoff,
+            is_international,
+            tournament_type: tournament_type_str,
+        };
+        let match_engine = MatchSimulationEngine::default();
+
         if is_playoff {
             // 季后赛：逐场模拟以确保正确生成后续对阵
             let mut simulated_count = 0u32;
@@ -3773,19 +3796,25 @@ impl GameFlowService {
                     found_pending = true;
                     let match_info = &pending[0];
 
-                    // 获取队伍并模拟比赛
-                    let home_team = TeamRepository::get_by_id(pool, match_info.home_team_id)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    let away_team = TeamRepository::get_by_id(pool, match_info.away_team_id)
-                        .await
-                        .map_err(|e| e.to_string())?;
+                    // 特性感知模拟
+                    let home_players = team_players.get(&match_info.home_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+                    let away_players = team_players.get(&match_info.away_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
 
-                    let result = self.league_service.simulate_match(
-                        match_info,
-                        home_team.power_rating,
-                        away_team.power_rating,
-                    );
+                    let result = if !home_players.is_empty() && !away_players.is_empty() {
+                        match_engine.simulate_match_with_traits(
+                            match_info.id, match_info.tournament_id, &match_info.stage,
+                            match_info.format.clone(), match_info.home_team_id, match_info.away_team_id,
+                            home_players, away_players, &sim_ctx, &meta_weights,
+                        )
+                    } else {
+                        let home_team = TeamRepository::get_by_id(pool, match_info.home_team_id)
+                            .await.map_err(|e| e.to_string())?;
+                        let away_team = TeamRepository::get_by_id(pool, match_info.away_team_id)
+                            .await.map_err(|e| e.to_string())?;
+                        self.league_service.simulate_match(
+                            match_info, home_team.power_rating, away_team.power_rating,
+                        )
+                    };
 
                     // 更新比赛结果
                     MatchRepository::update_result(
@@ -3837,18 +3866,25 @@ impl GameFlowService {
                     .map_err(|e| e.to_string())?;
 
                 for match_info in &pending {
-                    let home_team = TeamRepository::get_by_id(pool, match_info.home_team_id)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    let away_team = TeamRepository::get_by_id(pool, match_info.away_team_id)
-                        .await
-                        .map_err(|e| e.to_string())?;
+                    // 特性感知模拟
+                    let home_players = team_players.get(&match_info.home_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+                    let away_players = team_players.get(&match_info.away_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
 
-                    let result = self.league_service.simulate_match(
-                        match_info,
-                        home_team.power_rating,
-                        away_team.power_rating,
-                    );
+                    let result = if !home_players.is_empty() && !away_players.is_empty() {
+                        match_engine.simulate_match_with_traits(
+                            match_info.id, match_info.tournament_id, &match_info.stage,
+                            match_info.format.clone(), match_info.home_team_id, match_info.away_team_id,
+                            home_players, away_players, &sim_ctx, &meta_weights,
+                        )
+                    } else {
+                        let home_team = TeamRepository::get_by_id(pool, match_info.home_team_id)
+                            .await.map_err(|e| e.to_string())?;
+                        let away_team = TeamRepository::get_by_id(pool, match_info.away_team_id)
+                            .await.map_err(|e| e.to_string())?;
+                        self.league_service.simulate_match(
+                            match_info, home_team.power_rating, away_team.power_rating,
+                        )
+                    };
 
                     MatchRepository::update_result(
                         pool,
@@ -3866,6 +3902,75 @@ impl GameFlowService {
 
             Ok(simulated_count)
         }
+    }
+
+    /// 预加载所有队伍的首发选手数据（含特性），用于特性感知模拟
+    async fn load_team_players(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        current_season: i64,
+    ) -> Result<HashMap<u64, Vec<MatchPlayerInfo>>, String> {
+        // 查询所有在役首发选手
+        let rows = sqlx::query(
+            r#"
+            SELECT id, ability, stability, condition, age, position, team_id, join_season
+            FROM players
+            WHERE save_id = ? AND status = 'Active' AND is_starter = 1
+            "#,
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("加载选手数据失败: {}", e))?;
+
+        // 收集所有 player_id
+        let player_ids: Vec<i64> = rows.iter().map(|r| r.get::<i64, _>("id")).collect();
+
+        // 批量查询特性
+        let mut player_traits_map: HashMap<u64, Vec<TraitType>> = HashMap::new();
+        if !player_ids.is_empty() {
+            let placeholders: String = player_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let query_str = format!(
+                "SELECT player_id, trait_type FROM player_traits WHERE save_id = ? AND player_id IN ({})",
+                placeholders
+            );
+            let mut query = sqlx::query(&query_str).bind(save_id);
+            for pid in &player_ids {
+                query = query.bind(pid);
+            }
+            let trait_rows = query.fetch_all(pool).await.map_err(|e| format!("加载特性失败: {}", e))?;
+
+            for row in &trait_rows {
+                let pid = row.get::<i64, _>("player_id") as u64;
+                let trait_str: String = row.get("trait_type");
+                if let Some(tt) = TraitType::from_str(&trait_str) {
+                    player_traits_map.entry(pid).or_default().push(tt);
+                }
+            }
+        }
+
+        // 按 team_id 分组
+        let mut team_players: HashMap<u64, Vec<MatchPlayerInfo>> = HashMap::new();
+        for row in &rows {
+            let player_id = row.get::<i64, _>("id") as u64;
+            let team_id = row.get::<i64, _>("team_id") as u64;
+            let join_season: i64 = row.get("join_season");
+
+            let player_info = MatchPlayerInfo {
+                ability: row.get::<i64, _>("ability") as u8,
+                stability: row.get::<i64, _>("stability") as u8,
+                condition: row.get::<i64, _>("condition") as i8,
+                age: row.get::<i64, _>("age") as u8,
+                position: row.get::<String, _>("position"),
+                traits: player_traits_map.get(&player_id).cloned().unwrap_or_default(),
+                is_first_season: join_season == current_season,
+            };
+
+            team_players.entry(team_id).or_default().push(player_info);
+        }
+
+        Ok(team_players)
     }
 }
 

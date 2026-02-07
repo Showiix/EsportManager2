@@ -18,6 +18,7 @@ pub mod awards_commands;
 pub mod transfer_commands;
 pub mod log_commands;
 pub mod perf_commands;
+pub mod meta_commands;
 
 pub use save_commands::*;
 pub use team_commands::*;
@@ -39,6 +40,7 @@ pub use awards_commands::*;
 pub use transfer_commands::*;
 pub use log_commands::*;
 pub use perf_commands::*;
+pub use meta_commands::*;
 
 use serde::{Deserialize, Serialize};
 
