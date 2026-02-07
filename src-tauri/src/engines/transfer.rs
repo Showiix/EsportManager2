@@ -518,7 +518,7 @@ impl TransferEngine {
             events.push(event);
 
             // 退役检查
-            if new_age >= 35 && new_ability < 65 {
+            if new_age >= 35 && new_ability < 51 {
                 sqlx::query(
                     "UPDATE players SET status = 'RETIRED', team_id = NULL WHERE id = ? AND save_id = ?"
                 )
@@ -1009,31 +1009,31 @@ impl TransferEngine {
                 "DYNASTY" => ("NONE", 0, "阵容稳定无需变动".to_string()),
                 "MAINTAIN" => {
                     if let Some(ability) = starter_ability {
-                        if ability < 75 {
+                        if ability < 58 {
                             ("OPTIONAL", (ability + 5) as i32, format!("{}位置能力{}偏低，可考虑补强", pos, ability))
                         } else {
                             ("NONE", 0, "当前首发足够".to_string())
                         }
                     } else {
-                        ("CRITICAL", 75, format!("{}位置缺少首发", pos))
+                        ("CRITICAL", 58, format!("{}位置缺少首发", pos))
                     }
                 },
                 "UPGRADE" => {
                     if let Some(ability) = starter_ability {
                         if ability < roster_power as i64 - 5 {
-                            ("IMPORTANT", (roster_power as i32 + 5).min(90), format!("{}位置能力{}低于队伍均值", pos, ability))
-                        } else if ability < 80 {
-                            ("OPTIONAL", 80, format!("{}位置能力{}，可考虑升级", pos, ability))
+                            ("IMPORTANT", (roster_power as i32 + 5).min(72), format!("{}位置能力{}低于队伍均值", pos, ability))
+                        } else if ability < 61 {
+                            ("OPTIONAL", 61, format!("{}位置能力{}，可考虑升级", pos, ability))
                         } else {
                             ("NONE", 0, "当前首发足够".to_string())
                         }
                     } else {
-                        ("CRITICAL", 78, format!("{}位置缺少首发", pos))
+                        ("CRITICAL", 60, format!("{}位置缺少首发", pos))
                     }
                 },
                 "REBUILD" => {
                     if let Some(ability) = starter_ability {
-                        if ability < 75 {
+                        if ability < 58 {
                             ("CRITICAL", 80, format!("重建期需要补强{}位置", pos))
                         } else {
                             ("OPTIONAL", (ability + 5) as i32, format!("可考虑升级{}位置", pos))
@@ -1146,7 +1146,7 @@ impl TransferEngine {
         let has_recent_honor = cache.has_recent_honor(player_id);
         let honor_score = if has_recent_honor {
             5.0
-        } else if ability >= 80 && team_eval.current_rank > 8 {
+        } else if ability >= 61 && team_eval.current_rank > 8 {
             -10.0
         } else {
             0.0
@@ -1273,7 +1273,7 @@ impl TransferEngine {
         roster: &[CachedPlayer],
     ) -> (bool, String, String) {
         // 荣誉保护
-        if has_recent_honor && ability >= 75 {
+        if has_recent_honor && ability >= 58 {
             return (false, "".to_string(), "近2赛季有荣誉".to_string());
         }
 
@@ -1286,13 +1286,13 @@ impl TransferEngine {
         }
 
         // 核心选手保护
-        if ability > team_eval.roster_power as i64 + 5 && ability >= 80 {
+        if ability > team_eval.roster_power as i64 + 5 && ability >= 61 {
             return (false, "".to_string(), "核心选手".to_string());
         }
 
         // 维持模式
         if team_eval.strategy == "MAINTAIN" {
-            if ability < 70 || (age >= 32 && ability < 75) {
+            if ability < 54 || (age >= 32 && ability < 58) {
                 return (true, "能力不足".to_string(), "".to_string());
             }
             return (false, "".to_string(), "阵容稳定".to_string());
@@ -1314,7 +1314,7 @@ impl TransferEngine {
             return (true, "能力低于队伍均值".to_string(), "".to_string());
         }
 
-        if ability < 65 {
+        if ability < 51 {
             return (true, "能力过低".to_string(), "".to_string());
         }
 
@@ -1325,13 +1325,13 @@ impl TransferEngine {
     fn estimate_market_salary(&self, ability: u8, age: u8) -> i64 {
         // 基础薪资（万元基数）
         let base = match ability {
-            95..=100 => 300,
-            90..=94 => 200,
-            85..=89 => 150,
-            80..=84 => 100,
-            75..=79 => 70,
-            70..=74 => 50,
-            _ => 30,
+            72..=100 => 150,
+            68..=71 => 100,
+            65..=67 => 75,
+            62..=64 => 50,
+            60..=61 => 35,
+            55..=59 => 25,
+            _ => 15,
         };
 
         // 年龄因素
@@ -1387,6 +1387,7 @@ impl TransferEngine {
             let loyalty: i64 = free_agent.get("loyalty");
             let home_region_id: Option<i64> = free_agent.try_get("home_region_id").ok();
             let region_loyalty: i64 = free_agent.try_get("region_loyalty").unwrap_or(70);
+            let potential: i64 = free_agent.try_get("potential").unwrap_or(0);
 
             let expected_salary = self.calculate_expected_salary(ability as u8, age as u8);
 
@@ -1425,6 +1426,20 @@ impl TransferEngine {
                     continue;
                 }
 
+                // pos_count == 1 时，只在实力升级或培养新人时才报价
+                if pos_count == 1 {
+                    let best_ability_at_pos = roster.iter()
+                        .filter(|r| r.position == position)
+                        .map(|r| r.ability)
+                        .max()
+                        .unwrap_or(0);
+                    let is_upgrade = ability > best_ability_at_pos;
+                    let is_youth_prospect = age <= 23 && potential >= 70;
+                    if !is_upgrade && !is_youth_prospect {
+                        continue;
+                    }
+                }
+
                 // 使用缓存获取AI性格权重
                 let weights = cache.get_weights(team_id);
                 let roster = cache.get_roster(team_id);
@@ -1436,7 +1451,7 @@ impl TransferEngine {
                     &roster, team_rank,
                 );
 
-                if match_score < 40.0 {
+                if match_score < 50.0 {
                     continue;
                 }
 
@@ -2746,10 +2761,10 @@ impl TransferEngine {
         let base = ability as i64 * 8; // 万元/年
 
         let ability_coeff = match ability {
-            90..=100 => 1.5,
-            85..=89 => 1.3,
-            80..=84 => 1.1,
-            75..=79 => 1.0,
+            68..=100 => 1.5,
+            65..=67 => 1.3,
+            62..=64 => 1.1,
+            58..=61 => 1.0,
             _ => 0.8,
         };
 
@@ -2766,13 +2781,13 @@ impl TransferEngine {
     /// 计算简易身价（万元 -> 元）
     fn calculate_market_value_simple(&self, ability: u8, age: u8) -> i64 {
         let base_multiplier = match ability {
-            95..=100 => 50i64,
-            90..=94 => 35,
-            85..=89 => 20,
-            80..=84 => 12,
-            75..=79 => 7,
-            70..=74 => 4,
-            60..=69 => 2,
+            72..=100 => 25i64,
+            68..=71 => 18,
+            65..=67 => 10,
+            62..=64 => 6,
+            60..=61 => 4,
+            55..=59 => 2,
+            47..=54 => 1,
             _ => 1,
         };
 
@@ -2804,11 +2819,14 @@ impl TransferEngine {
         // 1. 能力匹配（0-100）
         let ability_score = match ability {
             90..=100 => 100.0,
-            85..=89 => 90.0,
-            80..=84 => 80.0,
-            75..=79 => 70.0,
-            70..=74 => 60.0,
-            _ => 40.0,
+            80..=89 => 90.0,
+            75..=79 => 80.0,
+            70..=74 => 70.0,
+            65..=69 => 60.0,
+            60..=64 => 50.0,
+            55..=59 => 35.0,
+            50..=54 => 20.0,
+            _ => 10.0,
         };
 
         // 2. 年龄匹配（0-100，根据性格偏好）
@@ -2851,9 +2869,9 @@ impl TransferEngine {
         let pos_count = pos_players.len();
         let need_score = match pos_count {
             0 => 100.0,   // 该位置空缺，急需
-            1 => 75.0,    // 只有1人，需要替补
-            2 => 40.0,    // 已有2人，不太需要
-            _ => 20.0,    // 饱和
+            1 => 40.0,    // 已有首发，仅轻度需求
+            2 => 15.0,    // 饱和
+            _ => 5.0,     // 超饱和
         };
 
         // 5. 提升度（0-100）：选手能力相对于球队该位置最强选手的提升
