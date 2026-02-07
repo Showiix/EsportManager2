@@ -424,6 +424,7 @@ onMounted(async () => {
 .intro-card {
   margin-bottom: 24px;
   border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
 .intro-content {
@@ -600,6 +601,7 @@ onMounted(async () => {
 .batch-card {
   border-radius: 12px;
   margin-bottom: 24px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
 .batch-content {

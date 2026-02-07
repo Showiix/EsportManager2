@@ -493,6 +493,7 @@ onMounted(async () => {
   margin-bottom: 24px;
   border-radius: 12px;
   overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .intro-card :deep(.el-card__body) {
@@ -572,6 +573,7 @@ onMounted(async () => {
 .action-card {
   margin-bottom: 24px;
   border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
 .action-content {
@@ -756,6 +758,7 @@ onMounted(async () => {
 .history-card {
   margin-bottom: 24px;
   border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
 .history-summary {

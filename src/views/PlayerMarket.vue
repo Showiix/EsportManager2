@@ -669,6 +669,7 @@ onMounted(() => {
   background: linear-gradient(135deg, #1e3a5f 0%, #2d5a7b 100%);
   border-radius: 12px;
   color: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .header-content h1 {
@@ -740,6 +741,19 @@ onMounted(() => {
 /* 表格卡片 */
 .table-card {
   border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.table-card :deep(.el-table th.el-table__cell) {
+  background: #f8f9fb;
+  color: #606266;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 0;
+}
+
+.table-card :deep(.el-table td.el-table__cell) {
+  padding: 6px 0;
 }
 
 /* 修复固定列溢出问题 */

@@ -441,6 +441,7 @@ onMounted(async () => {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 12px;
   color: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .header-content h1 {
@@ -533,6 +534,19 @@ onMounted(async () => {
 .table-card {
   margin-bottom: 20px;
   border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.table-card :deep(.el-table th.el-table__cell) {
+  background: #f8f9fb;
+  color: #606266;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 0;
+}
+
+.table-card :deep(.el-table td.el-table__cell) {
+  padding: 6px 0;
 }
 
 .player-info {
@@ -644,6 +658,7 @@ onMounted(async () => {
 .empty-card {
   margin-bottom: 20px;
   border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
   text-align: center;
   padding: 40px 0;
 }
