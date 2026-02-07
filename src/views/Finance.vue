@@ -155,7 +155,7 @@
         <el-table-column prop="team_name" label="战队" min-width="180">
           <template #default="{ row }">
             <div class="team-cell">
-              <div class="team-avatar" :class="getLeagueName(row.region_code).toLowerCase()">
+              <div class="team-avatar medium" :class="getLeagueName(row.region_code).toLowerCase()">
                 {{ row.short_name || row.team_name.substring(0, 2) }}
               </div>
               <div class="team-info">
@@ -349,22 +349,23 @@ async function handleRefresh() {
 
 /* 页面标题 */
 .page-header {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .page-header h1 {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text-primary, #303133);
-  margin: 0 0 8px 0;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text-primary, #1d2129);
+  margin: 0 0 6px 0;
+  letter-spacing: -0.5px;
 }
 
 .page-header p {
   font-size: 14px;
-  color: var(--text-tertiary, #909399);
+  color: var(--text-tertiary, #86909c);
   margin: 0;
 }
 
@@ -374,40 +375,53 @@ async function handleRefresh() {
 }
 
 .stat-card {
-  border-radius: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.stat-card:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
 }
 
 .stat-content {
   display: flex;
   align-items: center;
   gap: 16px;
+  padding: 4px 0;
 }
 
 .stat-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
+  flex-shrink: 0;
 }
 
-.stat-icon.gold { background: linear-gradient(135deg, #f59e0b, #d97706); }
-.stat-icon.green { background: linear-gradient(135deg, #10b981, #059669); }
-.stat-icon.red { background: linear-gradient(135deg, #ef4444, #dc2626); }
-.stat-icon.blue { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.stat-icon.orange { background: linear-gradient(135deg, #f97316, #ea580c); }
-.stat-icon.purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+.stat-icon.gold { background: linear-gradient(135deg, #fbbf24, #f59e0b); box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); }
+.stat-icon.green { background: linear-gradient(135deg, #34d399, #10b981); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
+.stat-icon.red { background: linear-gradient(135deg, #f87171, #ef4444); box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); }
+.stat-icon.blue { background: linear-gradient(135deg, #60a5fa, #3b82f6); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
+.stat-icon.orange { background: linear-gradient(135deg, #fb923c, #f97316); box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3); }
+.stat-icon.purple { background: linear-gradient(135deg, #a78bfa, #8b5cf6); box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); }
 
 .stat-info {
   flex: 1;
+  min-width: 0;
 }
 
 .stat-number {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text-primary, #303133);
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-primary, #1d2129);
+  letter-spacing: -0.5px;
+  line-height: 1.2;
 }
 
 .stat-number.negative {
@@ -416,59 +430,73 @@ async function handleRefresh() {
 
 .stat-label {
   font-size: 13px;
-  color: var(--text-tertiary, #909399);
+  color: var(--text-tertiary, #86909c);
   margin-top: 4px;
+  font-weight: 500;
 }
 
 /* 状态分布 */
 .status-distribution-card {
   margin-bottom: 20px;
-  border-radius: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 
 .status-distribution {
   display: flex;
   justify-content: space-around;
   align-items: center;
-  padding: 8px 0;
+  padding: 6px 0;
 }
 
 .status-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 8px;
-  background: #f5f7fa;
+  gap: 10px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  background: #f7f8fa;
+  transition: background 0.2s ease;
+}
+
+.status-item:hover {
+  background: #f0f1f3;
 }
 
 .status-dot {
   display: inline-block;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.04);
 }
 
-.status-dot.dot-wealthy { background-color: #10b981; }
-.status-dot.dot-healthy { background-color: #3b82f6; }
-.status-dot.dot-tight { background-color: #f59e0b; }
-.status-dot.dot-deficit { background-color: #f97316; }
-.status-dot.dot-bankrupt { background-color: #ef4444; }
+.status-dot.dot-wealthy { background-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15); }
+.status-dot.dot-healthy { background-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
+.status-dot.dot-tight { background-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15); }
+.status-dot.dot-deficit { background-color: #f97316; box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15); }
+.status-dot.dot-bankrupt { background-color: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15); }
 
 .status-label {
   font-size: 14px;
-  color: #606266;
+  color: #4e5969;
+  font-weight: 500;
 }
 
 .status-count {
-  font-size: 18px;
-  font-weight: 700;
-  color: #303133;
+  font-size: 20px;
+  font-weight: 800;
+  color: #1d2129;
+  min-width: 20px;
+  text-align: center;
 }
 
 /* 财务卡片 */
 .finance-card {
-  border-radius: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 
 .filter-row {
@@ -476,6 +504,9 @@ async function handleRefresh() {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  padding: 14px 16px;
+  background: #f7f8fa;
+  border-radius: 10px;
   flex-wrap: wrap;
   gap: 12px;
 }
@@ -487,7 +518,7 @@ async function handleRefresh() {
 
 .filter-right {
   display: flex;
-  gap: 12px;
+  gap: 10px;
 }
 
 /* 表格 */
@@ -495,12 +526,26 @@ async function handleRefresh() {
   width: 100%;
 }
 
-.finance-table :deep(.el-table__row) {
-  cursor: pointer;
+.finance-table :deep(.el-table__header th) {
+  font-weight: 600;
+  color: #86909c;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: #fafbfc;
 }
 
-.finance-table :deep(.el-table__row:hover) {
-  background-color: #f0f9ff !important;
+.finance-table :deep(.el-table__row) {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.finance-table :deep(.el-table__row td) {
+  padding: 14px 0;
+}
+
+.finance-table :deep(.el-table__row:hover > td) {
+  background-color: #f0f7ff !important;
 }
 
 /* 战队单元格 */
@@ -510,40 +555,26 @@ async function handleRefresh() {
   gap: 12px;
 }
 
-.team-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 12px;
-  color: white;
-}
-
-.team-avatar.lpl { background: linear-gradient(135deg, #ef4444, #dc2626); }
-.team-avatar.lck { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.team-avatar.lec { background: linear-gradient(135deg, #10b981, #059669); }
-.team-avatar.lcs { background: linear-gradient(135deg, #f59e0b, #d97706); }
-
 .team-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  align-items: flex-start;
+  gap: 5px;
 }
 
 .team-name {
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: #1d2129;
 }
 
 /* 金额样式 */
 .money-value {
-  font-size: 15px;
-  font-weight: 600;
-  color: #303133;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1d2129;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.2px;
 }
 
 .money-value.negative {
@@ -552,12 +583,16 @@ async function handleRefresh() {
 
 .money-income {
   color: #10b981;
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
 }
 
 .money-expense {
   color: #ef4444;
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 详情按钮 */
@@ -565,14 +600,16 @@ async function handleRefresh() {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border: none;
   font-size: 12px;
-  padding: 6px 12px;
-  transition: all 0.3s ease;
+  font-weight: 600;
+  padding: 6px 14px;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
 }
 
 .detail-btn:hover {
-  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+  background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 14px rgba(102, 126, 234, 0.45);
 }
 
 .detail-btn .mr-1 {

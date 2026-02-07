@@ -276,7 +276,7 @@
             <span class="points-unit">总积分</span>
           </div>
           <div class="team-badge">
-            <div class="team-avatar large" :class="selectedTeam.region.toLowerCase()">
+            <div class="team-avatar xlarge" :class="selectedTeam.region.toLowerCase()">
               {{ selectedTeam.short }}
             </div>
             <div class="team-meta">
@@ -830,112 +830,167 @@ const getPowerColor = (power: number) => {
   padding: 0;
 }
 
+/* 页面标题 */
 .page-header {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .page-header h1 {
-  font-size: 24px;
-  font-weight: 700;
-  color: #303133;
-  margin: 0 0 8px 0;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text-primary, #1d2129);
+  margin: 0 0 6px 0;
+  letter-spacing: -0.5px;
 }
 
 .page-header p {
   font-size: 14px;
-  color: #909399;
+  color: var(--text-tertiary, #86909c);
   margin: 0;
 }
 
+/* 积分说明 */
 .notice-alert {
   margin-bottom: 20px;
-  border-radius: 8px;
+  border-radius: 12px;
 }
 
 .intercontinental-note {
-  color: #ff9800;
-  font-weight: 500;
+  color: #f59e0b;
+  font-weight: 600;
 }
 
+/* 统计卡片 */
 .stats-row {
   margin-bottom: 20px;
 }
 
 .stat-card {
-  border-radius: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.stat-card:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
 }
 
 .stat-content {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 8px 0;
+  padding: 4px 0;
 }
 
 .stat-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
+  flex-shrink: 0;
 }
 
-.stat-icon.blue {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-}
-
-.stat-icon.green {
-  background: linear-gradient(135deg, #11998e, #38ef7d);
-}
-
-.stat-icon.orange {
-  background: linear-gradient(135deg, #f093fb, #f5576c);
-}
-
-.stat-icon.purple {
-  background: linear-gradient(135deg, #4facfe, #00f2fe);
-}
+.stat-icon.blue { background: linear-gradient(135deg, #60a5fa, #3b82f6); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
+.stat-icon.green { background: linear-gradient(135deg, #34d399, #10b981); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
+.stat-icon.orange { background: linear-gradient(135deg, #fb923c, #f97316); box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3); }
+.stat-icon.purple { background: linear-gradient(135deg, #a78bfa, #8b5cf6); box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); }
 
 .stat-info {
   flex: 1;
+  min-width: 0;
 }
 
 .stat-number {
-  font-size: 28px;
-  font-weight: 700;
-  color: #303133;
-  line-height: 1;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-primary, #1d2129);
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-label {
-  font-size: 14px;
-  color: #909399;
+  font-size: 13px;
+  color: var(--text-tertiary, #86909c);
   margin-top: 4px;
+  font-weight: 500;
 }
 
+/* 排名主卡片 */
 .rankings-card {
-  border-radius: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 
+.rankings-card :deep(.el-tabs__header) {
+  margin-bottom: 0;
+}
+
+.rankings-card :deep(.el-tabs__item) {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* 筛选栏 */
 .filter-row {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   margin-bottom: 20px;
-  padding: 16px;
-  background: #f5f7fa;
-  border-radius: 8px;
+  padding: 14px 16px;
+  background: #f7f8fa;
+  border-radius: 10px;
+  align-items: center;
 }
 
 .filter-row .el-select {
   width: 180px;
 }
 
+/* 表格 */
 .rankings-table {
+  width: 100%;
+}
+
+.rankings-table :deep(.el-table__header th) {
+  font-weight: 600;
+  color: #86909c;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: #fafbfc;
+}
+
+.rankings-table :deep(.el-table__row) {
+  height: 72px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.rankings-table :deep(.el-table__row td) {
+  padding: 14px 0;
+}
+
+.rankings-table :deep(.el-table__row:hover > td) {
+  background-color: #f0f7ff !important;
+}
+
+.rankings-table :deep(.el-tag--large) {
+  padding: 8px 12px;
+  font-size: 14px;
   border-radius: 8px;
 }
 
+.rankings-table :deep(.el-tag--large .el-icon) {
+  margin-right: 4px;
+}
+
+/* 排名单元格 */
 .rank-cell {
   display: flex;
   justify-content: center;
@@ -943,112 +998,42 @@ const getPowerColor = (power: number) => {
 }
 
 .rank-number {
-  font-weight: 700;
+  font-weight: 800;
   font-size: 18px;
-  color: #606266;
+  color: #4e5969;
+  font-variant-numeric: tabular-nums;
 }
 
+/* 战队单元格 */
 .team-cell {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.team-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
-  font-size: 14px;
-}
-
-.team-avatar.lpl {
-  background: linear-gradient(135deg, #ff4757, #ff6b81);
-}
-
-.team-avatar.lck {
-  background: linear-gradient(135deg, #3742fa, #5352ed);
-}
-
-.team-avatar.lec {
-  background: linear-gradient(135deg, #2ed573, #7bed9f);
-}
-
-.team-avatar.lcs {
-  background: linear-gradient(135deg, #ffa502, #ff6348);
-}
-
 .team-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  align-items: flex-start;
+  gap: 5px;
 }
 
 .team-name {
   font-weight: 600;
-  color: #303133;
-  font-size: 15px;
+  color: #1d2129;
+  font-size: 14px;
 }
 
+/* 总积分 */
 .total-points {
-  font-size: 24px;
-  font-weight: 700;
-  color: #409eff;
+  font-size: 22px;
+  font-weight: 800;
+  color: #3b82f6;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
 }
 
-.points-breakdown {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.points-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  background: #f0f2f5;
-  border-radius: 4px;
-  font-size: 13px;
-}
-
-.points-label {
-  color: #909399;
-}
-
-.points-value {
-  font-weight: 600;
-}
-
-.points-value.spring {
-  color: #67c23a;
-}
-
-.points-value.summer {
-  color: #e6a23c;
-}
-
-.points-value.msi {
-  color: #f56c6c;
-}
-
-.points-value.worlds {
-  color: #9c27b0;
-}
-
-.points-value.madrid {
-  color: #e6a23c;
-}
-
-.points-value.shanghai {
-  color: #00bcd4;
-}
-
-/* 积分明细小标签 */
+/* 积分明细标签 */
 .points-breakdown-tags {
   display: flex;
   flex-wrap: wrap;
@@ -1059,75 +1044,81 @@ const getPowerColor = (power: number) => {
   display: inline-flex;
   align-items: center;
   padding: 4px 10px;
-  border-radius: 12px;
+  border-radius: 20px;
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.point-tag:hover {
+  transform: translateY(-1px);
 }
 
 .point-tag.spring {
-  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
-  color: #2e7d32;
-  border: 1px solid #a5d6a7;
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  color: #065f46;
+  border: 1px solid #a7f3d0;
 }
 
 .point-tag.msi {
-  background: linear-gradient(135deg, #ffebee, #ffcdd2);
-  color: #c62828;
-  border: 1px solid #ef9a9a;
+  background: linear-gradient(135deg, #fef2f2, #fecaca);
+  color: #991b1b;
+  border: 1px solid #fca5a5;
 }
 
 .point-tag.madrid {
-  background: linear-gradient(135deg, #fff8e1, #ffecb3);
-  color: #f57c00;
-  border: 1px solid #ffe082;
+  background: linear-gradient(135deg, #fffbeb, #fef3c7);
+  color: #b45309;
+  border: 1px solid #fde68a;
 }
 
 .point-tag.summer {
-  background: linear-gradient(135deg, #fff3e0, #ffe0b2);
-  color: #ef6c00;
-  border: 1px solid #ffcc80;
+  background: linear-gradient(135deg, #fff7ed, #fed7aa);
+  color: #c2410c;
+  border: 1px solid #fdba74;
 }
 
 .point-tag.claude {
-  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
-  color: #1565c0;
-  border: 1px solid #90caf9;
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  color: #1e40af;
+  border: 1px solid #93c5fd;
 }
 
 .point-tag.worlds {
-  background: linear-gradient(135deg, #f3e5f5, #e1bee7);
-  color: #7b1fa2;
-  border: 1px solid #ce93d8;
+  background: linear-gradient(135deg, #faf5ff, #e9d5ff);
+  color: #6b21a8;
+  border: 1px solid #c4b5fd;
 }
 
 .point-tag.shanghai {
-  background: linear-gradient(135deg, #e0f7fa, #b2ebf2);
-  color: #00838f;
-  border: 1px solid #80deea;
+  background: linear-gradient(135deg, #ecfeff, #cffafe);
+  color: #155e75;
+  border: 1px solid #67e8f9;
 }
 
 .point-tag.icp {
-  background: linear-gradient(135deg, #fbe9e7, #ffccbc);
-  color: #d84315;
-  border: 1px solid #ffab91;
+  background: linear-gradient(135deg, #fff7ed, #ffedd5);
+  color: #9a3412;
+  border: 1px solid #fdba74;
 }
 
 .point-tag.super {
-  background: linear-gradient(135deg, #fffde7, #fff9c4);
-  color: #f57f17;
-  border: 1px solid #fff176;
+  background: linear-gradient(135deg, #fefce8, #fef9c3);
+  color: #a16207;
+  border: 1px solid #fde047;
 }
 
 .point-tag.more {
-  background: linear-gradient(135deg, #f5f5f5, #e0e0e0);
-  color: #616161;
-  border: 1px solid #bdbdbd;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
   cursor: pointer;
 }
 
 .point-tag.more:hover {
-  background: linear-gradient(135deg, #e0e0e0, #bdbdbd);
+  background: #e2e8f0;
+  transform: translateY(-1px);
 }
 
 .more-tags-popover {
@@ -1139,35 +1130,48 @@ const getPowerColor = (power: number) => {
 .no-points {
   color: #c0c4cc;
   font-style: italic;
+  font-size: 13px;
 }
 
+/* 战力进度条 */
 .power-cell {
   padding-right: 20px;
 }
 
+.power-cell :deep(.el-progress-bar__outer) {
+  border-radius: 6px;
+}
+
+.power-cell :deep(.el-progress-bar__inner) {
+  border-radius: 6px;
+}
+
+/* 排名变化 */
 .change-up {
-  color: #67c23a;
-  font-weight: 600;
+  color: #10b981;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
 .change-down {
-  color: #f56c6c;
-  font-weight: 600;
+  color: #ef4444;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
 .change-none {
-  color: #909399;
+  color: #c0c4cc;
 }
 
-/* 积分详情按钮样式 */
+/* 详情按钮 */
 .detail-btn {
   display: inline-flex;
   align-items: center;
@@ -1177,16 +1181,16 @@ const getPowerColor = (power: number) => {
   border-radius: 20px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.35);
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
 }
 
 .detail-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(102, 126, 234, 0.45);
   background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
 }
 
@@ -1199,33 +1203,42 @@ const getPowerColor = (power: number) => {
   font-size: 14px;
 }
 
-/* 表格样式优化 */
-.rankings-table :deep(.el-table__row) {
-  height: 72px;
+/* ============ 积分详情弹窗 ============ */
+.points-detail-dialog :deep(.el-dialog) {
+  border-radius: 16px;
+  overflow: hidden;
 }
 
-.rankings-table :deep(.el-tag--large) {
-  padding: 8px 12px;
-  font-size: 14px;
+.points-detail-dialog :deep(.el-dialog__header) {
+  border-bottom: 1px solid #f0f1f3;
+  padding-bottom: 16px;
 }
 
-.rankings-table :deep(.el-tag--large .el-icon) {
-  margin-right: 4px;
+.points-detail-dialog :deep(.el-dialog__title) {
+  font-weight: 800;
+  font-size: 18px;
+  color: #1d2129;
 }
 
-/* 积分详情弹窗样式 */
+.points-detail-dialog :deep(.el-dialog__body) {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
 .points-detail-content {
   padding: 0 8px;
 }
 
+/* 总积分概览横幅 */
 .total-overview {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px;
+  padding: 24px 28px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
+  border-radius: 14px;
   margin-bottom: 24px;
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
 }
 
 .total-points-display {
@@ -1240,31 +1253,22 @@ const getPowerColor = (power: number) => {
   color: white;
   line-height: 1;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  font-variant-numeric: tabular-nums;
 }
 
 .total-points-display .points-unit {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.9);
-  margin-top: 4px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  margin-top: 6px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }
 
 .team-badge {
   display: flex;
   align-items: center;
   gap: 16px;
-}
-
-.team-avatar.large {
-  width: 64px;
-  height: 64px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
-  font-size: 20px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .team-meta {
@@ -1275,17 +1279,19 @@ const getPowerColor = (power: number) => {
 
 .team-name-large {
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 800;
   color: white;
+  letter-spacing: -0.3px;
 }
 
+/* 积分来源标题 */
 .points-sources h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #303133;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1d2129;
   margin: 0 0 16px 0;
-  padding-bottom: 8px;
-  border-bottom: 2px solid #f0f2f5;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #f0f1f3;
 }
 
 /* 卡片网格布局 */
@@ -1300,21 +1306,21 @@ const getPowerColor = (power: number) => {
   align-items: flex-start;
   gap: 12px;
   padding: 16px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
-  border: 1px solid #e4e7ed;
-  transition: all 0.3s ease;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f7f8fa 0%, #eef0f3 100%);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .points-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 
 .points-card .card-icon {
   width: 44px;
   height: 44px;
-  border-radius: 10px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1328,228 +1334,129 @@ const getPowerColor = (power: number) => {
 }
 
 .points-card .card-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  color: #606266;
+  color: #86909c;
   margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .points-card .card-points {
   font-size: 22px;
-  font-weight: 700;
-  color: #303133;
+  font-weight: 800;
+  color: #1d2129;
   margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
 }
 
 .points-card .card-desc {
   font-size: 11px;
-  color: #909399;
-  line-height: 1.4;
+  color: #86909c;
+  line-height: 1.5;
 }
 
 /* 各赛事卡片颜色 */
 .points-card.spring {
-  background: linear-gradient(135deg, #f0f9eb 0%, #e1f3d8 100%);
-  border-color: #c2e7b0;
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border-color: rgba(16, 185, 129, 0.15);
 }
 .points-card.spring .card-icon {
-  background: linear-gradient(135deg, #67c23a, #85ce61);
+  background: linear-gradient(135deg, #34d399, #10b981);
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);
 }
-.points-card.spring .card-points {
-  color: #67c23a;
-}
+.points-card.spring .card-points { color: #059669; }
 
 .points-card.msi {
-  background: linear-gradient(135deg, #fef0f0 0%, #fde2e2 100%);
-  border-color: #f9d0d0;
+  background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+  border-color: rgba(239, 68, 68, 0.15);
 }
 .points-card.msi .card-icon {
-  background: linear-gradient(135deg, #f56c6c, #f89898);
+  background: linear-gradient(135deg, #f87171, #ef4444);
+  box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3);
 }
-.points-card.msi .card-points {
-  color: #f56c6c;
-}
+.points-card.msi .card-points { color: #dc2626; }
 
 .points-card.madrid {
-  background: linear-gradient(135deg, #fdf6ec 0%, #faecd8 100%);
-  border-color: #f5dab1;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border-color: rgba(245, 158, 11, 0.15);
 }
 .points-card.madrid .card-icon {
-  background: linear-gradient(135deg, #e6a23c, #ebb563);
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  box-shadow: 0 4px 10px rgba(245, 158, 11, 0.3);
 }
-.points-card.madrid .card-points {
-  color: #e6a23c;
-}
+.points-card.madrid .card-points { color: #d97706; }
 
 .points-card.summer {
-  background: linear-gradient(135deg, #fff7e6 0%, #ffedd5 100%);
-  border-color: #ffd591;
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+  border-color: rgba(249, 115, 22, 0.15);
 }
 .points-card.summer .card-icon {
-  background: linear-gradient(135deg, #ff9500, #ffb74d);
+  background: linear-gradient(135deg, #fb923c, #f97316);
+  box-shadow: 0 4px 10px rgba(249, 115, 22, 0.3);
 }
-.points-card.summer .card-points {
-  color: #ff9500;
-}
+.points-card.summer .card-points { color: #ea580c; }
 
 .points-card.claude {
-  background: linear-gradient(135deg, #ecf5ff 0%, #d9ecff 100%);
-  border-color: #b3d8ff;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border-color: rgba(59, 130, 246, 0.15);
 }
 .points-card.claude .card-icon {
-  background: linear-gradient(135deg, #409eff, #66b1ff);
+  background: linear-gradient(135deg, #60a5fa, #3b82f6);
+  box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3);
 }
-.points-card.claude .card-points {
-  color: #409eff;
-}
+.points-card.claude .card-points { color: #2563eb; }
 
 .points-card.worlds {
-  background: linear-gradient(135deg, #f5e6ff 0%, #e8d5f5 100%);
-  border-color: #d4b8e8;
+  background: linear-gradient(135deg, #faf5ff 0%, #e9d5ff 100%);
+  border-color: rgba(139, 92, 246, 0.15);
 }
 .points-card.worlds .card-icon {
-  background: linear-gradient(135deg, #9c27b0, #ba68c8);
+  background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+  box-shadow: 0 4px 10px rgba(139, 92, 246, 0.3);
 }
-.points-card.worlds .card-points {
-  color: #9c27b0;
-}
+.points-card.worlds .card-points { color: #7c3aed; }
 
 .points-card.shanghai {
-  background: linear-gradient(135deg, #e6fcff 0%, #d1f7ff 100%);
-  border-color: #a8e8f5;
+  background: linear-gradient(135deg, #ecfeff 0%, #cffafe 100%);
+  border-color: rgba(6, 182, 212, 0.15);
 }
 .points-card.shanghai .card-icon {
-  background: linear-gradient(135deg, #00bcd4, #4dd0e1);
+  background: linear-gradient(135deg, #22d3ee, #06b6d4);
+  box-shadow: 0 4px 10px rgba(6, 182, 212, 0.3);
 }
-.points-card.shanghai .card-points {
-  color: #00bcd4;
-}
+.points-card.shanghai .card-points { color: #0891b2; }
 
 .points-card.icp {
-  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
-  border-color: #ffcc80;
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+  border-color: rgba(234, 88, 12, 0.15);
 }
 .points-card.icp .card-icon {
-  background: linear-gradient(135deg, #ff5722, #ff8a65);
+  background: linear-gradient(135deg, #fb923c, #ea580c);
+  box-shadow: 0 4px 10px rgba(234, 88, 12, 0.3);
 }
-.points-card.icp .card-points {
-  color: #ff5722;
-}
+.points-card.icp .card-points { color: #c2410c; }
 
 .points-card.super {
-  background: linear-gradient(135deg, #fffde7 0%, #fff9c4 100%);
-  border-color: #fff176;
+  background: linear-gradient(135deg, #fefce8 0%, #fef9c3 100%);
+  border-color: rgba(202, 138, 4, 0.15);
 }
 .points-card.super .card-icon {
-  background: linear-gradient(135deg, #ffc107, #ffd54f);
+  background: linear-gradient(135deg, #facc15, #eab308);
+  box-shadow: 0 4px 10px rgba(234, 179, 8, 0.3);
 }
-.points-card.super .card-points {
-  color: #ff8f00;
-}
+.points-card.super .card-points { color: #ca8a04; }
 
-.source-section {
-  margin-bottom: 16px;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.source-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  font-weight: 600;
-  color: white;
-}
-
-.source-header .el-icon {
-  font-size: 18px;
-}
-
-.source-header .source-total {
-  margin-left: auto;
-  font-size: 16px;
-}
-
-.source-header.spring {
-  background: linear-gradient(135deg, #67c23a, #95d475);
-}
-
-.source-header.msi {
-  background: linear-gradient(135deg, #f56c6c, #fab6b6);
-}
-
-.source-header.madrid {
-  background: linear-gradient(135deg, #e6a23c, #f3d19e);
-}
-
-.source-header.summer {
-  background: linear-gradient(135deg, #ff9500, #ffb74d);
-}
-
-.source-header.claude {
-  background: linear-gradient(135deg, #409eff, #79bbff);
-}
-
-.source-header.worlds {
-  background: linear-gradient(135deg, #9c27b0, #ce93d8);
-}
-
-.source-header.shanghai {
-  background: linear-gradient(135deg, #00bcd4, #4dd0e1);
-}
-
-.source-header.icp {
-  background: linear-gradient(135deg, #ff5722, #ff8a65);
-}
-
-.source-header.super {
-  background: linear-gradient(135deg, #ffc107, #ffecb3);
-  color: #333;
-}
-
-.source-items {
-  padding: 8px 0;
-  background: #fafafa;
-}
-
-.source-item {
-  display: flex;
-  align-items: center;
-  padding: 10px 16px;
-  border-bottom: 1px solid #f0f2f5;
-}
-
-.source-item:last-child {
-  border-bottom: none;
-}
-
-.source-item .item-name {
-  font-weight: 500;
-  color: #303133;
-  min-width: 120px;
-}
-
-.source-item .item-desc {
-  flex: 1;
-  color: #909399;
-  font-size: 13px;
-}
-
-.source-item .item-points {
-  font-weight: 700;
-  color: #67c23a;
-  font-size: 15px;
-}
-
+/* 积分规则 */
 .points-rules {
   margin-top: 20px;
 }
 
 .points-rules :deep(.el-collapse-item__header) {
   font-weight: 600;
-  color: #606266;
+  color: #4e5969;
+  font-size: 14px;
 }
 
 .rules-content {
@@ -1557,36 +1464,38 @@ const getPowerColor = (power: number) => {
 }
 
 .rule-section {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .rule-section h4 {
-  font-size: 14px;
-  font-weight: 600;
-  color: #303133;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1d2129;
   margin: 0 0 4px 0;
 }
 
 .rule-section p {
   font-size: 13px;
-  color: #909399;
+  color: #86909c;
   margin: 0;
-  line-height: 1.6;
+  line-height: 1.7;
 }
 
-/* 弹窗样式覆盖 */
-.points-detail-dialog :deep(.el-dialog__header) {
-  border-bottom: 1px solid #f0f2f5;
-  padding-bottom: 16px;
+/* 响应式 */
+@media (max-width: 768px) {
+  .filter-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .points-cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
-.points-detail-dialog :deep(.el-dialog__title) {
-  font-weight: 700;
-  font-size: 18px;
-}
-
-.points-detail-dialog :deep(.el-dialog__body) {
-  max-height: 60vh;
-  overflow-y: auto;
+@media (max-width: 480px) {
+  .points-cards-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

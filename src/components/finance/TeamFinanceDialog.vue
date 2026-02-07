@@ -3,6 +3,8 @@
     :model-value="modelValue"
     :title="team ? `${team.team_name} - 财务详情` : '财务详情'"
     width="800px"
+    append-to-body
+    class="finance-detail-dialog"
     @update:model-value="$emit('update:modelValue', $event)"
     @close="$emit('close')"
   >
@@ -201,6 +203,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useFinanceStore, type FinancialStatus } from '@/stores/useFinanceStore'
 import type { TeamFinanceSummary, FinanceTransaction, SeasonFinanceReport, TournamentPrizeDetail } from '@/api/tauri'
+import { financeApi } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('TeamFinanceDialog')
@@ -226,19 +229,20 @@ const totalPrizeMoney = computed(() => {
   return prizeDetails.value.reduce((sum, item) => sum + item.amount, 0)
 })
 
-// 监听team变化，加载详细数据
+// 监听team变化，加载详细数据（直接调用 API，避免触发 store 的 loading 状态导致主页面表格刷新）
 watch(() => props.team, async (newTeam) => {
   if (newTeam) {
     try {
-      // 加载交易记录
-      const txns = await financeStore.fetchTeamTransactions(newTeam.team_id)
-      transactions.value = txns.slice(0, 10) // 只显示最近10条
+      // 并行加载所有数据
+      const [txns, reportData, prizes] = await Promise.all([
+        financeApi.getTeamTransactions(newTeam.team_id),
+        financeApi.getSeasonFinanceReport(newTeam.team_id),
+        financeApi.getTeamPrizeDetails(newTeam.team_id),
+      ])
 
-      // 加载赛季报告
-      report.value = await financeStore.fetchSeasonReport(newTeam.team_id)
-
-      // 加载赛事奖金明细
-      prizeDetails.value = await financeStore.fetchTeamPrizeDetails(newTeam.team_id)
+      transactions.value = txns.slice(0, 10)
+      report.value = reportData
+      prizeDetails.value = prizes
     } catch (e) {
       logger.error('加载财务详情失败', { teamId: newTeam.team_id, error: e })
     }
@@ -316,14 +320,39 @@ function formatPosition(position: string): string {
 </script>
 
 <style scoped>
-/* 财务概览 */
+/* 弹窗基础 */
+.finance-detail-dialog :deep(.el-dialog) {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.finance-detail-dialog :deep(.el-dialog__header) {
+  border-bottom: 1px solid #f0f1f3;
+  padding: 20px 24px 16px;
+}
+
+.finance-detail-dialog :deep(.el-dialog__title) {
+  font-weight: 800;
+  font-size: 18px;
+  color: #1d2129;
+  letter-spacing: -0.3px;
+}
+
+.finance-detail-dialog :deep(.el-dialog__body) {
+  max-height: 65vh;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* 财务概览横幅 */
 .finance-overview {
   display: flex;
   justify-content: space-around;
-  padding: 20px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
-  border-radius: 12px;
-  margin-bottom: 20px;
+  padding: 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 14px;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
 }
 
 .overview-item {
@@ -331,23 +360,28 @@ function formatPosition(position: string): string {
 }
 
 .overview-label {
-  font-size: 13px;
-  color: #909399;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
   margin-bottom: 8px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .overview-value {
   font-size: 24px;
-  font-weight: 700;
-  color: #303133;
+  font-weight: 800;
+  color: white;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
 }
 
 .overview-value.negative {
-  color: #ef4444;
+  color: #fca5a5;
 }
 
 .overview-value.budget {
-  color: #3b82f6;
+  color: #93c5fd;
 }
 
 /* 收支明细卡片 */
@@ -356,10 +390,16 @@ function formatPosition(position: string): string {
 }
 
 .detail-card {
-  background: #fafafa;
-  border-radius: 12px;
-  padding: 16px;
+  background: #fafbfc;
+  border-radius: 14px;
+  padding: 20px;
   height: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.2s ease;
+}
+
+.detail-card:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
 }
 
 .detail-card.income {
@@ -374,58 +414,67 @@ function formatPosition(position: string): string {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #303133;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1d2129;
   margin-bottom: 16px;
 }
 
 .detail-card.income .detail-header {
-  color: #10b981;
+  color: #059669;
 }
 
 .detail-card.expense .detail-header {
-  color: #ef4444;
+  color: #dc2626;
 }
 
 .detail-content {
-  padding: 0 8px;
+  padding: 0 4px;
 }
 
 .detail-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f1f3;
+}
+
+.detail-item:last-of-type {
+  border-bottom: none;
 }
 
 .item-label {
-  font-size: 14px;
-  color: #606266;
+  font-size: 13px;
+  color: #86909c;
+  font-weight: 500;
 }
 
 .item-value {
   font-size: 14px;
-  font-weight: 500;
-  color: #303133;
+  font-weight: 600;
+  color: #1d2129;
+  font-variant-numeric: tabular-nums;
 }
 
 .detail-total {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
+  padding: 10px 0 4px;
 }
 
 .total-label {
-  font-size: 15px;
-  font-weight: 600;
-  color: #303133;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1d2129;
 }
 
 .total-value {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
 }
 
 .total-value.income {
@@ -438,9 +487,10 @@ function formatPosition(position: string): string {
 
 /* 预测区域 */
 .forecast-section {
-  background: #f0f9ff;
-  border-radius: 12px;
-  padding: 16px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border: 1px solid rgba(59, 130, 246, 0.1);
+  border-radius: 14px;
+  padding: 20px;
   margin-bottom: 20px;
 }
 
@@ -448,9 +498,9 @@ function formatPosition(position: string): string {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #3b82f6;
+  font-size: 14px;
+  font-weight: 700;
+  color: #2563eb;
   margin-bottom: 16px;
 }
 
@@ -467,15 +517,18 @@ function formatPosition(position: string): string {
 
 .forecast-label {
   display: block;
-  font-size: 13px;
-  color: #909399;
-  margin-bottom: 4px;
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 6px;
+  font-weight: 500;
 }
 
 .forecast-value {
-  font-size: 18px;
-  font-weight: 600;
-  color: #303133;
+  font-size: 20px;
+  font-weight: 800;
+  color: #1d2129;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
 }
 
 .forecast-value.positive {
@@ -484,6 +537,58 @@ function formatPosition(position: string): string {
 
 .forecast-value.negative {
   color: #ef4444;
+}
+
+/* 赛事奖金明细 */
+.prize-details-section {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 1px solid rgba(245, 158, 11, 0.12);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1d2129;
+}
+
+.section-title.prize {
+  color: #b45309;
+}
+
+.prize-total {
+  font-size: 13px;
+  color: #78716c;
+  font-weight: 500;
+}
+
+.prize-total .money-income {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.prize-details-section :deep(.el-table) {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.prize-details-section :deep(.el-table__header th) {
+  font-weight: 600;
+  color: #86909c;
+  font-size: 12px;
+  background: #fefce8;
 }
 
 /* 交易记录 */
@@ -495,58 +600,34 @@ function formatPosition(position: string): string {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 15px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1d2129;
+  margin-bottom: 14px;
+}
+
+.transactions-section :deep(.el-table) {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.transactions-section :deep(.el-table__header th) {
   font-weight: 600;
-  color: #303133;
-  margin-bottom: 12px;
+  color: #86909c;
+  font-size: 12px;
+  background: #fafbfc;
 }
 
 /* 金额样式 */
 .money-income {
   color: #10b981;
-  font-weight: 500;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .money-expense {
   color: #ef4444;
-  font-weight: 500;
-}
-
-/* 赛事奖金明细 */
-.prize-details-section {
-  background: #fffbeb;
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 20px;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.section-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
   font-weight: 600;
-  color: #303133;
-}
-
-.section-title.prize {
-  color: #d97706;
-}
-
-.prize-total {
-  font-size: 14px;
-  color: #606266;
-}
-
-.prize-total .money-income {
-  font-size: 16px;
-  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 </style>
