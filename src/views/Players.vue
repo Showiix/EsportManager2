@@ -618,32 +618,6 @@ const getSatisfactionColor = (satisfaction: number) => {
   padding: 8px 0;
 }
 
-.stat-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-}
-
-.stat-icon.blue {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-}
-
-.stat-icon.green {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
-}
-
-.stat-icon.silver {
-  background: linear-gradient(135deg, #9ca3af, #6b7280);
-}
-
-.stat-icon.purple {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-}
-
 .stat-info {
   flex: 1;
 }
@@ -722,34 +696,6 @@ const getSatisfactionColor = (satisfaction: number) => {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.team-avatar.mini {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
-  font-size: 10px;
-}
-
-.team-avatar.mini.lpl {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-}
-
-.team-avatar.mini.lck {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-}
-
-.team-avatar.mini.lec {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
-}
-
-.team-avatar.mini.lcs {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
 }
 
 /* 能力值数字 */

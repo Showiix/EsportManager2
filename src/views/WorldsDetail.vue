@@ -25,7 +25,7 @@
           :loading="simulatingSwiss"
         >
           <el-icon><DArrowRight /></el-icon>
-          {{ simulatingSwiss ? `模拟中 (${simulationProgress}%)` : '模拟瑞士轮' }}
+          {{ simulatingSwiss ? `模拟中 (${swissSimProgress}%)` : '模拟瑞士轮' }}
         </el-button>
         <el-button
           v-if="worldsBracket.status === 'knockout_stage'"
@@ -34,7 +34,7 @@
           :loading="simulatingKnockout"
         >
           <el-icon><DArrowRight /></el-icon>
-          {{ simulatingKnockout ? `模拟中 (${simulationProgress}%)` : '模拟淘汰赛' }}
+          {{ simulatingKnockout ? `模拟中 (${koSimProgress}%)` : '模拟淘汰赛' }}
         </el-button>
       </div>
     </div>
@@ -362,6 +362,7 @@ import type { MatchDetail } from '@/types/matchDetail'
 import type { Player, PlayerPosition } from '@/types/player'
 import type { WorldsQualification, SwissStandings, WorldsSwissMatch, WorldsKnockoutMatch } from '@/types/index'
 import { createLogger } from '@/utils/logger'
+import { useBatchSimulation, buildMatchDetail, recordMatchPerformances } from '@/composables/useBatchSimulation'
 
 const logger = createLogger('WorldsDetail')
 
@@ -383,9 +384,8 @@ const teamMap = ref<Map<number, { name: string; regionCode: string }>>(new Map()
 
 // 响应式状态
 const generatingKnockout = ref(false)
-const simulatingSwiss = ref(false)
-const simulatingKnockout = ref(false)
-const simulationProgress = ref(0)
+const { simulationProgress: swissSimProgress, isSimulating: simulatingSwiss, batchSimulate: batchSimulateSwissComposable } = useBatchSimulation()
+const { simulationProgress: koSimProgress, isSimulating: simulatingKnockout, batchSimulate: batchSimulateKoComposable } = useBatchSimulation()
 const activeSwissRound = ref('1')
 const currentSwissRound = ref(1)
 
@@ -1451,7 +1451,7 @@ const batchSimulateSwissRound = async () => {
     )
 
     simulatingSwiss.value = true
-    simulationProgress.value = 0
+    swissSimProgress.value = 0
 
     let totalMatches = 0
     let completedMatches = 0
@@ -1469,7 +1469,7 @@ const batchSimulateSwissRound = async () => {
         // 使用完整的模拟引擎（与单场模拟相同的逻辑）
         await handleSimulateSwissMatch(match)
         completedMatches++
-        simulationProgress.value = Math.floor((completedMatches / Math.max(totalMatches, 1)) * 100)
+        swissSimProgress.value = Math.floor((completedMatches / Math.max(totalMatches, 1)) * 100)
         // 添加短暂延迟，让UI有时间更新
         await new Promise(resolve => setTimeout(resolve, 100))
       }
@@ -1492,7 +1492,7 @@ const batchSimulateSwissRound = async () => {
     }
   } finally {
     simulatingSwiss.value = false
-    simulationProgress.value = 0
+    swissSimProgress.value = 0
   }
 }
 
@@ -1512,7 +1512,7 @@ const batchSimulateKnockout = async () => {
     )
 
     simulatingKnockout.value = true
-    simulationProgress.value = 0
+    koSimProgress.value = 0
 
     const stages = ['QUARTER_FINAL', 'SEMI_FINAL', 'THIRD_PLACE', 'FINAL']
     let totalMatches = 0
@@ -1535,7 +1535,7 @@ const batchSimulateKnockout = async () => {
           // 使用完整的模拟引擎（与单场模拟相同的逻辑）
           await handleSimulateKnockoutMatch(match)
           completedMatches++
-          simulationProgress.value = Math.floor((completedMatches / Math.max(totalMatches, 1)) * 100)
+          koSimProgress.value = Math.floor((completedMatches / Math.max(totalMatches, 1)) * 100)
           // 添加短暂延迟，让UI有时间更新
           await new Promise(resolve => setTimeout(resolve, 150))
         }
@@ -1551,7 +1551,7 @@ const batchSimulateKnockout = async () => {
     }
   } finally {
     simulatingKnockout.value = false
-    simulationProgress.value = 0
+    koSimProgress.value = 0
   }
 }
 

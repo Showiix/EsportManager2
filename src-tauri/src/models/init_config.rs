@@ -13,6 +13,18 @@ pub struct PlayerInitConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DraftPoolPlayerInitConfig {
+    pub game_id: String,
+    pub real_name: String,
+    pub position: String,   // "Top"/"Jungle"/"Mid"/"Bot"/"Support"
+    pub ability: u8,
+    pub potential: u8,
+    pub stability: u8,
+    pub age: u8,
+    pub tag: String,         // "Genius"/"Normal"/"Ordinary"
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TeamInitConfig {
     pub name: String,
     pub short_name: String,
@@ -26,6 +38,8 @@ pub struct RegionInitConfig {
     pub name: String,
     pub short_name: String,
     pub teams: Vec<TeamInitConfig>,
+    pub free_agents: Vec<PlayerInitConfig>,
+    pub draft_pool: Vec<DraftPoolPlayerInitConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

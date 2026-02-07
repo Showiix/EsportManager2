@@ -598,21 +598,21 @@ const getTournamentHeaderStyle = (tournament: any) => {
 .tournaments-view { padding: 0; }
 
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.page-header h1 { font-size: 24px; font-weight: 700; color: #303133; margin: 0 0 8px 0; }
-.page-header p { font-size: 14px; color: #909399; margin: 0; }
+.page-header h1 { font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 8px 0; }
+.page-header p { font-size: 14px; color: var(--text-tertiary); margin: 0; }
 .header-actions { display: flex; gap: 12px; }
 
 .stats-row { margin-bottom: 20px; }
 .stat-card { border-radius: 12px; }
 .stat-content { display: flex; align-items: center; gap: 16px; padding: 8px 0; }
-.stat-icon { width: 56px; height: 56px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; }
+/* stat-icon 基础结构已在 main.css 全局定义，此处仅覆盖本页特殊渐变 */
 .stat-icon.blue { background: linear-gradient(135deg, #667eea, #764ba2); }
 .stat-icon.green { background: linear-gradient(135deg, #11998e, #38ef7d); }
 .stat-icon.orange { background: linear-gradient(135deg, #f093fb, #f5576c); }
 .stat-icon.purple { background: linear-gradient(135deg, #4facfe, #00f2fe); }
 .stat-info { flex: 1; }
-.stat-number { font-size: 28px; font-weight: 700; color: #303133; line-height: 1; }
-.stat-label { font-size: 14px; color: #909399; margin-top: 4px; }
+.stat-number { font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1; }
+.stat-label { font-size: 14px; color: var(--text-tertiary); margin-top: 4px; }
 
 .loading-card, .empty-card { border-radius: 12px; margin-bottom: 20px; }
 

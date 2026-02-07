@@ -4,6 +4,7 @@ pub mod init_service;
 pub mod game_flow;
 pub mod player_data;
 pub mod draft_pool_data;
+pub mod free_agent_data;
 pub mod honor_service;
 pub mod draft_ai_service;
 pub mod logging_service;

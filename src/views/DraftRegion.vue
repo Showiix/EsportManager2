@@ -1287,17 +1287,7 @@ const completeDraft = () => {
       width: 36px;
       height: 36px;
       border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       font-size: 11px;
-      font-weight: 700;
-      color: white;
-
-      &.lpl { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
-      &.lck { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
-      &.lec { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); }
-      &.lcs { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
     }
 
     .team-name {
@@ -1526,17 +1516,7 @@ const completeDraft = () => {
       width: 40px;
       height: 40px;
       border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       font-size: 12px;
-      font-weight: 700;
-      color: white;
-
-      &.lpl { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
-      &.lck { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
-      &.lec { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); }
-      &.lcs { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
     }
 
     .team-name {

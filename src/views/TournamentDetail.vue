@@ -158,7 +158,7 @@
               <el-table-column label="战队" min-width="120">
                 <template #default="{ row }">
                   <div class="team-cell">
-                    <div class="team-avatar" :class="row.region?.toLowerCase()">
+                    <div class="team-avatar small" :class="row.region?.toLowerCase()">
                       {{ row.short }}
                     </div>
                     <span class="team-name">{{ row.short }}</span>
@@ -1414,23 +1414,6 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
 }
-
-.team-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.team-avatar.lpl { background: linear-gradient(135deg, #ef4444, #dc2626); }
-.team-avatar.lck { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.team-avatar.lec { background: linear-gradient(135deg, #22c55e, #16a34a); }
-.team-avatar.lcs { background: linear-gradient(135deg, #f59e0b, #d97706); }
 
 .team-name {
   font-weight: 500;

@@ -348,3 +348,115 @@ body {
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
+
+/* ============================================
+   全局工具类 - 避免各组件重复定义
+   ============================================ */
+
+/* --- stat-icon 基础结构 --- */
+.stat-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.stat-icon.small {
+  width: 48px;
+  height: 48px;
+}
+
+/* --- team-avatar 基础结构 + 尺寸变体 --- */
+.team-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.team-avatar.mini {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  font-size: 10px;
+}
+
+.team-avatar.small {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.team-avatar.medium {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.team-avatar.large {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  font-size: 16px;
+}
+
+.team-avatar.xlarge {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  font-size: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* player-avatar 也走同样的赛区渐变 */
+.player-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.player-avatar.lpl { background: linear-gradient(135deg, #ef4444, #dc2626) !important; }
+.player-avatar.lck { background: linear-gradient(135deg, #3b82f6, #2563eb) !important; }
+.player-avatar.lec { background: linear-gradient(135deg, #22c55e, #16a34a) !important; }
+.player-avatar.lcs { background: linear-gradient(135deg, #f59e0b, #d97706) !important; }
+
+/* --- page-header 通用布局 --- */
+.page-header-common {
+  margin-bottom: 20px;
+}
+
+.page-header-common h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+}
+
+.page-header-common p {
+  font-size: 14px;
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+/* --- pagination-wrapper 通用布局 --- */
+.pagination-wrapper-common {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+  padding-top: 16px;
+}

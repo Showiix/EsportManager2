@@ -64,7 +64,7 @@
         <el-col :span="6">
           <el-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-icon blue">
+              <div class="stat-icon small blue">
                 <el-icon :size="24"><VideoPlay /></el-icon>
               </div>
               <div class="stat-info">
@@ -77,7 +77,7 @@
         <el-col :span="6">
           <el-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-icon green">
+              <div class="stat-icon small green">
                 <el-icon :size="24"><UserFilled /></el-icon>
               </div>
               <div class="stat-info">
@@ -90,7 +90,7 @@
         <el-col :span="6">
           <el-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-icon orange">
+              <div class="stat-icon small orange">
                 <el-icon :size="24"><Calendar /></el-icon>
               </div>
               <div class="stat-info">
@@ -103,7 +103,7 @@
         <el-col :span="6">
           <el-card class="stat-card">
             <div class="stat-content">
-              <div class="stat-icon purple">
+              <div class="stat-icon small purple">
                 <el-icon :size="24"><TrendCharts /></el-icon>
               </div>
               <div class="stat-info">
@@ -141,7 +141,7 @@
               <el-table-column label="战队" min-width="120">
                 <template #default="{ row }">
                   <div class="team-cell">
-                    <div class="team-avatar" :class="row.region?.toLowerCase()">
+                    <div class="team-avatar small" :class="row.region?.toLowerCase()">
                       {{ row.short }}
                     </div>
                     <span class="team-name">{{ row.short }}</span>
@@ -1034,21 +1034,6 @@ watch(
   gap: 16px;
 }
 
-.stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-}
-
-.stat-icon.blue { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.stat-icon.green { background: linear-gradient(135deg, #22c55e, #16a34a); }
-.stat-icon.orange { background: linear-gradient(135deg, #f97316, #ea580c); }
-.stat-icon.purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
-
 .stat-number {
   font-size: 24px;
   font-weight: 700;
@@ -1088,23 +1073,6 @@ watch(
   align-items: center;
   gap: 10px;
 }
-
-.team-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.team-avatar.lpl { background: linear-gradient(135deg, #ef4444, #dc2626); }
-.team-avatar.lck { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.team-avatar.lec { background: linear-gradient(135deg, #22c55e, #16a34a); }
-.team-avatar.lcs { background: linear-gradient(135deg, #f59e0b, #d97706); }
 
 .team-name {
   font-weight: 500;

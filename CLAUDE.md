@@ -227,6 +227,7 @@ npm run tauri build
 | `data-center-system` | 统计计算/排行榜修改 |
 | `performance-monitoring-system` | 性能监测/命令计时 |
 | `logging-system` | 日志与错误处理 |
+| `trait-system` | 选手特性定义/触发/生成规则 |
 | `player-contract-center` | 选手合同中心页面 |
 | `menu-manager` | 侧边栏菜单管理 |
 | `commit-generator` | 生成规范的 commit message |

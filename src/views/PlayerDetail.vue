@@ -1562,28 +1562,7 @@ watch(playerStats, async () => {
   width: 120px;
   height: 120px;
   border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
   font-size: 24px;
-}
-
-.player-avatar.lpl {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-}
-
-.player-avatar.lck {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-}
-
-.player-avatar.lec {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
-}
-
-.player-avatar.lcs {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
 }
 
 .talent-tag {
@@ -1625,34 +1604,6 @@ watch(playerStats, async () => {
   gap: 8px;
   font-size: 15px;
   color: var(--text-primary);
-}
-
-.team-avatar.mini {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
-  font-size: 10px;
-}
-
-.team-avatar.mini.lpl {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-}
-
-.team-avatar.mini.lck {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-}
-
-.team-avatar.mini.lec {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
-}
-
-.team-avatar.mini.lcs {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
 }
 
 .stats-section {

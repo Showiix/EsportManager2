@@ -231,6 +231,7 @@ import { PowerEngine } from '@/engines/PowerEngine'
 import type { MatchDetail } from '@/types/matchDetail'
 import type { Player, PlayerPosition } from '@/types/player'
 import { createLogger } from '@/utils/logger'
+import { useBatchSimulation } from '@/composables/useBatchSimulation'
 
 const logger = createLogger('ShanghaiDetail')
 
@@ -358,8 +359,7 @@ const mockBracket = reactive({
 })
 
 // 响应式状态
-const batchSimulating = ref(false)
-const simulationProgress = ref(0)
+const { simulationProgress, isSimulating: batchSimulating, batchSimulate: batchSimulateComposable } = useBatchSimulation()
 
 // 比赛详情弹窗状态
 const showMatchDetailDialog = ref(false)

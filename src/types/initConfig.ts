@@ -9,6 +9,17 @@ export interface PlayerInitConfig {
   is_starter: boolean
 }
 
+export interface DraftPoolPlayerInitConfig {
+  game_id: string
+  real_name: string
+  position: string   // "Top" | "Jungle" | "Mid" | "Bot" | "Support"
+  ability: number
+  potential: number
+  stability: number
+  age: number
+  tag: string         // "Genius" | "Normal" | "Ordinary"
+}
+
 export interface TeamInitConfig {
   name: string
   short_name: string
@@ -21,6 +32,8 @@ export interface RegionInitConfig {
   name: string
   short_name: string
   teams: TeamInitConfig[]
+  free_agents: PlayerInitConfig[]
+  draft_pool: DraftPoolPlayerInitConfig[]
 }
 
 export interface GameInitConfig {

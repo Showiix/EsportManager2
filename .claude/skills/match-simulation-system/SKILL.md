@@ -25,8 +25,10 @@ pub struct MatchSimulationEngine {
 
 **核心方法**:
 - `simulate_game(...)` - 模拟单局比赛
-- `simulate_match(...)` - 模拟BO系列赛
+- `simulate_match(...)` - 模拟BO系列赛（纯战力值）
+- `simulate_match_with_traits(...)` - 特性感知的BO系列赛模拟
 - `calculate_win_probability(...)` - 计算胜率
+- `calculate_trait_adjusted_power(...)` - 计算特性修正后的队伍战力
 
 ## 核心算法
 
@@ -201,6 +203,13 @@ export async function simulateAllMatches(): Promise<number>
 ### 与数据中心系统
 - 每局 `home_performance` / `away_performance` 记录为影响力
 - 选手表现数据用于MVP计算
+
+### 与选手特性系统 (Trait System)
+- 快速模拟路径通过 `simulate_match_with_traits` 集成特性
+- 每局比赛前构建 `TraitContext`，计算特性修正后再做正态分布采样
+- `game_flow.rs` 的 `load_team_players` 批量预加载选手特性
+- 无选手数据时回退到纯战力值模拟
+- 详见 `trait-system` 技能
 
 ### 与选手系统
 - 队伍战力值 = Meta 加权平均 + carry/drag 效应（详见 `meta-system` 技能）

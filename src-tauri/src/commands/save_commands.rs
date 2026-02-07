@@ -1,9 +1,11 @@
 use crate::db::{DatabaseManager, SaveRepository};
 use crate::models::Save;
-use crate::models::init_config::{GameInitConfig, RegionInitConfig, TeamInitConfig, PlayerInitConfig};
+use crate::models::init_config::{GameInitConfig, RegionInitConfig, TeamInitConfig, PlayerInitConfig, DraftPoolPlayerInitConfig};
 use crate::services::InitService;
 use crate::services::perf_service::PerfCollector;
 use crate::services::player_data::get_team_players;
+use crate::services::draft_pool_data::get_draft_pool;
+use crate::services::free_agent_data::get_free_agents;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
@@ -359,6 +361,32 @@ pub async fn get_default_game_config(
                 name: region.name.to_string(),
                 short_name: region.short_name.to_string(),
                 teams,
+                free_agents: get_free_agents(region.id)
+                    .iter()
+                    .map(|fa| PlayerInitConfig {
+                        game_id: fa.game_id.to_string(),
+                        real_name: Some(fa.real_name.to_string()),
+                        nationality: region.short_name.to_string(),
+                        position: fa.position.to_string(),
+                        age: fa.age,
+                        ability: fa.ability,
+                        potential: fa.potential,
+                        is_starter: false,
+                    })
+                    .collect(),
+                draft_pool: get_draft_pool(region.id)
+                    .iter()
+                    .map(|dp| DraftPoolPlayerInitConfig {
+                        game_id: dp.game_id.to_string(),
+                        real_name: dp.real_name.to_string(),
+                        position: dp.position.to_string(),
+                        ability: dp.ability,
+                        potential: dp.potential,
+                        stability: dp.stability,
+                        age: dp.age,
+                        tag: dp.tag.to_string(),
+                    })
+                    .collect(),
             }
         })
         .collect();

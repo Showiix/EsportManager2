@@ -916,13 +916,125 @@ impl InitService {
                     .map_err(|e| format!("Failed to init form factors for player {}: {}", player_id, e))?;
                 }
             }
+
+            // 创建自由选手
+            let mut rng_free = StdRng::from_entropy();
+            for player_config in &region_config.free_agents {
+                let position = match player_config.position.as_str() {
+                    "Top" => Position::Top,
+                    "Jug" => Position::Jug,
+                    "Mid" => Position::Mid,
+                    "Adc" => Position::Adc,
+                    "Sup" => Position::Sup,
+                    _ => Position::Mid,
+                };
+
+                let tag = Self::determine_player_tag(player_config.ability, player_config.potential, player_config.age);
+                let salary = Self::calculate_initial_salary(player_config.ability, player_config.potential, tag);
+                let loyalty = Self::calculate_initial_loyalty(player_config.ability, player_config.potential, player_config.age, tag);
+                let satisfaction = Self::calculate_initial_satisfaction(player_config.ability, player_config.potential, player_config.age, false, tag);
+
+                let player = Player {
+                    id: 0,
+                    game_id: player_config.game_id.clone(),
+                    real_name: player_config.real_name.clone(),
+                    nationality: Some(player_config.nationality.clone()),
+                    age: player_config.age,
+                    ability: player_config.ability,
+                    potential: player_config.potential,
+                    stability: Player::calculate_stability(player_config.age),
+                    tag,
+                    status: PlayerStatus::Active,
+                    position: Some(position),
+                    team_id: None,
+                    salary,
+                    market_value: Self::calculate_market_value(player_config.ability, player_config.potential, player_config.age, tag, position),
+                    calculated_market_value: 0,
+                    contract_end_season: None,
+                    join_season: current_season,
+                    retire_season: None,
+                    is_starter: false,
+                    loyalty,
+                    satisfaction,
+                };
+
+                let player_id = PlayerRepository::create(pool, save_id, &player)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                // 初始化状态因子
+                let form_cycle = rng_free.gen_range(0.0..100.0);
+                sqlx::query(
+                    r#"
+                    INSERT INTO player_form_factors (
+                        save_id, player_id, form_cycle, momentum,
+                        last_performance, last_match_won, games_since_rest
+                    ) VALUES (?, ?, ?, 0, 0.0, 1, 0)
+                    "#
+                )
+                .bind(save_id)
+                .bind(player_id as i64)
+                .bind(form_cycle)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("Failed to init form factors for free agent {}: {}", player_id, e))?;
+            }
         }
 
         // 创建初始赛事（春季常规赛）
         Self::create_initial_tournaments(pool, save_id, current_season, &region_ids).await?;
 
-        // 创建初始选秀池
-        Self::create_initial_draft_pool(pool, save_id, current_season, &region_ids).await?;
+        // 从自定义配置创建选秀池
+        Self::create_draft_pool_from_config(pool, save_id, current_season, &region_ids, config).await?;
+
+        Ok(())
+    }
+
+    /// 从自定义配置创建选秀池
+    async fn create_draft_pool_from_config(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        current_season: u32,
+        region_ids: &[u64],
+        config: &crate::models::init_config::GameInitConfig,
+    ) -> Result<(), String> {
+        // 先清空该存档的所有选秀池数据
+        sqlx::query("DELETE FROM draft_pool WHERE save_id = ?")
+            .bind(save_id)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("Failed to clear draft pool: {}", e))?;
+
+        for (idx, &region_id) in region_ids.iter().enumerate() {
+            if let Some(region_config) = config.regions.get(idx) {
+                let nationality = get_region_nationality(region_config.id);
+
+                for dp in &region_config.draft_pool {
+                    sqlx::query(
+                        r#"
+                        INSERT INTO draft_pool (
+                            save_id, region_id, game_id, real_name, nationality,
+                            age, ability, potential, position, tag, status, created_season
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?)
+                        "#
+                    )
+                    .bind(save_id)
+                    .bind(region_id as i64)
+                    .bind(&dp.game_id)
+                    .bind(&dp.real_name)
+                    .bind(nationality)
+                    .bind(dp.age as i64)
+                    .bind(dp.ability as i64)
+                    .bind(dp.potential as i64)
+                    .bind(&dp.position)
+                    .bind(&dp.tag)
+                    .bind(current_season as i64)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| format!("Failed to insert draft pool player {}: {}", dp.game_id, e))?;
+                }
+            }
+        }
 
         Ok(())
     }

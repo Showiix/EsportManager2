@@ -25,7 +25,7 @@
           :loading="simulatingGroupStage"
         >
           <el-icon><DArrowRight /></el-icon>
-          {{ simulatingGroupStage ? `模拟中 (${simulationProgress}%)` : '模拟小组赛' }}
+          {{ simulatingGroupStage ? `模拟中 (${groupSimProgress}%)` : '模拟小组赛' }}
         </el-button>
         <el-button
           v-if="clauchBracket.status === 'knockout_stage'"
@@ -290,8 +290,8 @@ import { useGameStore } from '@/stores/useGameStore'
 import { internationalApi, matchApi } from '@/api/tauri'
 import type { BracketInfo, MatchBracketInfo, GroupStandingInfo, DetailedGameResult, PlayerGameStats } from '@/api/tauri'
 import type { MatchDetail } from '@/types/matchDetail'
-import type { PlayerPosition } from '@/types/player'
 import type { ClauchMatch, ClauchGroup, ClauchGroupStanding as ClauchGroupStandingType, ClauchKnockoutBracket as ClauchKnockoutBracketType } from '@/types/clauch'
+import { useBatchSimulation, buildMatchDetail, recordMatchPerformances } from '@/composables/useBatchSimulation'
 import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('ClauchDetail')
@@ -339,10 +339,11 @@ const loading = ref(false)
 
 // 响应式状态
 const generatingKnockout = ref(false)
-const simulatingGroupStage = ref(false)
 const simulatingKnockout = ref(false)
 const simulationProgress = ref(0)
 const activeGroup = ref('A')
+
+const { simulationProgress: groupSimProgress, isSimulating: simulatingGroupStage, batchSimulate } = useBatchSimulation()
 
 // 比赛详情弹窗状态
 const showMatchDetailDialog = ref(false)
@@ -591,184 +592,34 @@ const handleGenerateKnockout = async () => {
  * 批量模拟小组赛 - 使用后端 API
  */
 const batchSimulateGroupStage = async () => {
-  try {
-    await ElMessageBox.confirm(
-      '将自动模拟所有未完成的小组赛比赛。是否继续?',
-      '模拟小组赛确认',
-      {
-        confirmButtonText: '开始模拟',
-        cancelButtonText: '取消',
-        type: 'info'
-      }
-    )
+  const groupMatches = clauchBracket.groups.flatMap(g => g.matches)
+  const uncompleted = groupMatches.filter(m => m.status !== 'completed')
 
-    simulatingGroupStage.value = true
-    simulationProgress.value = 0
+  logger.debug('[batchSimulateGroupStage] uncompleted:', uncompleted.length)
 
-    // 获取所有未完成的小组赛比赛
-    const groupMatches = clauchBracket.groups.flatMap(g => g.matches)
-    const uncompletedGroupMatches = groupMatches.filter(m => m.status !== 'completed')
-
-    logger.debug('[batchSimulateGroupStage] clauchBracket.groups.length:', clauchBracket.groups.length)
-    logger.debug('[batchSimulateGroupStage] groupMatches.length:', groupMatches.length)
-    logger.debug('[batchSimulateGroupStage] uncompletedGroupMatches.length:', uncompletedGroupMatches.length)
-    logger.debug('[batchSimulateGroupStage] clauchBracket.status:', clauchBracket.status)
-
-    if (uncompletedGroupMatches.length === 0) {
-      ElMessage.info('没有需要模拟的比赛')
-      logger.debug('[batchSimulateGroupStage] 没有需要模拟的比赛，检查 isGroupStageComplete:', isGroupStageComplete.value)
-      return
+  await batchSimulate({
+    confirmMessage: '将自动模拟所有未完成的小组赛比赛。是否继续?',
+    confirmTitle: '模拟小组赛确认',
+    confirmType: 'info',
+    successMessage: '小组赛模拟完成！现在可以生成淘汰赛对阵。',
+    errorPrefix: '小组赛模拟失败',
+    tournamentType: 'clauch',
+    seasonId: String(clauchBracket.seasonYear),
+    competitionType: 'INTL',
+    delayMs: 50,
+    matches: uncompleted.map(m => ({
+      matchId: Number(m.id),
+      teamAId: String(m.teamAId || ''),
+      teamAName: m.teamAName || '',
+      teamBId: String(m.teamBId || ''),
+      teamBName: m.teamBName || '',
+      bestOf: m.bestOf || 3,
+      frontendMatchId: m.id
+    })),
+    onComplete: async () => {
+      await loadTournamentData()
     }
-
-    // 解析位置格式（后端可能返回 "Some(Adc)" 格式）
-    const parsePosition = (pos: string | null | undefined): string => {
-      if (!pos) return 'MID'
-      const someMatch = pos.match(/Some\((\w+)\)/)
-      if (someMatch) return someMatch[1]
-      return pos
-    }
-
-    // 将位置转换为标准格式
-    const normalizePosition = (pos: string): PlayerPosition => {
-      const posMap: Record<string, PlayerPosition> = {
-        'Top': 'TOP', 'Jungle': 'JUG', 'Mid': 'MID', 'Adc': 'ADC', 'Support': 'SUP',
-        'top': 'TOP', 'jungle': 'JUG', 'mid': 'MID', 'adc': 'ADC', 'support': 'SUP',
-        'TOP': 'TOP', 'JUG': 'JUG', 'MID': 'MID', 'ADC': 'ADC', 'SUP': 'SUP',
-        'Jug': 'JUG', 'Sup': 'SUP',
-      }
-      return posMap[pos] || 'MID'
-    }
-
-    // 转换选手表现数据
-    const convertPlayerPerformance = (p: any, teamId: string) => ({
-      playerId: String(p.player_id),
-      playerName: p.player_name,
-      position: normalizePosition(parsePosition(p.position)),
-      teamId: teamId,
-      baseAbility: p.base_ability,
-      conditionBonus: p.condition_bonus,
-      stabilityNoise: p.stability_noise,
-      actualAbility: p.actual_ability,
-      impactScore: p.impact_score,
-      traits: p.traits,
-      activatedTraits: p.activated_traits?.map((t: any) => ({
-        type: t.trait_type,
-        name: t.name,
-        effect: t.effect,
-        value: t.value,
-        isPositive: t.is_positive
-      }))
-    })
-
-    // 计算队伍战力
-    const calcTeamPower = (players: any[]) => {
-      if (!players || players.length === 0) return 0
-      const sum = players.reduce((acc: number, p: any) => acc + (p.actual_ability || p.base_ability || 0), 0)
-      return sum / players.length
-    }
-
-    for (let i = 0; i < uncompletedGroupMatches.length; i++) {
-      const match = uncompletedGroupMatches[i]
-      const matchId = Number(match.id)
-
-      try {
-        // 调用后端模拟
-        const result = await matchApi.simulateMatchDetailed(matchId)
-
-        // 构建比赛详情
-        const matchDetail: MatchDetail = {
-          matchId: match.id,
-          tournamentType: 'clauch',
-          seasonId: String(clauchBracket.seasonYear),
-          teamAId: String(match.teamAId || ''),
-          teamAName: match.teamAName || '',
-          teamBId: String(match.teamBId || ''),
-          teamBName: match.teamBName || '',
-          bestOf: match.bestOf || 3,
-          finalScoreA: result.home_score,
-          finalScoreB: result.away_score,
-          winnerId: String(result.winner_id),
-          winnerName: result.winner_id === result.home_team_id ? (match.teamAName || '') : (match.teamBName || ''),
-          mvpPlayerId: result.match_mvp ? String(result.match_mvp.player_id) : undefined,
-          mvpPlayerName: result.match_mvp?.player_name,
-          mvpTeamId: result.match_mvp ? String(result.match_mvp.team_id) : undefined,
-          mvpTotalImpact: result.match_mvp?.mvp_score,
-          games: result.games.map((game: any) => {
-            const teamAPower = calcTeamPower(game.home_players)
-            const teamBPower = calcTeamPower(game.away_players)
-            return {
-              gameNumber: game.game_number,
-              teamAId: String(match.teamAId || ''),
-              teamAName: match.teamAName || '',
-              teamAPower,
-              teamAPerformance: game.home_performance,
-              teamAPlayers: game.home_players.map((p: any) => convertPlayerPerformance(p, String(match.teamAId || ''))),
-              teamBId: String(match.teamBId || ''),
-              teamBName: match.teamBName || '',
-              teamBPower,
-              teamBPerformance: game.away_performance,
-              teamBPlayers: game.away_players.map((p: any) => convertPlayerPerformance(p, String(match.teamBId || ''))),
-              winnerId: String(game.winner_id),
-              winnerName: game.winner_id === result.home_team_id ? (match.teamAName || '') : (match.teamBName || ''),
-              powerDifference: teamAPower - teamBPower,
-              performanceDifference: game.home_performance - game.away_performance,
-              isUpset: (teamAPower > teamBPower && game.winner_id !== result.home_team_id) ||
-                       (teamBPower > teamAPower && game.winner_id === result.home_team_id)
-            }
-          })
-        }
-        await matchDetailStore.saveMatchDetail(match.id, matchDetail)
-
-        // 记录选手表现
-        matchDetail.games.forEach(game => {
-          game.teamAPlayers.forEach(perf => {
-            playerStore.recordPerformance(
-              perf.playerId,
-              perf.playerName,
-              perf.teamId,
-              perf.position,
-              perf.impactScore,
-              perf.actualAbility,
-              String(clauchBracket.seasonYear),
-              'INTL'
-            )
-          })
-          game.teamBPlayers.forEach(perf => {
-            playerStore.recordPerformance(
-              perf.playerId,
-              perf.playerName,
-              perf.teamId,
-              perf.position,
-              perf.impactScore,
-              perf.actualAbility,
-              String(clauchBracket.seasonYear),
-              'INTL'
-            )
-          })
-        })
-      } catch (e) {
-        logger.error(`模拟比赛 ${matchId} 失败:`, e)
-      }
-
-      simulationProgress.value = Math.floor(((i + 1) / uncompletedGroupMatches.length) * 100)
-      await new Promise(resolve => setTimeout(resolve, 50))
-    }
-
-    playerStore.saveToStorage()
-
-    // 刷新数据
-    await loadTournamentData()
-
-    ElMessage.success('小组赛模拟完成！现在可以生成淘汰赛对阵。')
-  } catch (error: any) {
-    if (error !== 'cancel') {
-      logger.error('小组赛模拟失败:', error)
-      ElMessage.error(error.message || '小组赛模拟失败')
-    }
-  } finally {
-    simulatingGroupStage.value = false
-    simulationProgress.value = 0
-  }
+  })
 }
 
 /**
@@ -789,58 +640,10 @@ const batchSimulateKnockout = async () => {
     simulatingKnockout.value = true
     simulationProgress.value = 0
 
-    // 解析位置格式
-    const parsePosition = (pos: string | null | undefined): string => {
-      if (!pos) return 'MID'
-      const someMatch = pos.match(/Some\((\w+)\)/)
-      if (someMatch) return someMatch[1]
-      return pos
-    }
-
-    // 将位置转换为标准格式
-    const normalizePosition = (pos: string): PlayerPosition => {
-      const posMap: Record<string, PlayerPosition> = {
-        'Top': 'TOP', 'Jungle': 'JUG', 'Mid': 'MID', 'Adc': 'ADC', 'Support': 'SUP',
-        'top': 'TOP', 'jungle': 'JUG', 'mid': 'MID', 'adc': 'ADC', 'support': 'SUP',
-        'TOP': 'TOP', 'JUG': 'JUG', 'MID': 'MID', 'ADC': 'ADC', 'SUP': 'SUP',
-        'Jug': 'JUG', 'Sup': 'SUP',
-      }
-      return posMap[pos] || 'MID'
-    }
-
-    // 转换选手表现数据
-    const convertPlayerPerformance = (p: any, teamId: string) => ({
-      playerId: String(p.player_id),
-      playerName: p.player_name,
-      position: normalizePosition(parsePosition(p.position)),
-      teamId: teamId,
-      baseAbility: p.base_ability,
-      conditionBonus: p.condition_bonus,
-      stabilityNoise: p.stability_noise,
-      actualAbility: p.actual_ability,
-      impactScore: p.impact_score,
-      traits: p.traits,
-      activatedTraits: p.activated_traits?.map((t: any) => ({
-        type: t.trait_type,
-        name: t.name,
-        effect: t.effect,
-        value: t.value,
-        isPositive: t.is_positive
-      }))
-    })
-
-    // 计算队伍战力
-    const calcTeamPower = (players: any[]) => {
-      if (!players || players.length === 0) return 0
-      const sum = players.reduce((acc: number, p: any) => acc + (p.actual_ability || p.base_ability || 0), 0)
-      return sum / players.length
-    }
-
     // 按阶段顺序模拟
     const stages = ['EAST_R1', 'WEST_R1', 'EAST_SEMI', 'WEST_SEMI', 'EAST_FINAL', 'WEST_FINAL', 'THIRD_PLACE', 'GRAND_FINAL']
 
     for (const stageName of stages) {
-      // 获取当前阶段的比赛
       const stageMatches = bracketData.value?.matches.filter(m => m.stage === stageName && m.status !== 'Completed' && m.status !== 'COMPLETED' && m.status !== 'completed') || []
 
       for (const match of stageMatches) {
@@ -853,79 +656,17 @@ const batchSimulateKnockout = async () => {
           const teamBName = match.away_team?.name || ''
           const bestOf = match.format === 'Bo5' ? 5 : match.format === 'Bo3' ? 3 : 1
 
-          // 构建比赛详情
-          const matchDetail: MatchDetail = {
+          const matchDetail = buildMatchDetail({
             matchId: String(match.match_id),
             tournamentType: 'clauch',
             seasonId: String(clauchBracket.seasonYear),
-            teamAId,
-            teamAName,
-            teamBId,
-            teamBName,
-            bestOf,
-            finalScoreA: result.home_score,
-            finalScoreB: result.away_score,
-            winnerId: String(result.winner_id),
-            winnerName: result.winner_id === result.home_team_id ? teamAName : teamBName,
-            mvpPlayerId: result.match_mvp ? String(result.match_mvp.player_id) : undefined,
-            mvpPlayerName: result.match_mvp?.player_name,
-            mvpTeamId: result.match_mvp ? String(result.match_mvp.team_id) : undefined,
-            mvpTotalImpact: result.match_mvp?.mvp_score,
-            games: result.games.map((game: any) => {
-              const teamAPower = calcTeamPower(game.home_players)
-              const teamBPower = calcTeamPower(game.away_players)
-              return {
-                gameNumber: game.game_number,
-                teamAId,
-                teamAName,
-                teamAPower,
-                teamAPerformance: game.home_performance,
-                teamAPlayers: game.home_players.map((p: any) => convertPlayerPerformance(p, teamAId)),
-                teamBId,
-                teamBName,
-                teamBPower,
-                teamBPerformance: game.away_performance,
-                teamBPlayers: game.away_players.map((p: any) => convertPlayerPerformance(p, teamBId)),
-                winnerId: String(game.winner_id),
-                winnerName: game.winner_id === result.home_team_id ? teamAName : teamBName,
-                powerDifference: teamAPower - teamBPower,
-                performanceDifference: game.home_performance - game.away_performance,
-                isUpset: (teamAPower > teamBPower && game.winner_id !== result.home_team_id) ||
-                         (teamBPower > teamAPower && game.winner_id === result.home_team_id)
-              }
-            })
-          }
+            teamAId, teamAName, teamBId, teamBName, bestOf,
+            result
+          })
           await matchDetailStore.saveMatchDetail(String(match.match_id), matchDetail)
 
-          // 记录选手表现
-          matchDetail.games.forEach(game => {
-            game.teamAPlayers.forEach(perf => {
-              playerStore.recordPerformance(
-                perf.playerId,
-                perf.playerName,
-                perf.teamId,
-                perf.position,
-                perf.impactScore,
-                perf.actualAbility,
-                String(clauchBracket.seasonYear),
-                'INTL'
-              )
-            })
-            game.teamBPlayers.forEach(perf => {
-              playerStore.recordPerformance(
-                perf.playerId,
-                perf.playerName,
-                perf.teamId,
-                perf.position,
-                perf.impactScore,
-                perf.actualAbility,
-                String(clauchBracket.seasonYear),
-                'INTL'
-              )
-            })
-          })
+          recordMatchPerformances(matchDetail, String(clauchBracket.seasonYear), 'INTL', playerStore)
 
-          // 更新淘汰赛对阵
           if (tournamentId.value) {
             await internationalApi.advanceBracket(tournamentId.value, match.match_id, result.winner_id)
           }
@@ -936,7 +677,6 @@ const batchSimulateKnockout = async () => {
         await new Promise(resolve => setTimeout(resolve, 100))
       }
 
-      // 刷新数据以获取更新的对阵
       await loadTournamentData()
     }
 

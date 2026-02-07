@@ -1266,28 +1266,7 @@ const getAchievementType = (achievement: string) => {
   width: 120px;
   height: 120px;
   border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
   font-size: 32px;
-}
-
-.team-avatar.large.lpl {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-}
-
-.team-avatar.large.lck {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-}
-
-.team-avatar.large.lec {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
-}
-
-.team-avatar.large.lcs {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
 }
 
 .region-tag {
@@ -1551,19 +1530,9 @@ const getAchievementType = (achievement: string) => {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
   font-size: 24px;
   margin: 0 auto 8px;
 }
-
-.player-avatar.lpl { background: linear-gradient(135deg, #ef4444, #dc2626); }
-.player-avatar.lck { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.player-avatar.lec { background: linear-gradient(135deg, #22c55e, #16a34a); }
-.player-avatar.lcs { background: linear-gradient(135deg, #f59e0b, #d97706); }
 
 .player-name {
   font-size: 16px;

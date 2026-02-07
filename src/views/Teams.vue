@@ -379,22 +379,12 @@ const getWinRateClass = (winRate: number) => {
 .stats-row { margin-bottom: 20px; }
 .stat-card { border-radius: 12px; }
 .stat-content { display: flex; align-items: center; gap: 16px; padding: 8px 0; }
-.stat-icon { width: 56px; height: 56px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; }
-.stat-icon.blue { background: linear-gradient(135deg, #667eea, #764ba2); }
-.stat-icon.green { background: linear-gradient(135deg, #11998e, #38ef7d); }
-.stat-icon.orange { background: linear-gradient(135deg, #f093fb, #f5576c); }
-.stat-icon.purple { background: linear-gradient(135deg, #4facfe, #00f2fe); }
 .stat-info { flex: 1; }
 .stat-number { font-size: 28px; font-weight: 700; color: #303133; line-height: 1; }
 .stat-label { font-size: 14px; color: #909399; margin-top: 4px; }
 
 .table-card { border-radius: 12px; }
 .team-cell { display: flex; align-items: center; gap: 12px; }
-.team-avatar { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 14px; }
-.team-avatar.lpl { background: linear-gradient(135deg, #ff4757, #ff6b81); }
-.team-avatar.lck { background: linear-gradient(135deg, #3742fa, #5352ed); }
-.team-avatar.lec { background: linear-gradient(135deg, #2ed573, #7bed9f); }
-.team-avatar.lcs { background: linear-gradient(135deg, #ffa502, #ff6348); }
 .team-avatar.unknown { background: linear-gradient(135deg, #95a5a6, #7f8c8d); }
 .team-info { flex: 1; }
 .team-name { font-weight: 600; color: #303133; }

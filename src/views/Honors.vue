@@ -738,21 +738,6 @@ const getRankClass = (rank: number) => {
   padding: 8px 0;
 }
 
-.stat-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-}
-
-.stat-icon.gold { background: linear-gradient(135deg, #fbbf24, #f59e0b); }
-.stat-icon.purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
-.stat-icon.blue { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.stat-icon.orange { background: linear-gradient(135deg, #f97316, #ea580c); }
-
 .stat-info { flex: 1; }
 
 .stat-number {
@@ -888,29 +873,6 @@ const getRankClass = (rank: number) => {
   align-items: center;
   gap: 12px;
 }
-
-.team-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
-  font-size: 14px;
-}
-
-.team-avatar.large {
-  width: 56px;
-  height: 56px;
-  font-size: 16px;
-}
-
-.team-avatar.lpl { background: linear-gradient(135deg, #ef4444, #dc2626); }
-.team-avatar.lck { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.team-avatar.lec { background: linear-gradient(135deg, #22c55e, #16a34a); }
-.team-avatar.lcs { background: linear-gradient(135deg, #f59e0b, #d97706); }
 
 .team-details { flex: 1; }
 

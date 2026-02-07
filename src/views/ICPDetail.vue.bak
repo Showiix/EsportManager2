@@ -25,7 +25,7 @@
           :loading="simulatingGroupStage"
         >
           <el-icon><DArrowRight /></el-icon>
-          {{ simulatingGroupStage ? `模拟中 (${groupSimProgress}%)` : '模拟种子组赛' }}
+          {{ simulatingGroupStage ? `模拟中 (${simulationProgress}%)` : '模拟种子组赛' }}
         </el-button>
         <el-button
           v-if="icpTournament.status === 'region_battle' || icpTournament.status === 'tiebreaker'"
@@ -34,7 +34,7 @@
           :loading="simulatingRegionBattle"
         >
           <el-icon><DArrowRight /></el-icon>
-          {{ simulatingRegionBattle ? `模拟中 (${battleSimProgress}%)` : '模拟赛区对决' }}
+          {{ simulatingRegionBattle ? `模拟中 (${simulationProgress}%)` : '模拟赛区对决' }}
         </el-button>
       </div>
     </div>
@@ -531,7 +531,6 @@ import type { PlayerPosition } from '@/types/player'
 import type { MatchDetail } from '@/types/matchDetail'
 import type { ICPTournament, ICPSeedGroup, ICPMatch, ICPRegionStats, ICPRegionMatch, ICPGroupStanding } from '@/types/icp'
 import { createLogger } from '@/utils/logger'
-import { useBatchSimulation, buildMatchDetail, recordMatchPerformances } from '@/composables/useBatchSimulation'
 
 const logger = createLogger('ICPDetail')
 
@@ -578,8 +577,9 @@ const teamMap = ref<Map<number, { name: string; regionCode: string }>>(new Map()
 
 // 响应式状态
 const generatingRegionBattle = ref(false)
-const { simulationProgress: groupSimProgress, isSimulating: simulatingGroupStage, batchSimulate: batchSimulateGroupComposable } = useBatchSimulation()
-const { simulationProgress: battleSimProgress, isSimulating: simulatingRegionBattle, batchSimulate: batchSimulateBattleComposable } = useBatchSimulation()
+const simulatingGroupStage = ref(false)
+const simulatingRegionBattle = ref(false)
+const simulationProgress = ref(0)
 const activeSeedGroup = ref('A')
 
 // ICP赛事数据 - 从后端加载
@@ -1614,7 +1614,7 @@ const batchSimulateGroupStage = async () => {
     )
 
     simulatingGroupStage.value = true
-    groupSimProgress.value = 0
+    simulationProgress.value = 0
 
     const allMatches = icpTournament.seedGroups.flatMap(g => g.matches)
     const uncompletedMatches = allMatches.filter(m => m.status !== 'completed')
@@ -1622,7 +1622,7 @@ const batchSimulateGroupStage = async () => {
     for (let i = 0; i < uncompletedMatches.length; i++) {
       const match = uncompletedMatches[i]
       await simulateMatchInternal(match)
-      groupSimProgress.value = Math.floor(((i + 1) / uncompletedMatches.length) * 100)
+      simulationProgress.value = Math.floor(((i + 1) / uncompletedMatches.length) * 100)
       await new Promise(resolve => setTimeout(resolve, 80))
     }
 
@@ -1634,7 +1634,7 @@ const batchSimulateGroupStage = async () => {
     }
   } finally {
     simulatingGroupStage.value = false
-    groupSimProgress.value = 0
+    simulationProgress.value = 0
   }
 }
 
@@ -1654,7 +1654,7 @@ const batchSimulateRegionBattle = async () => {
     )
 
     simulatingRegionBattle.value = true
-    battleSimProgress.value = 0
+    simulationProgress.value = 0
 
     // 模拟半决赛（如果有）
     if (icpTournament.semifinal) {
@@ -1684,7 +1684,7 @@ const batchSimulateRegionBattle = async () => {
     }
   } finally {
     simulatingRegionBattle.value = false
-    battleSimProgress.value = 0
+    simulationProgress.value = 0
   }
 }
 
