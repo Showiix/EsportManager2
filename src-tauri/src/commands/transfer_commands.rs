@@ -318,6 +318,51 @@ pub async fn get_current_transfer_window(
     }
 }
 
+/// 查询指定赛季的转会窗口
+#[tauri::command]
+pub async fn get_transfer_window_by_season(
+    state: State<'_, AppState>,
+    season_id: i64,
+) -> Result<CommandResult<Option<TransferWindowResponse>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let row = sqlx::query(
+        "SELECT id, season_id, status, current_round FROM transfer_windows WHERE save_id = ? AND season_id = ? ORDER BY id DESC LIMIT 1"
+    )
+    .bind(&save_id)
+    .bind(season_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match row {
+        Some(r) => {
+            Ok(CommandResult::ok(Some(TransferWindowResponse {
+                window_id: r.get("id"),
+                season_id: r.get("season_id"),
+                status: r.get("status"),
+                current_round: r.get("current_round"),
+            })))
+        }
+        None => Ok(CommandResult::ok(None)),
+    }
+}
+
 // ============================================
 // AI球队性格命令
 // ============================================

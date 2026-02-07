@@ -726,8 +726,8 @@ export const draftApi = {
     invokeCommand<number>('delete_draft_pool_players', { regionId, playerIds }),
 
   // 选秀状态查询
-  getDraftRegionStatus: (regionId: number) =>
-    invokeCommand<DraftRegionStatus>('get_draft_region_status', { regionId }),
+  getDraftRegionStatus: (regionId: number, seasonId?: number) =>
+    invokeCommand<DraftRegionStatus>('get_draft_region_status', { regionId, seasonId }),
 }
 
 // ========================================
@@ -3123,6 +3123,10 @@ export const transferWindowApi = {
   // 查询当前赛季的转会窗口（纯查询，不创建）
   getCurrentTransferWindow: () =>
     invokeCommand<TransferWindowResponse | null>('get_current_transfer_window'),
+
+  // 查询指定赛季的转会窗口
+  getTransferWindowBySeason: (seasonId: number) =>
+    invokeCommand<TransferWindowResponse | null>('get_transfer_window_by_season', { seasonId }),
 
   // 获取球队AI性格
   getTeamPersonality: (teamId: number) =>

@@ -4,143 +4,212 @@
     <div class="page-header">
       <div>
         <h1>转会系统</h1>
-        <p>S{{ currentSeason }} 赛季 - 休赛期转会</p>
+        <p>S{{ selectedSeason }} 赛季 - 休赛期转会</p>
       </div>
       <div class="header-actions">
+        <SeasonSelector v-model="selectedSeason" width="140px" />
         <el-tag type="info" size="large" effect="dark">
           全球统一转会期
         </el-tag>
       </div>
     </div>
 
-    <!-- 流程说明 -->
-    <el-card class="intro-card">
-      <div class="intro-content">
-        <div class="intro-icon">
-          <el-icon :size="48"><Opportunity /></el-icon>
-        </div>
-        <div class="intro-text">
-          <h3>转会期流程</h3>
-          <p>全球四大赛区（LPL、LCK、LEC、LCS）统一进行转会，共 8 个阶段：</p>
-          <div class="round-flow">
-            <div v-for="(name, round) in roundNames" :key="round" class="round-item">
-              <span class="round-number">{{ round }}</span>
-              <span class="round-name">{{ name }}</span>
+    <!-- 当前赛季：显示操作界面 -->
+    <template v-if="!isViewingHistory">
+      <!-- 流程说明 -->
+      <el-card class="intro-card">
+        <div class="intro-content">
+          <div class="intro-icon">
+            <el-icon :size="48"><Opportunity /></el-icon>
+          </div>
+          <div class="intro-text">
+            <h3>转会期流程</h3>
+            <p>全球四大赛区（LPL、LCK、LEC、LCS）统一进行转会，共 8 个阶段：</p>
+            <div class="round-flow">
+              <div v-for="(name, round) in roundNames" :key="round" class="round-item">
+                <span class="round-number">{{ round }}</span>
+                <span class="round-name">{{ name }}</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </el-card>
+      </el-card>
 
-    <!-- 统一入口 -->
-    <el-card class="action-card">
-      <div class="action-content">
-        <div class="action-info">
-          <div class="region-badges">
-            <span class="region-badge lpl">LPL</span>
-            <span class="region-badge lck">LCK</span>
-            <span class="region-badge lec">LEC</span>
-            <span class="region-badge lcs">LCS</span>
+      <!-- 统一入口 -->
+      <el-card class="action-card">
+        <div class="action-content">
+          <div class="action-info">
+            <div class="region-badges">
+              <span class="region-badge lpl">LPL</span>
+              <span class="region-badge lck">LCK</span>
+              <span class="region-badge lec">LEC</span>
+              <span class="region-badge lcs">LCS</span>
+            </div>
+            <h3>全球转会期</h3>
+            <p>管理全部 {{ totalTeams }} 支战队的 {{ totalPlayers }} 名选手</p>
           </div>
-          <h3>全球转会期</h3>
-          <p>管理全部 {{ totalTeams }} 支战队的 {{ totalPlayers }} 名选手</p>
+
+          <div class="action-status">
+            <template v-if="transferInProgress">
+              <el-tag type="success" size="large" class="status-tag">
+                <span class="tag-content"><el-icon><VideoPlay /></el-icon> 转会期进行中 (第{{ transferStore.currentRound }}轮)</span>
+              </el-tag>
+              <el-button type="success" size="large" @click="continueTransfer">
+                <el-icon><VideoPlay /></el-icon>
+                继续转会期
+              </el-button>
+            </template>
+            <template v-else-if="!gmConfigured">
+              <el-tag type="warning" size="large" class="status-tag">
+                <span class="tag-content"><el-icon><Warning /></el-icon> 需配置 {{ unconfiguredGMCount }} 队GM</span>
+              </el-tag>
+              <el-button type="warning" size="large" @click="goToGMConfig">
+                <el-icon><Setting /></el-icon>
+                配置GM性格
+              </el-button>
+            </template>
+            <template v-else>
+              <el-tag type="success" size="large" class="status-tag">
+                <span class="tag-content"><el-icon><Check /></el-icon> GM配置完成</span>
+              </el-tag>
+              <el-button type="primary" size="large" @click="startTransfer">
+                <el-icon><VideoPlay /></el-icon>
+                开始转会期
+              </el-button>
+            </template>
+          </div>
+        </div>
+      </el-card>
+
+      <!-- 赛区统计 -->
+      <div class="stats-section">
+        <div class="section-header">
+          <h2>
+            <el-icon><Flag /></el-icon>
+            赛区概览
+          </h2>
         </div>
 
-        <div class="action-status">
-          <template v-if="transferInProgress">
-            <el-tag type="success" size="large" class="status-tag">
-              <span class="tag-content"><el-icon><VideoPlay /></el-icon> 转会期进行中 (第{{ transferStore.currentRound }}轮)</span>
-            </el-tag>
-            <el-button type="success" size="large" @click="continueTransfer">
-              <el-icon><VideoPlay /></el-icon>
-              继续转会期
-            </el-button>
-          </template>
-          <template v-else-if="!gmConfigured">
-            <el-tag type="warning" size="large" class="status-tag">
-              <span class="tag-content"><el-icon><Warning /></el-icon> 需配置 {{ unconfiguredGMCount }} 队GM</span>
-            </el-tag>
-            <el-button type="warning" size="large" @click="goToGMConfig">
-              <el-icon><Setting /></el-icon>
-              配置GM性格
-            </el-button>
-          </template>
-          <template v-else>
-            <el-tag type="success" size="large" class="status-tag">
-              <span class="tag-content"><el-icon><Check /></el-icon> GM配置完成</span>
-            </el-tag>
-            <el-button type="primary" size="large" @click="startTransfer">
-              <el-icon><VideoPlay /></el-icon>
-              开始转会期
-            </el-button>
-          </template>
-        </div>
-      </div>
-    </el-card>
-
-    <!-- 赛区统计 -->
-    <div class="stats-section">
-      <div class="section-header">
-        <h2>
-          <el-icon><Flag /></el-icon>
-          赛区概览
-        </h2>
+        <el-row :gutter="16">
+          <el-col v-for="region in regions" :key="region.id" :span="6">
+            <el-card class="region-stat-card">
+              <div class="region-stat-header" :style="{ background: getRegionGradient(region.code) }">
+                <span class="region-code">{{ region.code }}</span>
+                <span class="region-name">{{ region.name }}</span>
+              </div>
+              <div class="region-stat-body">
+                <div class="stat-item">
+                  <span class="stat-value">{{ getRegionTeamCount(region.id) }}</span>
+                  <span class="stat-label">战队</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-value">{{ getRegionPlayerCount(region.id) }}</span>
+                  <span class="stat-label">选手</span>
+                </div>
+                <div class="stat-item">
+                  <template v-if="getRegionGMStatus(region.id).allConfigured">
+                    <el-icon class="stat-icon success"><Check /></el-icon>
+                  </template>
+                  <template v-else>
+                    <span class="stat-value warning">{{ getRegionGMStatus(region.id).unconfigured }}</span>
+                  </template>
+                  <span class="stat-label">待配置</span>
+                </div>
+              </div>
+            </el-card>
+          </el-col>
+        </el-row>
       </div>
 
-      <el-row :gutter="16">
-        <el-col v-for="region in regions" :key="region.id" :span="6">
-          <el-card class="region-stat-card">
-            <div class="region-stat-header" :style="{ background: getRegionGradient(region.code) }">
-              <span class="region-code">{{ region.code }}</span>
-              <span class="region-name">{{ region.name }}</span>
-            </div>
-            <div class="region-stat-body">
-              <div class="stat-item">
-                <span class="stat-value">{{ getRegionTeamCount(region.id) }}</span>
-                <span class="stat-label">战队</span>
-              </div>
-              <div class="stat-item">
-                <span class="stat-value">{{ getRegionPlayerCount(region.id) }}</span>
-                <span class="stat-label">选手</span>
-              </div>
-              <div class="stat-item">
-                <template v-if="getRegionGMStatus(region.id).allConfigured">
-                  <el-icon class="stat-icon success"><Check /></el-icon>
-                </template>
-                <template v-else>
-                  <span class="stat-value warning">{{ getRegionGMStatus(region.id).unconfigured }}</span>
-                </template>
-                <span class="stat-label">待配置</span>
-              </div>
-            </div>
-          </el-card>
-        </el-col>
-      </el-row>
-    </div>
+      <!-- 转会须知 -->
+      <el-card class="notice-card">
+        <template #header>
+          <div class="card-header">
+            <el-icon><InfoFilled /></el-icon>
+            <span>转会须知</span>
+          </div>
+        </template>
+        <ul class="notice-list">
+          <li>转会期开始前，必须为所有 AI 球队配置 GM 性格</li>
+          <li>四个赛区统一进行转会，选手可跨赛区转会</li>
+          <li>中国选手更倾向留在 LPL，韩国选手相对开放外出</li>
+          <li>转会期间会自动处理合同续约、自由球员签约、球员挖角等事务</li>
+          <li>转会完成后可查看详细的转会报告</li>
+        </ul>
+      </el-card>
+    </template>
 
-    <!-- 转会须知 -->
-    <el-card class="notice-card">
-      <template #header>
-        <div class="card-header">
-          <el-icon><InfoFilled /></el-icon>
-          <span>转会须知</span>
+    <!-- 历史赛季：显示转会记录摘要 -->
+    <template v-else>
+      <el-card v-if="historyLoading" class="history-card">
+        <el-skeleton :rows="4" animated />
+      </el-card>
+
+      <template v-else-if="historyWindow">
+        <el-card class="history-card">
+          <div class="history-summary">
+            <div class="history-icon">
+              <el-icon :size="48"><Opportunity /></el-icon>
+            </div>
+            <div class="history-info">
+              <h3>S{{ selectedSeason }} 赛季转会记录</h3>
+              <div class="history-stats">
+                <div class="history-stat-item">
+                  <span class="history-stat-value">{{ historyReport?.total_events ?? 0 }}</span>
+                  <span class="history-stat-label">转会事件</span>
+                </div>
+                <div class="history-stat-item">
+                  <span class="history-stat-value">{{ formatMoney(historyReport?.total_transfer_fee ?? 0) }}</span>
+                  <span class="history-stat-label">总转会费</span>
+                </div>
+                <div class="history-stat-item">
+                  <span class="history-stat-value">{{ historyWindow.current_round }}</span>
+                  <span class="history-stat-label">转会轮次</span>
+                </div>
+                <div class="history-stat-item">
+                  <el-tag :type="historyWindow.status === 'completed' ? 'success' : 'warning'" size="small">
+                    {{ historyWindow.status === 'completed' ? '已完成' : '进行中' }}
+                  </el-tag>
+                  <span class="history-stat-label">状态</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-card>
+
+        <!-- 转会类型分布 -->
+        <el-card v-if="historyReport && Object.keys(historyReport.events_by_type).length > 0" class="history-card">
+          <template #header>
+            <div class="card-header">
+              <el-icon><Flag /></el-icon>
+              <span>转会类型分布</span>
+            </div>
+          </template>
+          <div class="type-distribution">
+            <div v-for="(count, type) in historyReport.events_by_type" :key="type" class="type-item">
+              <span class="type-name">{{ type }}</span>
+              <span class="type-count">{{ count }}</span>
+            </div>
+          </div>
+        </el-card>
+
+        <!-- 查看完整报告按钮 -->
+        <div class="history-actions">
+          <el-button type="primary" size="large" @click="goToReport(historyWindow.window_id)">
+            <el-icon><Document /></el-icon>
+            查看完整转会报告
+          </el-button>
         </div>
       </template>
-      <ul class="notice-list">
-        <li>转会期开始前，必须为所有 AI 球队配置 GM 性格</li>
-        <li>四个赛区统一进行转会，选手可跨赛区转会</li>
-        <li>中国选手更倾向留在 LPL，韩国选手相对开放外出</li>
-        <li>转会期间会自动处理合同续约、自由球员签约、球员挖角等事务</li>
-        <li>转会完成后可查看详细的转会报告</li>
-      </ul>
-    </el-card>
+
+      <el-empty v-else description="该赛季没有转会记录" />
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import {
   Opportunity,
@@ -150,10 +219,14 @@ import {
   Setting,
   VideoPlay,
   InfoFilled,
+  Document,
 } from '@element-plus/icons-vue'
 import { useTransferWindowStore, ROUND_NAMES } from '@/stores/useTransferWindowStore'
-import { useGameStore } from '@/stores/useGameStore'
-import { queryApi } from '@/api/tauri'
+import { useSeasonStore } from '@/stores/useSeasonStore'
+import { queryApi, transferWindowApi } from '@/api/tauri'
+import type { TransferWindowResponse, TransferReport } from '@/api/tauri'
+import SeasonSelector from '@/components/common/SeasonSelector.vue'
+import { formatMoney } from '@/utils/format'
 import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('Transfer')
@@ -172,9 +245,16 @@ interface Team {
 
 const router = useRouter()
 const transferStore = useTransferWindowStore()
-const gameStore = useGameStore()
+const seasonStore = useSeasonStore()
 
-const { currentSeason } = storeToRefs(gameStore)
+// 赛季选择
+const selectedSeason = ref(0)
+const isViewingHistory = computed(() => selectedSeason.value !== 0 && selectedSeason.value !== seasonStore.currentSeason)
+
+// 历史数据
+const historyWindow = ref<TransferWindowResponse | null>(null)
+const historyReport = ref<TransferReport | null>(null)
+const historyLoading = ref(false)
 
 // 状态
 const regions = ref<Region[]>([])
@@ -272,6 +352,38 @@ function continueTransfer() {
   router.push('/transfer/window')
 }
 
+// 查看转会报告
+function goToReport(windowId: number) {
+  router.push(`/transfer/report/${windowId}`)
+}
+
+// 加载历史赛季数据
+async function loadHistoryData(season: number) {
+  historyLoading.value = true
+  historyWindow.value = null
+  historyReport.value = null
+
+  try {
+    const window = await transferWindowApi.getTransferWindowBySeason(season)
+    historyWindow.value = window
+    if (window) {
+      const report = await transferWindowApi.getTransferReport(window.window_id)
+      historyReport.value = report
+    }
+  } catch (e) {
+    logger.error('Failed to load history data:', e)
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+// 监听赛季切换
+watch(selectedSeason, (val) => {
+  if (val !== 0 && val !== seasonStore.currentSeason) {
+    loadHistoryData(val)
+  }
+})
+
 // 加载数据
 async function loadData() {
   isLoading.value = true
@@ -308,6 +420,7 @@ async function loadData() {
 }
 
 onMounted(async () => {
+  selectedSeason.value = seasonStore.currentSeason
   await loadData()
   // 初始化转会期状态（检查是否有进行中的转会期）
   await transferStore.initTransferWindow()
@@ -602,5 +715,95 @@ onMounted(async () => {
 
 .notice-list li {
   font-size: 14px;
+}
+
+/* 历史模式 */
+.history-card {
+  margin-bottom: 24px;
+  border-radius: 16px;
+}
+
+.history-summary {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.history-icon {
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.history-info {
+  flex: 1;
+}
+
+.history-info h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0 0 16px 0;
+}
+
+.history-stats {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.history-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.history-stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #303133;
+}
+
+.history-stat-label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.type-distribution {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.type-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.type-name {
+  font-size: 14px;
+  color: #606266;
+}
+
+.type-count {
+  font-size: 16px;
+  font-weight: 700;
+  color: #303133;
+}
+
+.history-actions {
+  text-align: center;
+  margin-top: 24px;
 }
 </style>

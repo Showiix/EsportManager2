@@ -960,6 +960,7 @@ pub struct DraftRegionStatus {
 pub async fn get_draft_region_status(
     state: State<'_, AppState>,
     region_id: u64,
+    season_id: Option<u64>,
 ) -> Result<CommandResult<DraftRegionStatus>, String> {
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
@@ -978,12 +979,17 @@ pub async fn get_draft_region_status(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
     };
 
-    let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
-        .bind(&save_id)
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| e.to_string())?;
-    let current_season: i64 = save_row.get("current_season");
+    let current_season: i64 = match season_id {
+        Some(s) => s as i64,
+        None => {
+            let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+                .bind(&save_id)
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            save_row.get("current_season")
+        }
+    };
 
     // 1. 查询全部 draft_players（不过滤 is_picked）
     let player_rows = sqlx::query(
