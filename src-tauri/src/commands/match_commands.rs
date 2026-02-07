@@ -554,8 +554,8 @@ pub async fn simulate_match_detailed(
         0.0
     };
 
-    update_player_form_factors(&pool, &home_players, home_won, home_avg_perf).await.ok();
-    update_player_form_factors(&pool, &away_players, !home_won, away_avg_perf).await.ok();
+    update_player_form_factors(&pool, &save_id, &home_players, home_won, home_avg_perf).await.ok();
+    update_player_form_factors(&pool, &save_id, &away_players, !home_won, away_avg_perf).await.ok();
 
     // 保存选手赛事统计（用于MVP计算）
     save_player_tournament_stats(
@@ -1412,6 +1412,7 @@ impl TeamMatchStats {
 /// - `avg_performance`: 队伍平均发挥值
 async fn update_player_form_factors(
     pool: &sqlx::SqlitePool,
+    save_id: &str,
     players: &[PlayerData],
     won: bool,
     avg_performance: f64,
@@ -1429,9 +1430,9 @@ async fn update_player_form_factors(
         // 更新或插入到数据库
         sqlx::query(
             r#"
-            INSERT INTO player_form_factors (player_id, form_cycle, momentum, last_performance, last_match_won, games_since_rest, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-            ON CONFLICT(player_id) DO UPDATE SET
+            INSERT INTO player_form_factors (save_id, player_id, form_cycle, momentum, last_performance, last_match_won, games_since_rest, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(save_id, player_id) DO UPDATE SET
                 form_cycle = excluded.form_cycle,
                 momentum = excluded.momentum,
                 last_performance = excluded.last_performance,
@@ -1440,6 +1441,7 @@ async fn update_player_form_factors(
                 updated_at = datetime('now')
             "#,
         )
+        .bind(save_id)
         .bind(player.id as i64)
         .bind(updated_factors.form_cycle)
         .bind(updated_factors.momentum as i64)

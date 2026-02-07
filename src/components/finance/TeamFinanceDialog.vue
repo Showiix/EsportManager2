@@ -276,7 +276,7 @@ function getTransactionTagType(type: string): string {
   if (type.includes('Income') || type.includes('Bonus') || type.includes('Share')) {
     return 'success'
   }
-  if (type.includes('Expense') || type.includes('Salary')) {
+  if (type.includes('Expense') || type.includes('Salary') || type.includes('DRAFT_PICK') || type === 'TransferIn') {
     return 'danger'
   }
   return 'info'
@@ -291,8 +291,11 @@ function getTransactionLabel(type: string): string {
     Sponsorship: '赞助收入',
     TransferIncome: '转会收入',
     TransferExpense: '转会支出',
+    TransferIn: '转会引进',
     Salary: '薪资支出',
     OperatingCost: '运营成本',
+    DraftPickPurchase: '选秀权购买',
+    DRAFT_PICK_PU: '选秀权购买',
   }
   return labels[type] || type
 }

@@ -2,7 +2,7 @@ use crate::db::{
     HonorRepository, MatchRepository, PlayerStatsRepository, PointsRepository, SaveRepository,
     StandingRepository, TeamRepository, TournamentRepository,
 };
-use crate::engines::{FinancialEngine, PointsCalculationEngine, MetaEngine, MatchSimulationEngine, MatchPlayerInfo, MatchSimContext, TraitType};
+use crate::engines::{FinancialEngine, PointsCalculationEngine, MetaEngine, MatchSimulationEngine, MatchPlayerInfo, MatchSimContext, TraitType, ConditionEngine, PlayerFormFactors};
 use std::collections::HashMap;
 use crate::models::{
     HonorType, LeagueStanding, SeasonPhase, Tournament, TournamentStatus,
@@ -3202,6 +3202,24 @@ impl GameFlowService {
             .await
             .map_err(|e| format!("重置年度积分失败: {}", e))?;
 
+        // 2.5 重置选手 form factors（新赛季状态重置）
+        sqlx::query(
+            r#"
+            UPDATE player_form_factors
+            SET momentum = 0,
+                last_performance = 0.0,
+                last_match_won = 0,
+                games_since_rest = 0,
+                form_cycle = (ABS(RANDOM()) % 10000) / 100.0,
+                updated_at = datetime('now')
+            WHERE save_id = ?
+            "#,
+        )
+        .bind(save_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("重置 form factors 失败: {}", e))?;
+
         // 3. 自动确认首发
         let starters_confirmed = self.auto_confirm_starters(pool, save_id).await?;
 
@@ -3755,8 +3773,8 @@ impl GameFlowService {
         // 检查是否是季后赛阶段
         let is_playoff = matches!(phase, SeasonPhase::SpringPlayoffs | SeasonPhase::SummerPlayoffs);
 
-        // === 特性系统：预加载选手数据 ===
-        let team_players = self.load_team_players(pool, save_id, save.current_season as i64).await?;
+        // === 特性系统：预加载选手数据 + form factors ===
+        let (mut team_players, mut form_factors_map) = self.load_team_players(pool, save_id, save.current_season as i64).await?;
         let meta_weights = MetaEngine::get_current_weights(pool, save_id, save.current_season as i64)
             .await
             .unwrap_or_else(|_| crate::engines::MetaWeights::balanced());
@@ -3827,6 +3845,13 @@ impl GameFlowService {
                     .await
                     .map_err(|e| e.to_string())?;
 
+                    // 比赛后更新 form factors
+                    let home_won = result.winner_id == match_info.home_team_id;
+                    let home_avg = Self::calculate_avg_performance(&result, match_info.home_team_id);
+                    let away_avg = Self::calculate_avg_performance(&result, match_info.away_team_id);
+                    Self::update_form_factors_after_match(&mut team_players, &mut form_factors_map, match_info.home_team_id, home_won, home_avg);
+                    Self::update_form_factors_after_match(&mut team_players, &mut form_factors_map, match_info.away_team_id, !home_won, away_avg);
+
                     simulated_count += 1;
 
                     // 检查并生成下一轮对阵
@@ -3854,6 +3879,9 @@ impl GameFlowService {
                     break;
                 }
             }
+
+            // 阶段结束，批量写回 form factors
+            Self::flush_form_factors_to_db(pool, save_id, &form_factors_map).await?;
 
             Ok(simulated_count)
         } else {
@@ -3896,29 +3924,46 @@ impl GameFlowService {
                     .await
                     .map_err(|e| e.to_string())?;
 
+                    // 比赛后更新 form factors
+                    let home_won = result.winner_id == match_info.home_team_id;
+                    let home_avg = Self::calculate_avg_performance(&result, match_info.home_team_id);
+                    let away_avg = Self::calculate_avg_performance(&result, match_info.away_team_id);
+                    Self::update_form_factors_after_match(&mut team_players, &mut form_factors_map, match_info.home_team_id, home_won, home_avg);
+                    Self::update_form_factors_after_match(&mut team_players, &mut form_factors_map, match_info.away_team_id, !home_won, away_avg);
+
                     simulated_count += 1;
                 }
             }
+
+            // 阶段结束，批量写回 form factors
+            Self::flush_form_factors_to_db(pool, save_id, &form_factors_map).await?;
 
             Ok(simulated_count)
         }
     }
 
-    /// 预加载所有队伍的首发选手数据（含特性），用于特性感知模拟
+    /// 预加载所有队伍的首发选手数据（含特性+动态condition），用于特性感知模拟
     async fn load_team_players(
         &self,
         pool: &Pool<Sqlite>,
         save_id: &str,
         current_season: i64,
-    ) -> Result<HashMap<u64, Vec<MatchPlayerInfo>>, String> {
-        // 查询所有在役首发选手
+    ) -> Result<(HashMap<u64, Vec<MatchPlayerInfo>>, HashMap<u64, PlayerFormFactors>), String> {
+        // 查询所有在役首发选手，LEFT JOIN form factors
         let rows = sqlx::query(
             r#"
-            SELECT id, ability, stability, condition, age, position, team_id, join_season
-            FROM players
-            WHERE save_id = ? AND status = 'Active' AND is_starter = 1
+            SELECT p.id, p.ability, p.stability, p.age, p.position, p.team_id, p.join_season,
+                   COALESCE(pff.form_cycle, 50.0) as form_cycle,
+                   COALESCE(pff.momentum, 0) as momentum,
+                   COALESCE(pff.last_performance, 0.0) as last_performance,
+                   COALESCE(pff.last_match_won, 0) as last_match_won,
+                   COALESCE(pff.games_since_rest, 0) as games_since_rest
+            FROM players p
+            LEFT JOIN player_form_factors pff ON p.id = pff.player_id AND pff.save_id = ?
+            WHERE p.save_id = ? AND p.status = 'Active' AND p.is_starter = 1
             "#,
         )
+        .bind(save_id)
         .bind(save_id)
         .fetch_all(pool)
         .await
@@ -3950,18 +3995,37 @@ impl GameFlowService {
             }
         }
 
-        // 按 team_id 分组
+        // 按 team_id 分组，同时构建 form_factors_map
         let mut team_players: HashMap<u64, Vec<MatchPlayerInfo>> = HashMap::new();
+        let mut form_factors_map: HashMap<u64, PlayerFormFactors> = HashMap::new();
         for row in &rows {
             let player_id = row.get::<i64, _>("id") as u64;
             let team_id = row.get::<i64, _>("team_id") as u64;
             let join_season: i64 = row.get("join_season");
+            let ability = row.get::<i64, _>("ability") as u8;
+            let age = row.get::<i64, _>("age") as u8;
+
+            // 构建 form factors
+            let factors = PlayerFormFactors {
+                player_id,
+                form_cycle: row.get::<f64, _>("form_cycle"),
+                momentum: row.get::<i64, _>("momentum") as i8,
+                last_performance: row.get::<f64, _>("last_performance"),
+                last_match_won: row.get::<i64, _>("last_match_won") != 0,
+                games_since_rest: row.get::<i64, _>("games_since_rest") as u32,
+            };
+
+            // 动态计算 condition
+            let condition = ConditionEngine::calculate_condition(age, ability, &factors, None);
+
+            form_factors_map.insert(player_id, factors);
 
             let player_info = MatchPlayerInfo {
-                ability: row.get::<i64, _>("ability") as u8,
+                player_id,
+                ability,
                 stability: row.get::<i64, _>("stability") as u8,
-                condition: row.get::<i64, _>("condition") as i8,
-                age: row.get::<i64, _>("age") as u8,
+                condition,
+                age,
                 position: row.get::<String, _>("position"),
                 traits: player_traits_map.get(&player_id).cloned().unwrap_or_default(),
                 is_first_season: join_season == current_season,
@@ -3970,7 +4034,91 @@ impl GameFlowService {
             team_players.entry(team_id).or_default().push(player_info);
         }
 
-        Ok(team_players)
+        Ok((team_players, form_factors_map))
+    }
+
+    /// 比赛后更新内存中的 form factors 并重算 condition
+    fn update_form_factors_after_match(
+        team_players: &mut HashMap<u64, Vec<MatchPlayerInfo>>,
+        form_factors_map: &mut HashMap<u64, PlayerFormFactors>,
+        team_id: u64,
+        won: bool,
+        avg_performance: f64,
+    ) {
+        if let Some(players) = team_players.get_mut(&team_id) {
+            for player in players.iter_mut() {
+                if let Some(factors) = form_factors_map.remove(&player.player_id) {
+                    let updated = ConditionEngine::update_form_factors(factors, won, avg_performance);
+                    let new_condition = ConditionEngine::calculate_condition(
+                        player.age, player.ability, &updated, None,
+                    );
+                    player.condition = new_condition;
+                    form_factors_map.insert(player.player_id, updated);
+                }
+            }
+        }
+    }
+
+    /// 批量将 form factors 写回数据库
+    async fn flush_form_factors_to_db(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        form_factors_map: &HashMap<u64, PlayerFormFactors>,
+    ) -> Result<(), String> {
+        let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+        for (player_id, factors) in form_factors_map {
+            sqlx::query(
+                r#"
+                INSERT INTO player_form_factors (save_id, player_id, form_cycle, momentum, last_performance, last_match_won, games_since_rest, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(save_id, player_id) DO UPDATE SET
+                    form_cycle = excluded.form_cycle,
+                    momentum = excluded.momentum,
+                    last_performance = excluded.last_performance,
+                    last_match_won = excluded.last_match_won,
+                    games_since_rest = excluded.games_since_rest,
+                    updated_at = datetime('now')
+                "#,
+            )
+            .bind(save_id)
+            .bind(*player_id as i64)
+            .bind(factors.form_cycle)
+            .bind(factors.momentum as i64)
+            .bind(factors.last_performance)
+            .bind(if factors.last_match_won { 1i64 } else { 0i64 })
+            .bind(factors.games_since_rest as i64)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+
+        tx.commit().await.map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// 从 MatchResult 中计算某队的平均 performance
+    fn calculate_avg_performance(result: &crate::models::MatchResult, team_id: u64) -> f64 {
+        if result.games.is_empty() {
+            return 0.0;
+        }
+        let total: f64 = result.games.iter().map(|g| {
+            if g.winner_id == team_id {
+                // 该队赢的局，取对应方的 performance
+                if team_id == result.match_info.home_team_id {
+                    g.home_performance
+                } else {
+                    g.away_performance
+                }
+            } else {
+                if team_id == result.match_info.home_team_id {
+                    g.home_performance
+                } else {
+                    g.away_performance
+                }
+            }
+        }).sum();
+        total / result.games.len() as f64
     }
 }
 

@@ -6,6 +6,7 @@ use super::meta_engine::{MetaWeights, MetaEngine};
 /// 比赛用选手信息（用于快速模拟路径的特性感知）
 #[derive(Debug, Clone)]
 pub struct MatchPlayerInfo {
+    pub player_id: u64,
     pub ability: u8,
     pub stability: u8,
     pub condition: i8,
@@ -528,6 +529,7 @@ mod tests {
 
     fn make_player(ability: u8, position: &str, traits: Vec<TraitType>) -> MatchPlayerInfo {
         MatchPlayerInfo {
+            player_id: 0,
             ability,
             stability: 70,
             condition: 0,

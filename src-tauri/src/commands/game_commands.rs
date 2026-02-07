@@ -1235,8 +1235,8 @@ async fn simulate_match_core(
 
     // 更新选手状态因子
     let home_won = final_winner_id == home_team_id;
-    update_player_form_factors_internal(pool, &home_players, home_won).await.ok();
-    update_player_form_factors_internal(pool, &away_players, !home_won).await.ok();
+    update_player_form_factors_internal(pool, save_id, &home_players, home_won).await.ok();
+    update_player_form_factors_internal(pool, save_id, &away_players, !home_won).await.ok();
 
     // 如果是季后赛比赛，推进对阵生成后续比赛
     let is_playoff = stage.contains("WINNERS")
@@ -1292,6 +1292,7 @@ async fn simulate_match_core(
 /// 更新选手状态因子
 async fn update_player_form_factors_internal(
     pool: &sqlx::SqlitePool,
+    save_id: &str,
     players: &[PlayerData],
     won: bool,
 ) -> Result<(), String> {
@@ -1304,9 +1305,9 @@ async fn update_player_form_factors_internal(
 
         sqlx::query(
             r#"
-            INSERT INTO player_form_factors (player_id, form_cycle, momentum, last_performance, last_match_won, games_since_rest, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-            ON CONFLICT(player_id) DO UPDATE SET
+            INSERT INTO player_form_factors (save_id, player_id, form_cycle, momentum, last_performance, last_match_won, games_since_rest, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(save_id, player_id) DO UPDATE SET
                 form_cycle = excluded.form_cycle,
                 momentum = excluded.momentum,
                 last_performance = excluded.last_performance,
@@ -1315,6 +1316,7 @@ async fn update_player_form_factors_internal(
                 updated_at = datetime('now')
             "#,
         )
+        .bind(save_id)
         .bind(player.id as i64)
         .bind(updated_factors.form_cycle)
         .bind(updated_factors.momentum as i64)
