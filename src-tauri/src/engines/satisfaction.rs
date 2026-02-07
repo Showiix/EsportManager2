@@ -47,9 +47,9 @@ impl SatisfactionEngine {
             0.0
         };
 
-        if starter_ratio < 0.3 && player.ability >= 70 {
+        if starter_ratio < 0.3 && player.ability >= 54 {
             change -= 20; // 能力强但打不上比赛
-        } else if starter_ratio < 0.5 && player.ability >= 60 {
+        } else if starter_ratio < 0.5 && player.ability >= 47 {
             change -= 10;
         } else if starter_ratio >= 0.8 {
             change += 5; // 稳定首发
@@ -57,9 +57,9 @@ impl SatisfactionEngine {
 
         // 2. 球队战绩影响
         if let Some(rank) = team_perf.final_rank {
-            if rank >= 8 && player.ability >= 75 {
+            if rank >= 8 && player.ability >= 58 {
                 change -= 15; // 强选手在弱队
-            } else if rank >= 6 && player.ability >= 80 {
+            } else if rank >= 6 && player.ability >= 61 {
                 change -= 10; // 顶级选手在中下游队伍
             } else if rank <= 2 {
                 change += 10; // 好成绩
@@ -140,7 +140,7 @@ impl SatisfactionEngine {
 
         // 收集离队原因
         // 1. 追求冠军：能力强但球队战绩差
-        if player.ability >= 80 && team_perf.final_rank.unwrap_or(10) >= 6 {
+        if player.ability >= 61 && team_perf.final_rank.unwrap_or(10) >= 6 {
             reasons.push(DepartureReason::SeekingChampionship);
         }
 
@@ -164,7 +164,7 @@ impl SatisfactionEngine {
         }
 
         // 5. 缺少上场时间
-        if !player.is_starter && player.ability >= 70 {
+        if !player.is_starter && player.ability >= 54 {
             reasons.push(DepartureReason::LackOfPlaytime);
         }
 

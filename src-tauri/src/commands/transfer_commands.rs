@@ -675,6 +675,8 @@ pub struct PlayerStayEvaluationInfo {
     pub ability: i64,
     pub team_id: i64,
     pub team_name: String,
+    pub team_short_name: Option<String>,
+    pub region_code: String,
     pub stay_score: f64,
     pub wants_to_leave: bool,
     pub leave_reason: String,
@@ -1039,6 +1041,8 @@ pub async fn get_player_stay_evaluations(
             p.ability,
             se.team_id,
             t.name as team_name,
+            t.short_name as team_short_name,
+            r.short_name as region_code,
             se.stay_score,
             se.wants_to_leave,
             se.leave_reason,
@@ -1048,6 +1052,7 @@ pub async fn get_player_stay_evaluations(
         FROM player_season_evaluations se
         JOIN players p ON se.player_id = p.id
         JOIN teams t ON se.team_id = t.id
+        JOIN regions r ON t.region_id = r.id
         WHERE se.save_id = ? AND se.window_id = ?
     "#;
 
@@ -1078,6 +1083,8 @@ pub async fn get_player_stay_evaluations(
             ability: row.get("ability"),
             team_id: row.get("team_id"),
             team_name: row.get("team_name"),
+            team_short_name: row.get("team_short_name"),
+            region_code: row.get("region_code"),
             stay_score: row.get("stay_score"),
             wants_to_leave: row.get("wants_to_leave"),
             leave_reason: row.get("leave_reason"),

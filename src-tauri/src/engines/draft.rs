@@ -171,10 +171,10 @@ impl DraftEngine {
 /// 计算选秀球员的初始薪资
 fn calculate_draft_salary(ability: u8, potential: u8) -> u64 {
     let base = match ability {
-        80..=100 => 80,
-        70..=79 => 50,
-        60..=69 => 30,
-        _ => 15,
+        62..=100 => 40,
+        55..=61 => 25,
+        47..=54 => 15,
+        _ => 8,
     };
 
     // 潜力值加成

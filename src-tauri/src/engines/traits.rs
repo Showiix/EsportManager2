@@ -342,9 +342,9 @@ impl TraitEngine {
 
         // 根据能力值决定特性数量
         let trait_count = match ability {
-            90..=100 => 2 + rng.gen_range(0..2),  // 顶级选手 2-3 个特性
-            80..=89 => 1 + rng.gen_range(0..2),   // 优秀选手 1-2 个特性
-            70..=79 => rng.gen_range(0..2),       // 合格选手 0-1 个特性
+            68..=100 => 2 + rng.gen_range(0..2),  // 顶级选手 2-3 个特性
+            61..=67 => 1 + rng.gen_range(0..2),   // 优秀选手 1-2 个特性
+            54..=60 => rng.gen_range(0..2),       // 合格选手 0-1 个特性
             _ => if rng.gen::<f64>() < 0.3 { 1 } else { 0 },  // 低能力 30% 概率 1 个
         };
 
@@ -374,7 +374,7 @@ impl TraitEngine {
         if age >= 28 {
             available.push(TraitType::Veteran);
         }
-        if ability >= 85 {
+        if ability >= 65 {
             available.push(TraitType::TeamLeader);
         }
 

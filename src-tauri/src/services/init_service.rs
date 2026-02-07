@@ -109,40 +109,61 @@ impl InitService {
         ]
     }
 
-    /// 生成初始队伍战力 (基于赛区强度)
+    /// 生成初始队伍战力 (基于赛区强度，缩放后)
     fn generate_team_power(region_id: u64, rank: usize) -> f64 {
         let mut rng = rand::thread_rng();
 
-        // 基础战力 (赛区差异)
+        // 基础战力 (赛区差异，缩放后)
         let region_base = match region_id {
-            1 => 78.0, // LPL
-            2 => 77.0, // LCK
-            3 => 72.0, // LEC
-            4 => 70.0, // LCS
-            _ => 70.0,
+            1 => 60.0, // LPL
+            2 => 59.0, // LCK
+            3 => 55.0, // LEC
+            4 => 54.0, // LCS
+            _ => 54.0,
         };
 
-        // 队伍排名差异 (顶级队伍更强)
+        // 队伍排名差异 (顶级队伍更强，缩放后)
         let rank_bonus = match rank {
-            0..=1 => 10.0,
-            2..=3 => 7.0,
-            4..=5 => 4.0,
-            6..=7 => 2.0,
+            0..=1 => 7.0,
+            2..=3 => 5.0,
+            4..=5 => 3.0,
+            6..=7 => 1.0,
             8..=10 => 0.0,
-            _ => -2.0,
+            _ => -1.0,
         };
 
         // 随机波动
-        let random_factor: f64 = rng.gen_range(-3.0..3.0);
+        let random_factor: f64 = rng.gen_range(-2.0..2.0);
 
-        (region_base + rank_bonus + random_factor).clamp(60.0, 95.0)
+        (region_base + rank_bonus + random_factor).clamp(48.0, 72.0)
     }
 
-    /// 生成队伍初始资金
-    fn generate_team_balance(power: f64) -> i64 {
-        let base = 3000i64; // 基础300万
-        let power_bonus = ((power - 70.0) * 100.0).max(0.0) as i64;
-        (base + power_bonus) * 10000 // 转换为实际金额
+    /// 获取队伍初始资金（固定值，单位：元）
+    fn get_team_initial_balance(short_name: &str) -> i64 {
+        let balance_wan = match short_name {
+            // LPL
+            "TES" => 8700, "BLG" => 8400, "JDG" => 8850, "WBG" => 8400,
+            "RNG" => 8450, "FPX" => 8050, "LNG" => 8350, "TT" => 7350,
+            "IG" => 8150, "UP" => 7700, "AL" => 7600, "NIP" => 8050,
+            "MR" => 8000, "EDG" => 8550,
+            // LCK
+            "T1" => 8750, "DRX" => 7900, "DK" => 8250, "GEN" => 8400,
+            "KT" => 8050, "KF" => 7650, "SB" => 7700, "BRO" => 7600,
+            "NS" => 7550, "BNK" => 7350, "FX" => 7350, "LZ" => 8050,
+            "HLE" => 8400, "AF" => 7900,
+            // LEC
+            "FNC" => 7600, "TH" => 7550, "MAD" => 7950, "G2" => 8200,
+            "FAL" => 7500, "TW" => 7150, "AMB" => 7900, "MSF" => 7300,
+            "WLF" => 7500, "NKE" => 7500, "AST" => 7150, "VIT" => 7450,
+            "XL" => 7450, "SK" => 7000,
+            // LCS
+            "FQ" => 7250, "100T" => 7800, "C9" => 7900, "TL" => 7700,
+            "NRG" => 7350, "DIG" => 7100, "EG" => 7750, "SR" => 7050,
+            "TSM" => 7500, "EUB" => 6950, "SASY" => 6800, "IMT" => 7150,
+            "CLG" => 7100, "LG" => 6600,
+            _ => 7000,
+        };
+        balance_wan * 10000 // 万元转换为元
     }
 
     /// 从配置创建单个选手
@@ -211,8 +232,8 @@ impl InitService {
                     team_power - 5.0 + rng.gen_range(-5.0..3.0)
                 };
 
-                let ability = (ability_base.clamp(50.0, 99.0)) as u8;
-                let potential = (ability as f64 + rng.gen_range(-5.0..15.0)).clamp(50.0, 99.0) as u8;
+                let ability = (ability_base.clamp(40.0, 72.0)) as u8;
+                let potential = (ability as f64 + rng.gen_range(-5.0..15.0)).clamp(40.0, 75.0) as u8;
                 let age = if is_starter {
                     rng.gen_range(19..26)
                 } else {
@@ -257,14 +278,15 @@ impl InitService {
         players
     }
 
-    /// 判定选手标签 (Ordinary=普通, Normal=正常, Genius=天才)
-    fn determine_player_tag(ability: u8, potential: u8, age: u8) -> PlayerTag {
-        if ability >= 90 || (age <= 20 && potential >= 90) {
+    /// 判定选手标签 (Ordinary=平庸, Normal=一般, Genius=天才)
+    /// 缩放后阈值：天才 ability≥68 且 potential≥67；平庸 ability≤59 或 potential≤59；其余为一般
+    fn determine_player_tag(ability: u8, potential: u8, _age: u8) -> PlayerTag {
+        if ability >= 68 && potential >= 67 {
             PlayerTag::Genius
-        } else if ability >= 75 || potential >= 80 {
-            PlayerTag::Normal
-        } else {
+        } else if ability <= 59 || potential <= 59 {
             PlayerTag::Ordinary
+        } else {
+            PlayerTag::Normal
         }
     }
 
@@ -288,17 +310,17 @@ impl InitService {
             _ => 10.0,         // 高龄，非常忠诚
         };
 
-        // 能力因素: 减小惩罚，顶级选手也可以忠诚
+        // 能力因素: 减小惩罚，顶级选手也可以忠诚（缩放后阈值）
         base += match ability {
-            90..=100 => -2.0,  // 顶级选手，略有降低
-            85..=89 => 0.0,    // 明星选手，正常
-            80..=84 => 2.0,    // 优秀选手，略高
-            70..=79 => 3.0,    // 普通选手，珍惜机会
+            68..=100 => -2.0,  // 顶级选手，略有降低
+            65..=67 => 0.0,    // 明星选手，正常
+            61..=64 => 2.0,    // 优秀选手，略高
+            54..=60 => 3.0,    // 普通选手，珍惜机会
             _ => 4.0,          // 替补选手，更加忠诚
         };
 
-        // 潜力因素: 高潜力年轻人的惩罚减小
-        if age <= 21 && potential >= 90 {
+        // 潜力因素: 高潜力年轻人的惩罚减小（缩放后阈值）
+        if age <= 21 && potential >= 68 {
             base -= 3.0;  // 只有超高潜力才略有影响
         }
 
@@ -329,10 +351,10 @@ impl InitService {
 
         // 首发/替补因素：减小惩罚
         if !is_starter {
-            // 替补选手如果能力高，满意度会降低（觉得自己应该首发）
-            if ability >= 85 {
+            // 替补选手如果能力高，满意度会降低（觉得自己应该首发）（缩放后阈值）
+            if ability >= 65 {
                 base -= 5.0;  // 从 -8 减小到 -5
-            } else if ability >= 80 {
+            } else if ability >= 61 {
                 base -= 3.0;  // 从 -4 减小到 -3
             }
         }
@@ -347,8 +369,8 @@ impl InitService {
             };
         }
 
-        // 潜力因素: 减小惩罚
-        if !is_starter && potential >= 88 && age <= 21 {
+        // 潜力因素: 减小惩罚（缩放后阈值）
+        if !is_starter && potential >= 67 && age <= 21 {
             base -= 3.0;  // 从 -5 减小到 -3
         }
 
@@ -359,12 +381,12 @@ impl InitService {
             PlayerTag::Ordinary => -1.0, // 普通选手可能略有不安
         };
 
-        // 能力因素: 高能力选手更自信
+        // 能力因素: 高能力选手更自信（缩放后阈值）
         base += match ability {
-            90..=100 => 5.0,   // 顶级选手，自信满满
-            85..=89 => 3.0,
-            80..=84 => 1.0,
-            70..=79 => 0.0,    // 普通选手，正常
+            68..=100 => 5.0,   // 顶级选手，自信满满
+            65..=67 => 3.0,
+            61..=64 => 1.0,
+            54..=60 => 0.0,    // 普通选手，正常
             _ => -2.0,         // 能力较低，可能有些焦虑
         };
 
@@ -376,15 +398,16 @@ impl InitService {
     }
 
     /// 计算初始薪资（单位：元）
+    /// 缩放后阈值，薪资基数约为原来的一半
     fn calculate_initial_salary(ability: u8, _potential: u8, tag: PlayerTag) -> u64 {
         // base 单位为万元（基数）
         let base = match ability {
-            90..=100 => 150,
-            85..=89 => 100,
-            80..=84 => 70,
-            75..=79 => 50,
-            70..=74 => 35,
-            _ => 20,
+            68..=100 => 75,
+            65..=67 => 50,
+            62..=64 => 35,
+            60..=61 => 25,
+            55..=59 => 18,
+            _ => 10,
         };
 
         let tag_multiplier = match tag {
@@ -399,16 +422,17 @@ impl InitService {
 
     /// 计算市场价值（单位：元）
     /// 使用与 Player::calculate_base_market_value 相同的公式
+    /// 缩放后阈值
     fn calculate_market_value(ability: u8, potential: u8, age: u8, tag: PlayerTag, position: Position) -> u64 {
-        // 基础身价系数（与 player.rs 保持一致）
+        // 基础身价系数（缩放后阈值）
         let multiplier = match ability {
-            95..=100 => 50,  // 顶级选手
-            90..=94 => 35,   // 世界级
-            85..=89 => 20,   // 顶尖
-            80..=84 => 12,   // 优秀
-            75..=79 => 7,    // 合格首发
-            70..=74 => 4,    // 替补级
-            60..=69 => 2,    // 新人
+            72..=100 => 25,  // 顶级选手
+            68..=71 => 18,   // 世界级
+            65..=67 => 10,   // 顶尖
+            62..=64 => 6,    // 优秀
+            60..=61 => 4,    // 合格首发
+            55..=59 => 2,    // 替补级
+            47..=54 => 1,    // 新人
             _ => 1,          // 青训
         };
 
@@ -474,7 +498,7 @@ impl InitService {
             // 创建队伍
             for (rank, (name, short_name)) in region.team_names.iter().enumerate() {
                 let power = Self::generate_team_power(region.id, rank);
-                let balance = Self::generate_team_balance(power);
+                let balance = Self::get_team_initial_balance(short_name);
 
                 let team = Team {
                     id: 0,

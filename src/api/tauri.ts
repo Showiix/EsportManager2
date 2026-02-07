@@ -3086,6 +3086,8 @@ export interface PlayerStayEvaluationInfo {
   ability: number
   team_id: number
   team_name: string
+  team_short_name: string | null
+  region_code: string
   stay_score: number
   wants_to_leave: boolean
   leave_reason: string

@@ -249,12 +249,12 @@ impl EventEngine {
         // 生成年龄 (17-19岁)
         let _age = rng.gen_range(self.config.rookie_min_age..=self.config.rookie_max_age);
 
-        // 生成能力值 (55-75)
-        let ability = rng.gen_range(55..=75);
+        // 生成能力值 (44-58，缩放后)
+        let ability = rng.gen_range(44..=58);
 
         // 生成潜力值 (能力值+5 到 能力值+20)
         let potential_bonus = rng.gen_range(5..=20);
-        let potential = (ability + potential_bonus).min(100);
+        let potential = (ability + potential_bonus).min(75);
 
         // 生成标签 (天才5%, 普通75%, 平庸20%)
         let tag_roll: f64 = rng.gen();
@@ -315,11 +315,11 @@ impl EventEngine {
         let mut probability = self.config.contract_renewal_base_probability;
 
         // 能力值影响: 高能力更容易续约
-        if player.ability >= 80 {
+        if player.ability >= 61 {
             probability += 0.15;
-        } else if player.ability >= 70 {
+        } else if player.ability >= 54 {
             probability += 0.05;
-        } else if player.ability < 60 {
+        } else if player.ability < 47 {
             probability -= 0.2;
         }
 
@@ -356,11 +356,11 @@ impl EventEngine {
 
         // 薪资: 基于能力值
         let base_salary = match player.ability {
-            90..=100 => rng.gen_range(200..=400),
-            80..=89 => rng.gen_range(100..=200),
-            70..=79 => rng.gen_range(50..=100),
-            60..=69 => rng.gen_range(20..=50),
-            _ => rng.gen_range(10..=20),
+            68..=100 => rng.gen_range(100..=200),
+            62..=67 => rng.gen_range(50..=100),
+            55..=61 => rng.gen_range(25..=50),
+            47..=54 => rng.gen_range(10..=25),
+            _ => rng.gen_range(5..=10),
         };
 
         (years, base_salary)
@@ -986,7 +986,7 @@ mod tests {
         for _ in 0..50 {
             let rookie = engine.generate_rookie(&team, Position::Top, 1);
             // 能力值应在55-75范围内
-            assert!(rookie.ability >= 55 && rookie.ability <= 75);
+            assert!(rookie.ability >= 44 && rookie.ability <= 58);
             // 潜力应高于能力
             assert!(rookie.potential > rookie.ability);
             assert!(rookie.potential <= 100);

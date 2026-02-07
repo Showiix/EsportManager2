@@ -136,11 +136,11 @@ impl EventLevel {
 
     /// 根据球员能力和转会费自动判定等级
     pub fn from_ability_and_fee(ability: u8, transfer_fee: i64) -> Self {
-        if ability >= 90 || transfer_fee > 5_000_000 {
+        if ability >= 68 || transfer_fee > 5_000_000 {
             EventLevel::S
-        } else if ability >= 85 || transfer_fee > 3_000_000 {
+        } else if ability >= 65 || transfer_fee > 3_000_000 {
             EventLevel::A
-        } else if ability >= 80 || transfer_fee > 1_500_000 {
+        } else if ability >= 61 || transfer_fee > 1_500_000 {
             EventLevel::B
         } else {
             EventLevel::C

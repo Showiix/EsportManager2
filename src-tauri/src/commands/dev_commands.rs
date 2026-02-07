@@ -1352,13 +1352,13 @@ fn get_region_market_factor(region_code: &str) -> f64 {
 /// 计算选手身价（与 init_service 保持一致）
 fn calculate_market_value(ability: u8, potential: u8, age: u8, tag: PlayerTag, position: Position) -> u64 {
     let multiplier = match ability {
-        95..=100 => 50,
-        90..=94 => 35,
-        85..=89 => 20,
-        80..=84 => 12,
-        75..=79 => 7,
-        70..=74 => 4,
-        60..=69 => 2,
+        72..=100 => 25,
+        68..=71 => 18,
+        65..=67 => 10,
+        62..=64 => 6,
+        60..=61 => 4,
+        55..=59 => 2,
+        47..=54 => 1,
         _ => 1,
     };
 
