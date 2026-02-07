@@ -347,6 +347,9 @@ const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
 const gameStore = useGameStore()
 
+// 从 query 获取赛季（赛事管理页传入），否则使用当前赛季
+const viewingSeason = computed(() => Number(route.query.season) || gameStore.gameState?.current_season || 1)
+
 // 比赛详情弹窗状态
 const showMatchDetailDialog = ref(false)
 const currentMatchDetail = ref<MatchDetail | null>(null)
@@ -415,7 +418,7 @@ const loadTeams = async (regionId: number) => {
 // 加载当前赛区的春季赛赛事
 const loadTournament = async (regionId: number) => {
   try {
-    const seasonId = gameStore.gameState?.current_season || 1
+    const seasonId = viewingSeason.value
     const tournaments = await queryApi.getRegionTournaments(regionId, seasonId)
     // 查找春季常规赛 (后端存储格式为 PascalCase: SpringRegular)
     const springRegular = tournaments.find(t => t.tournament_type === 'SpringRegular')
@@ -798,7 +801,7 @@ const convertToMatchDetail = (result: any, match: any): MatchDetail => {
 
   return {
     matchId: `spring-${match.id}`,
-    seasonId: String(gameStore.gameState?.current_season || 1),
+    seasonId: String(viewingSeason.value),
     tournamentType: 'spring',
     teamAId: String(result.home_team_id),
     teamAName: result.home_team_name || match.homeTeam,

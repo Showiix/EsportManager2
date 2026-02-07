@@ -2670,13 +2670,15 @@ impl PointsRepository {
                 t.short_name as team_short_name,
                 t.region_id,
                 COALESCE(r.name, 'N/A') as region_code,
-                t.annual_points as total_points,
-                (SELECT COUNT(*) FROM annual_points_detail
-                 WHERE save_id = ? AND season_id = ? AND team_id = t.id) as tournaments_count
+                COALESCE(SUM(apd.points), 0) as total_points,
+                COUNT(DISTINCT apd.tournament_id) as tournaments_count
             FROM teams t
             LEFT JOIN regions r ON t.region_id = r.id
+            LEFT JOIN annual_points_detail apd ON apd.team_id = t.id
+              AND apd.save_id = ? AND apd.season_id = ?
             WHERE t.save_id = ?
-            ORDER BY t.annual_points DESC
+            GROUP BY t.id
+            ORDER BY total_points DESC
             "#,
         )
         .bind(save_id)

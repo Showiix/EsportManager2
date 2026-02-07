@@ -510,7 +510,7 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Flag,
@@ -535,12 +535,16 @@ import { createLogger } from '@/utils/logger'
 const logger = createLogger('ICPDetail')
 
 const router = useRouter()
+const route = useRoute()
 const gameStore = useGameStore()
 const timeStore = useTimeStore()
 
 // Stores
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
+
+// 从 query 获取赛季（赛事管理页传入），否则使用当前赛季
+const viewingSeason = computed(() => Number(route.query.season) || gameStore.gameState?.current_season || 1)
 
 // 阶段检查
 const ICP_PHASE = 'ICP_INTERCONTINENTAL'
@@ -1983,7 +1987,7 @@ const loadICPData = async () => {
       return
     }
 
-    const seasonId = currentSave.current_season || 1
+    const seasonId = viewingSeason.value
 
     // 获取ICP赛事ID (类型为 'Icp')
     const tournaments = await internationalApi.getTournamentsByType('Icp', seasonId)

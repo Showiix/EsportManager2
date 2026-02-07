@@ -2104,16 +2104,11 @@ impl TransferEngine {
         for &team_id in &team_ids {
             let team_name = cache.get_team_name(team_id);
             let roster = cache.get_roster(team_id);
-            let roster_count = roster.len();
 
-            if roster_count >= 5 {
-                continue;
-            }
-
-            // 需要紧急签约 - find_missing_positions 需要用 SqliteRow，改为直接检查缓存
+            // 检查每个位置是否有人（不能只看总人数，可能有8人但缺某个位置）
             let mut has_position = [false; 5];
             for player in &roster {
-                match player.position.as_str() {
+                match player.position.to_uppercase().as_str() {
                     "TOP" => has_position[0] = true,
                     "JUG" => has_position[1] = true,
                     "MID" => has_position[2] = true,
@@ -2121,6 +2116,10 @@ impl TransferEngine {
                     "SUP" => has_position[4] = true,
                     _ => {}
                 }
+            }
+
+            if has_position.iter().all(|&h| h) {
+                continue; // 所有位置都有人，跳过
             }
 
             let all_positions = [
@@ -2140,7 +2139,7 @@ impl TransferEngine {
                 let candidate: Option<sqlx::sqlite::SqliteRow> = sqlx::query(
                     r#"SELECT id, game_id, ability, age
                        FROM players
-                       WHERE save_id = ? AND status = 'Active' AND team_id IS NULL AND position = ?
+                       WHERE save_id = ? AND status = 'Active' AND team_id IS NULL AND UPPER(position) = UPPER(?)
                        ORDER BY ability DESC
                        LIMIT 1"#
                 )

@@ -210,6 +210,7 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Trophy,
@@ -233,10 +234,15 @@ import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('ShanghaiDetail')
 
+const route = useRoute()
+
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
 const gameStore = useGameStore()
 const timeStore = useTimeStore()
+
+// 从 query 获取赛季（赛事管理页传入），否则使用当前赛季
+const viewingSeason = computed(() => Number(route.query.season) || gameStore.gameState?.current_season || 1)
 
 // 后端数据状态
 const loading = ref(false)
@@ -457,7 +463,7 @@ const refreshData = async () => {
 const loadShanghaiData = async () => {
   loading.value = true
   try {
-    const seasonId = gameStore.gameState?.current_season || 1
+    const seasonId = viewingSeason.value
 
     // 并行获取赛事列表和参赛队伍
     const [tournaments, qualifiedTeams] = await Promise.all([
@@ -1110,7 +1116,7 @@ const processTournamentCompletion = async (tournamentId: number) => {
  * 从后端模拟结果记录选手表现到数据中心系统
  */
 const recordPlayerPerformancesFromBackend = async (result: any) => {
-  const seasonId = gameStore.gameState?.current_season || mockBracket.seasonYear
+  const seasonId = viewingSeason.value
   const performances: RecordPerformanceParams[] = []
 
   // 遍历每局比赛的选手表现

@@ -329,7 +329,7 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Trophy,
@@ -361,12 +361,16 @@ import { createLogger } from '@/utils/logger'
 const logger = createLogger('SuperDetail')
 
 const router = useRouter()
+const route = useRoute()
 const gameStore = useGameStore()
 const timeStore = useTimeStore()
 
 // Stores
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
+
+// 从 query 获取赛季（赛事管理页传入），否则使用当前赛季
+const viewingSeason = computed(() => Number(route.query.season) || gameStore.gameState?.current_season || 1)
 
 // 阶段检查
 const SUPER_PHASE = 'SUPER_INTERCONTINENTAL'
@@ -1684,7 +1688,7 @@ const initSuperData = async () => {
       return
     }
 
-    const seasonId = currentSave.current_season || 1
+    const seasonId = viewingSeason.value
 
     // 加载参赛队伍数据（Top 16）
     try {

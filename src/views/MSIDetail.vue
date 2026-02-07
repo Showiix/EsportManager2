@@ -282,6 +282,7 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Trophy,
@@ -305,11 +306,16 @@ import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('MSIDetail')
 
+const route = useRoute()
+
 // Stores
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
 const gameStore = useGameStore()
 const timeStore = useTimeStore()
+
+// 从 query 获取赛季（赛事管理页传入），否则使用当前赛季
+const viewingSeason = computed(() => Number(route.query.season) || gameStore.gameState?.current_season || 1)
 
 // 加载状态
 const loading = ref(false)
@@ -552,7 +558,7 @@ const refreshData = async () => {
 const loadMSIData = async () => {
   loading.value = true
   try {
-    const seasonId = gameStore.gameState?.current_season || 1
+    const seasonId = viewingSeason.value
 
     // 同时获取MSI赛事列表和参赛队伍分组
     const [tournaments, qualifiedTeams] = await Promise.all([
@@ -1335,7 +1341,7 @@ const formatDate = (dateString: string | undefined): string => {
  * 从后端模拟结果记录选手表现到数据中心系统
  */
 const recordPlayerPerformancesFromBackend = async (result: any) => {
-  const seasonId = gameStore.gameState?.current_season || mockMSIBracket.seasonYear
+  const seasonId = viewingSeason.value
   const performances: RecordPerformanceParams[] = []
 
   // 遍历每局比赛的选手表现

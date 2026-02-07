@@ -339,7 +339,7 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Trophy,
@@ -366,10 +366,14 @@ import { createLogger } from '@/utils/logger'
 const logger = createLogger('WorldsDetail')
 
 const router = useRouter()
+const route = useRoute()
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
 const gameStore = useGameStore()
 const timeStore = useTimeStore()
+
+// 从 query 获取赛季（赛事管理页传入），否则使用当前赛季
+const viewingSeason = computed(() => Number(route.query.season) || gameStore.gameState?.current_season || 1)
 
 // 后端数据状态
 const loading = ref(false)
@@ -431,7 +435,7 @@ const generateTeamPlayers = (teamId: string, teamName: string, regionId: string)
 const loadWorldsData = async () => {
   loading.value = true
   try {
-    const seasonId = gameStore.gameState?.current_season || 1
+    const seasonId = viewingSeason.value
     // 获取国际赛事列表
     const tournaments = await queryApi.getInternationalTournaments(seasonId)
     // 查找世界赛赛事
@@ -1642,7 +1646,7 @@ const processTournamentCompletion = async (tournamentId: number) => {
  * 从后端比赛结果记录选手表现数据到数据中心
  */
 const recordPlayerPerformancesFromBackend = async (result: any) => {
-  const seasonId = gameStore.gameState?.current_season || worldsBracket.seasonYear
+  const seasonId = viewingSeason.value
   const performances: RecordPerformanceParams[] = []
 
   // 遍历所有比赛，收集选手表现数据

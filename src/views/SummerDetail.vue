@@ -351,6 +351,9 @@ const gameStore = useGameStore()
 const timeStore = useTimeStore()
 const { lastMessage: timeLastMessage, timeState } = storeToRefs(timeStore)
 
+// 从 query 获取赛季（赛事管理页传入），否则使用当前赛季
+const viewingSeason = computed(() => Number(route.query.season) || gameStore.gameState?.current_season || 1)
+
 // 比赛详情弹窗状态
 const showMatchDetailDialog = ref(false)
 const currentMatchDetail = ref<MatchDetail | null>(null)
@@ -419,7 +422,7 @@ const loadTeams = async (regionId: number) => {
 // 加载当前赛区的夏季赛赛事
 const loadTournament = async (regionId: number) => {
   try {
-    const seasonId = gameStore.gameState?.current_season || 1
+    const seasonId = viewingSeason.value
     logger.debug('[SummerDetail] loadTournament: regionId=', regionId, ', seasonId=', seasonId)
     const tournaments = await queryApi.getRegionTournaments(regionId, seasonId)
     logger.debug('[SummerDetail] loadTournament: 获取到', tournaments.length, '个赛事')
@@ -820,7 +823,7 @@ const convertToMatchDetail = (result: any, match: any): MatchDetail => {
 
   return {
     matchId: `summer-${match.id}`,
-    seasonId: String(gameStore.gameState?.current_season || 1),
+    seasonId: String(viewingSeason.value),
     tournamentType: 'summer',
     teamAId: String(result.home_team_id),
     teamAName: result.home_team_name || match.homeTeam,

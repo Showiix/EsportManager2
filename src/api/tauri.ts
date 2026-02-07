@@ -2099,12 +2099,12 @@ export interface AnnualPointsDetail {
 
 export const pointsApi = {
   /** 获取年度积分排名 */
-  getRankings: () =>
-    invokeCommand<TeamAnnualPoints[]>('get_annual_points_ranking'),
+  getRankings: (seasonId?: number) =>
+    invokeCommand<TeamAnnualPoints[]>('get_annual_points_ranking', seasonId != null ? { seasonId } : undefined),
 
   /** 获取队伍的积分明细 */
-  getTeamPoints: (teamId: number) =>
-    invokeCommand<AnnualPointsDetail[]>('get_team_points_detail', { teamId }),
+  getTeamPoints: (teamId: number, seasonId?: number) =>
+    invokeCommand<AnnualPointsDetail[]>('get_team_points_detail', { teamId, ...(seasonId != null ? { seasonId } : {}) }),
 
   /** 获取赛事的积分发放记录 */
   getTournamentPoints: (tournamentId: number) =>

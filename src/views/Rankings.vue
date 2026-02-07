@@ -467,7 +467,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   UserFilled,
@@ -488,15 +488,17 @@ import { teamApi, queryApi, pointsApi } from '@/api/tauri'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
 import type { Team, Region, TeamAnnualPoints, AnnualPointsDetail } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
+import { useSeasonStore } from '@/stores/useSeasonStore'
 
 const logger = createLogger('Rankings')
 
 const router = useRouter()
+const seasonStore = useSeasonStore()
 
 // 状态
 const activeTab = ref('annual')
 const selectedRegion = ref('')
-const selectedSeason = ref(1)
+const selectedSeason = ref(seasonStore.currentSeason)
 const pointsDetailVisible = ref(false)
 const selectedTeam = ref<any>(null)
 const loading = ref(false)
@@ -514,15 +516,48 @@ const annualRankings = ref<any[]>([])
 // 数据 - 战力排名榜
 const powerRankings = ref<any[]>([])
 
+// 加载积分排名数据（可按赛季重新加载）
+async function loadPointsRankings(seasonId: number) {
+  const pointsRankings = await pointsApi.getRankings(seasonId)
+
+  // 为有积分的队伍加载积分明细
+  const teamsWithPoints = pointsRankings.filter((item: TeamAnnualPoints) => item.total_points > 0)
+  const detailsPromises = teamsWithPoints.map((item: TeamAnnualPoints) =>
+    pointsApi.getTeamPoints(item.team_id, seasonId).then(details => ({ teamId: item.team_id, details }))
+  )
+  const allDetails = await Promise.all(detailsPromises)
+
+  // 解析每个队伍的积分明细并缓存
+  allTeamPointsCache.value.clear()
+  allDetails.forEach(({ teamId, details }) => {
+    const parsed = parseTeamPointsDetails(details)
+    allTeamPointsCache.value.set(teamId, parsed)
+  })
+
+  // 使用积分排名API数据，并附加解析后的积分明细
+  annualRankings.value = pointsRankings.map((item: TeamAnnualPoints) => {
+    const cached = allTeamPointsCache.value.get(item.team_id)
+    return {
+      id: item.team_id,
+      name: item.team_name,
+      short: item.team_short_name || item.team_name.slice(0, 3),
+      region: item.region_code,
+      points: item.total_points,
+      rank: item.rank,
+      tournamentsCount: item.tournaments_count,
+      pointsBreakdown: cached || null,
+    }
+  })
+}
+
 // 加载数据
 onMounted(async () => {
   loading.value = true
   try {
     // 并行加载队伍、赛区和积分排名数据
-    const [teams, regions, pointsRankings] = await Promise.all([
+    const [teams, regions] = await Promise.all([
       teamApi.getAllTeams(),
       queryApi.getAllRegions(),
-      pointsApi.getRankings(),
     ])
 
     // 构建赛区ID到赛区代码的映射
@@ -530,36 +565,8 @@ onMounted(async () => {
       regionsMap.value.set(region.id, region.code)
     })
 
-    // 为有积分的队伍加载积分明细
-    const teamsWithPoints = pointsRankings.filter((item: TeamAnnualPoints) => item.total_points > 0)
-    const detailsPromises = teamsWithPoints.map((item: TeamAnnualPoints) =>
-      pointsApi.getTeamPoints(item.team_id).then(details => ({ teamId: item.team_id, details }))
-    )
-    const allDetails = await Promise.all(detailsPromises)
-
-    // 解析每个队伍的积分明细并缓存
-    allDetails.forEach(({ teamId, details }) => {
-      const parsed = parseTeamPointsDetails(details)
-      allTeamPointsCache.value.set(teamId, parsed)
-    })
-
-    // 使用积分排名API数据，并附加解析后的积分明细
-    const annualData = pointsRankings.map((item: TeamAnnualPoints) => {
-      const cached = allTeamPointsCache.value.get(item.team_id)
-      return {
-        id: item.team_id,
-        name: item.team_name,
-        short: item.team_short_name || item.team_name.slice(0, 3),
-        region: item.region_code,
-        points: item.total_points,
-        rank: item.rank,
-        tournamentsCount: item.tournaments_count,
-        // 各赛事积分
-        pointsBreakdown: cached || null,
-      }
-    })
-
-    annualRankings.value = annualData
+    // 加载积分排名
+    await loadPointsRankings(selectedSeason.value)
 
     // 处理战力排名榜数据
     const powerData = teams
@@ -577,6 +584,18 @@ onMounted(async () => {
     powerRankings.value = powerData
   } catch (error) {
     logger.error('Failed to load rankings data:', error)
+  } finally {
+    loading.value = false
+  }
+})
+
+// 赛季切换时重新加载积分数据
+watch(selectedSeason, async (newSeason) => {
+  loading.value = true
+  try {
+    await loadPointsRankings(newSeason)
+  } catch (error) {
+    logger.error('Failed to reload rankings for season:', newSeason, error)
   } finally {
     loading.value = false
   }
@@ -760,7 +779,7 @@ const showPointsDetail = async (team: any) => {
 
   // 加载队伍积分明细
   try {
-    teamPointsDetails.value = await pointsApi.getTeamPoints(team.id)
+    teamPointsDetails.value = await pointsApi.getTeamPoints(team.id, selectedSeason.value)
     logger.debug('[Rankings] Team points details for team', team.id, ':', teamPointsDetails.value)
     logger.debug('[Rankings] selectedTeamDetail computed:', selectedTeamDetail.value)
   } catch (error) {

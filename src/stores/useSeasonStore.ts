@@ -1,12 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import { useGameStore } from './useGameStore'
+import { useTimeStore } from './useTimeStore'
 
 export const useSeasonStore = defineStore('season', () => {
-  const gameStore = useGameStore()
+  const timeStore = useTimeStore()
 
-  // 当前活跃赛季（来自后端）
-  const currentSeason = computed(() => gameStore.currentSeason || 1)
+  // 当前活跃赛季（来自 timeStore，每次时间操作后自动更新）
+  const currentSeason = computed(() => timeStore.currentSeason || 1)
 
   // 各页面正在查看的赛季（默认当前赛季）
   const viewingSeason = ref(1)

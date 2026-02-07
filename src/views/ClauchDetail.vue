@@ -305,6 +305,9 @@ const playerStore = usePlayerStore()
 const timeStore = useTimeStore()
 const gameStore = useGameStore()
 
+// 从 query 获取赛季（赛事管理页传入），否则使用当前赛季
+const viewingSeason = computed(() => Number(route.query.season) || gameStore.gameState?.current_season || 1)
+
 // 阶段检查
 const CLAUCH_PHASE = 'CLAUDE_INTERCONTINENTAL'
 const phaseNotReached = computed(() => {
@@ -1252,7 +1255,7 @@ onMounted(async () => {
       // 如果没有ID，尝试按类型查找赛事
       const currentSave = gameStore.currentSave
       if (currentSave) {
-        const seasonId = currentSave.current_season || 1
+        const seasonId = viewingSeason.value
         // 获取 Claude 洲际赛 (类型为 'Clauch')
         const tournaments = await internationalApi.getTournamentsByType('Clauch', seasonId)
         if (tournaments && tournaments.length > 0) {

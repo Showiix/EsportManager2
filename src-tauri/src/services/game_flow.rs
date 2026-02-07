@@ -145,63 +145,106 @@ impl GameFlowService {
         match phase {
             // 春季常规赛 - 为4个赛区各创建一个常规赛赛事
             SeasonPhase::SpringRegular => {
-                for region_id in 1..=4 {
+                // 先获取已存在的春季常规赛赛事
+                let existing_spring = TournamentRepository::get_by_season_and_type(
+                    pool, save_id, season_id, "SpringRegular"
+                ).await.map_err(|e| e.to_string())?;
+                println!("[SpringRegular] 已存在的春季常规赛数量: {}", existing_spring.len());
+
+                // 从数据库获取实际的赛区ID（不硬编码1..=4）
+                let region_ids: Vec<u64> = sqlx::query_as::<_, (i64,)>(
+                    "SELECT DISTINCT region_id FROM teams WHERE save_id = ? ORDER BY region_id"
+                )
+                .bind(save_id)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| e.to_string())?
+                .iter()
+                .map(|r| r.0 as u64)
+                .collect();
+                println!("[SpringRegular] 实际赛区ID: {:?}", region_ids);
+
+                for region_id in region_ids {
                     let region_name = get_region_name(region_id);
-                    let tournament = Tournament {
-                        id: 0,
-                        save_id: save_id.to_string(),
-                        season_id,
-                        tournament_type: TournamentType::SpringRegular,
-                        name: format!("S{} {} 春季赛", season_id, region_name),
-                        region_id: Some(region_id),
-                        status: TournamentStatus::Upcoming,
-                        current_stage: None,
-                        current_round: None,
+                    println!("[SpringRegular] 处理赛区: {} (region_id={})", region_name, region_id);
+
+                    // 检查该赛区的春季常规赛是否已存在
+                    let existing = existing_spring.iter()
+                        .find(|t| t.region_id == Some(region_id));
+
+                    let id = if let Some(t) = existing {
+                        println!("[SpringRegular] {} 春季赛已存在, id={}", region_name, t.id);
+                        t.id
+                    } else {
+                        // 创建新赛事
+                        println!("[SpringRegular] {} 春季赛不存在，创建新赛事", region_name);
+                        let tournament = Tournament {
+                            id: 0,
+                            save_id: save_id.to_string(),
+                            season_id,
+                            tournament_type: TournamentType::SpringRegular,
+                            name: format!("S{} {} 春季赛", season_id, region_name),
+                            region_id: Some(region_id),
+                            status: TournamentStatus::Upcoming,
+                            current_stage: None,
+                            current_round: None,
+                        };
+
+                        TournamentRepository::create(pool, save_id, &tournament)
+                            .await
+                            .map_err(|e| e.to_string())?
                     };
 
-                    let id = TournamentRepository::create(pool, save_id, &tournament)
+                    // 检查是否已有比赛
+                    let match_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
+                        .bind(id as i64)
+                        .fetch_one(pool)
                         .await
                         .map_err(|e| e.to_string())?;
+                    println!("[SpringRegular] {} 春季赛 id={} 已有比赛数: {}", region_name, id, match_count.0);
 
-                    // 获取赛区队伍并生成赛程
-                    let teams = TeamRepository::get_by_region(pool, save_id, region_id)
-                        .await
-                        .map_err(|e| e.to_string())?;
-
-                    if teams.len() >= 8 {
-                        let matches = self
-                            .league_service
-                            .generate_regular_schedule(id, &teams);
-                        MatchRepository::create_batch(pool, save_id, &matches)
+                    if match_count.0 == 0 {
+                        // 获取赛区队伍并生成赛程
+                        let teams = TeamRepository::get_by_region(pool, save_id, region_id)
                             .await
                             .map_err(|e| e.to_string())?;
 
-                        // 初始化积分榜
-                        let standings: Vec<LeagueStanding> = teams
-                            .iter()
-                            .map(|team| LeagueStanding {
-                                id: 0,
-                                tournament_id: id,
-                                team_id: team.id,
-                                rank: None,
-                                matches_played: 0,
-                                wins: 0,
-                                losses: 0,
-                                points: 0,
-                                games_won: 0,
-                                games_lost: 0,
-                                game_diff: 0,
-                            })
-                            .collect();
+                        if teams.len() >= 8 {
+                            let matches = self
+                                .league_service
+                                .generate_regular_schedule(id, &teams);
+                            println!("[SpringRegular] {} 生成比赛数: {}", region_name, matches.len());
+                            MatchRepository::create_batch(pool, save_id, &matches)
+                                .await
+                                .map_err(|e| e.to_string())?;
 
-                        StandingRepository::upsert_batch(pool, save_id, &standings)
-                            .await
-                            .map_err(|e| e.to_string())?;
+                            // 初始化积分榜
+                            let standings: Vec<LeagueStanding> = teams
+                                .iter()
+                                .map(|team| LeagueStanding {
+                                    id: 0,
+                                    tournament_id: id,
+                                    team_id: team.id,
+                                    rank: None,
+                                    matches_played: 0,
+                                    wins: 0,
+                                    losses: 0,
+                                    points: 0,
+                                    games_won: 0,
+                                    games_lost: 0,
+                                    game_diff: 0,
+                                })
+                                .collect();
+
+                            StandingRepository::upsert_batch(pool, save_id, &standings)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                        }
                     }
 
                     tournaments_created.push(TournamentCreated {
                         id,
-                        name: tournament.name,
+                        name: format!("S{} {} 春季赛", season_id, region_name),
                         tournament_type: format!("{:?}", TournamentType::SpringRegular),
                         region: Some(region_name.to_string()),
                     });
@@ -469,7 +512,17 @@ impl GameFlowService {
 
                     // 如果队伍不足32支，用各赛区其他队伍填充
                     if teams.len() < 32 {
-                        for region_id in 1..=4 {
+                        let fill_region_ids: Vec<u64> = sqlx::query_as::<_, (i64,)>(
+                            "SELECT DISTINCT region_id FROM teams WHERE save_id = ? ORDER BY region_id"
+                        )
+                        .bind(save_id)
+                        .fetch_all(pool)
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .iter()
+                        .map(|r| r.0 as u64)
+                        .collect();
+                        for region_id in fill_region_ids {
                             let region_teams = TeamRepository::get_by_region(pool, save_id, region_id)
                                 .await
                                 .map_err(|e| e.to_string())?;
@@ -779,7 +832,17 @@ impl GameFlowService {
 
                     // 如果队伍不足32支，用各赛区其他队伍填充
                     if teams.len() < 32 {
-                        for region_id in 1..=4 {
+                        let fill_region_ids: Vec<u64> = sqlx::query_as::<_, (i64,)>(
+                            "SELECT DISTINCT region_id FROM teams WHERE save_id = ? ORDER BY region_id"
+                        )
+                        .bind(save_id)
+                        .fetch_all(pool)
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .iter()
+                        .map(|r| r.0 as u64)
+                        .collect();
+                        for region_id in fill_region_ids {
                             let region_teams = TeamRepository::get_by_region(pool, save_id, region_id)
                                 .await
                                 .map_err(|e| e.to_string())?;
@@ -3015,13 +3078,14 @@ impl GameFlowService {
         let mut confirmed_count = 0u32;
 
         for team in &teams {
+            let mut team_confirmed = 0u32;
             for pos in &positions {
                 // 找到该队伍该位置能力最高的选手
                 let result = sqlx::query(
                     r#"
-                    SELECT id FROM players
+                    SELECT id, game_id, ability, position FROM players
                     WHERE save_id = ? AND team_id = ? AND status = 'Active'
-                      AND position = ?
+                      AND UPPER(position) = UPPER(?)
                     ORDER BY ability DESC
                     LIMIT 1
                     "#,
@@ -3041,7 +3105,32 @@ impl GameFlowService {
                         .await
                         .map_err(|e| format!("设置首发失败: {}", e))?;
                     confirmed_count += 1;
+                    team_confirmed += 1;
+                } else {
+                    // 打印该队伍所有选手的位置信息，帮助排查
+                    let all_players: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+                        "SELECT id, game_id, position, status, ability FROM players WHERE save_id = ? AND team_id = ? ORDER BY position"
+                    )
+                    .bind(save_id)
+                    .bind(team.id as i64)
+                    .fetch_all(pool)
+                    .await
+                    .unwrap_or_default();
+
+                    let player_info: Vec<String> = all_players.iter().map(|p| {
+                        format!("{}({}, {}, ability={})",
+                            p.get::<String, _>("game_id"),
+                            p.get::<String, _>("position"),
+                            p.get::<String, _>("status"),
+                            p.get::<i64, _>("ability"))
+                    }).collect();
+
+                    println!("[auto_confirm_starters] 警告: 战队 {} (id={}) 缺少 {} 位置的选手! 该队所有选手: {:?}",
+                        team.name, team.id, pos, player_info);
                 }
+            }
+            if team_confirmed < 5 {
+                println!("[auto_confirm_starters] 战队 {} (id={}) 只确认了 {}/5 名首发!", team.name, team.id, team_confirmed);
             }
         }
 
@@ -3170,8 +3259,8 @@ impl GameFlowService {
         // 获取可用操作
         let available_actions = self.get_available_actions(current_phase, &phase_status);
 
-        // 判断是否可以推进
-        let can_advance = phase_status == PhaseStatus::Completed;
+        // 判断是否可以推进（需要已完成且存在下一阶段）
+        let can_advance = phase_status == PhaseStatus::Completed && current_phase.next().is_some();
 
         // 获取下一阶段
         let next_phase = current_phase.next().map(|p| p.name().to_string());

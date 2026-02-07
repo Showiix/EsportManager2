@@ -4,7 +4,10 @@
     <div class="page-header">
       <div>
         <h1>赛事管理</h1>
-        <p>{{ currentSeason }} 赛季赛事概览</p>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <p>赛事概览</p>
+          <SeasonSelector v-model="selectedSeason" />
+        </div>
       </div>
       <div class="header-actions">
         <el-button type="warning" @click="handleFixTournamentStatus" :loading="isFixing">
@@ -113,7 +116,7 @@
             <div class="tournament-info">
               <div class="info-item">
                 <el-icon><Trophy /></el-icon>
-                <span>S{{ gameState?.current_season }} 赛季</span>
+                <span>S{{ selectedSeason }} 赛季</span>
               </div>
               <div class="info-item" v-if="group.regions.length > 0">
                 <el-icon><UserFilled /></el-icon>
@@ -197,7 +200,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
@@ -213,17 +216,23 @@ import {
 } from '@element-plus/icons-vue'
 import { useTournamentStoreTauri } from '@/stores/useTournamentStoreTauri'
 import { useGameStore } from '@/stores/useGameStore'
+import { useSeasonStore } from '@/stores/useSeasonStore'
 import { queryApi, timeApi } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
+import SeasonSelector from '@/components/common/SeasonSelector.vue'
 
 const logger = createLogger('Tournaments')
 
 const router = useRouter()
 const tournamentStore = useTournamentStoreTauri()
 const gameStore = useGameStore()
+const seasonStore = useSeasonStore()
 
 // 从 store 获取响应式数据
 const { currentSeason, gameState } = storeToRefs(gameStore)
+
+// 赛季选择
+const selectedSeason = ref(0)
 
 // 本地赛事列表（合并赛季赛事和国际赛事）
 const tournaments = ref<any[]>([])
@@ -232,18 +241,24 @@ const isFixing = ref(false)
 
 // 初始化加载数据
 onMounted(async () => {
+  selectedSeason.value = seasonStore.currentSeason
   await loadAllTournaments()
+})
+
+// 监听赛季切换
+watch(selectedSeason, () => {
+  loadAllTournaments()
 })
 
 // 加载所有赛事（赛季 + 国际）
 const loadAllTournaments = async () => {
-  if (!gameState.value?.current_season) {
-    logger.debug('No current season')
+  if (!selectedSeason.value) {
+    logger.debug('No season selected')
     return
   }
 
   isLoading.value = true
-  const seasonId = gameState.value.current_season
+  const seasonId = selectedSeason.value
   logger.debug('Loading tournaments for season:', seasonId)
 
   try {
@@ -490,38 +505,41 @@ const navigateToDetail = (tournament: any) => {
   // 根据赛事类型跳转到不同的详情页
   // 后端返回 PascalCase 格式如 SpringRegular，直接比较原始值
   const type = tournament.tournament_type || ''
+  const seasonQuery = { season: String(selectedSeason.value) }
 
   // 联赛 - 根据类型跳转
   if (type === 'SpringRegular') {
-    router.push(`/tournaments/spring/${tournament.id}`)
+    router.push({ path: `/tournaments/spring/${tournament.id}`, query: seasonQuery })
   } else if (type === 'SpringPlayoffs') {
-    router.push(`/tournaments/spring-playoffs/${tournament.id}`)
+    router.push({ path: `/tournaments/spring-playoffs/${tournament.id}`, query: seasonQuery })
   } else if (type === 'SummerRegular') {
-    router.push(`/tournaments/summer/${tournament.id}`)
+    router.push({ path: `/tournaments/summer/${tournament.id}`, query: seasonQuery })
   } else if (type === 'SummerPlayoffs') {
-    router.push(`/tournaments/summer-playoffs/${tournament.id}`)
+    router.push({ path: `/tournaments/summer-playoffs/${tournament.id}`, query: seasonQuery })
   } else if (type === 'Msi') {
-    router.push('/tournaments/msi')
+    router.push({ path: '/tournaments/msi', query: seasonQuery })
   } else if (type === 'WorldChampionship') {
-    router.push('/tournaments/worlds')
+    router.push({ path: '/tournaments/worlds', query: seasonQuery })
   } else if (type === 'ShanghaiMasters') {
-    router.push('/tournaments/shanghai')
+    router.push({ path: '/tournaments/shanghai', query: seasonQuery })
   } else if (type === 'MadridMasters') {
-    router.push(`/tournaments/madrid/${tournament.id}`)
+    router.push({ path: `/tournaments/madrid/${tournament.id}`, query: seasonQuery })
   } else if (type === 'ClaudeIntercontinental') {
-    router.push(`/tournaments/clauch/${tournament.id}`)
+    router.push({ path: `/tournaments/clauch/${tournament.id}`, query: seasonQuery })
   } else if (type === 'IcpIntercontinental') {
-    router.push(`/tournaments/icp/${tournament.id}`)
+    router.push({ path: `/tournaments/icp/${tournament.id}`, query: seasonQuery })
   } else if (type === 'SuperIntercontinental') {
-    router.push(`/tournaments/super/${tournament.id}`)
+    router.push({ path: `/tournaments/super/${tournament.id}`, query: seasonQuery })
   } else {
     // 默认跳转
-    router.push(`/tournaments/${tournament.id}`)
+    router.push({ path: `/tournaments/${tournament.id}`, query: seasonQuery })
   }
 }
 
 // 导航到合并的赛事组详情
 const navigateToGroup = async (group: TournamentGroup) => {
+  const seasonQuery = { season: String(selectedSeason.value) }
+
   // 国际赛事直接跳转到原有页面
   if (!group.isLeague && group.originalTournament) {
     await tournamentStore.selectTournament(group.originalTournament.id)
@@ -537,15 +555,15 @@ const navigateToGroup = async (group: TournamentGroup) => {
     // 根据类型跳转，传入 regionGroup 参数表示需要显示赛区选择
     const type = group.type
     if (type === 'SpringRegular') {
-      router.push({ path: `/tournaments/spring/${firstTournament.id}`, query: { grouped: 'true' } })
+      router.push({ path: `/tournaments/spring/${firstTournament.id}`, query: { grouped: 'true', ...seasonQuery } })
     } else if (type === 'SpringPlayoffs') {
-      router.push({ path: `/tournaments/spring-playoffs/${firstTournament.id}`, query: { grouped: 'true' } })
+      router.push({ path: `/tournaments/spring-playoffs/${firstTournament.id}`, query: { grouped: 'true', ...seasonQuery } })
     } else if (type === 'SummerRegular') {
-      router.push({ path: `/tournaments/summer/${firstTournament.id}`, query: { grouped: 'true' } })
+      router.push({ path: `/tournaments/summer/${firstTournament.id}`, query: { grouped: 'true', ...seasonQuery } })
     } else if (type === 'SummerPlayoffs') {
-      router.push({ path: `/tournaments/summer-playoffs/${firstTournament.id}`, query: { grouped: 'true' } })
+      router.push({ path: `/tournaments/summer-playoffs/${firstTournament.id}`, query: { grouped: 'true', ...seasonQuery } })
     } else {
-      router.push(`/tournaments/${firstTournament.id}`)
+      router.push({ path: `/tournaments/${firstTournament.id}`, query: seasonQuery })
     }
   }
 }

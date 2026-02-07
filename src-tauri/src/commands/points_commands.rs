@@ -32,6 +32,7 @@ pub struct TeamPointsDetail {
 #[tauri::command]
 pub async fn get_annual_points_ranking(
     state: State<'_, AppState>,
+    season_id: Option<u64>,
 ) -> Result<CommandResult<Vec<TeamAnnualPoints>>, String> {
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
@@ -50,13 +51,19 @@ pub async fn get_annual_points_ranking(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
     };
 
-    // 获取当前赛季
-    let save = match SaveRepository::get_by_id(&pool, &save_id).await {
-        Ok(s) => s,
-        Err(e) => return Ok(CommandResult::err(format!("Failed to get save: {}", e))),
+    // 使用传入的赛季ID，或回退到当前赛季
+    let target_season = match season_id {
+        Some(s) => s,
+        None => {
+            let save = match SaveRepository::get_by_id(&pool, &save_id).await {
+                Ok(s) => s,
+                Err(e) => return Ok(CommandResult::err(format!("Failed to get save: {}", e))),
+            };
+            save.current_season as u64
+        }
     };
 
-    match PointsRepository::get_season_rankings(&pool, &save_id, save.current_season as u64).await {
+    match PointsRepository::get_season_rankings(&pool, &save_id, target_season).await {
         Ok(rankings) => Ok(CommandResult::ok(rankings)),
         Err(e) => Ok(CommandResult::err(format!("Failed to get rankings: {}", e))),
     }
@@ -67,6 +74,7 @@ pub async fn get_annual_points_ranking(
 pub async fn get_team_points_detail(
     state: State<'_, AppState>,
     team_id: u64,
+    season_id: Option<u64>,
 ) -> Result<CommandResult<Vec<AnnualPointsDetail>>, String> {
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
@@ -85,13 +93,19 @@ pub async fn get_team_points_detail(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
     };
 
-    // 获取当前赛季
-    let save = match SaveRepository::get_by_id(&pool, &save_id).await {
-        Ok(s) => s,
-        Err(e) => return Ok(CommandResult::err(format!("Failed to get save: {}", e))),
+    // 使用传入的赛季ID，或回退到当前赛季
+    let target_season = match season_id {
+        Some(s) => s,
+        None => {
+            let save = match SaveRepository::get_by_id(&pool, &save_id).await {
+                Ok(s) => s,
+                Err(e) => return Ok(CommandResult::err(format!("Failed to get save: {}", e))),
+            };
+            save.current_season as u64
+        }
     };
 
-    match PointsRepository::get_team_season_points(&pool, &save_id, save.current_season as u64, team_id).await {
+    match PointsRepository::get_team_season_points(&pool, &save_id, target_season, team_id).await {
         Ok(details) => Ok(CommandResult::ok(details)),
         Err(e) => Ok(CommandResult::err(format!("Failed to get team points: {}", e))),
     }

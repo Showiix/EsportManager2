@@ -16,6 +16,19 @@
 
     <!-- 当前赛季：显示操作界面 -->
     <template v-if="!isViewingHistory">
+      <!-- 非转会期警告 -->
+      <el-alert
+        v-if="!isTransferPhase"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="phase-warning"
+      >
+        <template #title>
+          当前阶段：{{ timeStore.phaseDisplayName }}，需要在时间推进面板推进到转会期阶段才能操作
+        </template>
+      </el-alert>
+
       <!-- 流程说明 -->
       <el-card class="intro-card">
         <div class="intro-content">
@@ -50,7 +63,16 @@
           </div>
 
           <div class="action-status">
-            <template v-if="transferInProgress">
+            <template v-if="!isTransferPhase">
+              <el-tag type="info" size="large" class="status-tag">
+                <span class="tag-content"><el-icon><Warning /></el-icon> 未到转会期</span>
+              </el-tag>
+              <el-button type="info" size="large" disabled>
+                <el-icon><VideoPlay /></el-icon>
+                未到转会期阶段
+              </el-button>
+            </template>
+            <template v-else-if="transferInProgress">
               <el-tag type="success" size="large" class="status-tag">
                 <span class="tag-content"><el-icon><VideoPlay /></el-icon> 转会期进行中 (第{{ transferStore.currentRound }}轮)</span>
               </el-tag>
@@ -223,6 +245,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useTransferWindowStore, ROUND_NAMES } from '@/stores/useTransferWindowStore'
 import { useSeasonStore } from '@/stores/useSeasonStore'
+import { useTimeStore } from '@/stores/useTimeStore'
 import { queryApi, transferWindowApi } from '@/api/tauri'
 import type { TransferWindowResponse, TransferReport } from '@/api/tauri'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
@@ -246,6 +269,10 @@ interface Team {
 const router = useRouter()
 const transferStore = useTransferWindowStore()
 const seasonStore = useSeasonStore()
+const timeStore = useTimeStore()
+
+// 是否在转会期阶段
+const isTransferPhase = computed(() => timeStore.isInTransferWindow)
 
 // 赛季选择
 const selectedSeason = ref(0)
@@ -800,6 +827,11 @@ onMounted(async () => {
   font-size: 16px;
   font-weight: 700;
   color: #303133;
+}
+
+.phase-warning {
+  margin-bottom: 20px;
+  border-radius: 8px;
 }
 
 .history-actions {

@@ -91,7 +91,7 @@ export const useTimeStore = defineStore('time', () => {
   // 是否在赛事阶段
   const isInTournamentPhase = computed(() => {
     const phase = currentPhase.value
-    return !['TransferWindow', 'Draft', 'SeasonEnd'].includes(phase)
+    return !['TransferWindow', 'Draft', 'SeasonEnd', 'AnnualAwards'].includes(phase)
   })
 
   // 是否在转会期

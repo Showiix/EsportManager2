@@ -6,9 +6,12 @@
         <div class="confetti" v-for="i in 20" :key="i" :style="getConfettiStyle(i)"></div>
       </div>
       <div class="header-content">
-        <div class="season-badge">第 {{ currentSeason }} 赛季</div>
+        <div class="season-badge">第 {{ selectedSeason }} 赛季</div>
         <h1 class="ceremony-title">年度颁奖典礼</h1>
         <p class="ceremony-subtitle">表彰本赛季最出色的选手们</p>
+        <div class="season-selector-wrapper">
+          <SeasonSelector v-model="selectedSeason" />
+        </div>
       </div>
     </div>
 
@@ -184,24 +187,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useGameStore } from '@/stores/useGameStore'
+import { useSeasonStore } from '@/stores/useSeasonStore'
 import { tauriApi } from '@/api/tauri'
 import type { AnnualAwardsData } from '@/api/tauri'
 import type { PlayerPosition } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
 import { createLogger } from '@/utils/logger'
+import SeasonSelector from '@/components/common/SeasonSelector.vue'
 
 const logger = createLogger('AnnualAwards')
 
 const router = useRouter()
-const gameStore = useGameStore()
+const seasonStore = useSeasonStore()
 
 const loading = ref(false)
 const awardsData = ref<AnnualAwardsData | null>(null)
-
-const currentSeason = computed(() => gameStore.currentSeason || 1)
+const selectedSeason = ref(seasonStore.currentSeason)
 
 // MVP选手 (Top20的第一名)
 const mvpPlayer = computed(() => {
@@ -218,10 +221,10 @@ const sortedAllPro = computed(() => {
 })
 
 // 获取颁奖数据
-const fetchAwardsData = async () => {
+const fetchAwardsData = async (seasonId?: number) => {
   loading.value = true
   try {
-    awardsData.value = await tauriApi.awards.getAnnualAwardsData()
+    awardsData.value = await tauriApi.awards.getAnnualAwardsData(seasonId)
   } catch (error) {
     logger.error('获取颁奖数据失败:', error)
   } finally {
@@ -231,7 +234,7 @@ const fetchAwardsData = async () => {
 
 // 跳转到选手详情
 const goToPlayer = (playerId: number) => {
-  router.push(`/data-center/player/${playerId}?season=S${currentSeason.value}`)
+  router.push(`/data-center/player/${playerId}?season=S${selectedSeason.value}`)
 }
 
 // 返回
@@ -287,7 +290,12 @@ const getConfettiStyle = (index: number) => {
 }
 
 onMounted(() => {
-  fetchAwardsData()
+  fetchAwardsData(selectedSeason.value)
+})
+
+// 赛季切换时重新加载数据
+watch(selectedSeason, (newSeason) => {
+  fetchAwardsData(newSeason)
 })
 </script>
 
@@ -354,6 +362,12 @@ onMounted(() => {
     font-size: 18px;
     color: rgba(255, 255, 255, 0.8);
     margin: 0;
+  }
+
+  .season-selector-wrapper {
+    margin-top: 16px;
+    display: flex;
+    justify-content: center;
   }
 }
 

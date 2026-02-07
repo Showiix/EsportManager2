@@ -539,8 +539,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
@@ -561,12 +561,16 @@ import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('SummerPlayoffsDetail')
 
+const route = useRoute()
 const router = useRouter()
 
 // Stores
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
 const gameStore = useGameStore()
+
+// 从 query 获取赛季（赛事管理页传入），否则使用当前赛季
+const viewingSeason = computed(() => Number(route.query.season) || gameStore.gameState?.current_season || 1)
 
 // 比赛详情弹窗状态
 const showMatchDetailDialog = ref(false)
@@ -693,7 +697,7 @@ const loadTeams = async (regionId: number) => {
 
 const loadTournament = async (regionId: number) => {
   try {
-    const seasonId = gameStore.gameState?.current_season || 1
+    const seasonId = viewingSeason.value
     const tournaments = await queryApi.getRegionTournaments(regionId, seasonId)
     const summerPlayoffs = tournaments.find(t => t.tournament_type === 'SummerPlayoffs')
     if (summerPlayoffs) {
@@ -706,7 +710,7 @@ const loadTournament = async (regionId: number) => {
 
 const checkRegularSeasonStatus = async (regionId: number) => {
   try {
-    const seasonId = gameStore.gameState?.current_season || 1
+    const seasonId = viewingSeason.value
     const tournaments = await queryApi.getRegionTournaments(regionId, seasonId)
     const summerRegular = tournaments.find(t => t.tournament_type === 'SummerRegular')
 
@@ -726,7 +730,7 @@ const checkRegularSeasonStatus = async (regionId: number) => {
 
 const loadStandings = async (regionId: number) => {
   try {
-    const seasonId = gameStore.gameState?.current_season || 1
+    const seasonId = viewingSeason.value
     const tournaments = await queryApi.getRegionTournaments(regionId, seasonId)
     const summerRegular = tournaments.find(t => t.tournament_type === 'SummerRegular')
     if (summerRegular) {
