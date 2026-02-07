@@ -54,14 +54,6 @@ pub struct DraftAuctionConfig {
     pub max_rounds: u32,
     /// 联盟佣金比例
     pub commission_rate: f64,
-    /// 财务困难时卖签概率
-    pub bankrupt_sell_prob: f64,
-    /// 阵容充足时卖签概率
-    pub roster_full_sell_prob: f64,
-    /// 低顺位卖签概率
-    pub low_pick_sell_prob: f64,
-    /// 中顺位财务好时卖签概率
-    pub mid_pick_wealthy_sell_prob: f64,
 }
 
 impl Default for DraftAuctionConfig {
@@ -69,10 +61,6 @@ impl Default for DraftAuctionConfig {
         Self {
             max_rounds: 3,
             commission_rate: COMMISSION_RATE,
-            bankrupt_sell_prob: 0.80,
-            roster_full_sell_prob: 0.60,
-            low_pick_sell_prob: 0.30,
-            mid_pick_wealthy_sell_prob: 0.15,
         }
     }
 }
@@ -250,24 +238,52 @@ impl DraftAuctionEngine {
         new_events
     }
 
-    /// AI 卖签决策（简化版本）
+    /// AI 卖签决策（4因素相乘模型）
     fn evaluate_sell_decision(&self, team_info: &TeamAuctionInfo, position: u32, rng: &mut impl Rng) -> bool {
-        let mut base_prob: f64 = 0.2; // 基础卖签概率
+        // 1. 财务动机（越穷越想卖）
+        let financial_motivation: f64 = match team_info.financial_status {
+            FinancialStatus::Bankrupt => 0.70,
+            FinancialStatus::Deficit  => 0.50,
+            FinancialStatus::Tight    => 0.25,
+            FinancialStatus::Healthy  => 0.10,
+            FinancialStatus::Wealthy  => 0.05,
+        };
 
-        // 1. 财务困难大幅提高
-        if matches!(team_info.financial_status, FinancialStatus::Bankrupt | FinancialStatus::Deficit) {
-            base_prob += 0.50;
-        }
+        // 2. 签位留存系数（高签越不想卖）
+        let pick_retention = match position {
+            1      => 0.10,
+            2      => 0.15,
+            3      => 0.20,
+            4..=5  => 0.40,
+            6..=8  => 0.60,
+            9..=10 => 0.80,
+            11..=12 => 1.00,
+            _      => 1.20,
+        };
 
-        // 2. 签位价值（高顺位签更难卖）
-        base_prob *= if position <= 3 { 0.3 } else if position >= 10 { 1.5 } else { 1.0 };
+        // 3. 阵容系数（缺人保签，满员甩签）
+        let roster_factor = if team_info.roster_count < 5 {
+            0.10
+        } else if team_info.roster_count < 7 {
+            0.50
+        } else if team_info.roster_count >= 9 {
+            1.50
+        } else {
+            1.00
+        };
 
-        // 3. 阵容需求（缺人保留签）
-        if team_info.roster_count < 6 {
-            base_prob *= 0.4;
-        }
+        // 4. 球队实力（强队不需要高签，弱队保留高签重建）
+        let strength_factor = if team_info.avg_ability > 65.0 && position <= 5 {
+            1.30
+        } else if team_info.avg_ability < 55.0 && position <= 5 {
+            0.50
+        } else {
+            1.00
+        };
 
-        rng.gen::<f64>() < base_prob.clamp(0.0, 0.95)
+        let sell_prob: f64 = (financial_motivation * pick_retention * roster_factor * strength_factor)
+            .clamp(0.0, 0.90);
+        rng.gen::<f64>() < sell_prob
     }
 
     /// 执行一轮竞拍
@@ -465,114 +481,25 @@ impl DraftAuctionEngine {
     }
 
     /// AI 竞拍决策
-    fn evaluate_bid_decision(
-        &self,
-        team_info: &TeamAuctionInfo,
-        listing: &DraftPickListing,
-        current_round: u32,
-        rng: &mut impl Rng,
-    ) -> Option<i64> {
-        // 计算可用预算
-        let budget_ratio = match team_info.financial_status {
-            FinancialStatus::Wealthy => 0.40,
-            FinancialStatus::Healthy => 0.25,
-            FinancialStatus::Tight => 0.10,
-            FinancialStatus::Deficit => 0.05,
-            FinancialStatus::Bankrupt => 0.0,
-        };
-
-        let available_budget = (team_info.balance as f64 * budget_ratio) as i64;
-        let min_bid = listing.current_price + listing.min_increment;
-
-        // 预算不足
-        if available_budget < min_bid {
-            return None;
-        }
-
-        // 阵容已满(>=10人)不竞拍
-        if team_info.roster_count >= 10 {
-            return None;
-        }
-
-        // 计算竞拍意愿
-        let mut bid_probability = 0.0;
-
-        // 高顺位签(1-5)更有吸引力
-        if listing.draft_position <= 5 {
-            bid_probability += 0.40;
-        } else if listing.draft_position <= 10 {
-            bid_probability += 0.20;
-        } else {
-            bid_probability += 0.10;
-        }
-
-        // 财务状况影响
-        bid_probability *= match team_info.financial_status {
-            FinancialStatus::Wealthy => 1.5,
-            FinancialStatus::Healthy => 1.0,
-            FinancialStatus::Tight => 0.5,
-            _ => 0.0,
-        };
-
-        // 阵容需求影响 - 缺人更愿意买签
-        if team_info.roster_count < 6 {
-            bid_probability += 0.30;
-        } else if team_info.roster_count < 8 {
-            bid_probability += 0.15;
-        }
-
-        // 如果价格已经很高，降低竞拍意愿
-        if let Some(pricing) = get_price_for_position(listing.draft_position) {
-            let price_ratio = listing.current_price as f64 / pricing.starting_price as f64;
-            if price_ratio > 1.5 {
-                bid_probability *= 0.5;
-            } else if price_ratio > 2.0 {
-                bid_probability *= 0.2;
-            }
-        }
-
-        // 后续轮次竞争更激烈
-        if current_round > 1 && listing.buyer_team_id.is_some() {
-            // 已经有人出价，需要更高意愿才会跟进
-            bid_probability *= 0.7;
-        }
-
-        let roll: f64 = rng.gen();
-        if roll >= bid_probability {
-            return None;
-        }
-
-        // 决定出价金额
-        let max_bid = (available_budget * 8 / 10).min(min_bid * 3 / 2); // 最多出可用预算的80%
-        if max_bid < min_bid {
-            return None;
-        }
-
-        // 出价策略：在最低加价和最高可接受价格之间随机
-        let bid_range = max_bid - min_bid;
-        let random_addition = if bid_range > 0 {
-            rng.gen_range(0..=bid_range / 2)
-        } else {
-            0
-        };
-
-        Some(min_bid + random_addition)
-    }
-
-    /// AI 竞拍决策（简化版本）
     fn evaluate_bid_for_listing(
         &self,
         team_info: &TeamAuctionInfo,
         draft_position: u32,
         current_price: i64,
         min_increment: i64,
-        current_bid_round: u32,
+        _current_bid_round: u32,
         buyer_team_id: Option<u64>,
         current_round: u32,
         rng: &mut impl Rng,
     ) -> Option<i64> {
-        // 1. 可用预算
-        let budget_ratio = 0.6; // 默认 60%
+        // 1. 财务差异化预算
+        let budget_ratio = match team_info.financial_status {
+            FinancialStatus::Wealthy  => 0.40,
+            FinancialStatus::Healthy  => 0.30,
+            FinancialStatus::Tight    => 0.15,
+            FinancialStatus::Deficit  => 0.05,
+            FinancialStatus::Bankrupt => return None,
+        };
         let available_budget = (team_info.balance as f64 * budget_ratio) as i64;
         let min_bid = current_price + min_increment;
 
@@ -580,52 +507,88 @@ impl DraftAuctionEngine {
             return None;
         }
 
-        // 2. 签位价值评分
-        let pick_value = Self::calculate_pick_value(draft_position);
+        // 2. 签位价值（14级梯度）
+        let pick_value: f64 = match draft_position {
+            1  => 100.0,
+            2  => 92.0,
+            3  => 85.0,
+            4  => 78.0,
+            5  => 72.0,
+            6  => 65.0,
+            7  => 58.0,
+            8  => 52.0,
+            9  => 45.0,
+            10 => 40.0,
+            11 => 35.0,
+            12 => 30.0,
+            13 => 25.0,
+            _  => 20.0,
+        };
 
-        // 3. 竞拍意愿概率
-        let mut bid_prob = (pick_value as f64 / 100.0) * 0.6;
+        // 3. 阵容需求
+        let need_score = if team_info.roster_count < 5 {
+            1.00
+        } else if team_info.roster_count < 7 {
+            0.60
+        } else if team_info.roster_count < 9 {
+            0.30
+        } else {
+            0.10
+        };
 
-        // 阵容需求加成
-        if team_info.roster_count < 6 {
-            bid_prob += 0.30;
-        }
+        // 4. 实力因素（弱队更需要新秀补强）
+        let strength_desire = if team_info.avg_ability < 55.0 {
+            1.40
+        } else if team_info.avg_ability < 60.0 {
+            1.15
+        } else if team_info.avg_ability > 65.0 {
+            0.70
+        } else {
+            1.00
+        };
 
-        // 价格敏感度
+        // 5. 基础竞拍概率
+        let mut bid_prob = (pick_value / 100.0) * 0.50 * need_score * strength_desire;
+
+        // 6. 价格敏感度（指数衰减）
         if let Some(pricing) = get_price_for_position(draft_position) {
             let price_ratio = current_price as f64 / pricing.starting_price as f64;
-            if price_ratio > 1.3 {
-                bid_prob *= (0.5_f64).powf((price_ratio - 1.0));
+            if price_ratio > 1.0 {
+                bid_prob *= (0.6_f64).powf(price_ratio - 1.0);
             }
         }
 
-        // 后续轮次抑制
+        // 7. 财务信心
+        bid_prob *= match team_info.financial_status {
+            FinancialStatus::Wealthy  => 1.30,
+            FinancialStatus::Healthy  => 1.00,
+            FinancialStatus::Tight    => 0.60,
+            FinancialStatus::Deficit  => 0.25,
+            FinancialStatus::Bankrupt => 0.00,
+        };
+
+        // 8. 轮次动态
         if current_round > 1 && buyer_team_id.is_some() {
-            bid_prob *= 0.7;
+            bid_prob *= 0.65;
         }
 
         if rng.gen::<f64>() >= bid_prob {
             return None;
         }
 
-        // 4. 决定出价金额（温和策略）
-        let max_bid = (min_bid as f64 * 1.3).min(available_budget as f64) as i64;
+        // 9. 差异化出价上限
+        let aggression = match team_info.financial_status {
+            FinancialStatus::Wealthy  => 1.5,
+            FinancialStatus::Healthy  => 1.3,
+            FinancialStatus::Tight    => 1.15,
+            _                         => 1.05,
+        };
+        let max_bid = (min_bid as f64 * aggression).min(available_budget as f64) as i64;
         if max_bid <= min_bid {
             return None;
         }
 
         Some(rng.gen_range(min_bid..=max_bid))
-    }
-
-    /// 计算签位价值评分（0-100）- 简化版本
-    fn calculate_pick_value(position: u32) -> u8 {
-        match position {
-            1..=3 => 95,
-            4..=5 => 80,
-            6..=8 => 65,
-            9..=10 => 50,
-            _ => 35,
-        }
     }
 
     /// 完成指定索引的挂牌交易
@@ -687,54 +650,6 @@ impl DraftAuctionEngine {
                 round,
                 created_at: chrono::Utc::now().to_rfc3339(),
             });
-        }
-    }
-
-    /// 完成一笔交易 (旧版，保留兼容)
-    fn finalize_sale(&mut self, listing: &mut DraftPickListing, events: &mut Vec<DraftPickAuctionEvent>, round: u32) {
-        if let Some(buyer_id) = listing.buyer_team_id {
-            listing.status = DraftListingStatus::Sold;
-            listing.final_price = Some(listing.current_price);
-            listing.commission_fee = Some(calculate_commission(listing.current_price));
-            listing.seller_revenue = Some(calculate_seller_revenue(listing.current_price));
-            listing.sold_at = Some(chrono::Utc::now().to_rfc3339());
-
-            self.auction.successful_auctions += 1;
-            self.auction.total_revenue += listing.current_price;
-            self.auction.total_commission += listing.commission_fee.unwrap_or(0);
-
-            // 标记获胜出价
-            for bid in &mut self.bids {
-                if bid.listing_id == listing.id && bid.bidder_team_id == buyer_id && bid.status == BidStatus::Active {
-                    bid.status = BidStatus::Won;
-                }
-            }
-
-            // 更新选秀顺位映射
-            self.draft_orders.remove(&listing.seller_team_id);
-            self.draft_orders.insert(buyer_id, listing.draft_position);
-
-            let position_name = get_position_name(listing.draft_position);
-            events.push(self.create_event(
-                AuctionEventType::Sold,
-                Some(listing.id),
-                Some(buyer_id),
-                Some(listing.draft_position),
-                Some(listing.current_price),
-                format!("{}成功拍得{}！", listing.buyer_team_name.as_deref().unwrap_or("买家"), position_name),
-                format!(
-                    "{}以{}万从{}手中购得{}。扣除{}%佣金后，{}将获得{}万收入。",
-                    listing.buyer_team_name.as_deref().unwrap_or("买家"),
-                    listing.current_price / 10000,
-                    listing.seller_team_name,
-                    position_name,
-                    (COMMISSION_RATE * 100.0) as u32,
-                    listing.seller_team_name,
-                    listing.seller_revenue.unwrap_or(0) / 10000
-                ),
-                if listing.draft_position <= 3 { EventImportance::Breaking } else { EventImportance::Major },
-                round,
-            ));
         }
     }
 
@@ -842,15 +757,6 @@ pub struct AuctionRoundResult {
 }
 
 // FinancialStatus::from_balance 已在 team.rs 中定义
-
-/// 出价策略
-#[derive(Debug, Clone, Copy)]
-enum BidStrategy {
-    Minimal,      // 最低加价
-    Conservative, // 保守试探
-    Moderate,     // 中等出价
-    Aggressive,   // 激进竞价
-}
 
 #[cfg(test)]
 mod tests {
