@@ -29,8 +29,9 @@ impl DraftEngine {
         self.draft_pool = players;
     }
 
-    /// 生成选秀顺位 (基于夏季赛排名的概率算法)
+    /// 生成选秀顺位 (基于夏季赛排名的加权概率算法)
     /// 排名越靠后，获得高顺位的概率越高
+    /// 权重公式: weight = summer_rank^2，即排名数字越大（成绩越差）权重越高
     pub fn generate_draft_order(
         &mut self,
         save_id: &str,
@@ -40,24 +41,32 @@ impl DraftEngine {
     ) -> Vec<DraftOrder> {
         let mut rng = rand::thread_rng();
         let mut draft_orders = Vec::new();
-        let mut assigned_positions: Vec<u32> = Vec::new();
 
-        // 获取概率配置
-        let weights = get_lottery_weights();
+        // 构建候选池: (team_id, summer_rank, weight)
+        // weight = summer_rank^2 → 排名越靠后权重越大
+        let mut remaining: Vec<(u64, u32, f64)> = teams
+            .iter()
+            .map(|&(team_id, rank)| (team_id, rank, (rank as f64).powi(2)))
+            .collect();
 
-        for &(team_id, summer_rank) in teams {
-            // 根据夏季赛排名获取概率分布
-            let probs = weights.get(&summer_rank).cloned().unwrap_or_else(|| {
-                // 默认概率：排名越后，获得好签位概率越高
-                let mut default_probs = vec![0.0; 14];
-                let idx = (14 - summer_rank).min(13) as usize;
-                default_probs[idx] = 1.0;
-                default_probs
-            });
+        // 按顺位从第1顺位开始逐个抽取
+        for position in 1..=(teams.len() as u32) {
+            let total_weight: f64 = remaining.iter().map(|(_, _, w)| w).sum();
 
-            // 根据概率选择签位
-            let position = self.weighted_lottery(&probs, &assigned_positions, &mut rng);
-            assigned_positions.push(position);
+            // 轮盘赌选择
+            let roll: f64 = rng.gen::<f64>() * total_weight;
+            let mut cumulative = 0.0;
+            let mut selected_idx = remaining.len() - 1;
+
+            for (idx, (_, _, weight)) in remaining.iter().enumerate() {
+                cumulative += weight;
+                if roll <= cumulative {
+                    selected_idx = idx;
+                    break;
+                }
+            }
+
+            let (team_id, summer_rank, _) = remaining.remove(selected_idx);
 
             draft_orders.push(DraftOrder {
                 id: 0,
@@ -79,57 +88,6 @@ impl DraftEngine {
         self.draft_order = draft_orders.clone();
 
         draft_orders
-    }
-
-    /// 加权随机抽签
-    fn weighted_lottery(
-        &self,
-        probs: &[f64],
-        assigned: &[u32],
-        rng: &mut impl Rng,
-    ) -> u32 {
-        let available_probs: Vec<(u32, f64)> = probs
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, &prob)| {
-                let position = (idx + 1) as u32;
-                if !assigned.contains(&position) && prob > 0.0 {
-                    Some((position, prob))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        if available_probs.is_empty() {
-            // 如果没有可用的签位，分配第一个未被分配的
-            for pos in 1..=14 {
-                if !assigned.contains(&pos) {
-                    return pos;
-                }
-            }
-            return 1;
-        }
-
-        // 归一化概率
-        let total: f64 = available_probs.iter().map(|(_, p)| p).sum();
-        let normalized: Vec<(u32, f64)> = available_probs
-            .iter()
-            .map(|(pos, p)| (*pos, p / total))
-            .collect();
-
-        // 轮盘赌选择
-        let roll: f64 = rng.gen();
-        let mut cumulative = 0.0;
-
-        for (position, prob) in &normalized {
-            cumulative += prob;
-            if roll <= cumulative {
-                return *position;
-            }
-        }
-
-        normalized.last().map(|(p, _)| *p).unwrap_or(1)
     }
 
     /// 执行选秀
@@ -229,58 +187,6 @@ fn calculate_draft_salary(ability: u8, potential: u8) -> u64 {
     };
 
     (base + potential_bonus) as u64
-}
-
-/// 获取抽签概率配置
-fn get_lottery_weights() -> std::collections::HashMap<u32, Vec<f64>> {
-    let mut weights = std::collections::HashMap::new();
-
-    // 排名越靠后，获得高顺位（数字小）的概率越高
-    // 概率数组：[获得第1顺位概率, 第2顺位概率, ...]
-
-    // 第14名：最高概率获得状元签
-    weights.insert(14, vec![0.25, 0.20, 0.15, 0.10, 0.08, 0.06, 0.05, 0.04, 0.03, 0.02, 0.01, 0.005, 0.003, 0.002]);
-
-    // 第13名
-    weights.insert(13, vec![0.20, 0.22, 0.15, 0.10, 0.08, 0.07, 0.06, 0.05, 0.03, 0.02, 0.01, 0.005, 0.003, 0.002]);
-
-    // 第12名
-    weights.insert(12, vec![0.15, 0.18, 0.18, 0.12, 0.10, 0.08, 0.06, 0.05, 0.04, 0.02, 0.01, 0.005, 0.003, 0.002]);
-
-    // 第11名
-    weights.insert(11, vec![0.12, 0.15, 0.16, 0.15, 0.12, 0.10, 0.08, 0.05, 0.04, 0.02, 0.005, 0.003, 0.002, 0.001]);
-
-    // 第10名
-    weights.insert(10, vec![0.10, 0.10, 0.14, 0.15, 0.15, 0.12, 0.10, 0.06, 0.04, 0.02, 0.01, 0.005, 0.003, 0.002]);
-
-    // 第9名
-    weights.insert(9, vec![0.08, 0.08, 0.10, 0.12, 0.15, 0.15, 0.12, 0.10, 0.06, 0.02, 0.01, 0.005, 0.003, 0.002]);
-
-    // 第8名
-    weights.insert(8, vec![0.05, 0.04, 0.06, 0.10, 0.12, 0.15, 0.16, 0.15, 0.10, 0.05, 0.01, 0.005, 0.003, 0.002]);
-
-    // 第7名
-    weights.insert(7, vec![0.03, 0.02, 0.04, 0.08, 0.10, 0.13, 0.15, 0.18, 0.15, 0.08, 0.02, 0.01, 0.005, 0.002]);
-
-    // 第6名
-    weights.insert(6, vec![0.015, 0.01, 0.015, 0.05, 0.08, 0.10, 0.14, 0.17, 0.20, 0.13, 0.04, 0.02, 0.01, 0.005]);
-
-    // 第5名
-    weights.insert(5, vec![0.005, 0.005, 0.01, 0.02, 0.05, 0.07, 0.10, 0.15, 0.22, 0.20, 0.08, 0.04, 0.02, 0.01]);
-
-    // 第4名
-    weights.insert(4, vec![0.002, 0.003, 0.005, 0.01, 0.02, 0.05, 0.08, 0.12, 0.18, 0.25, 0.15, 0.08, 0.04, 0.02]);
-
-    // 第3名
-    weights.insert(3, vec![0.001, 0.002, 0.003, 0.005, 0.01, 0.02, 0.05, 0.08, 0.12, 0.20, 0.25, 0.15, 0.08, 0.04]);
-
-    // 第2名
-    weights.insert(2, vec![0.0, 0.001, 0.002, 0.003, 0.005, 0.01, 0.02, 0.05, 0.08, 0.15, 0.25, 0.25, 0.12, 0.08]);
-
-    // 第1名：最低概率获得状元签，但保底获得最后顺位
-    weights.insert(1, vec![0.0, 0.0, 0.001, 0.002, 0.003, 0.005, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30, 0.20, 0.08]);
-
-    weights
 }
 
 /// 选秀抽签结果
@@ -482,30 +388,31 @@ mod tests {
     }
 
     #[test]
-    fn test_lottery_weights_exist() {
-        let weights = get_lottery_weights();
+    fn test_weighted_lottery_probability() {
+        // 跑 1000 次抽签，验证第14名（垫底）获得状元签的概率远高于第1名
+        let mut rank14_got_first = 0;
+        let mut rank1_got_first = 0;
 
-        // 验证所有14个排名都有权重
-        for rank in 1..=14 {
-            assert!(weights.contains_key(&rank), "Missing weight for rank {}", rank);
+        for _ in 0..1000 {
+            let mut engine = DraftEngine::new();
+            let teams: Vec<(u64, u32)> = (1..=14).map(|i| (i as u64, i as u32)).collect();
+            let orders = engine.generate_draft_order("save1", 1, 1, &teams);
+
+            for order in &orders {
+                if order.draft_position == 1 {
+                    if order.summer_rank == 14 {
+                        rank14_got_first += 1;
+                    } else if order.summer_rank == 1 {
+                        rank1_got_first += 1;
+                    }
+                }
+            }
         }
 
-        // 验证权重数组长度
-        for (rank, probs) in &weights {
-            assert_eq!(probs.len(), 14,
-                "Rank {} should have 14 probability values, got {}", rank, probs.len());
-        }
-    }
-
-    #[test]
-    fn test_lottery_weights_sum_approximately_one() {
-        let weights = get_lottery_weights();
-
-        for (rank, probs) in &weights {
-            let sum: f64 = probs.iter().sum();
-            // 权重总和应该接近1 (允许小误差)
-            assert!((sum - 1.0).abs() < 0.1,
-                "Rank {} weights sum to {}, expected ~1.0", rank, sum);
-        }
+        // 第14名获得状元签的次数应远超第1名
+        assert!(rank14_got_first > rank1_got_first * 5,
+            "Rank 14 got #1 pick {} times, Rank 1 got {} times", rank14_got_first, rank1_got_first);
+        // 第1名也应有机会（非零）
+        // 注意: 概率极低 (~0.1%), 1000次可能为0，所以不强制断言非零
     }
 }

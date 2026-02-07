@@ -7,7 +7,7 @@ use crate::engines::{SeasonProgressEngine, ConditionEngine, PlayerFormFactors, T
 use crate::models::{SeasonPhase, TournamentStatus, MatchFormat};
 use crate::models::match_game_detail::{SaveMatchDetailsInput, SaveGameInput, SavePerformanceInput};
 use crate::services::{
-    GameFlowService, PhaseCompleteResult, PhaseInitResult, SeasonSettlementResult, LeagueService,
+    GameFlowService, PhaseCompleteResult, PhaseInitResult, LeagueService,
 };
 use chrono::Utc;
 use rand::{Rng, SeedableRng};
@@ -384,7 +384,7 @@ fn get_phase_display_name(phase: &SeasonPhase) -> String {
         SeasonPhase::AnnualAwards => "年度颁奖典礼".to_string(),
         SeasonPhase::TransferWindow => "转会期".to_string(),
         SeasonPhase::Draft => "选秀大会".to_string(),
-        SeasonPhase::SeasonEnd => "赛季结算".to_string(),
+        SeasonPhase::SeasonEnd => "赛季总结".to_string(),
     }
 }
 
@@ -464,53 +464,11 @@ pub async fn complete_current_phase(
     }
 }
 
-/// 执行赛季结算 (游戏流程版)
-#[tauri::command]
-pub async fn run_season_settlement(
-    state: State<'_, AppState>,
-) -> Result<CommandResult<SeasonSettlementResult>, String> {
-    let guard = state.db.read().await;
-    let db = match guard.as_ref() {
-        Some(db) => db,
-        None => return Ok(CommandResult::err("Database not initialized")),
-    };
-
-    let current_save = state.current_save_id.read().await;
-    let save_id = match current_save.as_ref() {
-        Some(id) => id.clone(),
-        None => return Ok(CommandResult::err("No save loaded")),
-    };
-
-    let pool = match db.get_pool().await {
-        Ok(p) => p,
-        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
-    };
-
-    let save = match SaveRepository::get_by_id(&pool, &save_id).await {
-        Ok(s) => s,
-        Err(e) => return Ok(CommandResult::err(format!("Failed to get save: {}", e))),
-    };
-
-    // 只能在赛季结束阶段执行结算
-    if save.current_phase != SeasonPhase::SeasonEnd {
-        return Ok(CommandResult::err("只能在赛季结算阶段执行此操作"));
-    }
-
-    let game_flow = GameFlowService::new();
-    match game_flow
-        .execute_season_settlement(&pool, &save_id, save.current_season)
-        .await
-    {
-        Ok(result) => Ok(CommandResult::ok(result)),
-        Err(e) => Ok(CommandResult::err(format!("Failed to execute settlement: {}", e))),
-    }
-}
-
 /// 开始新赛季
 #[tauri::command]
 pub async fn start_new_season(
     state: State<'_, AppState>,
-) -> Result<CommandResult<u32>, String> {
+) -> Result<CommandResult<crate::services::NewSeasonResult>, String> {
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
         Some(db) => db,
@@ -540,7 +498,7 @@ pub async fn start_new_season(
 
     let game_flow = GameFlowService::new();
     match game_flow.advance_to_new_season(&pool, &save_id).await {
-        Ok(new_season) => Ok(CommandResult::ok(new_season)),
+        Ok(result) => Ok(CommandResult::ok(result)),
         Err(e) => Ok(CommandResult::err(format!("Failed to start new season: {}", e))),
     }
 }

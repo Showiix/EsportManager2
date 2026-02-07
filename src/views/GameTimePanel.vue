@@ -123,22 +123,10 @@
                 </el-col>
               </el-row>
 
-              <!-- 特殊阶段操作 -->
+              <!-- 赛季总结操作 -->
               <el-divider v-if="isSeasonEnd" />
               <el-row v-if="isSeasonEnd" :gutter="12">
-                <el-col :span="12">
-                  <el-button
-                    type="warning"
-                    size="large"
-                    :icon="DataAnalysis"
-                    :disabled="isLoading"
-                    @click="handleSeasonSettlement"
-                    class="action-btn"
-                  >
-                    执行赛季结算
-                  </el-button>
-                </el-col>
-                <el-col :span="12">
+                <el-col :span="24">
                   <el-button
                     type="success"
                     size="large"
@@ -147,7 +135,7 @@
                     @click="handleStartNewSeason"
                     class="action-btn"
                   >
-                    开始新赛季
+                    确认进入新赛季
                   </el-button>
                 </el-col>
               </el-row>
@@ -338,7 +326,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Promotion,
   CircleCheck,
-  DataAnalysis,
   RefreshRight,
   Trophy,
   Medal,
@@ -422,7 +409,7 @@ const getShortPhaseName = (name: string) => {
     '年度颁奖典礼': '颁奖',
     '转会期': '转会',
     '选秀大会': '选秀',
-    '赛季结算': '结算',
+    '赛季总结': '总结',
   }
   return map[name] || name.slice(0, 3)
 }
@@ -496,12 +483,31 @@ const handleCompleteAndAdvance = async () => {
   }
 }
 
-const handleSeasonSettlement = async () => {
-  await timeStore.executeSeasonSettlement()
-}
-
 const handleStartNewSeason = async () => {
-  await timeStore.startNewSeason()
+  try {
+    await ElMessageBox.confirm(
+      '确认进入新赛季？系统将自动确认各队首发、更新战力并创建春季赛。',
+      '确认进入新赛季',
+      {
+        confirmButtonText: '确认',
+        cancelButtonText: '取消',
+        type: 'info',
+      }
+    )
+    const result = await timeStore.startNewSeason()
+    ElMessageBox.alert(
+      result.message,
+      '新赛季已开始',
+      {
+        confirmButtonText: '确定',
+        type: 'success',
+      }
+    )
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error('开始新赛季失败: ' + (e instanceof Error ? e.message : '未知错误'))
+    }
+  }
 }
 
 // 自动刷新定时器

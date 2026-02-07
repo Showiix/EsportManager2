@@ -110,8 +110,6 @@ pub enum TimeAction {
     ExecuteTransferRound,
     /// 开始选秀
     StartDraft,
-    /// 执行赛季结算
-    ExecuteSeasonSettlement,
     /// 开始新赛季
     StartNewSeason,
 }
@@ -131,7 +129,6 @@ impl TimeAction {
             TimeAction::StartTransferWindow => "开始转会",
             TimeAction::ExecuteTransferRound => "执行转会轮次",
             TimeAction::StartDraft => "开始选秀",
-            TimeAction::ExecuteSeasonSettlement => "执行赛季结算",
             TimeAction::StartNewSeason => "开始新赛季",
         }
     }

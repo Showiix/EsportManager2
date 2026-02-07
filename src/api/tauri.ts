@@ -1929,7 +1929,6 @@ export type TimeAction =
   | 'START_TRANSFER_WINDOW'
   | 'EXECUTE_TRANSFER_ROUND'
   | 'START_DRAFT'
-  | 'EXECUTE_SEASON_SETTLEMENT'
   | 'START_NEW_SEASON'
 
 /** 赛事进度 */
@@ -2008,15 +2007,11 @@ export interface FastForwardResult {
   skipped_phases?: string[]
 }
 
-/** 赛季结算结果 */
-export interface SeasonSettlementResult {
-  season: number
-  players_grown: number
-  players_declined: number
-  players_retired: number
-  contracts_expired: number
-  rookies_generated: number
-  events: string[]
+/** 新赛季初始化结果 */
+export interface NewSeasonResult {
+  new_season: number
+  starters_confirmed: number
+  message: string
 }
 
 /** 单场模拟结果 */
@@ -2057,13 +2052,9 @@ export const timeApi = {
   simulateNext: () =>
     invokeCommand<SimulateNextResult>('time_simulate_next'),
 
-  /** 执行赛季结算 */
-  seasonSettlement: () =>
-    invokeCommand<SeasonSettlementResult>('time_season_settlement'),
-
   /** 开始新赛季 */
   startNewSeason: () =>
-    invokeCommand<number>('time_start_new_season'),
+    invokeCommand<NewSeasonResult>('time_start_new_season'),
 
   /** 修复赛事状态 - 将已完成的赛事状态更新为 Completed */
   fixTournamentStatus: () =>

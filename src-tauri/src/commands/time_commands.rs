@@ -375,58 +375,11 @@ pub async fn time_simulate_all(
     }
 }
 
-/// 执行赛季结算
-#[tauri::command]
-pub async fn time_season_settlement(
-    state: State<'_, AppState>,
-) -> Result<CommandResult<crate::services::SeasonSettlementResult>, String> {
-    let guard = state.db.read().await;
-    let db = match guard.as_ref() {
-        Some(db) => db,
-        None => return Ok(CommandResult::err("Database not initialized")),
-    };
-
-    let current_save = state.current_save_id.read().await;
-    let save_id = match current_save.as_ref() {
-        Some(id) => id.clone(),
-        None => return Ok(CommandResult::err("No save loaded")),
-    };
-
-    let pool = match db.get_pool().await {
-        Ok(p) => p,
-        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
-    };
-
-    let save = match SaveRepository::get_by_id(&pool, &save_id).await {
-        Ok(s) => s,
-        Err(e) => return Ok(CommandResult::err(format!("Failed to get save: {}", e))),
-    };
-
-    // 检查是否在赛季结束阶段
-    if save.current_phase != SeasonPhase::SeasonEnd {
-        return Ok(CommandResult::err(
-            "Season settlement can only be executed at SeasonEnd phase",
-        ));
-    }
-
-    let game_flow = GameFlowService::new();
-    match game_flow
-        .execute_season_settlement(&pool, &save_id, save.current_season)
-        .await
-    {
-        Ok(result) => Ok(CommandResult::ok(result)),
-        Err(e) => Ok(CommandResult::err(format!(
-            "Failed to execute season settlement: {}",
-            e
-        ))),
-    }
-}
-
 /// 推进到新赛季
 #[tauri::command]
 pub async fn time_start_new_season(
     state: State<'_, AppState>,
-) -> Result<CommandResult<u32>, String> {
+) -> Result<CommandResult<crate::services::NewSeasonResult>, String> {
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
         Some(db) => db,
@@ -446,7 +399,7 @@ pub async fn time_start_new_season(
 
     let game_flow = GameFlowService::new();
     match game_flow.advance_to_new_season(&pool, &save_id).await {
-        Ok(new_season) => Ok(CommandResult::ok(new_season)),
+        Ok(result) => Ok(CommandResult::ok(result)),
         Err(e) => Ok(CommandResult::err(format!(
             "Failed to start new season: {}",
             e

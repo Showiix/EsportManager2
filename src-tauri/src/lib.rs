@@ -16,11 +16,11 @@ use commands::{
     get_game_state, advance_phase, get_tournament_matches, get_standings,
     simulate_next_match, simulate_all_matches,
     // 游戏流程命令
-    initialize_current_phase, complete_current_phase, run_season_settlement, start_new_season,
+    initialize_current_phase, complete_current_phase, start_new_season,
     fix_tournament_status,
     // 时间推进系统命令
     get_time_state, time_init_phase, complete_and_advance, fast_forward_to,
-    time_simulate_all, time_simulate_next, time_season_settlement, time_start_new_season,
+    time_simulate_all, time_simulate_next, time_start_new_season,
     // 荣誉命令
     get_honor_hall, get_team_honors, get_player_honors, get_season_honors, get_tournament_honors,
     get_team_champion_count, get_player_champion_count, get_player_mvp_count,
@@ -153,7 +153,6 @@ pub fn run() {
             // 游戏流程命令
             initialize_current_phase,
             complete_current_phase,
-            run_season_settlement,
             start_new_season,
             fix_tournament_status,
             // 荣誉命令
@@ -285,7 +284,6 @@ pub fn run() {
             fast_forward_to,
             time_simulate_all,
             time_simulate_next,
-            time_season_settlement,
             time_start_new_season,
             // 年度积分命令
             get_annual_points_ranking,

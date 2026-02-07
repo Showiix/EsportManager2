@@ -9,7 +9,7 @@ import {
   type GameTimeState,
   type CompleteAndAdvanceResult,
   type FastForwardResult,
-  type SeasonSettlementResult,
+  type NewSeasonResult,
   type SimulateNextResult,
   type PhaseStatus,
   type TimeAction
@@ -302,56 +302,22 @@ export const useTimeStore = defineStore('time', () => {
   }
 
   /**
-   * 执行赛季结算
-   */
-  const executeSeasonSettlement = async (): Promise<SeasonSettlementResult> => {
-    isLoading.value = true
-    error.value = null
-
-    try {
-      logger.info('开始赛季结算', { season: currentSeason.value })
-      const result = await logger.timed('赛季结算', () => timeApi.seasonSettlement())
-      lastMessage.value = `赛季 ${result.season} 结算完成`
-
-      // 刷新状态
-      await fetchTimeState()
-
-      logger.info('赛季结算完成', {
-        season: result.season,
-        retiredCount: result.players_retired
-      })
-      return result
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : '赛季结算失败'
-      handleError(e, {
-        component: 'TimeStore',
-        userAction: '赛季结算',
-        canRetry: true,
-        retryFn: executeSeasonSettlement
-      })
-      throw e
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  /**
    * 开始新赛季
    */
-  const startNewSeason = async (): Promise<number> => {
+  const startNewSeason = async (): Promise<NewSeasonResult> => {
     isLoading.value = true
     error.value = null
 
     try {
       logger.info('开始新赛季', { fromSeason: currentSeason.value })
-      const newSeason = await logger.timed('开始新赛季', () => timeApi.startNewSeason())
-      lastMessage.value = `已进入第 ${newSeason} 赛季`
+      const result = await logger.timed('开始新赛季', () => timeApi.startNewSeason())
+      lastMessage.value = result.message
 
       // 刷新状态
       await fetchTimeState()
 
-      logger.info('新赛季已开始', { newSeason })
-      return newSeason
+      logger.info('新赛季已开始', { newSeason: result.new_season, startersConfirmed: result.starters_confirmed })
+      return result
     } catch (e) {
       error.value = e instanceof Error ? e.message : '开始新赛季失败'
       handleError(e, {
@@ -440,7 +406,6 @@ export const useTimeStore = defineStore('time', () => {
     fastForwardTo,
     simulateAll,
     simulateNext,
-    executeSeasonSettlement,
     startNewSeason,
     advanceToNextPhase,
     fastForwardToSummer,

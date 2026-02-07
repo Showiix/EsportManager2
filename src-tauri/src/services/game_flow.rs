@@ -1,10 +1,10 @@
 use crate::db::{
-    EventRepository, HonorRepository, MatchRepository, PlayerRepository, PlayerStatsRepository, PointsRepository, SaveRepository,
+    HonorRepository, MatchRepository, PlayerStatsRepository, PointsRepository, SaveRepository,
     StandingRepository, TeamRepository, TournamentRepository,
 };
-use crate::engines::{EventEngine, FinancialEngine, PointsCalculationEngine};
+use crate::engines::{FinancialEngine, PointsCalculationEngine};
 use crate::models::{
-    EventType, GameEvent, HonorType, LeagueStanding, SeasonPhase, Tournament, TournamentStatus,
+    HonorType, LeagueStanding, SeasonPhase, Tournament, TournamentStatus,
     TournamentType, GameTimeState, PhaseStatus, PhaseProgress, TournamentProgress,
     SeasonProgress, PhaseInfo, TimeAction, FastForwardTarget, FastForwardResult,
     CompleteAndAdvanceResult, HonorInfo,
@@ -16,7 +16,6 @@ use sqlx::{Pool, Row, Sqlite};
 /// 游戏流程服务 - 整合赛季流程控制
 pub struct GameFlowService {
     league_service: LeagueService,
-    event_engine: EventEngine,
     honor_service: HonorService,
     tournament_service: TournamentService,
 }
@@ -68,11 +67,18 @@ pub struct SeasonSettlementResult {
     pub events: Vec<String>,
 }
 
+/// 新赛季初始化结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewSeasonResult {
+    pub new_season: u32,
+    pub starters_confirmed: u32,
+    pub message: String,
+}
+
 impl Default for GameFlowService {
     fn default() -> Self {
         Self {
             league_service: LeagueService::new(),
-            event_engine: EventEngine::new(),
             honor_service: HonorService::new(),
             tournament_service: TournamentService::new(),
         }
@@ -2987,148 +2993,95 @@ impl GameFlowService {
         Ok(results)
     }
 
-    /// 执行赛季结算
-    pub async fn execute_season_settlement(
+    /// 自动确认首发：为每支队伍的每个位置选能力最高的选手设为首发
+    pub async fn auto_confirm_starters(
         &self,
         pool: &Pool<Sqlite>,
         save_id: &str,
-        current_season: u32,
-    ) -> Result<SeasonSettlementResult, String> {
-        // 获取所有活跃选手
-        let players = PlayerRepository::get_all_active(pool, save_id)
+    ) -> Result<u32, String> {
+        // 清除所有首发标记
+        sqlx::query("UPDATE players SET is_starter = 0 WHERE save_id = ? AND status = 'Active'")
+            .bind(save_id)
+            .execute(pool)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("清除首发失败: {}", e))?;
 
         // 获取所有队伍
         let teams = TeamRepository::get_all(pool, save_id)
             .await
             .map_err(|e| e.to_string())?;
 
-        // 执行赛季结算
-        let settlement = self.event_engine.process_season_settlement(
-            current_season as u64,
-            &players,
-            &teams,
-            current_season,
-        );
+        let positions = ["Top", "Jug", "Mid", "Adc", "Sup"];
+        let mut confirmed_count = 0u32;
 
-        let mut events = Vec::new();
-
-        // 处理选手成长
-        let mut ability_updates = Vec::new();
-        for growth in &settlement.growth_events {
-            ability_updates.push((growth.player_id, growth.new_ability));
-            events.push(format!(
-                "成长: {} 能力 {} -> {}",
-                growth.player_name, growth.old_ability, growth.new_ability
-            ));
-        }
-        if !ability_updates.is_empty() {
-            PlayerRepository::batch_update_ability(pool, &ability_updates)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-
-        // 处理选手衰退
-        let mut decline_updates = Vec::new();
-        for decline in &settlement.decline_events {
-            decline_updates.push((decline.player_id, decline.new_ability));
-            events.push(format!(
-                "衰退: {} 能力 {} -> {}",
-                decline.player_name, decline.old_ability, decline.new_ability
-            ));
-        }
-        if !decline_updates.is_empty() {
-            PlayerRepository::batch_update_ability(pool, &decline_updates)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-
-        // 处理退役
-        let retire_ids: Vec<u64> = settlement
-            .retirement_events
-            .iter()
-            .map(|r| r.player_id)
-            .collect();
-        if !retire_ids.is_empty() {
-            PlayerRepository::batch_retire(pool, &retire_ids, current_season)
-                .await
-                .map_err(|e| e.to_string())?;
-            for retire in &settlement.retirement_events {
-                events.push(format!(
-                    "退役: {} ({:?})",
-                    retire.player_name, retire.reason
-                ));
-            }
-        }
-
-        // 处理合同到期
-        let contract_updates: Vec<(u64, bool, Option<u32>, Option<u64>)> = settlement
-            .contract_expire_events
-            .iter()
-            .map(|c| {
-                (
-                    c.player_id,
-                    c.renewed,
-                    c.new_contract_years,
-                    c.new_salary,
+        for team in &teams {
+            for pos in &positions {
+                // 找到该队伍该位置能力最高的选手
+                let result = sqlx::query(
+                    r#"
+                    SELECT id FROM players
+                    WHERE save_id = ? AND team_id = ? AND status = 'Active'
+                      AND position = ?
+                    ORDER BY ability DESC
+                    LIMIT 1
+                    "#,
                 )
-            })
-            .collect();
-        if !contract_updates.is_empty() {
-            PlayerRepository::batch_update_contracts(pool, &contract_updates, current_season)
+                .bind(save_id)
+                .bind(team.id as i64)
+                .bind(pos)
+                .fetch_optional(pool)
                 .await
-                .map_err(|e| e.to_string())?;
-            for contract in &settlement.contract_expire_events {
-                if contract.renewed {
-                    events.push(format!(
-                        "续约: {} 续约 {} 年",
-                        contract.player_name,
-                        contract.new_contract_years.unwrap_or(0)
-                    ));
-                } else {
-                    events.push(format!("合同到期: {} 成为自由球员", contract.player_name));
+                .map_err(|e| format!("查询最强选手失败: {}", e))?;
+
+                if let Some(row) = result {
+                    let player_id: i64 = row.get("id");
+                    sqlx::query("UPDATE players SET is_starter = 1 WHERE id = ?")
+                        .bind(player_id)
+                        .execute(pool)
+                        .await
+                        .map_err(|e| format!("设置首发失败: {}", e))?;
+                    confirmed_count += 1;
                 }
             }
         }
 
-        // 记录新秀信息 (新秀由 EventEngine 生成)
-        let rookies_count = settlement.rookie_events.len() as u32;
-        for rookie in &settlement.rookie_events {
-            events.push(format!(
-                "新秀: {} ({}) 能力:{} 潜力:{}",
-                rookie.player_name, rookie.position, rookie.ability, rookie.potential
-            ));
-        }
+        println!("[auto_confirm_starters] 确认了 {} 名首发选手", confirmed_count);
+        Ok(confirmed_count)
+    }
 
-        // 记录事件到数据库
-        for event_desc in &events {
-            let game_event = GameEvent {
-                id: 0,
-                save_id: save_id.to_string(),
-                season_id: current_season as u64,
-                event_type: EventType::SeasonSettlement,
-                player_id: None,
-                team_id: None,
-                description: event_desc.clone(),
-                details: None,
-                phase: Some("SeasonEnd".to_string()),
-            };
+    /// 重新计算所有队伍的战力值：取首发选手能力值的平均值
+    pub async fn recalculate_team_powers(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+    ) -> Result<(), String> {
+        let teams = TeamRepository::get_all(pool, save_id)
+            .await
+            .map_err(|e| e.to_string())?;
 
-            EventRepository::create(pool, &game_event)
+        for team in &teams {
+            let avg_ability: f64 = sqlx::query_scalar(
+                r#"
+                SELECT COALESCE(AVG(ability), 60.0) FROM players
+                WHERE save_id = ? AND team_id = ? AND status = 'Active' AND is_starter = 1
+                "#,
+            )
+            .bind(save_id)
+            .bind(team.id as i64)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("计算队伍战力失败: {}", e))?;
+
+            sqlx::query("UPDATE teams SET power_rating = ? WHERE id = ?")
+                .bind(avg_ability)
+                .bind(team.id as i64)
+                .execute(pool)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| format!("更新队伍战力失败: {}", e))?;
         }
 
-        Ok(SeasonSettlementResult {
-            season: current_season,
-            players_grown: settlement.growth_events.len() as u32,
-            players_declined: settlement.decline_events.len() as u32,
-            players_retired: settlement.retirement_events.len() as u32,
-            contracts_expired: settlement.contract_expire_events.len() as u32,
-            rookies_generated: rookies_count,
-            events,
-        })
+        println!("[recalculate_team_powers] 更新了 {} 支队伍的战力", teams.len());
+        Ok(())
     }
 
     /// 推进到新赛季
@@ -3136,13 +3089,13 @@ impl GameFlowService {
         &self,
         pool: &Pool<Sqlite>,
         save_id: &str,
-    ) -> Result<u32, String> {
+    ) -> Result<NewSeasonResult, String> {
         // 获取当前存档
         let mut save = SaveRepository::get_by_id(pool, save_id)
             .await
             .map_err(|e| e.to_string())?;
 
-        // 更新赛季
+        // 1. 更新赛季号和阶段
         save.current_season += 1;
         save.current_phase = SeasonPhase::SpringRegular;
         save.phase_completed = false;
@@ -3152,21 +3105,32 @@ impl GameFlowService {
             .await
             .map_err(|e| e.to_string())?;
 
-        // 重置所有队伍的年度积分
-        let teams = TeamRepository::get_all(pool, save_id)
+        // 2. 批量重置年度积分
+        sqlx::query("UPDATE teams SET annual_points = 0 WHERE save_id = ?")
+            .bind(save_id)
+            .execute(pool)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("重置年度积分失败: {}", e))?;
 
-        for mut team in teams {
-            // 清空年度积分（新赛季从0开始）
-            team.annual_points = 0;
+        // 3. 自动确认首发
+        let starters_confirmed = self.auto_confirm_starters(pool, save_id).await?;
 
-            TeamRepository::update(pool, &team)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
+        // 4. 更新战力
+        self.recalculate_team_powers(pool, save_id).await?;
 
-        Ok(save.current_season)
+        // 5. 初始化春季赛（创建4个赛区的赛事、赛程、积分榜）
+        self.initialize_phase(pool, save_id, save.current_season as u64, SeasonPhase::SpringRegular).await?;
+
+        let message = format!(
+            "已进入第 {} 赛季，确认了 {} 名首发选手，已更新战力并创建春季赛",
+            save.current_season, starters_confirmed
+        );
+
+        Ok(NewSeasonResult {
+            new_season: save.current_season,
+            starters_confirmed,
+            message,
+        })
     }
 
     // ========== 时间推进系统核心方法 ==========
@@ -3480,7 +3444,6 @@ impl GameFlowService {
                 }
             }
             SeasonPhase::SeasonEnd => {
-                actions.push(TimeAction::ExecuteSeasonSettlement);
                 actions.push(TimeAction::StartNewSeason);
             }
             _ => {
@@ -4341,7 +4304,7 @@ fn get_phase_display_name(phase: &SeasonPhase) -> &'static str {
         SeasonPhase::AnnualAwards => "年度颁奖典礼",
         SeasonPhase::TransferWindow => "转会期",
         SeasonPhase::Draft => "选秀大会",
-        SeasonPhase::SeasonEnd => "赛季结算",
+        SeasonPhase::SeasonEnd => "赛季总结",
     }
 }
 
