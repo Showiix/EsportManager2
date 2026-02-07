@@ -6,10 +6,10 @@
           <!-- 错误头部 -->
           <div class="error-header">
             <div class="error-icon">
-              <span v-if="severity === 'critical'">🚨</span>
-              <span v-else-if="severity === 'high'">⚠️</span>
-              <span v-else-if="severity === 'medium'">⚡</span>
-              <span v-else>ℹ️</span>
+              <el-icon v-if="severity === 'critical'" color="#ff0000" :size="28"><CircleCloseFilled /></el-icon>
+              <el-icon v-else-if="severity === 'high'" color="#f56c6c" :size="28"><WarningFilled /></el-icon>
+              <el-icon v-else-if="severity === 'medium'" color="#e6a23c" :size="28"><Warning /></el-icon>
+              <el-icon v-else color="#909399" :size="28"><InfoFilled /></el-icon>
             </div>
             <div class="error-title-section">
               <h3 class="error-title">{{ errorTitle }}</h3>
@@ -32,7 +32,7 @@
             <!-- 建议操作 -->
             <div v-if="errorInfo?.suggestion" class="error-suggestion">
               <div class="suggestion-header">
-                <span class="suggestion-icon">💡</span>
+                <el-icon class="suggestion-icon" color="#409eff"><Opportunity /></el-icon>
                 <span>建议操作</span>
               </div>
               <p>{{ errorInfo.suggestion }}</p>
@@ -55,10 +55,10 @@
           <!-- 操作按钮 -->
           <div class="error-actions">
             <button v-if="errorInfo?.docUrl" class="action-btn help-btn" @click="openHelp">
-              📖 查看帮助
+              <el-icon><Reading /></el-icon> 查看帮助
             </button>
             <button class="action-btn copy-btn" @click="copyAllInfo">
-              📋 复制信息
+              <el-icon><CopyDocument /></el-icon> 复制信息
             </button>
             <button
               v-if="canRetry"
@@ -67,7 +67,9 @@
               @click="handleRetry"
             >
               <span v-if="isRetrying" class="loading-spinner"></span>
-              {{ isRetrying ? '重试中...' : '🔄 重试' }}
+              {{ isRetrying ? '重试中...' : '' }}
+              <el-icon v-if="!isRetrying"><RefreshRight /></el-icon>
+              {{ isRetrying ? '' : ' 重试' }}
             </button>
             <button class="action-btn confirm-btn" @click="handleClose">
               我知道了
@@ -91,6 +93,16 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import {
+  CircleCloseFilled,
+  WarningFilled,
+  Warning,
+  InfoFilled,
+  Opportunity,
+  Reading,
+  CopyDocument,
+  RefreshRight,
+} from '@element-plus/icons-vue'
 import {
   globalError,
   showErrorDialog,
@@ -278,7 +290,8 @@ function showCopyFeedback() {
 }
 
 .error-icon {
-  font-size: 28px;
+  display: flex;
+  align-items: center;
   line-height: 1;
 }
 

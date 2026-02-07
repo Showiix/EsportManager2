@@ -25,7 +25,7 @@
       <!-- 年度MVP -->
       <section class="awards-section mvp-section">
         <div class="section-header">
-          <span class="section-icon">👑</span>
+          <el-icon class="section-icon" :size="24"><Trophy /></el-icon>
           <h2>年度最有价值选手</h2>
           <span class="section-subtitle">ANNUAL MVP</span>
         </div>
@@ -62,7 +62,7 @@
       <!-- 年度Top20 -->
       <section class="awards-section top20-section">
         <div class="section-header">
-          <span class="section-icon">🌟</span>
+          <el-icon class="section-icon" :size="24"><StarFilled /></el-icon>
           <h2>年度Top20选手</h2>
           <span class="section-subtitle">ANNUAL TOP 20</span>
         </div>
@@ -99,7 +99,7 @@
       <!-- 年度最佳阵容 -->
       <section class="awards-section allpro-section">
         <div class="section-header">
-          <span class="section-icon">🏅</span>
+          <el-icon class="section-icon" :size="24"><Medal /></el-icon>
           <h2>年度最佳阵容</h2>
           <span class="section-subtitle">ALL-PRO TEAM</span>
         </div>
@@ -189,6 +189,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { Trophy, StarFilled, Medal } from '@element-plus/icons-vue'
 import { useSeasonStore } from '@/stores/useSeasonStore'
 import { tauriApi } from '@/api/tauri'
 import type { AnnualAwardsData } from '@/api/tauri'

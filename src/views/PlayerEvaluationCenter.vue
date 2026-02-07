@@ -58,6 +58,16 @@
           </el-select>
         </div>
         <div class="filter-group">
+          <label>赛区</label>
+          <el-select v-model="filters.region" placeholder="全部赛区" clearable style="width: 100px">
+            <el-option label="全部" value="" />
+            <el-option label="LPL" value="LPL" />
+            <el-option label="LCK" value="LCK" />
+            <el-option label="LEC" value="LEC" />
+            <el-option label="LCS" value="LCS" />
+          </el-select>
+        </div>
+        <div class="filter-group">
           <label>意愿</label>
           <el-select v-model="filters.wantToLeave" placeholder="全部" clearable style="width: 120px">
             <el-option label="全部" value="" />
@@ -114,9 +124,14 @@
         </el-table-column>
 
         <!-- 战队 -->
-        <el-table-column prop="team_name" label="战队" width="100" align="center">
+        <el-table-column prop="team_name" label="战队" width="140" align="center">
           <template #default="{ row }">
-            <span class="team-name">{{ row.team_name }}</span>
+            <div class="team-cell">
+              <el-tag size="small" :type="getRegionTagType(row.region_code)">
+                {{ normalizeRegionCode(row.region_code) }}
+              </el-tag>
+              <span class="team-name">{{ row.team_short_name || row.team_name }}</span>
+            </div>
           </template>
         </el-table-column>
 
@@ -229,6 +244,7 @@ const selectedSeason = ref<number>(0)
 const filters = reactive({
   search: '',
   position: '',
+  region: '',
   wantToLeave: '',
   abilityRange: '',
 })
@@ -254,6 +270,9 @@ const filteredEvaluations = computed(() => {
       return false
     }
     if (filters.position && e.position !== filters.position) {
+      return false
+    }
+    if (filters.region && normalizeRegionCode(e.region_code) !== filters.region) {
       return false
     }
     if (filters.wantToLeave === 'leave' && !e.wants_to_leave) {
@@ -290,7 +309,7 @@ const paginatedEvaluations = computed(() => {
 })
 
 // 筛选变化时重置分页
-watch([() => filters.search, () => filters.position, () => filters.wantToLeave, () => filters.abilityRange], () => {
+watch([() => filters.search, () => filters.position, () => filters.region, () => filters.wantToLeave, () => filters.abilityRange], () => {
   currentPage.value = 1
 })
 
@@ -322,6 +341,21 @@ async function loadEvaluations() {
 
 function onSeasonChange() {
   loadEvaluations()
+}
+
+function getRegionTagType(region: string): string {
+  const types: Record<string, string> = {
+    LPL: 'danger', CN: 'danger',
+    LCK: 'primary', KR: 'primary',
+    LEC: 'success', EU: 'success',
+    LCS: 'warning', NA: 'warning',
+  }
+  return types[region] || 'info'
+}
+
+function normalizeRegionCode(region: string): string {
+  const mapping: Record<string, string> = { CN: 'LPL', KR: 'LCK', EU: 'LEC', NA: 'LCS' }
+  return mapping[region] || region
 }
 
 // 样式辅助函数
@@ -403,7 +437,7 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-  padding: 20px;
+  padding: 24px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 12px;
   color: white;
@@ -412,12 +446,12 @@ onMounted(async () => {
 .header-content h1 {
   margin: 0 0 8px 0;
   font-size: 24px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .header-content p {
   margin: 0;
-  opacity: 0.9;
+  opacity: 0.85;
   font-size: 14px;
 }
 
@@ -468,28 +502,37 @@ onMounted(async () => {
 
 .filter-card {
   margin-bottom: 20px;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.filter-card :deep(.el-card__body) {
+  padding: 12px 16px;
 }
 
 .filter-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  align-items: flex-end;
+  gap: 12px;
+  align-items: center;
 }
 
 .filter-group {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
 }
 
 .filter-group label {
   font-size: 12px;
-  color: #606266;
+  color: #909399;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .table-card {
   margin-bottom: 20px;
+  border-radius: 12px;
 }
 
 .player-info {
@@ -500,6 +543,13 @@ onMounted(async () => {
 
 .player-name {
   font-weight: 500;
+}
+
+.team-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .team-name {
@@ -593,6 +643,7 @@ onMounted(async () => {
 /* 空状态样式 */
 .empty-card {
   margin-bottom: 20px;
+  border-radius: 12px;
   text-align: center;
   padding: 40px 0;
 }
@@ -607,9 +658,7 @@ onMounted(async () => {
 .pagination-wrapper {
   display: flex;
   justify-content: center;
-  margin-top: 20px;
+  margin-top: 16px;
   padding: 16px;
-  background: white;
-  border-radius: 8px;
 }
 </style>

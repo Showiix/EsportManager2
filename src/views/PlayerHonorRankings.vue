@@ -2,7 +2,7 @@
   <div class="player-honor-rankings">
     <!-- 页面标题 -->
     <div class="page-header">
-      <h1>👤 选手荣誉榜</h1>
+      <h1><el-icon><User /></el-icon> 选手荣誉榜</h1>
       <p>PLAYER HONOR RANKINGS</p>
     </div>
 
@@ -11,8 +11,8 @@
       <div class="sort-options">
         <span class="label">排序:</span>
         <el-radio-group v-model="sortBy" size="small">
-          <el-radio-button value="champion">🏆冠军数</el-radio-button>
-          <el-radio-button value="mvp">🎖️MVP数</el-radio-button>
+          <el-radio-button value="champion"><el-icon><Trophy /></el-icon> 冠军数</el-radio-button>
+          <el-radio-button value="mvp"><el-icon><Medal /></el-icon> MVP数</el-radio-button>
           <el-radio-button value="total">总荣誉</el-radio-button>
         </el-radio-group>
       </div>
@@ -50,11 +50,11 @@
           <div class="honor-stats">
             <div class="stat-item">
               <span class="stat-value">{{ player.champion_count }}</span>
-              <span class="stat-label">🏆冠军</span>
+              <span class="stat-label"><el-icon><Trophy /></el-icon>冠军</span>
             </div>
             <div class="stat-item">
               <span class="stat-value">{{ player.mvp_count }}</span>
-              <span class="stat-label">🎖️MVP</span>
+              <span class="stat-label"><el-icon><Medal /></el-icon>MVP</span>
             </div>
             <div class="stat-item">
               <span class="stat-value">{{ player.international_champion_count }}</span>
@@ -85,8 +85,8 @@
               </span>
             </div>
             <div class="stats">
-              <span class="stat">🏆{{ player.champion_count }}</span>
-              <span class="stat">🎖️{{ player.mvp_count }}</span>
+              <span class="stat"><el-icon><Trophy /></el-icon>{{ player.champion_count }}</span>
+              <span class="stat"><el-icon><Medal /></el-icon>{{ player.mvp_count }}</span>
               <span class="stat">🌍{{ player.international_champion_count }}</span>
             </div>
             <div class="total">总: {{ player.champion_count + player.mvp_count }}</div>
@@ -103,6 +103,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { Trophy, Medal, User } from '@element-plus/icons-vue'
 import { tauriApi, type PlayerHonorRanking } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
 

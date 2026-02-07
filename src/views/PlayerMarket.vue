@@ -654,14 +654,16 @@ onMounted(() => {
 
 <style scoped>
 .contract-center {
-  padding: 0;
+  padding: 20px;
+  background: #f5f7fa;
+  min-height: 100vh;
 }
 
 /* 页面标题 */
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   margin-bottom: 20px;
   padding: 24px;
   background: linear-gradient(135deg, #1e3a5f 0%, #2d5a7b 100%);
@@ -677,13 +679,13 @@ onMounted(() => {
 
 .header-content p {
   font-size: 14px;
-  opacity: 0.8;
+  opacity: 0.85;
   margin: 0;
 }
 
 .header-stats {
   display: flex;
-  gap: 32px;
+  gap: 30px;
 }
 
 .stat-item {
@@ -694,39 +696,45 @@ onMounted(() => {
 }
 
 .stat-value {
-  font-size: 24px;
+  display: block;
+  font-size: 28px;
   font-weight: 700;
 }
 
 .stat-label {
   font-size: 12px;
-  opacity: 0.8;
-  margin-top: 4px;
+  opacity: 0.85;
 }
 
 /* 筛选卡片 */
 .filter-card {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
   border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.filter-card :deep(.el-card__body) {
+  padding: 12px 16px;
 }
 
 .filter-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  align-items: flex-end;
+  gap: 12px;
+  align-items: center;
 }
 
 .filter-group {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
 }
 
 .filter-group label {
   font-size: 12px;
   color: #909399;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 /* 表格卡片 */
@@ -866,8 +874,9 @@ onMounted(() => {
 /* 分页 */
 .pagination-wrapper {
   margin-top: 16px;
+  padding: 16px;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 /* 详情弹窗 */

@@ -78,27 +78,27 @@
     <el-card class="status-distribution-card">
       <div class="status-distribution">
         <div class="status-item wealthy">
-          <span class="status-icon">🟢</span>
+          <span class="status-dot dot-wealthy"></span>
           <span class="status-label">富裕</span>
           <span class="status-count">{{ stats.wealthyCount }}</span>
         </div>
         <div class="status-item healthy">
-          <span class="status-icon">🔵</span>
+          <span class="status-dot dot-healthy"></span>
           <span class="status-label">健康</span>
           <span class="status-count">{{ stats.healthyCount }}</span>
         </div>
         <div class="status-item tight">
-          <span class="status-icon">🟡</span>
+          <span class="status-dot dot-tight"></span>
           <span class="status-label">紧张</span>
           <span class="status-count">{{ stats.tightCount }}</span>
         </div>
         <div class="status-item deficit">
-          <span class="status-icon">🟠</span>
+          <span class="status-dot dot-deficit"></span>
           <span class="status-label">赤字</span>
           <span class="status-count">{{ stats.deficitCount }}</span>
         </div>
         <div class="status-item bankrupt">
-          <span class="status-icon">🔴</span>
+          <span class="status-dot dot-bankrupt"></span>
           <span class="status-label">破产</span>
           <span class="status-count">{{ stats.bankruptCount }}</span>
         </div>
@@ -442,9 +442,18 @@ async function handleRefresh() {
   background: #f5f7fa;
 }
 
-.status-icon {
-  font-size: 16px;
+.status-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
 }
+
+.status-dot.dot-wealthy { background-color: #10b981; }
+.status-dot.dot-healthy { background-color: #3b82f6; }
+.status-dot.dot-tight { background-color: #f59e0b; }
+.status-dot.dot-deficit { background-color: #f97316; }
+.status-dot.dot-bankrupt { background-color: #ef4444; }
 
 .status-label {
   font-size: 14px;

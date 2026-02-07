@@ -173,7 +173,7 @@
           <template #header>
             <div class="card-header">
               <h2>
-                <span class="header-icon">⚡</span>
+                <el-icon class="header-icon"><Lightning /></el-icon>
                 选手特性
               </h2>
               <div class="header-actions">
@@ -188,7 +188,7 @@
 
           <el-empty v-if="traits.length === 0" description="暂无特性" :image-size="60">
             <template #image>
-              <div class="empty-icon">🎯</div>
+              <el-icon class="empty-icon"><Aim /></el-icon>
             </template>
           </el-empty>
 
@@ -217,7 +217,7 @@
           <template #header>
             <div class="card-header">
               <h2>
-                <span class="header-icon">📊</span>
+                <el-icon class="header-icon"><DataAnalysis /></el-icon>
                 能力分析
               </h2>
               <span v-if="playerStats" class="count-badge">{{ playerStats.games_played }} 场比赛</span>
@@ -232,7 +232,7 @@
             <div class="radar-stats">
               <div class="stat-row">
                 <span class="stat-label">
-                  <span class="stat-icon impact">⚡</span>
+                  <el-icon class="stat-icon impact"><Lightning /></el-icon>
                   影响力
                 </span>
                 <div class="stat-bar-wrapper">
@@ -242,7 +242,7 @@
               </div>
               <div class="stat-row">
                 <span class="stat-label">
-                  <span class="stat-icon performance">🎯</span>
+                  <el-icon class="stat-icon performance"><Aim /></el-icon>
                   发挥
                 </span>
                 <div class="stat-bar-wrapper">
@@ -272,7 +272,7 @@
               </div>
               <div class="stat-row">
                 <span class="stat-label">
-                  <span class="stat-icon honor">🏆</span>
+                  <el-icon class="stat-icon honor"><Trophy /></el-icon>
                   荣誉
                 </span>
                 <div class="stat-bar-wrapper">
@@ -285,7 +285,7 @@
 
           <el-empty v-else description="暂无比赛数据" :image-size="60">
             <template #image>
-              <div class="empty-icon">📊</div>
+              <el-icon class="empty-icon"><DataAnalysis /></el-icon>
             </template>
           </el-empty>
         </el-card>
@@ -306,7 +306,7 @@
 
       <el-empty v-if="honors.length === 0" description="暂无荣誉记录">
         <template #image>
-          <div class="empty-icon">🏆</div>
+          <el-icon class="empty-icon"><Trophy /></el-icon>
         </template>
       </el-empty>
 
@@ -488,7 +488,7 @@
               </span>
             </div>
             <div class="mv-factor-row">
-              <span class="mv-factor-icon">📈</span>
+              <el-icon class="mv-factor-icon"><TrendCharts /></el-icon>
               <span class="mv-factor-name">潜力</span>
               <span class="mv-factor-detail">差值{{ player.potential - player.ability }}</span>
               <span class="mv-factor-val" :class="marketValueFactors.potentialFactor >= 1 ? 'positive' : 'negative'">
@@ -496,7 +496,7 @@
               </span>
             </div>
             <div class="mv-factor-row">
-              <span class="mv-factor-icon">⭐</span>
+              <el-icon class="mv-factor-icon"><StarFilled /></el-icon>
               <span class="mv-factor-name">天赋</span>
               <span class="mv-factor-detail">{{ getTalentLabel(player.tag) }}</span>
               <span class="mv-factor-val" :class="marketValueFactors.tagFactor >= 1 ? 'positive' : 'negative'">
@@ -504,7 +504,7 @@
               </span>
             </div>
             <div class="mv-factor-row">
-              <span class="mv-factor-icon">🎮</span>
+              <el-icon class="mv-factor-icon"><Monitor /></el-icon>
               <span class="mv-factor-name">位置</span>
               <span class="mv-factor-detail">{{ getPositionName(player.position) }}</span>
               <span class="mv-factor-val" :class="marketValueFactors.positionFactor >= 1 ? 'positive' : 'negative'">
@@ -520,7 +520,7 @@
               </span>
             </div>
             <div class="mv-factor-row highlight">
-              <span class="mv-factor-icon">🏆</span>
+              <el-icon class="mv-factor-icon"><Trophy /></el-icon>
               <span class="mv-factor-name">荣誉</span>
               <span class="mv-factor-detail">{{ getHonorDescription(marketValueFactors.honorFactor, marketValueFactors.teamHonorCount, marketValueFactors.individualHonorCount) }}</span>
               <span class="mv-factor-val" :class="marketValueFactors.honorFactor > 1 ? 'positive' : ''">
@@ -641,6 +641,11 @@ import {
   Trophy,
   Clock,
   InfoFilled,
+  Lightning,
+  DataAnalysis,
+  Aim,
+  StarFilled,
+  Monitor,
 } from '@element-plus/icons-vue'
 import { teamApi, playerApi, honorApi, statsApi, formatHonorType, type TraitInfo, type PlayerConditionInfo, type MarketValueChange } from '@/api/tauri'
 import { formatMoney } from '@/utils'

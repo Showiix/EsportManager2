@@ -1554,7 +1554,7 @@
                 </div>
               </div>
               <div class="factor-card win">
-                <div class="factor-icon">🏆</div>
+                <div class="factor-icon"><el-icon><Trophy /></el-icon></div>
                 <div class="factor-info">
                   <div class="factor-name">胜场</div>
                   <div class="factor-weight">+2.0</div>
@@ -2005,7 +2005,7 @@
             <div class="gm-personality-grid">
               <div class="personality-card championship">
                 <div class="personality-header">
-                  <span class="personality-icon">🏆</span>
+                  <span class="personality-icon"><el-icon><Trophy /></el-icon></span>
                   <span class="personality-name">争冠型</span>
                 </div>
                 <div class="personality-stats">
@@ -2071,7 +2071,7 @@
 
               <div class="personality-card speculator">
                 <div class="personality-header">
-                  <span class="personality-icon">📈</span>
+                  <span class="personality-icon"><el-icon><TrendCharts /></el-icon></span>
                   <span class="personality-name">投机型</span>
                 </div>
                 <div class="personality-stats">
@@ -2115,7 +2115,7 @@
 
               <div class="personality-card custom">
                 <div class="personality-header">
-                  <span class="personality-icon">⚙️</span>
+                  <span class="personality-icon"><el-icon><Setting /></el-icon></span>
                   <span class="personality-name">自定义</span>
                 </div>
                 <div class="personality-stats">

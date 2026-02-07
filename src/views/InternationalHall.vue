@@ -29,7 +29,7 @@
     <!-- 空状态 -->
     <el-empty v-else-if="filteredChampions.length === 0" description="暂无国际赛事冠军记录">
       <template #image>
-        <div class="empty-icon">🏆</div>
+        <div class="empty-icon"><el-icon :size="48"><Trophy /></el-icon></div>
       </template>
     </el-empty>
 
@@ -53,7 +53,7 @@
           >
             <!-- 卡片收起状态 -->
             <div v-if="expandedId !== champion.tournament_id" class="card-collapsed">
-              <div class="trophy-icon">🏆</div>
+              <div class="trophy-icon"><el-icon :size="24"><Trophy /></el-icon></div>
               <div class="team-name">{{ champion.champion_team_name }}</div>
               <div class="tournament-info">
                 <span class="season">S{{ champion.season_id }}</span>
@@ -69,7 +69,7 @@
             <!-- 卡片展开状态 -->
             <div v-else class="card-expanded">
               <div class="expanded-header">
-                <div class="trophy-icon large">🏆</div>
+                <div class="trophy-icon large"><el-icon :size="48"><Trophy /></el-icon></div>
                 <div class="team-name large">{{ champion.champion_team_name }}</div>
                 <div class="tournament-full">
                   S{{ champion.season_id }} {{ champion.tournament_name }}
@@ -126,6 +126,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { Trophy } from '@element-plus/icons-vue'
 import { tauriApi, type InternationalChampionCard, type ChampionDetail } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
 

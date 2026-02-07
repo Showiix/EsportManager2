@@ -5,7 +5,7 @@
       <div class="header-content">
         <div class="logo">
           <div class="logo-icon">
-            <span>🎮</span>
+            <el-icon :size="20" color="white"><Monitor /></el-icon>
           </div>
           <div class="logo-text">
             <h1>电竞比赛模拟器 2</h1>
@@ -83,13 +83,34 @@
               <el-icon><Sort /></el-icon>
               <span>转会市场</span>
             </template>
-            <el-menu-item index="/transfer" :disabled="isMenuDisabled('/transfer')">📊 转会总览</el-menu-item>
-            <el-menu-item index="/transfer/gm-config" :disabled="isMenuDisabled('/transfer/gm-config')">🤖 GM性格配置</el-menu-item>
-            <el-menu-item index="/transfer/player-market" :disabled="isMenuDisabled('/transfer/player-market')">👤 选手合同中心</el-menu-item>
-            <el-menu-item index="/transfer/market-listings" :disabled="isMenuDisabled('/transfer/market-listings')">📋 转会挂牌市场</el-menu-item>
-            <el-menu-item index="/transfer/team-evaluation" :disabled="isMenuDisabled('/transfer/team-evaluation')">📋 战队评估中心</el-menu-item>
-            <el-menu-item index="/transfer/player-evaluation" :disabled="isMenuDisabled('/transfer/player-evaluation')">👥 选手评估中心</el-menu-item>
-            <el-menu-item index="/transfer/bid-analysis" :disabled="isMenuDisabled('/transfer/bid-analysis')">📈 竞价分析</el-menu-item>
+            <el-menu-item index="/transfer" :disabled="isMenuDisabled('/transfer')">
+              <el-icon><DataAnalysis /></el-icon>
+              <span>转会总览</span>
+            </el-menu-item>
+            <el-menu-item index="/transfer/gm-config" :disabled="isMenuDisabled('/transfer/gm-config')">
+              <el-icon><Tools /></el-icon>
+              <span>GM性格配置</span>
+            </el-menu-item>
+            <el-menu-item index="/transfer/player-market" :disabled="isMenuDisabled('/transfer/player-market')">
+              <el-icon><User /></el-icon>
+              <span>选手合同中心</span>
+            </el-menu-item>
+            <el-menu-item index="/transfer/market-listings" :disabled="isMenuDisabled('/transfer/market-listings')">
+              <el-icon><Document /></el-icon>
+              <span>转会挂牌市场</span>
+            </el-menu-item>
+            <el-menu-item index="/transfer/team-evaluation" :disabled="isMenuDisabled('/transfer/team-evaluation')">
+              <el-icon><Histogram /></el-icon>
+              <span>战队评估中心</span>
+            </el-menu-item>
+            <el-menu-item index="/transfer/player-evaluation" :disabled="isMenuDisabled('/transfer/player-evaluation')">
+              <el-icon><UserFilled /></el-icon>
+              <span>选手评估中心</span>
+            </el-menu-item>
+            <el-menu-item index="/transfer/bid-analysis" :disabled="isMenuDisabled('/transfer/bid-analysis')">
+              <el-icon><TrendCharts /></el-icon>
+              <span>竞价分析</span>
+            </el-menu-item>
           </el-sub-menu>
 
           <el-menu-item index="/rankings" :disabled="isMenuDisabled('/rankings')">
@@ -176,6 +197,14 @@ import {
   Clock,
   Wallet,
   GoldMedal,
+  Odometer,
+  Monitor,
+  DataAnalysis,
+  Tools,
+  User,
+  Document,
+  Histogram,
+  TrendCharts,
 } from '@element-plus/icons-vue'
 import { useGameStore } from '@/stores/useGameStore'
 

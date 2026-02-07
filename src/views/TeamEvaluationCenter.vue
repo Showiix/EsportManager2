@@ -762,7 +762,7 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-  padding: 20px;
+  padding: 24px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 12px;
   color: white;
@@ -771,12 +771,12 @@ onMounted(async () => {
 .header-content h1 {
   margin: 0 0 8px 0;
   font-size: 24px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .header-content p {
   margin: 0;
-  opacity: 0.9;
+  opacity: 0.85;
   font-size: 14px;
 }
 
@@ -827,28 +827,37 @@ onMounted(async () => {
 
 .filter-card {
   margin-bottom: 20px;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.filter-card :deep(.el-card__body) {
+  padding: 12px 16px;
 }
 
 .filter-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  align-items: flex-end;
+  gap: 12px;
+  align-items: center;
 }
 
 .filter-group {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
 }
 
 .filter-group label {
   font-size: 12px;
-  color: #606266;
+  color: #909399;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .table-card {
   margin-bottom: 20px;
+  border-radius: 12px;
 }
 
 .team-info {
@@ -959,6 +968,7 @@ onMounted(async () => {
 /* 空状态样式 */
 .empty-card {
   margin-bottom: 20px;
+  border-radius: 12px;
   text-align: center;
   padding: 40px 0;
 }
@@ -973,10 +983,8 @@ onMounted(async () => {
 .pagination-wrapper {
   display: flex;
   justify-content: center;
-  margin-top: 20px;
+  margin-top: 16px;
   padding: 16px;
-  background: white;
-  border-radius: 8px;
 }
 
 /* 弹窗样式 */

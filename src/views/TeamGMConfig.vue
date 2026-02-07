@@ -372,7 +372,9 @@ onMounted(async () => {
 
 <style scoped>
 .gm-config-view {
-  padding: 0;
+  padding: 20px;
+  background: #f5f7fa;
+  min-height: 100vh;
 }
 
 /* 返回导航 */
@@ -421,7 +423,7 @@ onMounted(async () => {
 /* 介绍卡片 */
 .intro-card {
   margin-bottom: 24px;
-  border-radius: 16px;
+  border-radius: 12px;
 }
 
 .intro-content {

@@ -203,7 +203,7 @@
         </template>
 
         <div class="awards-ceremony-content">
-          <div class="ceremony-icon">🏆</div>
+          <div class="ceremony-icon"><el-icon :size="48" color="#f59e0b"><Trophy /></el-icon></div>
           <div class="ceremony-info">
             <h3>第 {{ currentSeason }} 赛季年度颁奖典礼</h3>
             <p>本赛季的精彩已落幕，是时候表彰那些在赛场上闪耀的选手们了！</p>
@@ -213,11 +213,11 @@
                 <span class="award-name">年度MVP</span>
               </div>
               <div class="award-item">
-                <span class="award-icon">🌟</span>
+                <el-icon class="award-icon" color="#f59e0b"><StarFilled /></el-icon>
                 <span class="award-name">年度Top20选手</span>
               </div>
               <div class="award-item">
-                <span class="award-icon">🏅</span>
+                <el-icon class="award-icon" color="#3b82f6"><Medal /></el-icon>
                 <span class="award-name">各位置最佳选手</span>
               </div>
               <div class="award-item">
@@ -329,6 +329,7 @@ import {
   RefreshRight,
   Trophy,
   Medal,
+  StarFilled,
 } from '@element-plus/icons-vue'
 
 const timeStore = useTimeStore()

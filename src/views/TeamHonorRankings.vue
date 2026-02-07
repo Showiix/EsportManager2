@@ -2,7 +2,7 @@
   <div class="team-honor-rankings">
     <!-- 页面标题 -->
     <div class="page-header">
-      <h1>🏠 战队荣誉榜</h1>
+      <h1><el-icon><OfficeBuilding /></el-icon> 战队荣誉榜</h1>
       <p>TEAM HONOR RANKINGS</p>
     </div>
 
@@ -11,7 +11,7 @@
       <div class="sort-options">
         <span class="label">排序:</span>
         <el-radio-group v-model="sortBy" size="small">
-          <el-radio-button value="champion">🏆总冠军</el-radio-button>
+          <el-radio-button value="champion"><el-icon><Trophy /></el-icon> 总冠军</el-radio-button>
           <el-radio-button value="international">🌍国际冠军</el-radio-button>
           <el-radio-button value="runner_up">🥈亚军数</el-radio-button>
         </el-radio-group>
@@ -47,7 +47,7 @@
             <div class="stat-row">
               <div class="stat-item">
                 <span class="stat-value">{{ team.champion_count }}</span>
-                <span class="stat-label">🏆冠军</span>
+                <span class="stat-label"><el-icon><Trophy /></el-icon>冠军</span>
               </div>
               <div class="stat-item">
                 <span class="stat-value">{{ team.international_champion_count }}</span>
@@ -77,7 +77,7 @@
               <span class="name">{{ team.team_name }}</span>
             </div>
             <div class="stats">
-              <span class="stat">🏆{{ team.champion_count }}</span>
+              <span class="stat"><el-icon><Trophy /></el-icon>{{ team.champion_count }}</span>
               <span class="stat">🌍{{ team.international_champion_count }}</span>
               <span class="stat">🥈{{ team.runner_up_count }}</span>
             </div>
@@ -94,6 +94,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { Trophy, OfficeBuilding } from '@element-plus/icons-vue'
 import { tauriApi, type TeamHonorRanking } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
 

@@ -15,7 +15,7 @@
     <div class="hall-navigation">
       <el-card class="nav-card international" @click="$router.push('/international-hall')">
         <div class="nav-content">
-          <div class="nav-icon">🏆</div>
+          <div class="nav-icon"><el-icon :size="24"><Trophy /></el-icon></div>
           <div class="nav-info">
             <h3>国际荣誉殿堂</h3>
             <p>记录所有国际赛事的冠军荣耀</p>
@@ -26,13 +26,13 @@
       <div class="sub-nav">
         <el-card class="sub-nav-card" @click="$router.push('/player-honor-rankings')">
           <div class="sub-nav-content">
-            <span class="sub-icon">👤</span>
+            <el-icon class="sub-icon"><User /></el-icon>
             <span>选手荣誉榜</span>
           </div>
         </el-card>
         <el-card class="sub-nav-card" @click="$router.push('/team-honor-rankings')">
           <div class="sub-nav-content">
-            <span class="sub-icon">🏠</span>
+            <el-icon class="sub-icon"><OfficeBuilding /></el-icon>
             <span>战队荣誉榜</span>
           </div>
         </el-card>
@@ -112,7 +112,7 @@
 
       <el-empty v-if="filteredTournaments.length === 0" description="暂无赛事记录">
         <template #image>
-          <div class="empty-icon">🏆</div>
+          <div class="empty-icon"><el-icon :size="48"><Trophy /></el-icon></div>
         </template>
         <template #description>
           <p>完成赛事后，荣誉将被记录在此</p>
@@ -132,7 +132,7 @@
             <div class="tournament-badge">
               {{ tournament.type === 'international' ? '国际赛' : '联赛' }}
             </div>
-            <div class="tournament-trophy">🏆</div>
+            <div class="tournament-trophy"><el-icon :size="24" color="#f59e0b"><Trophy /></el-icon></div>
           </div>
 
           <!-- 赛事信息 -->
@@ -251,7 +251,7 @@
           <!-- 冠军/最强赛区 -->
           <div class="placement-item champion">
             <div class="placement-rank">
-              <span class="rank-icon">🏆</span>
+              <el-icon class="rank-icon" color="#f59e0b"><Trophy /></el-icon>
               <span class="rank-text">{{ selectedTournament.isIcp ? '最强赛区' : '冠军' }}</span>
             </div>
             <div class="placement-team">
@@ -359,7 +359,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Trophy, Medal, Star, Flag, ArrowRight } from '@element-plus/icons-vue'
+import { Trophy, Medal, Star, Flag, ArrowRight, User, OfficeBuilding } from '@element-plus/icons-vue'
 import { honorApi, teamApi, queryApi } from '@/api/tauri'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
 import type { Team } from '@/api/tauri'

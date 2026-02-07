@@ -456,7 +456,9 @@ onMounted(async () => {
 
 <style scoped>
 .transfer-system {
-  padding: 0;
+  padding: 20px;
+  background: #f5f7fa;
+  min-height: 100vh;
 }
 
 /* 页面标题 */
@@ -489,7 +491,7 @@ onMounted(async () => {
 /* 流程介绍卡片 */
 .intro-card {
   margin-bottom: 24px;
-  border-radius: 16px;
+  border-radius: 12px;
   overflow: hidden;
 }
 
@@ -569,7 +571,7 @@ onMounted(async () => {
 /* 操作入口卡片 */
 .action-card {
   margin-bottom: 24px;
-  border-radius: 16px;
+  border-radius: 12px;
 }
 
 .action-content {
@@ -753,7 +755,7 @@ onMounted(async () => {
 /* 历史模式 */
 .history-card {
   margin-bottom: 24px;
-  border-radius: 16px;
+  border-radius: 12px;
 }
 
 .history-summary {
