@@ -114,7 +114,7 @@
                 <span class="player-name">{{ row.player_name }}</span>
                 <span class="player-team">
                   <el-tag v-if="row.team_name" size="small" :type="getRegionTagType(row.region_code)">
-                    {{ row.team_name }}
+                    {{ row.team_short_name || row.team_name }}
                   </el-tag>
                   <el-tag v-else size="small" type="info">自由球员</el-tag>
                 </span>

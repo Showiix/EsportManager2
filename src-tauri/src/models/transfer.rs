@@ -585,6 +585,7 @@ pub struct PlayerContractInfo {
     // 战队信息
     pub team_id: Option<i64>,
     pub team_name: Option<String>,
+    pub team_short_name: Option<String>,
     pub region_code: Option<String>,
     // 合同信息
     pub salary: i64,

@@ -1060,6 +1060,7 @@ export interface PlayerMarketInfo {
   // 战队信息
   team_id: number | null
   team_name: string | null
+  team_short_name: string | null
   region_code: string | null
   // 合同信息
   salary: number
