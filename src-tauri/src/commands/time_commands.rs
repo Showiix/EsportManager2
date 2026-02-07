@@ -293,7 +293,7 @@ pub async fn time_simulate_all(
                     league_service.advance_playoff_bracket(tournament.id, &all_matches);
 
                 if !new_matches.is_empty() {
-                    println!(
+                    log::debug!(
                         "[time_simulate_all] 季后赛生成 {} 场新比赛",
                         new_matches.len()
                     );
@@ -547,7 +547,7 @@ pub async fn time_simulate_next(
         let new_matches = league_service.advance_playoff_bracket(match_info.tournament_id, &all_matches);
 
         if !new_matches.is_empty() {
-            println!("[Playoffs] 生成 {} 场新比赛", new_matches.len());
+            log::debug!("生成 {} 场新比赛", new_matches.len());
             MatchRepository::create_batch(&pool, &save_id, &new_matches)
                 .await
                 .map_err(|e| e.to_string())?;

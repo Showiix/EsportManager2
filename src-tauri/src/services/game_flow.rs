@@ -101,7 +101,7 @@ impl GameFlowService {
         // 检查该阶段的赛事是否已经存在
         if let Some(tournament_type) = phase_to_tournament_type(phase) {
             let existing = self.get_phase_tournaments(pool, save_id, season_id, tournament_type).await?;
-            println!("[initialize_phase] 阶段 {:?}, 已存在赛事数: {}", phase, existing.len());
+            log::debug!("阶段 {:?}, 已存在赛事数: {}", phase, existing.len());
             if !existing.is_empty() {
                 // 检查是否【所有】赛事都有比赛
                 // 只有所有赛事都有比赛时才跳过，否则继续初始化（为没有比赛的赛事生成比赛）
@@ -113,17 +113,17 @@ impl GameFlowService {
                         .fetch_one(pool)
                         .await
                         .map_err(|e| e.to_string())?;
-                    println!("[initialize_phase] 赛事 {} (id={}) 比赛数: {}", tournament.name, tournament.id, count.0);
+                    log::debug!("赛事 {} (id={}) 比赛数: {}", tournament.name, tournament.id, count.0);
                     total_matches += count.0;
                     if count.0 == 0 {
                         all_have_matches = false;
                         // 不要 break，继续统计总数
                     }
                 }
-                println!("[initialize_phase] all_have_matches={}, total_matches={}", all_have_matches, total_matches);
+                log::debug!("all_have_matches={}, total_matches={}", all_have_matches, total_matches);
 
                 if all_have_matches && total_matches > 0 {
-                    println!("[initialize_phase] 所有赛事都有比赛，跳过初始化");
+                    log::debug!("所有赛事都有比赛，跳过初始化");
                     return Ok(PhaseInitResult {
                         phase: format!("{:?}", phase),
                         tournaments_created: existing.iter().map(|t| TournamentCreated {
@@ -135,7 +135,7 @@ impl GameFlowService {
                         message: format!("阶段 {:?} 的赛事已存在，跳过初始化", phase),
                     });
                 }
-                println!("[initialize_phase] 有赛事没有比赛，继续初始化");
+                log::debug!("有赛事没有比赛，继续初始化");
                 // 有赛事没有比赛，继续生成比赛
             }
         }
@@ -149,7 +149,7 @@ impl GameFlowService {
                 let existing_spring = TournamentRepository::get_by_season_and_type(
                     pool, save_id, season_id, "SpringRegular"
                 ).await.map_err(|e| e.to_string())?;
-                println!("[SpringRegular] 已存在的春季常规赛数量: {}", existing_spring.len());
+                log::debug!("已存在的春季常规赛数量: {}", existing_spring.len());
 
                 // 从数据库获取实际的赛区ID（不硬编码1..=4）
                 let region_ids: Vec<u64> = sqlx::query_as::<_, (i64,)>(
@@ -162,22 +162,22 @@ impl GameFlowService {
                 .iter()
                 .map(|r| r.0 as u64)
                 .collect();
-                println!("[SpringRegular] 实际赛区ID: {:?}", region_ids);
+                log::debug!("实际赛区ID: {:?}", region_ids);
 
                 for region_id in region_ids {
                     let region_name = get_region_name(region_id);
-                    println!("[SpringRegular] 处理赛区: {} (region_id={})", region_name, region_id);
+                    log::debug!("处理赛区: {} (region_id={})", region_name, region_id);
 
                     // 检查该赛区的春季常规赛是否已存在
                     let existing = existing_spring.iter()
                         .find(|t| t.region_id == Some(region_id));
 
                     let id = if let Some(t) = existing {
-                        println!("[SpringRegular] {} 春季赛已存在, id={}", region_name, t.id);
+                        log::debug!("{} 春季赛已存在, id={}", region_name, t.id);
                         t.id
                     } else {
                         // 创建新赛事
-                        println!("[SpringRegular] {} 春季赛不存在，创建新赛事", region_name);
+                        log::debug!("{} 春季赛不存在，创建新赛事", region_name);
                         let tournament = Tournament {
                             id: 0,
                             save_id: save_id.to_string(),
@@ -201,7 +201,7 @@ impl GameFlowService {
                         .fetch_one(pool)
                         .await
                         .map_err(|e| e.to_string())?;
-                    println!("[SpringRegular] {} 春季赛 id={} 已有比赛数: {}", region_name, id, match_count.0);
+                    log::debug!("{} 春季赛 id={} 已有比赛数: {}", region_name, id, match_count.0);
 
                     if match_count.0 == 0 {
                         // 获取赛区队伍并生成赛程
@@ -213,7 +213,7 @@ impl GameFlowService {
                             let matches = self
                                 .league_service
                                 .generate_regular_schedule(id, &teams);
-                            println!("[SpringRegular] {} 生成比赛数: {}", region_name, matches.len());
+                            log::debug!("{} 生成比赛数: {}", region_name, matches.len());
                             MatchRepository::create_batch(pool, save_id, &matches)
                                 .await
                                 .map_err(|e| e.to_string())?;
@@ -257,13 +257,13 @@ impl GameFlowService {
                 let existing_playoffs = TournamentRepository::get_by_season_and_type(
                     pool, save_id, season_id, "SpringPlayoffs"
                 ).await.map_err(|e| e.to_string())?;
-                println!("[SpringPlayoffs] 已存在的季后赛数量: {}", existing_playoffs.len());
+                log::debug!("已存在的季后赛数量: {}", existing_playoffs.len());
 
                 // 从常规赛获取实际的 region_id
                 let regular_tournaments = TournamentRepository::get_by_season_and_type(
                     pool, save_id, season_id, "SpringRegular"
                 ).await.map_err(|e| e.to_string())?;
-                println!("[SpringPlayoffs] 常规赛数量: {}", regular_tournaments.len());
+                log::debug!("常规赛数量: {}", regular_tournaments.len());
 
                 for regular_tournament in &regular_tournaments {
                     let region_id = match regular_tournament.region_id {
@@ -271,18 +271,18 @@ impl GameFlowService {
                         None => continue,
                     };
                     let region_name = get_region_name(region_id);
-                    println!("[SpringPlayoffs] 处理赛区: {} (region_id={})", region_name, region_id);
+                    log::debug!("处理赛区: {} (region_id={})", region_name, region_id);
 
                     // 检查该赛区的季后赛是否已存在
                     let existing = existing_playoffs.iter()
                         .find(|t| t.region_id == Some(region_id));
 
                     let id = if let Some(t) = existing {
-                        println!("[SpringPlayoffs] {} 季后赛已存在, id={}", region_name, t.id);
+                        log::debug!("{} 季后赛已存在, id={}", region_name, t.id);
                         t.id
                     } else {
                         // 创建新赛事
-                        println!("[SpringPlayoffs] {} 季后赛不存在，创建新赛事", region_name);
+                        log::debug!("{} 季后赛不存在，创建新赛事", region_name);
                         let tournament = Tournament {
                             id: 0,
                             save_id: save_id.to_string(),
@@ -305,30 +305,30 @@ impl GameFlowService {
                         .fetch_one(pool)
                         .await
                         .map_err(|e| e.to_string())?;
-                    println!("[SpringPlayoffs] {} 季后赛 id={} 已有比赛数: {}", region_name, id, match_count.0);
+                    log::debug!("{} 季后赛 id={} 已有比赛数: {}", region_name, id, match_count.0);
 
                     if match_count.0 == 0 {
                         // 获取常规赛积分榜
                         let standings = StandingRepository::get_by_tournament(pool, regular_tournament.id)
                             .await
                             .map_err(|e| e.to_string())?;
-                        println!("[SpringPlayoffs] {} 常规赛积分榜队伍数: {}", region_name, standings.len());
+                        log::debug!("{} 常规赛积分榜队伍数: {}", region_name, standings.len());
 
                         if standings.len() >= 8 {
                             // 生成季后赛对阵
                             let matches = self.league_service.generate_playoff_bracket(id, &standings);
-                            println!("[SpringPlayoffs] {} 生成比赛数: {}", region_name, matches.len());
+                            log::debug!("{} 生成比赛数: {}", region_name, matches.len());
                             if !matches.is_empty() {
                                 MatchRepository::create_batch(pool, save_id, &matches)
                                     .await
                                     .map_err(|e| e.to_string())?;
-                                println!("[SpringPlayoffs] {} 比赛已创建", region_name);
+                                log::debug!("{} 比赛已创建", region_name);
                             }
                         } else {
-                            println!("[SpringPlayoffs] {} 积分榜队伍不足8支，跳过", region_name);
+                            log::debug!("{} 积分榜队伍不足8支，跳过", region_name);
                         }
                     } else {
-                        println!("[SpringPlayoffs] {} 已有比赛，跳过生成", region_name);
+                        log::debug!("{} 已有比赛，跳过生成", region_name);
                     }
 
                     tournaments_created.push(TournamentCreated {
@@ -348,7 +348,7 @@ impl GameFlowService {
                 ).await.map_err(|e| e.to_string())?;
 
                 let id = if let Some(existing) = existing_msi.into_iter().find(|t| t.status == TournamentStatus::Upcoming) {
-                    println!("[MSI Init] 使用已存在的MSI赛事: id={}, name={}", existing.id, existing.name);
+                    log::debug!("[MSI Init] 使用已存在的MSI赛事: id={}, name={}", existing.id, existing.name);
                     existing.id
                 } else {
                     // 创建新的MSI赛事
@@ -367,7 +367,7 @@ impl GameFlowService {
                     let new_id = TournamentRepository::create(pool, save_id, &tournament)
                         .await
                         .map_err(|e| e.to_string())?;
-                    println!("[MSI Init] 创建新MSI赛事: id={}", new_id);
+                    log::debug!("[MSI Init] 创建新MSI赛事: id={}", new_id);
                     new_id
                 };
 
@@ -377,7 +377,7 @@ impl GameFlowService {
                     .map_err(|e| e.to_string())?;
 
                 if existing_matches.len() > 0 {
-                    println!("[MSI Init] MSI赛事已有 {} 场比赛，跳过生成", existing_matches.len());
+                    log::debug!("[MSI Init] MSI赛事已有 {} 场比赛，跳过生成", existing_matches.len());
                     tournaments_created.push(TournamentCreated {
                         id,
                         name: format!("S{} MSI季中赛", season_id),
@@ -395,9 +395,9 @@ impl GameFlowService {
                         pool, save_id, season_id, "SpringPlayoffs"
                     ).await.map_err(|e| e.to_string())?;
 
-                    println!("[MSI Init] 找到 {} 个春季季后赛赛事", all_playoffs.len());
+                    log::debug!("[MSI Init] 找到 {} 个春季季后赛赛事", all_playoffs.len());
                     for playoff in &all_playoffs {
-                        println!("[MSI Init] 季后赛: id={}, name={}, status={:?}",
+                        log::debug!("[MSI Init] 季后赛: id={}, name={}, status={:?}",
                             playoff.id, playoff.name, playoff.status);
                     }
 
@@ -409,9 +409,9 @@ impl GameFlowService {
                             legendary_teams.push(results[0].clone());  // 冠军
                             challenger_teams.push(results[1].clone()); // 亚军
                             qualifier_teams.push(results[2].clone());  // 季军
-                            println!("[MSI] 从赛事 {} 获取到前3名队伍", playoff_tournament.name);
+                            log::debug!("从赛事 {} 获取到前3名队伍", playoff_tournament.name);
                         } else {
-                            println!("[MSI] 赛事 {} 结果不足3支队伍: {}", playoff_tournament.name, results.len());
+                            log::debug!("赛事 {} 结果不足3支队伍: {}", playoff_tournament.name, results.len());
                         }
                     }
 
@@ -428,9 +428,9 @@ impl GameFlowService {
                             .await
                             .map_err(|e| e.to_string())?;
 
-                        println!("[initialize_phase] MSI 生成了 {} 场比赛", matches.len());
+                        log::debug!("MSI 生成了 {} 场比赛", matches.len());
                     } else {
-                        println!("[initialize_phase] MSI 队伍不足: legendary={}, challenger={}, qualifier={}",
+                        log::debug!("MSI 队伍不足: legendary={}, challenger={}, qualifier={}",
                             legendary_teams.len(), challenger_teams.len(), qualifier_teams.len());
                     }
 
@@ -451,7 +451,7 @@ impl GameFlowService {
                 ).await.map_err(|e| e.to_string())?;
 
                 let id = if let Some(t) = existing.first() {
-                    println!("[MadridMasters] 使用已存在的赛事: id={}", t.id);
+                    log::debug!("使用已存在的赛事: id={}", t.id);
                     t.id
                 } else {
                     // 创建新赛事
@@ -488,7 +488,7 @@ impl GameFlowService {
                         pool, save_id, season_id, "SpringRegular"
                     ).await.map_err(|e| e.to_string())?;
 
-                    println!("[MadridMasters] 找到 {} 个春季常规赛", regular_tournaments.len());
+                    log::debug!("找到 {} 个春季常规赛", regular_tournaments.len());
 
                     for regular in regular_tournaments {
                         // 获取常规赛积分榜（按排名排序）
@@ -496,7 +496,7 @@ impl GameFlowService {
                             .await
                             .map_err(|e| e.to_string())?;
 
-                        println!("[MadridMasters] 赛区 {:?} 积分榜有 {} 支队伍", regular.region_id, standings.len());
+                        log::debug!("赛区 {:?} 积分榜有 {} 支队伍", regular.region_id, standings.len());
 
                         // 取前8名
                         for standing in standings.iter().take(8) {
@@ -508,7 +508,7 @@ impl GameFlowService {
                         }
                     }
 
-                    println!("[MadridMasters] 找到 {} 支参赛队伍", teams.len());
+                    log::debug!("找到 {} 支参赛队伍", teams.len());
 
                     // 如果队伍不足32支，用各赛区其他队伍填充
                     if teams.len() < 32 {
@@ -539,7 +539,7 @@ impl GameFlowService {
 
                     if teams.len() >= 32 {
                         let matches = self.tournament_service.generate_masters_bracket(id, &teams[..32]);
-                        println!("[MadridMasters] 生成 {} 场比赛", matches.len());
+                        log::debug!("生成 {} 场比赛", matches.len());
                         if !matches.is_empty() {
                             MatchRepository::create_batch(pool, save_id, &matches)
                                 .await
@@ -566,10 +566,10 @@ impl GameFlowService {
                             StandingRepository::upsert_batch(pool, save_id, &standings)
                                 .await
                                 .map_err(|e| e.to_string())?;
-                            println!("[MadridMasters] 初始化 {} 支队伍的积分榜", standings.len());
+                            log::debug!("初始化 {} 支队伍的积分榜", standings.len());
                         }
                     } else {
-                        println!("[MadridMasters] 队伍不足32支 (只有{}支)，跳过比赛生成", teams.len());
+                        log::debug!("队伍不足32支 (只有{}支)，跳过比赛生成", teams.len());
                     }
                 }
 
@@ -587,13 +587,13 @@ impl GameFlowService {
                 let existing_summer = TournamentRepository::get_by_season_and_type(
                     pool, save_id, season_id, "SummerRegular"
                 ).await.map_err(|e| e.to_string())?;
-                println!("[SummerRegular] 已存在的夏季常规赛数量: {}", existing_summer.len());
+                log::debug!("已存在的夏季常规赛数量: {}", existing_summer.len());
 
                 // 从春季常规赛获取实际的 region_id（与 SpringPlayoffs 相同的逻辑）
                 let spring_regular_tournaments = TournamentRepository::get_by_season_and_type(
                     pool, save_id, season_id, "SpringRegular"
                 ).await.map_err(|e| e.to_string())?;
-                println!("[SummerRegular] 春季常规赛数量: {}", spring_regular_tournaments.len());
+                log::debug!("春季常规赛数量: {}", spring_regular_tournaments.len());
 
                 for spring_tournament in &spring_regular_tournaments {
                     let region_id = match spring_tournament.region_id {
@@ -601,18 +601,18 @@ impl GameFlowService {
                         None => continue,
                     };
                     let region_name = get_region_name(region_id);
-                    println!("[SummerRegular] 处理赛区: {} (region_id={})", region_name, region_id);
+                    log::debug!("处理赛区: {} (region_id={})", region_name, region_id);
 
                     // 检查该赛区的夏季常规赛是否已存在
                     let existing = existing_summer.iter()
                         .find(|t| t.region_id == Some(region_id));
 
                     let id = if let Some(t) = existing {
-                        println!("[SummerRegular] {} 夏季赛已存在, id={}", region_name, t.id);
+                        log::debug!("{} 夏季赛已存在, id={}", region_name, t.id);
                         t.id
                     } else {
                         // 创建新赛事
-                        println!("[SummerRegular] {} 夏季赛不存在，创建新赛事", region_name);
+                        log::debug!("{} 夏季赛不存在，创建新赛事", region_name);
                         let tournament = Tournament {
                             id: 0,
                             save_id: save_id.to_string(),
@@ -636,7 +636,7 @@ impl GameFlowService {
                         .fetch_one(pool)
                         .await
                         .map_err(|e| e.to_string())?;
-                    println!("[SummerRegular] {} 夏季赛 id={} 已有比赛数: {}", region_name, id, match_count.0);
+                    log::debug!("{} 夏季赛 id={} 已有比赛数: {}", region_name, id, match_count.0);
 
                     if match_count.0 == 0 {
                         // 生成赛程
@@ -648,7 +648,7 @@ impl GameFlowService {
                             let matches = self
                                 .league_service
                                 .generate_regular_schedule(id, &teams);
-                            println!("[SummerRegular] {} 生成比赛数: {}", region_name, matches.len());
+                            log::debug!("{} 生成比赛数: {}", region_name, matches.len());
                             MatchRepository::create_batch(pool, save_id, &matches)
                                 .await
                                 .map_err(|e| e.to_string())?;
@@ -673,10 +673,10 @@ impl GameFlowService {
                             StandingRepository::upsert_batch(pool, save_id, &standings)
                                 .await
                                 .map_err(|e| e.to_string())?;
-                            println!("[SummerRegular] {} 初始化 {} 支队伍的积分榜", region_name, standings.len());
+                            log::debug!("{} 初始化 {} 支队伍的积分榜", region_name, standings.len());
                         }
                     } else {
-                        println!("[SummerRegular] {} 已有比赛，跳过生成", region_name);
+                        log::debug!("{} 已有比赛，跳过生成", region_name);
                     }
 
                     tournaments_created.push(TournamentCreated {
@@ -772,7 +772,7 @@ impl GameFlowService {
                 ).await.map_err(|e| e.to_string())?;
 
                 let id = if let Some(existing_tournament) = existing.first() {
-                    println!("[ClaudeIntercontinental] 赛事已存在, id={}", existing_tournament.id);
+                    log::debug!("赛事已存在, id={}", existing_tournament.id);
                     existing_tournament.id
                 } else {
                     let tournament = Tournament {
@@ -808,7 +808,7 @@ impl GameFlowService {
                         pool, save_id, season_id, "SummerRegular"
                     ).await.map_err(|e| e.to_string())?;
 
-                    println!("[ClaudeIntercontinental] 找到 {} 个夏季常规赛", regular_tournaments.len());
+                    log::debug!("找到 {} 个夏季常规赛", regular_tournaments.len());
 
                     for regular in regular_tournaments {
                         // 获取常规赛积分榜（按排名排序）
@@ -816,7 +816,7 @@ impl GameFlowService {
                             .await
                             .map_err(|e| e.to_string())?;
 
-                        println!("[ClaudeIntercontinental] 赛区 {:?} 积分榜有 {} 支队伍", regular.region_id, standings.len());
+                        log::debug!("赛区 {:?} 积分榜有 {} 支队伍", regular.region_id, standings.len());
 
                         // 取前8名
                         for standing in standings.iter().take(8) {
@@ -828,7 +828,7 @@ impl GameFlowService {
                         }
                     }
 
-                    println!("[ClaudeIntercontinental] 找到 {} 支参赛队伍", teams.len());
+                    log::debug!("找到 {} 支参赛队伍", teams.len());
 
                     // 如果队伍不足32支，用各赛区其他队伍填充
                     if teams.len() < 32 {
@@ -859,7 +859,7 @@ impl GameFlowService {
 
                     if teams.len() >= 32 {
                         let matches = self.tournament_service.generate_masters_bracket(id, &teams[..32]);
-                        println!("[ClaudeIntercontinental] 生成 {} 场比赛", matches.len());
+                        log::debug!("生成 {} 场比赛", matches.len());
                         if !matches.is_empty() {
                             MatchRepository::create_batch(pool, save_id, &matches)
                                 .await
@@ -886,10 +886,10 @@ impl GameFlowService {
                             StandingRepository::upsert_batch(pool, save_id, &standings)
                                 .await
                                 .map_err(|e| e.to_string())?;
-                            println!("[ClaudeIntercontinental] 初始化 {} 支队伍的积分榜", standings.len());
+                            log::debug!("初始化 {} 支队伍的积分榜", standings.len());
                         }
                     } else {
-                        println!("[ClaudeIntercontinental] 队伍不足32支 (只有{}支)，跳过比赛生成", teams.len());
+                        log::debug!("队伍不足32支 (只有{}支)，跳过比赛生成", teams.len());
                     }
                 }
 
@@ -909,7 +909,7 @@ impl GameFlowService {
                 ).await.map_err(|e| e.to_string())?;
 
                 let id = if let Some(existing_tournament) = existing.first() {
-                    println!("[WorldChampionship] 赛事已存在, id={}", existing_tournament.id);
+                    log::debug!("赛事已存在, id={}", existing_tournament.id);
                     existing_tournament.id
                 } else {
                     let tournament = Tournament {
@@ -946,7 +946,7 @@ impl GameFlowService {
                         pool, save_id, season_id, "SummerPlayoffs"
                     ).await.map_err(|e| e.to_string())?;
 
-                    println!("[WorldChampionship] 找到 {} 个夏季季后赛", playoffs_tournaments.len());
+                    log::debug!("找到 {} 个夏季季后赛", playoffs_tournaments.len());
 
                     for playoffs in playoffs_tournaments {
                         // 获取季后赛最终排名（从荣誉记录获取）
@@ -964,7 +964,7 @@ impl GameFlowService {
                             if let Ok(team) = TeamRepository::get_by_id(pool, team_id as u64).await {
                                 if !direct_teams.iter().any(|t: &crate::models::Team| t.id == team.id) {
                                     direct_teams.push(team);
-                                    println!("[WorldChampionship] 赛区 {:?} 冠军: team_id={}", playoffs.region_id, team_id);
+                                    log::debug!("赛区 {:?} 冠军: team_id={}", playoffs.region_id, team_id);
                                 }
                             }
                         }
@@ -983,7 +983,7 @@ impl GameFlowService {
                             if let Ok(team) = TeamRepository::get_by_id(pool, team_id as u64).await {
                                 if !swiss_teams.iter().any(|t: &crate::models::Team| t.id == team.id) {
                                     swiss_teams.push(team);
-                                    println!("[WorldChampionship] 赛区 {:?} 亚军: team_id={}", playoffs.region_id, team_id);
+                                    log::debug!("赛区 {:?} 亚军: team_id={}", playoffs.region_id, team_id);
                                 }
                             }
                         }
@@ -1002,17 +1002,17 @@ impl GameFlowService {
                             if let Ok(team) = TeamRepository::get_by_id(pool, team_id as u64).await {
                                 if !swiss_teams.iter().any(|t: &crate::models::Team| t.id == team.id) {
                                     swiss_teams.push(team);
-                                    println!("[WorldChampionship] 赛区 {:?} 季军: team_id={}", playoffs.region_id, team_id);
+                                    log::debug!("赛区 {:?} 季军: team_id={}", playoffs.region_id, team_id);
                                 }
                             }
                         }
                     }
 
-                    println!("[WorldChampionship] 冠军队伍: {} 支, 瑞士轮队伍: {} 支", direct_teams.len(), swiss_teams.len());
+                    log::debug!("冠军队伍: {} 支, 瑞士轮队伍: {} 支", direct_teams.len(), swiss_teams.len());
 
                     // 如果队伍不足，从夏季常规赛积分榜补充
                     if direct_teams.len() < 4 || swiss_teams.len() < 8 {
-                        println!("[WorldChampionship] 队伍不足，从常规赛积分榜补充");
+                        log::debug!("队伍不足，从常规赛积分榜补充");
                         let regular_tournaments = TournamentRepository::get_by_season_and_type(
                             pool, save_id, season_id, "SummerRegular"
                         ).await.map_err(|e| e.to_string())?;
@@ -1042,7 +1042,7 @@ impl GameFlowService {
                         }
                     }
 
-                    println!("[WorldChampionship] 最终: 冠军队伍 {} 支, 瑞士轮队伍 {} 支", direct_teams.len(), swiss_teams.len());
+                    log::debug!("最终: 冠军队伍 {} 支, 瑞士轮队伍 {} 支", direct_teams.len(), swiss_teams.len());
 
                     if direct_teams.len() >= 4 && swiss_teams.len() >= 8 {
                         let matches = self.tournament_service.generate_worlds_bracket(
@@ -1050,7 +1050,7 @@ impl GameFlowService {
                             &direct_teams[..4],
                             &swiss_teams[..8]
                         );
-                        println!("[WorldChampionship] 生成 {} 场比赛", matches.len());
+                        log::debug!("生成 {} 场比赛", matches.len());
                         if !matches.is_empty() {
                             MatchRepository::create_batch(pool, save_id, &matches)
                                 .await
@@ -1078,10 +1078,10 @@ impl GameFlowService {
                             StandingRepository::upsert_batch(pool, save_id, &standings)
                                 .await
                                 .map_err(|e| e.to_string())?;
-                            println!("[WorldChampionship] 初始化 {} 支队伍的积分榜", standings.len());
+                            log::debug!("初始化 {} 支队伍的积分榜", standings.len());
                         }
                     } else {
-                        println!("[WorldChampionship] 队伍不足，无法生成比赛: direct={}, swiss={}", direct_teams.len(), swiss_teams.len());
+                        log::debug!("队伍不足，无法生成比赛: direct={}, swiss={}", direct_teams.len(), swiss_teams.len());
                     }
                 }
 
@@ -1110,10 +1110,10 @@ impl GameFlowService {
 
                 // 如果有多个，删除多余的
                 if valid_tournaments.len() > 1 {
-                    println!("[ShanghaiMasters Init] 发现 {} 个重复的上海大师赛，清理中...", valid_tournaments.len());
+                    log::debug!("[ShanghaiMasters Init] 发现 {} 个重复的上海大师赛，清理中...", valid_tournaments.len());
                     // 保留第一个，删除其他
                     for extra_tournament in valid_tournaments.iter().skip(1) {
-                        println!("[ShanghaiMasters Init] 删除重复赛事: id={}", extra_tournament.id);
+                        log::debug!("[ShanghaiMasters Init] 删除重复赛事: id={}", extra_tournament.id);
                         // 先删除比赛
                         sqlx::query("DELETE FROM matches WHERE tournament_id = ?")
                             .bind(extra_tournament.id as i64)
@@ -1130,7 +1130,7 @@ impl GameFlowService {
                 }
 
                 let id = if let Some(existing_id) = first_valid_id {
-                    println!("[ShanghaiMasters Init] 使用已存在的上海大师赛赛事: id={}", existing_id);
+                    log::debug!("[ShanghaiMasters Init] 使用已存在的上海大师赛赛事: id={}", existing_id);
                     existing_id
                 } else {
                     // 创建新的上海大师赛赛事
@@ -1149,7 +1149,7 @@ impl GameFlowService {
                     let new_id = TournamentRepository::create(pool, save_id, &tournament)
                         .await
                         .map_err(|e| e.to_string())?;
-                    println!("[ShanghaiMasters Init] 创建新上海大师赛赛事: id={}", new_id);
+                    log::debug!("[ShanghaiMasters Init] 创建新上海大师赛赛事: id={}", new_id);
                     new_id
                 };
 
@@ -1159,7 +1159,7 @@ impl GameFlowService {
                     .map_err(|e| e.to_string())?;
 
                 if existing_matches.len() > 0 {
-                    println!("[ShanghaiMasters Init] 上海大师赛已有 {} 场比赛，跳过生成", existing_matches.len());
+                    log::debug!("[ShanghaiMasters Init] 上海大师赛已有 {} 场比赛，跳过生成", existing_matches.len());
                     tournaments_created.push(TournamentCreated {
                         id,
                         name: format!("S{} 上海大师赛", season_id),
@@ -1177,9 +1177,9 @@ impl GameFlowService {
                         pool, save_id, season_id, "SummerPlayoffs"
                     ).await.map_err(|e| e.to_string())?;
 
-                    println!("[ShanghaiMasters Init] 找到 {} 个夏季季后赛赛事", all_playoffs.len());
+                    log::debug!("[ShanghaiMasters Init] 找到 {} 个夏季季后赛赛事", all_playoffs.len());
                     for playoff in &all_playoffs {
-                        println!("[ShanghaiMasters Init] 季后赛: id={}, name={}, status={:?}",
+                        log::debug!("[ShanghaiMasters Init] 季后赛: id={}, name={}, status={:?}",
                             playoff.id, playoff.name, playoff.status);
                     }
 
@@ -1191,9 +1191,9 @@ impl GameFlowService {
                             legendary_teams.push(results[0].clone());  // 冠军
                             challenger_teams.push(results[1].clone()); // 亚军
                             qualifier_teams.push(results[2].clone());  // 季军
-                            println!("[ShanghaiMasters] 从赛事 {} 获取到前3名队伍", playoff_tournament.name);
+                            log::debug!("从赛事 {} 获取到前3名队伍", playoff_tournament.name);
                         } else {
-                            println!("[ShanghaiMasters] 赛事 {} 结果不足3支队伍: {}", playoff_tournament.name, results.len());
+                            log::debug!("赛事 {} 结果不足3支队伍: {}", playoff_tournament.name, results.len());
                         }
                     }
 
@@ -1216,10 +1216,10 @@ impl GameFlowService {
                                 .await
                                 .map_err(|e| e.to_string())?;
 
-                            println!("[ShanghaiMasters] 成功生成 {} 场比赛并更新状态为进行中", matches.len());
+                            log::debug!("成功生成 {} 场比赛并更新状态为进行中", matches.len());
                         }
                     } else {
-                        println!("[ShanghaiMasters] 队伍不足: legendary={}, challenger={}, qualifier={}",
+                        log::debug!("队伍不足: legendary={}, challenger={}, qualifier={}",
                             legendary_teams.len(), challenger_teams.len(), qualifier_teams.len());
                     }
 
@@ -1240,7 +1240,7 @@ impl GameFlowService {
                 ).await.map_err(|e| e.to_string())?;
 
                 let id = if let Some(t) = existing.first() {
-                    println!("[ICP Init] 找到已存在的ICP赛事: id={}", t.id);
+                    log::debug!("[ICP Init] 找到已存在的ICP赛事: id={}", t.id);
                     t.id
                 } else {
                     let tournament = Tournament {
@@ -1258,7 +1258,7 @@ impl GameFlowService {
                     let new_id = TournamentRepository::create(pool, save_id, &tournament)
                         .await
                         .map_err(|e| e.to_string())?;
-                    println!("[ICP Init] 创建新ICP赛事: id={}", new_id);
+                    log::debug!("[ICP Init] 创建新ICP赛事: id={}", new_id);
                     new_id
                 };
 
@@ -1268,7 +1268,7 @@ impl GameFlowService {
                     .map_err(|e| e.to_string())?;
 
                 if existing_matches.len() > 0 {
-                    println!("[ICP Init] ICP赛事已有 {} 场比赛，跳过生成", existing_matches.len());
+                    log::debug!("[ICP Init] ICP赛事已有 {} 场比赛，跳过生成", existing_matches.len());
                     tournaments_created.push(TournamentCreated {
                         id,
                         name: format!("S{} ICP洲际对抗赛", season_id),
@@ -1284,7 +1284,7 @@ impl GameFlowService {
                         pool, save_id, season_id, "SummerPlayoffs"
                     ).await.map_err(|e| e.to_string())?;
 
-                    println!("[ICP Init] 找到 {} 个夏季季后赛赛事", all_playoffs.len());
+                    log::debug!("[ICP Init] 找到 {} 个夏季季后赛赛事", all_playoffs.len());
 
                     for playoff_tournament in all_playoffs {
                         // 获取该季后赛的前4名
@@ -1292,9 +1292,9 @@ impl GameFlowService {
 
                         if results.len() >= 4 {
                             region_teams.push(results);
-                            println!("[ICP Init] 从赛事 {} 获取到前4名队伍", playoff_tournament.name);
+                            log::debug!("[ICP Init] 从赛事 {} 获取到前4名队伍", playoff_tournament.name);
                         } else {
-                            println!("[ICP Init] 赛事 {} 结果不足4支队伍: {}", playoff_tournament.name, results.len());
+                            log::debug!("[ICP Init] 赛事 {} 结果不足4支队伍: {}", playoff_tournament.name, results.len());
                         }
                     }
 
@@ -1315,10 +1315,10 @@ impl GameFlowService {
                                 .await
                                 .map_err(|e| e.to_string())?;
 
-                            println!("[ICP Init] 成功生成 {} 场比赛并更新状态为进行中", matches.len());
+                            log::debug!("[ICP Init] 成功生成 {} 场比赛并更新状态为进行中", matches.len());
                         }
                     } else {
-                        println!("[ICP Init] 赛区队伍不足: 需要4个赛区各4队，当前有 {} 个赛区数据", region_teams.len());
+                        log::debug!("[ICP Init] 赛区队伍不足: 需要4个赛区各4队，当前有 {} 个赛区数据", region_teams.len());
                     }
 
                     tournaments_created.push(TournamentCreated {
@@ -1338,7 +1338,7 @@ impl GameFlowService {
                 ).await.map_err(|e| e.to_string())?;
 
                 let id = if let Some(t) = existing.first() {
-                    println!("[Super Init] 找到已存在的Super赛事: id={}", t.id);
+                    log::debug!("[Super Init] 找到已存在的Super赛事: id={}", t.id);
                     t.id
                 } else {
                     let tournament = Tournament {
@@ -1356,7 +1356,7 @@ impl GameFlowService {
                     let new_id = TournamentRepository::create(pool, save_id, &tournament)
                         .await
                         .map_err(|e| e.to_string())?;
-                    println!("[Super Init] 创建新Super赛事: id={}", new_id);
+                    log::debug!("[Super Init] 创建新Super赛事: id={}", new_id);
                     new_id
                 };
 
@@ -1366,7 +1366,7 @@ impl GameFlowService {
                     .map_err(|e| e.to_string())?;
 
                 if existing_matches.len() > 0 {
-                    println!("[Super Init] Super赛事已有 {} 场比赛，跳过生成", existing_matches.len());
+                    log::debug!("[Super Init] Super赛事已有 {} 场比赛，跳过生成", existing_matches.len());
                     tournaments_created.push(TournamentCreated {
                         id,
                         name: format!("S{} Super洲际邀请赛", season_id),
@@ -1379,7 +1379,7 @@ impl GameFlowService {
                         .await
                         .map_err(|e| e.to_string())?;
 
-                    println!("[Super Init] 年度积分排名队伍数: {}", rankings.len());
+                    log::debug!("[Super Init] 年度积分排名队伍数: {}", rankings.len());
 
                     if rankings.len() >= 16 {
                         // 获取队伍信息
@@ -1398,7 +1398,7 @@ impl GameFlowService {
                             }
                         }
 
-                        println!("[Super Init] 传奇组: {} 队, 挑战者组: {} 队, Fighter组: {} 队",
+                        log::debug!("[Super Init] 传奇组: {} 队, 挑战者组: {} 队, Fighter组: {} 队",
                             legendary_teams.len(), challenger_teams.len(), fighter_teams.len());
 
                         if legendary_teams.len() == 4 && challenger_teams.len() == 4 && fighter_teams.len() == 8 {
@@ -1419,13 +1419,13 @@ impl GameFlowService {
                                     .await
                                     .map_err(|e| e.to_string())?;
 
-                                println!("[Super Init] 成功生成 {} 场比赛并更新状态为进行中", matches.len());
+                                log::debug!("[Super Init] 成功生成 {} 场比赛并更新状态为进行中", matches.len());
                             }
                         } else {
-                            println!("[Super Init] 队伍数量不足: 传奇组需4队，挑战者组需4队，Fighter组需8队");
+                            log::debug!("[Super Init] 队伍数量不足: 传奇组需4队，挑战者组需4队，Fighter组需8队");
                         }
                     } else {
-                        println!("[Super Init] 年度积分排名不足16队: 当前 {} 队", rankings.len());
+                        log::debug!("[Super Init] 年度积分排名不足16队: 当前 {} 队", rankings.len());
                     }
 
                     tournaments_created.push(TournamentCreated {
@@ -1502,7 +1502,7 @@ impl GameFlowService {
         season_id: u64,
         phase: SeasonPhase,
     ) -> Result<PhaseCompleteResult, String> {
-        println!("[complete_phase] 开始处理阶段: {:?}, season_id={}", phase, season_id);
+        log::debug!("开始处理阶段: {:?}, season_id={}", phase, season_id);
         let mut honors_awarded = Vec::new();
 
         // 根据阶段颁发荣誉
@@ -1513,13 +1513,13 @@ impl GameFlowService {
                 if let Some(t_type) = tournament_type {
                     // 获取该阶段的所有赛事
                     let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
-                    println!("[complete_phase] 找到 {} 个常规赛赛事", tournaments.len());
+                    log::debug!("找到 {} 个常规赛赛事", tournaments.len());
 
                     for tournament in tournaments {
-                        println!("[complete_phase] 处理常规赛荣誉: tournament_id={}", tournament.id);
+                        log::debug!("处理常规赛荣誉: tournament_id={}", tournament.id);
                         match self.honor_service.process_regular_season_honors(pool, save_id, tournament.id).await {
                             Ok(honors) => {
-                                println!("[complete_phase] 常规赛荣誉处理成功，获得 {} 个荣誉", honors.len());
+                                log::debug!("常规赛荣誉处理成功，获得 {} 个荣誉", honors.len());
                                 for honor in honors {
                                     honors_awarded.push(HonorAwarded {
                                         honor_type: format!("{:?}", honor.honor_type),
@@ -1531,7 +1531,7 @@ impl GameFlowService {
                                 }
                             }
                             Err(e) => {
-                                eprintln!("Failed to process regular season honors for tournament {}: {}", tournament.id, e);
+                                log::error!("Failed to process regular season honors for tournament {}: {}", tournament.id, e);
                             }
                         }
                     }
@@ -1549,19 +1549,19 @@ impl GameFlowService {
             | SeasonPhase::IcpIntercontinental
             | SeasonPhase::SuperIntercontinental => {
                 let tournament_type = phase_to_tournament_type(phase);
-                println!("[complete_phase] 处理季后赛/国际赛事: {:?}, tournament_type={:?}", phase, tournament_type);
+                log::debug!("处理季后赛/国际赛事: {:?}, tournament_type={:?}", phase, tournament_type);
                 if let Some(t_type) = tournament_type {
                     let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
-                    println!("[complete_phase] 找到 {} 个赛事", tournaments.len());
+                    log::debug!("找到 {} 个赛事", tournaments.len());
 
                     for tournament in &tournaments {
-                        println!("[complete_phase] 处理赛事荣誉: id={}, name={}", tournament.id, tournament.name);
+                        log::debug!("处理赛事荣誉: id={}, name={}", tournament.id, tournament.name);
                         match self.honor_service.process_tournament_completion(pool, save_id, tournament.id).await {
                             Ok(_) => {
                                 // 从数据库查询该赛事的所有荣誉（支持ICP等多队伍同名次的赛事）
                                 match HonorRepository::get_by_tournament(pool, save_id, tournament.id).await {
                                     Ok(all_honors) => {
-                                        println!("[complete_phase] 从数据库获取到 {} 个荣誉", all_honors.len());
+                                        log::debug!("从数据库获取到 {} 个荣誉", all_honors.len());
                                         // 只收集战队荣誉和MVP用于显示（选手荣誉太多）
                                         for honor in all_honors {
                                             match honor.honor_type {
@@ -1615,12 +1615,12 @@ impl GameFlowService {
                                         }
                                     }
                                     Err(e) => {
-                                        println!("[complete_phase] 获取荣誉列表失败: {}", e);
+                                        log::debug!("获取荣誉列表失败: {}", e);
                                     }
                                 }
                             }
                             Err(e) => {
-                                println!("[complete_phase] 荣誉处理失败: tournament_id={}, error={}", tournament.id, e);
+                                log::debug!("荣誉处理失败: tournament_id={}, error={}", tournament.id, e);
                             }
                         }
                     }
@@ -1629,11 +1629,11 @@ impl GameFlowService {
 
             // 年度颁奖典礼 - 颁发年度荣誉
             SeasonPhase::AnnualAwards => {
-                println!("[complete_phase] 处理年度颁奖典礼");
+                log::debug!("处理年度颁奖典礼");
 
                 // 获取年度Top20选手并颁发荣誉
                 let top20 = self.get_annual_top20(pool, save_id, season_id).await?;
-                println!("[complete_phase] 获取到 {} 位Top20选手", top20.len());
+                log::debug!("获取到 {} 位Top20选手", top20.len());
 
                 for (idx, player) in top20.iter().enumerate() {
                     // 第一名同时获得年度MVP
@@ -1653,7 +1653,7 @@ impl GameFlowService {
                             None,
                         );
                         if let Err(e) = HonorRepository::create(pool, save_id, &mvp_honor).await {
-                            eprintln!("Failed to create annual MVP honor: {}", e);
+                            log::error!("Failed to create annual MVP honor: {}", e);
                         } else {
                             honors_awarded.push(HonorAwarded {
                                 honor_type: "年度MVP".to_string(),
@@ -1680,7 +1680,7 @@ impl GameFlowService {
                         None,
                     );
                     if let Err(e) = HonorRepository::create(pool, save_id, &top20_honor).await {
-                        eprintln!("Failed to create annual top20 honor for player {}: {}", player.player_id, e);
+                        log::error!("Failed to create annual top20 honor for player {}: {}", player.player_id, e);
                     } else {
                         honors_awarded.push(HonorAwarded {
                             honor_type: format!("年度Top{}", idx + 1),
@@ -1702,7 +1702,7 @@ impl GameFlowService {
 
                 // 获取各位置最佳选手并颁发荣誉
                 let all_pro = self.get_annual_all_pro(pool, save_id, season_id).await?;
-                println!("[complete_phase] 获取到 {} 位最佳阵容选手", all_pro.len());
+                log::debug!("获取到 {} 位最佳阵容选手", all_pro.len());
 
                 for player in &all_pro {
                     let honor_type = match player.position.to_uppercase().as_str() {
@@ -1738,7 +1738,7 @@ impl GameFlowService {
                         None,
                     );
                     if let Err(e) = HonorRepository::create(pool, save_id, &position_honor).await {
-                        eprintln!("Failed to create annual best position honor: {}", e);
+                        log::error!("Failed to create annual best position honor: {}", e);
                     } else {
                         honors_awarded.push(HonorAwarded {
                             honor_type: honor_name.to_string(),
@@ -1753,7 +1753,7 @@ impl GameFlowService {
 
                 // 获取年度最佳新秀
                 if let Ok(Some(rookie)) = self.get_annual_rookie(pool, save_id, season_id).await {
-                    println!("[complete_phase] 年度最佳新秀: {}", rookie.player_name);
+                    log::debug!("年度最佳新秀: {}", rookie.player_name);
 
                     let rookie_honor = crate::models::Honor::new_player_honor(
                         save_id,
@@ -1770,7 +1770,7 @@ impl GameFlowService {
                         None,
                     );
                     if let Err(e) = HonorRepository::create(pool, save_id, &rookie_honor).await {
-                        eprintln!("Failed to create annual rookie honor: {}", e);
+                        log::error!("Failed to create annual rookie honor: {}", e);
                     } else {
                         honors_awarded.push(HonorAwarded {
                             honor_type: "年度最佳新秀".to_string(),
@@ -1787,14 +1787,14 @@ impl GameFlowService {
             _ => {}
         }
 
-        println!("[complete_phase] 荣誉处理完成，共 {} 个荣誉", honors_awarded.len());
+        log::debug!("荣誉处理完成，共 {} 个荣誉", honors_awarded.len());
 
         // 年度颁奖典礼后重算所有选手身价（考虑累积荣誉）
         if phase == SeasonPhase::AnnualAwards {
-            println!("[complete_phase] 开始年度身价重算...");
+            log::debug!("开始年度身价重算...");
             match self.recalculate_all_market_values(pool, save_id, season_id).await {
-                Ok(count) => println!("[complete_phase] 年度身价重算完成，共更新 {} 名选手", count),
-                Err(e) => eprintln!("[complete_phase] 年度身价重算失败: {}", e),
+                Ok(count) => log::debug!("年度身价重算完成，共更新 {} 名选手", count),
+                Err(e) => log::error!("[complete_phase] 年度身价重算失败: {}", e),
             }
         }
 
@@ -1809,15 +1809,15 @@ impl GameFlowService {
             | SeasonPhase::WorldChampionship
             | SeasonPhase::ShanghaiMasters
             | SeasonPhase::IcpIntercontinental => {
-                println!("[complete_phase] 颁发年度积分: {:?}", phase);
+                log::debug!("颁发年度积分: {:?}", phase);
                 let tournament_type = phase_to_tournament_type(phase);
                 if let Some(t_type) = tournament_type {
                     let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
                     for tournament in &tournaments {
-                        println!("[complete_phase] 为赛事 {} 颁发年度积分", tournament.id);
+                        log::debug!("为赛事 {} 颁发年度积分", tournament.id);
                         match self.award_tournament_points(pool, save_id, season_id, tournament.id, t_type).await {
-                            Ok(awarded) => println!("[complete_phase] 积分颁发成功: {:?}", awarded),
-                            Err(e) => println!("[complete_phase] 积分颁发失败: {}", e),
+                            Ok(awarded) => log::debug!("积分颁发成功: {:?}", awarded),
+                            Err(e) => log::debug!("积分颁发失败: {}", e),
                         }
                     }
                 }
@@ -1836,15 +1836,15 @@ impl GameFlowService {
             | SeasonPhase::ShanghaiMasters
             | SeasonPhase::IcpIntercontinental
             | SeasonPhase::SuperIntercontinental => {
-                println!("[complete_phase] 发放赛事奖金: {:?}", phase);
+                log::debug!("发放赛事奖金: {:?}", phase);
                 let tournament_type = phase_to_tournament_type(phase);
                 if let Some(t_type) = tournament_type {
                     let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
                     for tournament in &tournaments {
-                        println!("[complete_phase] 为赛事 {} 发放奖金", tournament.id);
+                        log::debug!("为赛事 {} 发放奖金", tournament.id);
                         match self.distribute_tournament_prizes(pool, save_id, season_id, tournament.id, t_type).await {
-                            Ok(distributed) => println!("[complete_phase] 奖金发放成功: {:?}", distributed),
-                            Err(e) => println!("[complete_phase] 奖金发放失败: {}", e),
+                            Ok(distributed) => log::debug!("奖金发放成功: {:?}", distributed),
+                            Err(e) => log::debug!("奖金发放失败: {}", e),
                         }
                     }
                 }
@@ -1877,7 +1877,7 @@ impl GameFlowService {
                     );
                     for tournament in tournaments {
                         if let Err(e) = self.update_champion_player_stats(pool, save_id, season_id, tournament.id, t_type, is_international).await {
-                            eprintln!("Failed to update champion stats for tournament {}: {}", tournament.id, e);
+                            log::error!("Failed to update champion stats for tournament {}: {}", tournament.id, e);
                         }
                     }
                 }
@@ -1894,7 +1894,7 @@ impl GameFlowService {
                     .bind(tournament.id as i64)
                     .execute(pool)
                     .await;
-                println!("[complete_phase] 更新赛事 {} (id={}) 状态为 Completed", tournament.name, tournament.id);
+                log::debug!("更新赛事 {} (id={}) 状态为 Completed", tournament.name, tournament.id);
             }
         }
 
@@ -2034,7 +2034,7 @@ impl GameFlowService {
             }
         }
 
-        println!("[get_playoffs_top3] tournament_id={}, found {} teams", tournament_id, results.len());
+        log::debug!("tournament_id={}, found {} teams", tournament_id, results.len());
         Ok(results)
     }
 
@@ -2047,7 +2047,7 @@ impl GameFlowService {
         use crate::models::Team;
         let mut results: Vec<Team> = Vec::new();
 
-        println!("[get_playoffs_top4] 开始获取 tournament_id={} 的前4名", tournament_id);
+        log::debug!("开始获取 tournament_id={} 的前4名", tournament_id);
 
         // 获取总决赛（GRAND_FINAL）
         let grand_final = sqlx::query(
@@ -2066,14 +2066,14 @@ impl GameFlowService {
             if let Some(winner) = winner_id {
                 let winner = winner as u64;
                 let loser = if winner == home_id { away_id } else { home_id };
-                println!("[get_playoffs_top4] GRAND_FINAL: champion={}, runner_up={}", winner, loser);
+                log::debug!("GRAND_FINAL: champion={}, runner_up={}", winner, loser);
                 (Some(winner), Some(loser))
             } else {
-                println!("[get_playoffs_top4] GRAND_FINAL 存在但无 winner_id");
+                log::debug!("GRAND_FINAL 存在但无 winner_id");
                 (None, None)
             }
         } else {
-            println!("[get_playoffs_top4] 未找到 GRAND_FINAL");
+            log::debug!("未找到 GRAND_FINAL");
             (None, None)
         };
 
@@ -2094,14 +2094,14 @@ impl GameFlowService {
             if let Some(winner) = winner_id {
                 let winner = winner as u64;
                 let loser = if winner == home_id { away_id } else { home_id };
-                println!("[get_playoffs_top4] LOSERS_FINAL: third={}", loser);
+                log::debug!("LOSERS_FINAL: third={}", loser);
                 Some(loser)
             } else {
-                println!("[get_playoffs_top4] LOSERS_FINAL 存在但无 winner_id");
+                log::debug!("LOSERS_FINAL 存在但无 winner_id");
                 None
             }
         } else {
-            println!("[get_playoffs_top4] 未找到 LOSERS_FINAL");
+            log::debug!("未找到 LOSERS_FINAL");
             None
         };
 
@@ -2124,14 +2124,14 @@ impl GameFlowService {
             if let Some(winner) = winner_id {
                 let winner = winner as u64;
                 let loser = if winner == home_id { away_id } else { home_id };
-                println!("[get_playoffs_top4] LOSERS_R3: fourth={}", loser);
+                log::debug!("LOSERS_R3: fourth={}", loser);
                 Some(loser)
             } else {
-                println!("[get_playoffs_top4] LOSERS_R3 存在但无 winner_id");
+                log::debug!("LOSERS_R3 存在但无 winner_id");
                 None
             }
         } else {
-            println!("[get_playoffs_top4] 未找到 LOSERS_R3");
+            log::debug!("未找到 LOSERS_R3");
             None
         };
 
@@ -2157,7 +2157,7 @@ impl GameFlowService {
             }
         }
 
-        println!("[get_playoffs_top4] tournament_id={}, found {} teams", tournament_id, results.len());
+        log::debug!("tournament_id={}, found {} teams", tournament_id, results.len());
         Ok(results)
     }
 
@@ -2203,10 +2203,10 @@ impl GameFlowService {
                         .map_err(|e| e.to_string())?;
 
                     awarded.push((*team_id, points));
-                    println!("Awarded {} points to team {} for position {} in tournament {}",
+                    log::debug!("Awarded {} points to team {} for position {} in tournament {}",
                         points, team_id, position, tournament_id);
                 } else {
-                    println!("Skipped duplicate points for team {} in tournament {}", team_id, tournament_id);
+                    log::debug!("Skipped duplicate points for team {} in tournament {}", team_id, tournament_id);
                 }
             }
         }
@@ -2268,12 +2268,12 @@ impl GameFlowService {
                     .map_err(|e| format!("Failed to update team balance: {}", e))?;
 
                 distributed.push((*team_id, prize));
-                println!("[distribute_tournament_prizes] Awarded {} prize to team {} for position {} in tournament {}",
+                log::debug!("Awarded {} prize to team {} for position {} in tournament {}",
                     prize, team_id, position, tournament_id);
             }
         }
 
-        println!("[distribute_tournament_prizes] Total {} prizes distributed for tournament {}", distributed.len(), tournament_id);
+        log::debug!("Total {} prizes distributed for tournament {}", distributed.len(), tournament_id);
         Ok(distributed)
     }
 
@@ -2296,7 +2296,7 @@ impl GameFlowService {
             .map(|(team_id, _)| *team_id);
 
         if let Some(team_id) = champion_team_id {
-            println!("[update_champion_player_stats] Updating stats for champion team {} in tournament {}", team_id, tournament_id);
+            log::debug!("Updating stats for champion team {} in tournament {}", team_id, tournament_id);
 
             // 获取队伍的所有选手（从 players 表）
             let players = sqlx::query(
@@ -2334,10 +2334,10 @@ impl GameFlowService {
                 // 更新冠军次数
                 if is_international {
                     stats.international_titles += 1;
-                    println!("[update_champion_player_stats] Player {} now has {} international titles", player_id, stats.international_titles);
+                    log::debug!("Player {} now has {} international titles", player_id, stats.international_titles);
                 } else {
                     stats.regional_titles += 1;
-                    println!("[update_champion_player_stats] Player {} now has {} regional titles", player_id, stats.regional_titles);
+                    log::debug!("Player {} now has {} regional titles", player_id, stats.regional_titles);
                 }
 
                 // 重新计算冠军加成和年度Top得分（综合三要素：影响力40% + 出场30% + 冠军30%）
@@ -2351,9 +2351,9 @@ impl GameFlowService {
                     .map_err(|e| e.to_string())?;
             }
 
-            println!("[update_champion_player_stats] Successfully updated champion stats for tournament {}", tournament_id);
+            log::debug!("Successfully updated champion stats for tournament {}", tournament_id);
         } else {
-            println!("[update_champion_player_stats] No champion found for tournament {}", tournament_id);
+            log::debug!("No champion found for tournament {}", tournament_id);
         }
 
         Ok(())
@@ -2395,10 +2395,10 @@ impl GameFlowService {
                         let runner_up = if winner == home_id { away_id } else { home_id };
                         results.push((winner, "CHAMPION".to_string()));
                         results.push((runner_up, "RUNNER_UP".to_string()));
-                        println!("[get_tournament_final_results] GRAND_FINAL: champion={}, runner_up={}", winner, runner_up);
+                        log::debug!("GRAND_FINAL: champion={}, runner_up={}", winner, runner_up);
                     }
                 } else {
-                    println!("[get_tournament_final_results] No GRAND_FINAL match found for tournament {}", tournament_id);
+                    log::debug!("No GRAND_FINAL match found for tournament {}", tournament_id);
                 }
 
                 // 获取败者组决赛失败者（季军）
@@ -2422,7 +2422,7 @@ impl GameFlowService {
                         // 败者组决赛的败者是季军
                         let third = if winner as u64 == home_id { away_id } else { home_id };
                         results.push((third, "THIRD".to_string()));
-                        println!("[get_tournament_final_results] LOSERS_FINAL loser (third): {}", third);
+                        log::debug!("LOSERS_FINAL loser (third): {}", third);
                     }
                 }
 
@@ -2447,7 +2447,7 @@ impl GameFlowService {
                         // 败者组R3的败者是殿军
                         let fourth = if winner as u64 == home_id { away_id } else { home_id };
                         results.push((fourth, "FOURTH".to_string()));
-                        println!("[get_tournament_final_results] LOSERS_R3 loser (fourth): {}", fourth);
+                        log::debug!("LOSERS_R3 loser (fourth): {}", fourth);
                     }
                 }
 
@@ -2471,7 +2471,7 @@ impl GameFlowService {
                     if let Some(winner) = winner_id {
                         let loser = if winner as u64 == home_id { away_id } else { home_id };
                         results.push((loser, "5TH_8TH".to_string()));
-                        println!("[get_tournament_final_results] LOSERS_R2 loser (5th-8th): {}", loser);
+                        log::debug!("LOSERS_R2 loser (5th-8th): {}", loser);
                     }
                 }
 
@@ -2495,11 +2495,11 @@ impl GameFlowService {
                     if let Some(winner) = winner_id {
                         let loser = if winner as u64 == home_id { away_id } else { home_id };
                         results.push((loser, "5TH_8TH".to_string()));
-                        println!("[get_tournament_final_results] LOSERS_R1 loser (5th-8th): {}", loser);
+                        log::debug!("LOSERS_R1 loser (5th-8th): {}", loser);
                     }
                 }
 
-                println!("[get_tournament_final_results] Total results for tournament {}: {:?}", tournament_id, results);
+                log::debug!("Total results for tournament {}: {:?}", tournament_id, results);
             }
 
             // MSI - 双败赛制，需要单独处理
@@ -2526,7 +2526,7 @@ impl GameFlowService {
                         let runner_up = if winner == home_id { away_id } else { home_id };
                         results.push((winner, "CHAMPION".to_string()));
                         results.push((runner_up, "RUNNER_UP".to_string()));
-                        println!("[MSI] GRAND_FINAL: champion={}, runner_up={}", winner, runner_up);
+                        log::debug!("GRAND_FINAL: champion={}, runner_up={}", winner, runner_up);
                     }
                 }
 
@@ -2550,7 +2550,7 @@ impl GameFlowService {
                     if let Some(winner) = winner_id {
                         let third = if winner as u64 == home_id { away_id } else { home_id };
                         results.push((third, "THIRD".to_string()));
-                        println!("[MSI] LOSERS_FINAL loser (third): {}", third);
+                        log::debug!("LOSERS_FINAL loser (third): {}", third);
                     }
                 }
 
@@ -2574,7 +2574,7 @@ impl GameFlowService {
                     if let Some(winner) = winner_id {
                         let fourth = if winner as u64 == home_id { away_id } else { home_id };
                         results.push((fourth, "FOURTH".to_string()));
-                        println!("[MSI] LOSERS_R4 loser (fourth): {}", fourth);
+                        log::debug!("LOSERS_R4 loser (fourth): {}", fourth);
                     }
                 }
 
@@ -2598,7 +2598,7 @@ impl GameFlowService {
                     if let Some(winner) = winner_id {
                         let loser = if winner as u64 == home_id { away_id } else { home_id };
                         results.push((loser, "LOSERS_R2".to_string())); // 积分配置中是 LOSERS_R2
-                        println!("[MSI] LOSERS_R3 loser: {}", loser);
+                        log::debug!("LOSERS_R3 loser: {}", loser);
                     }
                 }
 
@@ -2622,11 +2622,11 @@ impl GameFlowService {
                     if let Some(winner) = winner_id {
                         let loser = if winner as u64 == home_id { away_id } else { home_id };
                         results.push((loser, "LOSERS_R1".to_string())); // 积分配置中是 LOSERS_R1
-                        println!("[MSI] LOSERS_R2 loser: {}", loser);
+                        log::debug!("LOSERS_R2 loser: {}", loser);
                     }
                 }
 
-                println!("[MSI] Total results: {:?}", results);
+                log::debug!("Total results: {:?}", results);
             }
 
             // 马德里大师赛/Claude洲际赛 (32队分组+东西半区淘汰)
@@ -2656,7 +2656,7 @@ impl GameFlowService {
                             let runner_up = if winner == home_id { away_id } else { home_id };
                             results.push((winner, "CHAMPION".to_string()));
                             results.push((runner_up, "RUNNER_UP".to_string()));
-                            println!("[MadridMasters] GRAND_FINAL: champion={}, runner_up={}", winner, runner_up);
+                            log::debug!("GRAND_FINAL: champion={}, runner_up={}", winner, runner_up);
                         }
                         break;
                     }
@@ -2675,7 +2675,7 @@ impl GameFlowService {
                             let loser = if winner == home_id { away_id } else { home_id };
                             results.push((winner, "THIRD".to_string()));
                             results.push((loser, "FOURTH".to_string()));
-                            println!("[MadridMasters] THIRD_PLACE: third={}, fourth={}", winner, loser);
+                            log::debug!("THIRD_PLACE: third={}, fourth={}", winner, loser);
                         }
                         break;
                     }
@@ -2692,7 +2692,7 @@ impl GameFlowService {
                         if let Some(winner) = winner_id {
                             let loser = if winner as u64 == home_id { away_id } else { home_id };
                             results.push((loser, "SEMI_LOSER".to_string()));
-                            println!("[MadridMasters] {} loser (SEMI_LOSER): {}", stage, loser);
+                            log::debug!("{} loser (SEMI_LOSER): {}", stage, loser);
                         }
                     }
                 }
@@ -2708,12 +2708,12 @@ impl GameFlowService {
                         if let Some(winner) = winner_id {
                             let loser = if winner as u64 == home_id { away_id } else { home_id };
                             results.push((loser, "QUARTER_LOSER".to_string()));
-                            println!("[MadridMasters] {} loser (QUARTER_LOSER): {}", stage, loser);
+                            log::debug!("{} loser (QUARTER_LOSER): {}", stage, loser);
                         }
                     }
                 }
 
-                println!("[MadridMasters] Total results: {:?}", results);
+                log::debug!("Total results: {:?}", results);
             }
 
             // 其他国际赛事 (标准淘汰赛制)
@@ -2880,11 +2880,11 @@ impl GameFlowService {
                         if let (Some(r1), Some(r2)) = final_regions {
                             if *sorted[0].0 == r1 { (r1, r2) } else { (r2, r1) }
                         } else {
-                            println!("[ICP Points] 无法确定冠亚军赛区");
+                            log::debug!("[ICP Points] 无法确定冠亚军赛区");
                             return Ok(results);
                         }
                     } else {
-                        println!("[ICP Points] 没有决赛结果");
+                        log::debug!("[ICP Points] 没有决赛结果");
                         return Ok(results);
                     }
                 };
@@ -2912,7 +2912,7 @@ impl GameFlowService {
                     }
                 };
 
-                println!("[ICP Points] 赛区排名: 冠军={}, 亚军={}, 季军={}, 殿军={}",
+                log::debug!("[ICP Points] 赛区排名: 冠军={}, 亚军={}, 季军={}, 殿军={}",
                     champion_region, runner_up_region, third_region, fourth_region);
 
                 // 3. 获取每个赛区的所有队伍
@@ -2992,7 +2992,7 @@ impl GameFlowService {
                     }
                 }
 
-                println!("[ICP Points] 共 {} 个队伍需要颁发积分", results.len());
+                log::debug!("[ICP Points] 共 {} 个队伍需要颁发积分", results.len());
             }
 
             // Super洲际邀请赛
@@ -3125,16 +3125,16 @@ impl GameFlowService {
                             p.get::<i64, _>("ability"))
                     }).collect();
 
-                    println!("[auto_confirm_starters] 警告: 战队 {} (id={}) 缺少 {} 位置的选手! 该队所有选手: {:?}",
+                    log::debug!("警告: 战队 {} (id={}) 缺少 {} 位置的选手! 该队所有选手: {:?}",
                         team.name, team.id, pos, player_info);
                 }
             }
             if team_confirmed < 5 {
-                println!("[auto_confirm_starters] 战队 {} (id={}) 只确认了 {}/5 名首发!", team.name, team.id, team_confirmed);
+                log::debug!("战队 {} (id={}) 只确认了 {}/5 名首发!", team.name, team.id, team_confirmed);
             }
         }
 
-        println!("[auto_confirm_starters] 确认了 {} 名首发选手", confirmed_count);
+        log::debug!("确认了 {} 名首发选手", confirmed_count);
         Ok(confirmed_count)
     }
 
@@ -3169,7 +3169,7 @@ impl GameFlowService {
                 .map_err(|e| format!("更新队伍战力失败: {}", e))?;
         }
 
-        println!("[recalculate_team_powers] 更新了 {} 支队伍的战力", teams.len());
+        log::debug!("更新了 {} 支队伍的战力", teams.len());
         Ok(())
     }
 
@@ -3809,7 +3809,7 @@ impl GameFlowService {
                         self.league_service.advance_playoff_bracket(tournament.id, &all_matches);
 
                     if !new_matches.is_empty() {
-                        println!(
+                        log::debug!(
                             "[simulate_all_phase_matches] 季后赛生成 {} 场新比赛",
                             new_matches.len()
                         );
@@ -4069,7 +4069,7 @@ impl GameFlowService {
         .await
         .map_err(|e| format!("Failed to record market value change: {}", e))?;
 
-        println!("[update_player_market_value] {} 身价 {} -> {} (+{:.0}%, {})",
+        log::debug!("{} 身价 {} -> {} (+{:.0}%, {})",
             player_name, old_value, new_value, change_percent, reason);
         Ok(())
     }
@@ -4331,7 +4331,7 @@ impl GameFlowService {
             .await
             .ok(); // 忽略记录失败
 
-            println!("[recalculate_market_value] {} 身价重算: {} -> {} (荣誉×{:.2}, 赛区×{:.2})",
+            log::debug!("{} 身价重算: {} -> {} (荣誉×{:.2}, 赛区×{:.2})",
                 player_name, old_calculated / 10000, new_value / 10000, honor_factor, region_factor);
         }
 
@@ -4359,7 +4359,7 @@ impl GameFlowService {
             count += 1;
         }
 
-        println!("[recalculate_all_market_values] 完成 {} 名选手身价重算", count);
+        log::debug!("完成 {} 名选手身价重算", count);
         Ok(count)
     }
 }

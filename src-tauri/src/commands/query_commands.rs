@@ -396,9 +396,9 @@ pub async fn get_region_tournaments(
         })
         .collect();
 
-    println!("[get_region_tournaments] region_id={}, season_id={:?}, found {} tournaments", region_id, season_id, tournaments.len());
+    log::debug!("region_id={}, season_id={:?}, found {} tournaments", region_id, season_id, tournaments.len());
     for t in &tournaments {
-        println!("[get_region_tournaments]   - {} (type={}, matches={}/{})", t.name, t.tournament_type, t.completed_matches, t.match_count);
+        log::debug!("- {} (type={}, matches={}/{})", t.name, t.tournament_type, t.completed_matches, t.match_count);
     }
 
     Ok(CommandResult::ok(tournaments))

@@ -578,28 +578,28 @@ pub async fn simulate_match_detailed(
         || stage.contains("GRAND_FINAL");
 
     if is_playoff {
-        println!("[Playoffs] 检测到季后赛比赛完成: stage={}", stage);
+        log::debug!("检测到季后赛比赛完成: stage={}", stage);
 
         let all_matches = MatchRepository::get_by_tournament(&pool, tournament_id as u64)
             .await
             .unwrap_or_default();
 
-        println!("[Playoffs] 获取到 {} 场比赛", all_matches.len());
+        log::debug!("获取到 {} 场比赛", all_matches.len());
 
         let league_service = LeagueService::new();
         let new_matches = league_service.advance_playoff_bracket(tournament_id as u64, &all_matches);
 
         if !new_matches.is_empty() {
-            println!("[Playoffs] 生成 {} 场新比赛", new_matches.len());
+            log::debug!("生成 {} 场新比赛", new_matches.len());
             for nm in &new_matches {
-                println!("[Playoffs] 新比赛: stage={}, home={}, away={}", nm.stage, nm.home_team_id, nm.away_team_id);
+                log::debug!("新比赛: stage={}, home={}, away={}", nm.stage, nm.home_team_id, nm.away_team_id);
             }
             match MatchRepository::create_batch(&pool, &save_id, &new_matches).await {
-                Ok(_) => println!("[Playoffs] 比赛保存成功"),
-                Err(e) => println!("[Playoffs] 比赛保存失败: {:?}", e),
+                Ok(_) => log::debug!("比赛保存成功"),
+                Err(e) => log::debug!("比赛保存失败: {:?}", e),
             }
         } else {
-            println!("[Playoffs] 条件不满足，未生成新比赛");
+            log::debug!("条件不满足，未生成新比赛");
         }
     }
 
@@ -927,23 +927,7 @@ async fn load_player_traits(
 
 /// 解析特性类型字符串
 fn parse_trait_type(s: &str) -> Option<TraitType> {
-    match s.to_lowercase().as_str() {
-        "clutch" => Some(TraitType::Clutch),
-        "slow_starter" | "slowstarter" => Some(TraitType::SlowStarter),
-        "fast_starter" | "faststarter" => Some(TraitType::FastStarter),
-        "explosive" => Some(TraitType::Explosive),
-        "consistent" => Some(TraitType::Consistent),
-        "comeback_king" | "comebackking" => Some(TraitType::ComebackKing),
-        "tilter" => Some(TraitType::Tilter),
-        "mental_fortress" | "mentalfortress" => Some(TraitType::MentalFortress),
-        "fragile" => Some(TraitType::Fragile),
-        "ironman" => Some(TraitType::Ironman),
-        "volatile" => Some(TraitType::Volatile),
-        "rising_star" | "risingstar" => Some(TraitType::RisingStar),
-        "veteran" => Some(TraitType::Veteran),
-        "team_leader" | "teamleader" => Some(TraitType::TeamLeader),
-        _ => None,
-    }
+    TraitType::from_str(s)
 }
 
 /// 核心比赛模拟函数：基于选手真实属性模拟单局比赛
@@ -1662,7 +1646,7 @@ async fn save_player_tournament_stats(
         };
 
         if let Err(e) = PlayerTournamentStatsRepository::upsert(pool, &final_stats).await {
-            eprintln!("[save_player_tournament_stats] 保存选手 {} 统计失败: {}", player_id, e);
+            log::error!("[save_player_tournament_stats] 保存选手 {} 统计失败: {}", player_id, e);
         }
     }
 
@@ -1709,7 +1693,7 @@ pub async fn update_match_result(
     .await
     .map_err(|e| format!("Failed to update match result: {}", e))?;
 
-    println!("[update_match_result] Match {} updated: {}:{}, winner={}",
+    log::debug!("Match {} updated: {}:{}, winner={}",
         match_id, home_score, away_score, winner_id);
 
     Ok(CommandResult::ok(true))
@@ -1750,7 +1734,7 @@ pub async fn update_match_teams(
     .await
     .map_err(|e| format!("Failed to update match teams: {}", e))?;
 
-    println!("[update_match_teams] Match {} updated: home={}, away={}",
+    log::debug!("Match {} updated: home={}, away={}",
         match_id, home_team_id, away_team_id);
 
     Ok(CommandResult::ok(true))
@@ -1786,7 +1770,7 @@ pub async fn cancel_match(
     .await
     .map_err(|e| format!("Failed to cancel match: {}", e))?;
 
-    println!("[cancel_match] Match {} cancelled", match_id);
+    log::debug!("Match {} cancelled", match_id);
 
     Ok(CommandResult::ok(true))
 }

@@ -2574,7 +2574,7 @@ impl PointsRepository {
 
         // 如果已存在，跳过插入，返回已有记录的ID和false标志
         if let Some((existing_id,)) = existing {
-            println!("[PointsRepository] 积分记录已存在，跳过: team_id={}, tournament_id={}", team_id, tournament_id);
+            log::debug!("积分记录已存在，跳过: team_id={}, tournament_id={}", team_id, tournament_id);
             return Ok((existing_id as u64, false));
         }
 

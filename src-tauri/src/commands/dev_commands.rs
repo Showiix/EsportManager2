@@ -140,7 +140,7 @@ pub async fn dev_reassign_honors(
                            if honors.team_runner_up.is_some() { 1 } else { 0 };
                 honors_count += count;
             },
-            Err(e) => println!("[dev_reassign_honors] 赛事 {} 颁发荣誉失败: {}", tournament.name, e),
+            Err(e) => log::debug!("赛事 {} 颁发荣誉失败: {}", tournament.name, e),
         }
     }
 
@@ -1257,7 +1257,7 @@ pub async fn dev_recalculate_market_values(
                 .await
                 .map_err(|e| format!("Failed to update player {}: {}", game_id, e))?;
 
-            println!("[recalculate_market_values] {} 身价 {} -> {} 万 (荣誉×{:.2}, 赛区×{:.2})",
+            log::debug!("{} 身价 {} -> {} 万 (荣誉×{:.2}, 赛区×{:.2})",
                 game_id, old_calculated, new_value, honor_factor, region_factor);
 
             updated_count += 1;

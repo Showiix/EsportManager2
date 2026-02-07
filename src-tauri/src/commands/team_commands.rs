@@ -509,7 +509,7 @@ pub async fn update_all_market_values(
         if new_value != old_value {
             player.market_value = new_value;
             if let Err(e) = PlayerRepository::update(&pool, &player).await {
-                eprintln!("Failed to update player {}: {}", player.id, e);
+                log::error!("Failed to update player {}: {}", player.id, e);
                 continue;
             }
 
@@ -837,7 +837,7 @@ pub async fn update_player(
         return Ok(CommandResult::err(format!("Failed to update player: {}", e)));
     }
 
-    println!("✅ 选手 {} 属性已更新: ability={}, potential={}, stability={}, age={}",
+    log::debug!("✅ 选手 {} 属性已更新: ability={}, potential={}, stability={}, age={}",
         player.game_id, player.ability, player.potential, player.stability, player.age);
 
     Ok(CommandResult::ok(player.into()))

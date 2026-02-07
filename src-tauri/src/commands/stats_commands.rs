@@ -195,13 +195,13 @@ pub async fn get_season_impact_ranking(
     season_id: i64,
     limit: Option<i32>,
 ) -> Result<StatsCommandResult<Vec<PlayerRankingItem>>, String> {
-    println!("[get_season_impact_ranking] Called with season_id={}, limit={:?}", season_id, limit);
+    log::debug!("Called with season_id={}, limit={:?}", season_id, limit);
 
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
         Some(db) => db,
         None => {
-            println!("[get_season_impact_ranking] ERROR: Database not initialized");
+            log::debug!("ERROR: Database not initialized");
             return Ok(StatsCommandResult::err("Database not initialized"));
         }
     };
@@ -209,11 +209,11 @@ pub async fn get_season_impact_ranking(
     let current_save = state.current_save_id.read().await;
     let save_id = match current_save.as_ref() {
         Some(id) => {
-            println!("[get_season_impact_ranking] save_id={}", id);
+            log::debug!("save_id={}", id);
             id.clone()
         },
         None => {
-            println!("[get_season_impact_ranking] ERROR: No save loaded");
+            log::debug!("ERROR: No save loaded");
             return Ok(StatsCommandResult::err("No save loaded"));
         }
     };
@@ -224,15 +224,15 @@ pub async fn get_season_impact_ranking(
     };
 
     let limit = limit.unwrap_or(20);
-    println!("[get_season_impact_ranking] Querying with save_id={}, season_id={}, limit={}", save_id, season_id, limit);
+    log::debug!("Querying with save_id={}, season_id={}, limit={}", save_id, season_id, limit);
 
     let stats_list = match PlayerStatsRepository::get_season_ranking(&pool, &save_id, season_id, limit).await {
         Ok(list) => {
-            println!("[get_season_impact_ranking] Got {} records from database", list.len());
+            log::debug!("Got {} records from database", list.len());
             list
         },
         Err(e) => {
-            println!("[get_season_impact_ranking] ERROR: {}", e);
+            log::debug!("ERROR: {}", e);
             return Ok(StatsCommandResult::err(format!("Failed to get ranking: {}", e)));
         }
     };
@@ -377,13 +377,13 @@ pub async fn get_player_impact_history(
     player_id: i64,
     season_id: Option<i64>,
 ) -> Result<StatsCommandResult<Vec<f64>>, String> {
-    println!("[get_player_impact_history] Called with player_id={}, season_id={:?}", player_id, season_id);
+    log::debug!("Called with player_id={}, season_id={:?}", player_id, season_id);
 
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
         Some(db) => db,
         None => {
-            println!("[get_player_impact_history] ERROR: Database not initialized");
+            log::debug!("ERROR: Database not initialized");
             return Ok(StatsCommandResult::err("Database not initialized"));
         }
     };
@@ -391,11 +391,11 @@ pub async fn get_player_impact_history(
     let current_save = state.current_save_id.read().await;
     let save_id = match current_save.as_ref() {
         Some(id) => {
-            println!("[get_player_impact_history] save_id={}", id);
+            log::debug!("save_id={}", id);
             id.clone()
         },
         None => {
-            println!("[get_player_impact_history] ERROR: No save loaded");
+            log::debug!("ERROR: No save loaded");
             return Ok(StatsCommandResult::err("No save loaded"));
         }
     };
@@ -403,18 +403,18 @@ pub async fn get_player_impact_history(
     let pool = match db.get_pool().await {
         Ok(p) => p,
         Err(e) => {
-            println!("[get_player_impact_history] ERROR: Failed to get pool: {}", e);
+            log::debug!("ERROR: Failed to get pool: {}", e);
             return Ok(StatsCommandResult::err(format!("Failed to get pool: {}", e)));
         }
     };
 
     match MatchGameDetailRepository::get_player_impact_history(&pool, &save_id, player_id, season_id).await {
         Ok(history) => {
-            println!("[get_player_impact_history] Got {} records", history.len());
+            log::debug!("Got {} records", history.len());
             Ok(StatsCommandResult::ok(history))
         },
         Err(e) => {
-            println!("[get_player_impact_history] ERROR: {}", e);
+            log::debug!("ERROR: {}", e);
             Ok(StatsCommandResult::err(format!("Failed to get impact history: {}", e)))
         }
     }
@@ -427,13 +427,13 @@ pub async fn get_tournament_mvp_ranking(
     tournament_id: i64,
     limit: Option<i32>,
 ) -> Result<StatsCommandResult<Vec<PlayerTournamentStats>>, String> {
-    println!("[get_tournament_mvp_ranking] Called with tournament_id={}, limit={:?}", tournament_id, limit);
+    log::debug!("Called with tournament_id={}, limit={:?}", tournament_id, limit);
 
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
         Some(db) => db,
         None => {
-            println!("[get_tournament_mvp_ranking] ERROR: Database not initialized");
+            log::debug!("ERROR: Database not initialized");
             return Ok(StatsCommandResult::err("Database not initialized"));
         }
     };
@@ -441,11 +441,11 @@ pub async fn get_tournament_mvp_ranking(
     let current_save = state.current_save_id.read().await;
     let save_id = match current_save.as_ref() {
         Some(id) => {
-            println!("[get_tournament_mvp_ranking] save_id={}", id);
+            log::debug!("save_id={}", id);
             id.clone()
         },
         None => {
-            println!("[get_tournament_mvp_ranking] ERROR: No save loaded");
+            log::debug!("ERROR: No save loaded");
             return Ok(StatsCommandResult::err("No save loaded"));
         }
     };
@@ -456,15 +456,15 @@ pub async fn get_tournament_mvp_ranking(
     };
 
     let limit = limit.unwrap_or(20);
-    println!("[get_tournament_mvp_ranking] Querying with tournament_id={}, limit={}", tournament_id, limit);
+    log::debug!("Querying with tournament_id={}, limit={}", tournament_id, limit);
 
     match PlayerTournamentStatsRepository::get_mvp_candidates(&pool, &save_id, tournament_id as u64, limit).await {
         Ok(stats_list) => {
-            println!("[get_tournament_mvp_ranking] Got {} records from database", stats_list.len());
+            log::debug!("Got {} records from database", stats_list.len());
             Ok(StatsCommandResult::ok(stats_list))
         },
         Err(e) => {
-            println!("[get_tournament_mvp_ranking] ERROR: {}", e);
+            log::debug!("ERROR: {}", e);
             Ok(StatsCommandResult::err(format!("Failed to get MVP ranking: {}", e)))
         }
     }
@@ -476,7 +476,7 @@ pub async fn recalculate_yearly_scores(
     state: State<'_, AppState>,
     season_id: i64,
 ) -> Result<StatsCommandResult<i32>, String> {
-    println!("[recalculate_yearly_scores] Called with season_id={}", season_id);
+    log::debug!("Called with season_id={}", season_id);
 
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
@@ -513,7 +513,7 @@ pub async fn recalculate_yearly_scores(
         }
     }
 
-    println!("[recalculate_yearly_scores] Updated {} records", updated_count);
+    log::debug!("Updated {} records", updated_count);
     Ok(StatsCommandResult::ok(updated_count))
 }
 

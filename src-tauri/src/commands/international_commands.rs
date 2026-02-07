@@ -588,7 +588,7 @@ pub async fn advance_bracket(
         home_team_id
     };
 
-    println!("[advance_bracket] stage={}, match_order={}, winner={}, loser={:?}", stage, match_order, winner_id, loser_id);
+    log::debug!("stage={}, match_order={}, winner={}, loser={:?}", stage, match_order, winner_id, loser_id);
 
     let mut updated_match_ids = Vec::new();
 
@@ -615,7 +615,7 @@ pub async fn advance_bracket(
                 .await
                 .map_err(|e| e.to_string())?;
 
-            println!("[advance_bracket] Winner {} -> {} (order={}, is_home={})", winner_id, next_stage, next_order, is_home);
+            log::debug!("Winner {} -> {} (order={}, is_home={})", winner_id, next_stage, next_order, is_home);
             updated_match_ids.push(next_id as u64);
         }
     }
@@ -644,7 +644,7 @@ pub async fn advance_bracket(
                     .await
                     .map_err(|e| e.to_string())?;
 
-                println!("[advance_bracket] Loser {} -> {} (order={}, is_home={})", loser, next_stage, next_order, is_home);
+                log::debug!("Loser {} -> {} (order={}, is_home={})", loser, next_stage, next_order, is_home);
                 updated_match_ids.push(next_id as u64);
             }
         }
@@ -1668,7 +1668,7 @@ pub async fn complete_tournament(
             }
         }
         Err(e) => {
-            eprintln!("Failed to process tournament honors: {}", e);
+            log::error!("Failed to process tournament honors: {}", e);
         }
     }
 
@@ -1701,7 +1701,7 @@ pub async fn complete_tournament(
                 ).await {
                     Ok((_, new)) => new,
                     Err(e) => {
-                        eprintln!("Failed to add points detail: {}", e);
+                        log::error!("Failed to add points detail: {}", e);
                         continue;
                     }
                 };
@@ -1711,7 +1711,7 @@ pub async fn complete_tournament(
                     let mut team_to_update = team.clone();
                     team_to_update.annual_points += points;
                     if let Err(e) = TeamRepository::update(&pool, &team_to_update).await {
-                        eprintln!("Failed to update team annual points: {}", e);
+                        log::error!("Failed to update team annual points: {}", e);
                         continue;
                     }
 
@@ -1722,10 +1722,10 @@ pub async fn complete_tournament(
                         position: position.clone(),
                     });
 
-                    println!("[complete_tournament] Awarded {} points to {} for position {}",
+                    log::debug!("Awarded {} points to {} for position {}",
                         points, team.name, position);
                 } else {
-                    println!("[complete_tournament] Skipped duplicate points for {} in tournament {}",
+                    log::debug!("Skipped duplicate points for {} in tournament {}",
                         team.name, tournament_id);
                 }
             }
@@ -1788,7 +1788,7 @@ async fn get_tournament_final_rankings(
     .await
     .map_err(|e| e.to_string())?;
 
-    println!("[get_tournament_final_rankings] tournament_id={}, is_double_elimination={}, matches={}",
+    log::debug!("tournament_id={}, is_double_elimination={}, matches={}",
         tournament_id, is_double_elimination, knockout_matches.len());
 
     // 找到决赛 - 冠军和亚军
@@ -1804,7 +1804,7 @@ async fn get_tournament_final_rankings(
                 let runner_up = if winner == home_id { away_id } else { home_id };
                 results.push((winner, "CHAMPION".to_string()));
                 results.push((runner_up, "RUNNER_UP".to_string()));
-                println!("[get_tournament_final_rankings] CHAMPION={}, RUNNER_UP={}", winner, runner_up);
+                log::debug!("CHAMPION={}, RUNNER_UP={}", winner, runner_up);
             }
             break;
         }
@@ -1825,7 +1825,7 @@ async fn get_tournament_final_rankings(
                     let loser = if winner as u64 == home_id { away_id } else { home_id };
                     if !results.iter().any(|(id, _)| *id == loser) {
                         results.push((loser, "THIRD".to_string()));
-                        println!("[get_tournament_final_rankings] THIRD={}", loser);
+                        log::debug!("THIRD={}", loser);
                     }
                 }
                 break;
@@ -1844,7 +1844,7 @@ async fn get_tournament_final_rankings(
                     let loser = if winner as u64 == home_id { away_id } else { home_id };
                     if !results.iter().any(|(id, _)| *id == loser) {
                         results.push((loser, "FOURTH".to_string()));
-                        println!("[get_tournament_final_rankings] FOURTH={}", loser);
+                        log::debug!("FOURTH={}", loser);
                     }
                 }
                 break;
@@ -1863,7 +1863,7 @@ async fn get_tournament_final_rankings(
                     let loser = if winner as u64 == home_id { away_id } else { home_id };
                     if !results.iter().any(|(id, _)| *id == loser) {
                         results.push((loser, "LOSERS_R2".to_string()));
-                        println!("[get_tournament_final_rankings] LOSERS_R2={}", loser);
+                        log::debug!("LOSERS_R2={}", loser);
                     }
                 }
             }
@@ -1881,7 +1881,7 @@ async fn get_tournament_final_rankings(
                     let loser = if winner as u64 == home_id { away_id } else { home_id };
                     if !results.iter().any(|(id, _)| *id == loser) {
                         results.push((loser, "LOSERS_R1".to_string()));
-                        println!("[get_tournament_final_rankings] LOSERS_R1={}", loser);
+                        log::debug!("LOSERS_R1={}", loser);
                     }
                 }
             }
@@ -1899,7 +1899,7 @@ async fn get_tournament_final_rankings(
                     let loser = if winner as u64 == home_id { away_id } else { home_id };
                     if !results.iter().any(|(id, _)| *id == loser) {
                         results.push((loser, "QUALIFIER_OUT".to_string()));
-                        println!("[get_tournament_final_rankings] QUALIFIER_OUT={}", loser);
+                        log::debug!("QUALIFIER_OUT={}", loser);
                     }
                 }
             }
@@ -1917,7 +1917,7 @@ async fn get_tournament_final_rankings(
                     let loser = if winner as u64 == home_id { away_id } else { home_id };
                     if !results.iter().any(|(id, _)| *id == loser) {
                         results.push((loser, "QUALIFIER_R1_OUT".to_string()));
-                        println!("[get_tournament_final_rankings] QUALIFIER_R1_OUT={}", loser);
+                        log::debug!("QUALIFIER_R1_OUT={}", loser);
                     }
                 }
             }
@@ -1970,7 +1970,7 @@ async fn get_tournament_final_rankings(
         }
     }
 
-    println!("[get_tournament_final_rankings] Final results: {:?}", results);
+    log::debug!("Final results: {:?}", results);
     Ok(results)
 }
 
@@ -2139,7 +2139,7 @@ pub async fn get_msi_qualified_teams(
         }
     }
 
-    println!("[get_msi_qualified_teams] legendary={}, challenger={}, qualifier={}",
+    log::debug!("legendary={}, challenger={}, qualifier={}",
         legendary.len(), challenger.len(), qualifier.len());
 
     Ok(CommandResult::ok(MsiTeamGroups {
@@ -2251,7 +2251,7 @@ pub async fn regenerate_msi_bracket(
     .await
     .map_err(|e| e.to_string())?;
 
-    println!("[regenerate_msi_bracket] 找到 {} 个已完成的春季季后赛", playoffs.len());
+    log::debug!("找到 {} 个已完成的春季季后赛", playoffs.len());
 
     let mut legendary_teams: Vec<Team> = Vec::new();
     let mut challenger_teams: Vec<Team> = Vec::new();
@@ -2371,7 +2371,7 @@ pub async fn regenerate_msi_bracket(
         }
     }
 
-    println!("[regenerate_msi_bracket] legendary={}, challenger={}, qualifier={}",
+    log::debug!("legendary={}, challenger={}, qualifier={}",
         legendary_teams.len(), challenger_teams.len(), qualifier_teams.len());
 
     if legendary_teams.len() != 4 || challenger_teams.len() != 4 || qualifier_teams.len() != 4 {
@@ -2397,7 +2397,7 @@ pub async fn regenerate_msi_bracket(
         .await
         .map_err(|e| format!("Failed to save matches: {}", e))?;
 
-    println!("[regenerate_msi_bracket] 成功生成 {} 场比赛", match_count);
+    log::debug!("成功生成 {} 场比赛", match_count);
 
     Ok(CommandResult::ok(match_count as u32))
 }
@@ -2462,7 +2462,7 @@ pub async fn fill_worlds_knockout_bracket(
             .map_err(|e| e.to_string())?;
 
         updated_ids.push(match_id as u64);
-        println!("[fill_worlds_knockout] Match {} updated with away_team_id {}", match_id, qualified_team_id);
+        log::debug!("Match {} updated with away_team_id {}", match_id, qualified_team_id);
     }
 
     Ok(CommandResult::ok(updated_ids))
@@ -2517,18 +2517,18 @@ pub async fn cleanup_duplicate_tournaments(
     .map_err(|e| e.to_string())?;
 
     if tournaments.len() <= 1 {
-        println!("[cleanup_duplicate_tournaments] No duplicates found for type {}", tournament_type);
+        log::debug!("No duplicates found for type {}", tournament_type);
         return Ok(CommandResult::ok(0));
     }
 
-    println!("[cleanup_duplicate_tournaments] Found {} tournaments of type {}, cleaning duplicates...",
+    log::debug!("Found {} tournaments of type {}, cleaning duplicates...",
         tournaments.len(), tournament_type);
 
     let mut deleted_count = 0u32;
 
     // 保留第一个，删除其余
     for (tournament_id, status) in tournaments.iter().skip(1) {
-        println!("[cleanup_duplicate_tournaments] Deleting tournament id={}, status={}", tournament_id, status);
+        log::debug!("Deleting tournament id={}, status={}", tournament_id, status);
 
         // 删除相关比赛
         sqlx::query("DELETE FROM matches WHERE tournament_id = ?")
@@ -2556,7 +2556,7 @@ pub async fn cleanup_duplicate_tournaments(
         }
     }
 
-    println!("[cleanup_duplicate_tournaments] Deleted {} duplicate tournaments", deleted_count);
+    log::debug!("Deleted {} duplicate tournaments", deleted_count);
     Ok(CommandResult::ok(deleted_count))
 }
 
@@ -2602,7 +2602,7 @@ pub async fn get_shanghai_qualified_teams(
     .await
     .map_err(|e| e.to_string())?;
 
-    println!("[get_shanghai_qualified_teams] Found {} SummerPlayoffs", playoffs.len());
+    log::debug!("Found {} SummerPlayoffs", playoffs.len());
 
     for playoff in playoffs {
         let tournament_id: i64 = playoff.get("id");
@@ -2671,7 +2671,7 @@ pub async fn get_shanghai_qualified_teams(
         }
     }
 
-    println!("[get_shanghai_qualified_teams] legendary={}, challenger={}, qualifier={}",
+    log::debug!("legendary={}, challenger={}, qualifier={}",
         legendary.len(), challenger.len(), qualifier.len());
 
     Ok(CommandResult::ok(MsiTeamGroups {
@@ -2729,7 +2729,7 @@ pub async fn regenerate_shanghai_bracket(
 
     let season_id: i64 = tournament.get("season_id");
 
-    println!("[regenerate_shanghai_bracket] 重置上海大师赛: tournament_id={}, season_id={}", tournament_id, season_id);
+    log::debug!("重置上海大师赛: tournament_id={}, season_id={}", tournament_id, season_id);
 
     // 1. 删除现有比赛的详细数据
     sqlx::query("DELETE FROM game_player_performances WHERE game_id LIKE ?")
@@ -2776,7 +2776,7 @@ pub async fn regenerate_shanghai_bracket(
     .await
     .map_err(|e| e.to_string())?;
 
-    println!("[regenerate_shanghai_bracket] 找到 {} 个已完成的夏季季后赛", playoffs.len());
+    log::debug!("找到 {} 个已完成的夏季季后赛", playoffs.len());
 
     let mut legendary_teams: Vec<Team> = Vec::new();
     let mut challenger_teams: Vec<Team> = Vec::new();
@@ -2840,7 +2840,7 @@ pub async fn regenerate_shanghai_bracket(
         }
     }
 
-    println!("[regenerate_shanghai_bracket] legendary={}, challenger={}, qualifier={}",
+    log::debug!("legendary={}, challenger={}, qualifier={}",
         legendary_teams.len(), challenger_teams.len(), qualifier_teams.len());
 
     if legendary_teams.len() != 4 || challenger_teams.len() != 4 || qualifier_teams.len() != 4 {
@@ -2866,7 +2866,7 @@ pub async fn regenerate_shanghai_bracket(
         .await
         .map_err(|e| format!("Failed to save matches: {}", e))?;
 
-    println!("[regenerate_shanghai_bracket] 成功重新生成 {} 场比赛", match_count);
+    log::debug!("成功重新生成 {} 场比赛", match_count);
 
     Ok(CommandResult::ok(match_count as u32))
 }
@@ -2902,7 +2902,7 @@ pub async fn regenerate_icp_bracket(
         .map_err(|e| e.to_string())?;
     let season_id: i64 = tournament_row.get("season_id");
 
-    println!("[regenerate_icp_bracket] 重置ICP赛事: tournament_id={}, season_id={}", tournament_id, season_id);
+    log::debug!("重置ICP赛事: tournament_id={}, season_id={}", tournament_id, season_id);
 
     // 1. 删除现有比赛的详细数据
     sqlx::query("DELETE FROM game_player_performances WHERE game_id IN (SELECT id FROM match_games WHERE match_id IN (SELECT id FROM matches WHERE tournament_id = ?))")
@@ -2946,7 +2946,7 @@ pub async fn regenerate_icp_bracket(
         .await
         .ok();
 
-    println!("[regenerate_icp_bracket] 已清除荣誉、赛事结果和选手统计");
+    log::debug!("已清除荣誉、赛事结果和选手统计");
 
     // 3. 从夏季季后赛获取各赛区前4名
     let playoffs = sqlx::query(
@@ -2965,7 +2965,7 @@ pub async fn regenerate_icp_bracket(
     .await
     .map_err(|e| e.to_string())?;
 
-    println!("[regenerate_icp_bracket] 找到 {} 个已完成的夏季季后赛", playoffs.len());
+    log::debug!("找到 {} 个已完成的夏季季后赛", playoffs.len());
 
     if playoffs.len() != 4 {
         return Ok(CommandResult::err(format!(
@@ -3092,7 +3092,7 @@ pub async fn regenerate_icp_bracket(
             }
         }
 
-        println!("[regenerate_icp_bracket] {} 赛区: {} 支队伍", region_code, region_teams.len());
+        log::debug!("{} 赛区: {} 支队伍", region_code, region_teams.len());
 
         if region_teams.len() != 4 {
             return Ok(CommandResult::err(format!(
@@ -3121,7 +3121,7 @@ pub async fn regenerate_icp_bracket(
         .await
         .ok();
 
-    println!("[regenerate_icp_bracket] 成功重新生成 {} 场比赛", match_count);
+    log::debug!("成功重新生成 {} 场比赛", match_count);
 
     Ok(CommandResult::ok(match_count as u32))
 }
@@ -3276,7 +3276,7 @@ pub async fn generate_champion_prep_stage(
         updated_match_ids.push(id as u64);
     }
 
-    println!("[generate_champion_prep_stage] 成功更新第三阶段比赛: {:?}", updated_match_ids);
+    log::debug!("成功更新第三阶段比赛: {:?}", updated_match_ids);
 
     Ok(CommandResult::ok(updated_match_ids))
 }
@@ -3350,7 +3350,7 @@ pub async fn generate_final_stage(
         _ => return Ok(CommandResult::err("败者组决赛尚未完成")),
     };
 
-    println!("[generate_final_stage] PREP 晋级者: 1={}, 2={} (其他队伍被淘汰)",
+    log::debug!("PREP 晋级者: 1={}, 2={} (其他队伍被淘汰)",
              qualifier_1, qualifier_2);
 
     // === 获取传奇组队伍（年度积分前4名）===
@@ -3377,7 +3377,7 @@ pub async fn generate_final_stage(
     let legendary_3 = rankings[2].team_id; // 第3名
     let legendary_4 = rankings[3].team_id; // 第4名
 
-    println!("[generate_final_stage] 传奇组: 1={}, 2={}, 3={}, 4={}",
+    log::debug!("传奇组: 1={}, 2={}, 3={}, 4={}",
              legendary_1, legendary_2, legendary_3, legendary_4);
 
     let mut updated_match_ids: Vec<u64> = Vec::new();
@@ -3499,7 +3499,7 @@ pub async fn generate_final_stage(
         updated_match_ids.push(id as u64);
     }
 
-    println!("[generate_final_stage] 成功更新第四阶段比赛: {:?}", updated_match_ids);
+    log::debug!("成功更新第四阶段比赛: {:?}", updated_match_ids);
 
     Ok(CommandResult::ok(updated_match_ids))
 }

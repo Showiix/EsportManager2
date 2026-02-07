@@ -903,7 +903,7 @@ pub async fn cleanup_duplicate_honors(
         "没有发现重复的荣誉记录".to_string()
     };
 
-    println!("[cleanup_duplicate_honors] {}", message);
+    log::debug!("{}", message);
 
     Ok(ApiResponse::success(CleanupDuplicatesResponse {
         deleted_count,
@@ -955,7 +955,7 @@ pub async fn regenerate_tournament_honors(
     .map_err(|e| format!("Failed to delete existing honors: {}", e))?;
 
     let deleted_count = delete_result.rows_affected() as u32;
-    println!("[regenerate_tournament_honors] 删除了 {} 条旧荣誉记录, tournament_id={}", deleted_count, tournament_id);
+    log::debug!("删除了 {} 条旧荣誉记录, tournament_id={}", deleted_count, tournament_id);
 
     // 2. 重新生成荣誉
     let honor_service = HonorService::new();
@@ -981,7 +981,7 @@ pub async fn regenerate_tournament_honors(
         "成功重新生成赛事荣誉：删除 {} 条旧记录，创建 {} 条新记录",
         deleted_count, created_count
     );
-    println!("[regenerate_tournament_honors] {}", message);
+    log::debug!("{}", message);
 
     Ok(ApiResponse::success(RegenerateHonorsResponse {
         deleted_count,
@@ -1020,7 +1020,7 @@ pub async fn regenerate_all_honors(
         .await
         .map_err(|e| format!("Failed to get completed tournaments: {}", e))?;
 
-    println!("[regenerate_all_honors] 找到 {} 个已完成的赛事", completed_tournaments.len());
+    log::debug!("找到 {} 个已完成的赛事", completed_tournaments.len());
 
     let mut total_deleted = 0u32;
     let mut total_created = 0u32;
@@ -1056,11 +1056,11 @@ pub async fn regenerate_all_honors(
                 if honors.tournament_mvp.is_some() { count += 1; }
                 if honors.finals_mvp.is_some() { count += 1; }
                 total_created += count;
-                println!("[regenerate_all_honors] 赛事 {} ({}) 生成了 {} 条荣誉",
+                log::debug!("赛事 {} ({}) 生成了 {} 条荣誉",
                     tournament.name, tournament.id, count);
             }
             Err(e) => {
-                println!("[regenerate_all_honors] 赛事 {} ({}) 生成荣誉失败: {}",
+                log::debug!("赛事 {} ({}) 生成荣誉失败: {}",
                     tournament.name, tournament.id, e);
             }
         }
@@ -1070,7 +1070,7 @@ pub async fn regenerate_all_honors(
         "成功重新生成 {} 个赛事的荣誉：删除 {} 条旧记录，创建 {} 条新记录",
         completed_tournaments.len(), total_deleted, total_created
     );
-    println!("[regenerate_all_honors] {}", message);
+    log::debug!("{}", message);
 
     Ok(ApiResponse::success(RegenerateHonorsResponse {
         deleted_count: total_deleted,

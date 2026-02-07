@@ -114,6 +114,27 @@ impl TraitType {
     pub fn is_negative(&self) -> bool {
         matches!(self, TraitType::Tilter | TraitType::Fragile | TraitType::Volatile)
     }
+
+    /// 从字符串解析特性类型
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "clutch" => Some(Self::Clutch),
+            "slow_starter" | "slowstarter" => Some(Self::SlowStarter),
+            "fast_starter" | "faststarter" => Some(Self::FastStarter),
+            "explosive" => Some(Self::Explosive),
+            "consistent" => Some(Self::Consistent),
+            "comeback_king" | "comebackking" => Some(Self::ComebackKing),
+            "tilter" => Some(Self::Tilter),
+            "mental_fortress" | "mentalfortress" => Some(Self::MentalFortress),
+            "fragile" => Some(Self::Fragile),
+            "ironman" => Some(Self::Ironman),
+            "volatile" => Some(Self::Volatile),
+            "rising_star" | "risingstar" => Some(Self::RisingStar),
+            "veteran" => Some(Self::Veteran),
+            "team_leader" | "teamleader" => Some(Self::TeamLeader),
+            _ => None,
+        }
+    }
 }
 
 /// 特性修正结果

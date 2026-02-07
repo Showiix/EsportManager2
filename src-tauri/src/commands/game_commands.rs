@@ -171,7 +171,7 @@ pub async fn get_tournament_matches(
     state: State<'_, AppState>,
     tournament_id: u64,
 ) -> Result<CommandResult<Vec<MatchInfo>>, String> {
-    println!("[get_tournament_matches] Called with tournament_id={}", tournament_id);
+    log::debug!("Called with tournament_id={}", tournament_id);
     let guard = state.db.read().await;
     let db = match guard.as_ref() {
         Some(db) => db,
@@ -188,12 +188,12 @@ pub async fn get_tournament_matches(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get matches: {}", e))),
     };
 
-    println!("[get_tournament_matches] Found {} matches for tournament_id={}", matches.len(), tournament_id);
+    log::debug!("Found {} matches for tournament_id={}", matches.len(), tournament_id);
 
     // 统计比赛状态
     let completed_count = matches.iter().filter(|m| m.status == crate::models::MatchStatus::Completed).count();
     let scheduled_count = matches.iter().filter(|m| m.status == crate::models::MatchStatus::Scheduled).count();
-    println!("[get_tournament_matches] Status: Completed={}, Scheduled={}", completed_count, scheduled_count);
+    log::debug!("Status: Completed={}, Scheduled={}", completed_count, scheduled_count);
 
     let infos: Vec<MatchInfo> = matches
         .into_iter()
@@ -1243,32 +1243,32 @@ async fn simulate_match_core(
         || stage.contains("LOSERS")
         || stage.contains("GRAND_FINAL");
 
-    println!("[Playoffs Debug] stage={}, is_playoff={}", stage, is_playoff);
+    log::debug!("[Playoffs Debug] stage={}, is_playoff={}", stage, is_playoff);
 
     if is_playoff {
         let all_matches = MatchRepository::get_by_tournament(pool, tournament_id as u64)
             .await
             .unwrap_or_default();
 
-        println!("[Playoffs Debug] 获取到 {} 场比赛", all_matches.len());
+        log::debug!("[Playoffs Debug] 获取到 {} 场比赛", all_matches.len());
         for m in &all_matches {
-            println!("[Playoffs Debug] Match id={}, stage={}, order={:?}, status={:?}, winner={:?}",
+            log::debug!("[Playoffs Debug] Match id={}, stage={}, order={:?}, status={:?}, winner={:?}",
                 m.id, m.stage, m.match_order, m.status, m.winner_id);
         }
 
         let league_service = LeagueService::new();
         let new_matches = league_service.advance_playoff_bracket(tournament_id as u64, &all_matches);
 
-        println!("[Playoffs Debug] advance_playoff_bracket 返回 {} 场新比赛", new_matches.len());
+        log::debug!("[Playoffs Debug] advance_playoff_bracket 返回 {} 场新比赛", new_matches.len());
 
         if !new_matches.is_empty() {
-            println!("[Playoffs] 生成 {} 场新比赛", new_matches.len());
+            log::debug!("生成 {} 场新比赛", new_matches.len());
             for nm in &new_matches {
-                println!("[Playoffs] 新比赛: stage={}, home={}, away={}", nm.stage, nm.home_team_id, nm.away_team_id);
+                log::debug!("新比赛: stage={}, home={}, away={}", nm.stage, nm.home_team_id, nm.away_team_id);
             }
             match MatchRepository::create_batch(pool, save_id, &new_matches).await {
-                Ok(_) => println!("[Playoffs] 比赛保存成功"),
-                Err(e) => println!("[Playoffs] 比赛保存失败: {:?}", e),
+                Ok(_) => log::debug!("比赛保存成功"),
+                Err(e) => log::debug!("比赛保存失败: {:?}", e),
             }
         }
     }
@@ -1574,7 +1574,7 @@ pub async fn fix_tournament_status(
                 .map_err(|e| e.to_string())?;
 
             fixed_tournaments.push(tournament_name);
-            println!("[fix_tournament_status] 修复赛事状态: id={}, name={}", tournament_id, fixed_tournaments.last().unwrap());
+            log::debug!("修复赛事状态: id={}, name={}", tournament_id, fixed_tournaments.last().unwrap());
         }
     }
 

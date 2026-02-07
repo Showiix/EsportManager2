@@ -81,7 +81,7 @@ impl HonorService {
             .map_err(|e| format!("Failed to check existing honors: {}", e))?;
 
         if !existing_honors.is_empty() {
-            println!("[process_tournament_completion] 荣誉已存在，跳过颁发: tournament_id={}, honor_count={}",
+            log::debug!("荣誉已存在，跳过颁发: tournament_id={}, honor_count={}",
                 tournament_id, existing_honors.len());
             // 从已存在的荣誉中构建 TournamentHonors 返回
             return Ok(Self::build_tournament_honors_from_existing(&existing_honors));
@@ -94,7 +94,7 @@ impl HonorService {
 
         // 4. 如果不存在，推断并保存赛事结果
         let result = if let Some(existing) = existing_result {
-            println!("[process_tournament_completion] 赛事结果已存在，跳过创建: tournament_id={}", tournament_id);
+            log::debug!("赛事结果已存在，跳过创建: tournament_id={}", tournament_id);
             existing
         } else {
             let inferred_result = self
@@ -105,7 +105,7 @@ impl HonorService {
                 .await
                 .map_err(|e| format!("Failed to save tournament result: {}", e))?;
 
-            println!("[process_tournament_completion] 赛事结果已创建: tournament_id={}", tournament_id);
+            log::debug!("赛事结果已创建: tournament_id={}", tournament_id);
             inferred_result
         };
 
@@ -117,11 +117,11 @@ impl HonorService {
         .await
         .map_err(|e| format!("Failed to get champion players from tournament stats: {}", e))?;
 
-        println!("[process_tournament_completion] 从赛事统计获取冠军队选手: {} 人", champion_player_stats.len());
+        log::debug!("从赛事统计获取冠军队选手: {} 人", champion_player_stats.len());
 
         // 如果赛事统计表没有数据，回退到当前队伍成员
         let champion_players_info: Vec<(u64, String, String)> = if champion_player_stats.is_empty() {
-            println!("[process_tournament_completion] 赛事统计无数据，回退到当前队伍成员");
+            log::debug!("赛事统计无数据，回退到当前队伍成员");
             let current_players = PlayerRepository::get_by_team(pool, result.champion_team_id)
                 .await
                 .map_err(|e| format!("Failed to get champion players: {}", e))?;
@@ -143,12 +143,12 @@ impl HonorService {
                 .collect()
         };
 
-        println!("[process_tournament_completion] 冠军队选手数量: {}", champion_players_info.len());
+        log::debug!("冠军队选手数量: {}", champion_players_info.len());
 
         // 5. 获取赛事MVP（从 player_tournament_stats）
         // 对于MSI和马德里大师赛，从冠军队伍中选择MVP
         let mvp_candidates = if use_champion_mvp {
-            println!("[process_tournament_completion] 国际赛事MVP规则：从冠军队伍中选择MVP (champion_team_id={})", result.champion_team_id);
+            log::debug!("国际赛事MVP规则：从冠军队伍中选择MVP (champion_team_id={})", result.champion_team_id);
             PlayerTournamentStatsRepository::get_mvp_candidates_by_team(
                 pool, save_id, tournament_id, result.champion_team_id, 1
             )
@@ -236,7 +236,7 @@ impl HonorService {
             ));
         }
 
-        println!("[process_tournament_completion] 创建了 {} 个选手冠军荣誉", tournament_honors.player_champions.len());
+        log::debug!("创建了 {} 个选手冠军荣誉", tournament_honors.player_champions.len());
 
         // 7.6 亚军队选手荣誉
         let runner_up_player_stats = PlayerTournamentStatsRepository::get_by_team_tournament(
@@ -271,7 +271,7 @@ impl HonorService {
             ));
         }
 
-        println!("[process_tournament_completion] 创建了 {} 个选手亚军荣誉", tournament_honors.player_runner_ups.len());
+        log::debug!("创建了 {} 个选手亚军荣誉", tournament_honors.player_runner_ups.len());
 
         // 7.7 季军队选手荣誉（如果有季军）
         if let (Some(third_id), Some(third_name)) = (result.third_team_id, &result.third_team_name) {
@@ -307,7 +307,7 @@ impl HonorService {
                 ));
             }
 
-            println!("[process_tournament_completion] 创建了 {} 个选手季军荣誉", tournament_honors.player_thirds.len());
+            log::debug!("创建了 {} 个选手季军荣誉", tournament_honors.player_thirds.len());
         }
 
         // 7.8 殿军队选手荣誉（如果有殿军）
@@ -344,7 +344,7 @@ impl HonorService {
                 ));
             }
 
-            println!("[process_tournament_completion] 创建了 {} 个选手殿军荣誉", tournament_honors.player_fourths.len());
+            log::debug!("创建了 {} 个选手殿军荣誉", tournament_honors.player_fourths.len());
         }
 
         // 7.9 赛事MVP
@@ -388,7 +388,7 @@ impl HonorService {
             all_honors.push(honor.clone());
         }
 
-        println!("[process_tournament_completion] 总共保存 {} 个荣誉记录", all_honors.len());
+        log::debug!("总共保存 {} 个荣誉记录", all_honors.len());
 
         HonorRepository::create_batch(pool, save_id, &all_honors)
             .await
@@ -480,9 +480,9 @@ impl HonorService {
         let (third_team_id, third_team_name, fourth_team_id, fourth_team_name) =
             if tournament.tournament_type.has_third_fourth() {
                 // 方法1: 查找季军赛
-                println!("[infer_tournament_result] 查找季军赛，已完成比赛数量: {}", completed_matches.len());
+                log::debug!("查找季军赛，已完成比赛数量: {}", completed_matches.len());
                 for m in completed_matches.iter() {
-                    println!("[infer_tournament_result] 比赛: stage={}, winner_id={:?}", m.stage, m.winner_id);
+                    log::debug!("比赛: stage={}, winner_id={:?}", m.stage, m.winner_id);
                 }
 
                 let third_place_match = completed_matches.iter().find(|m| {
@@ -494,7 +494,7 @@ impl HonorService {
                         || stage_upper.contains("THIRD_PLACE")
                 });
 
-                println!("[infer_tournament_result] 找到季军赛: {:?}", third_place_match.map(|m| &m.stage));
+                log::debug!("找到季军赛: {:?}", third_place_match.map(|m| &m.stage));
 
                 if let Some(third_m) = third_place_match {
                     let third_id = third_m.winner_id;
@@ -534,9 +534,9 @@ impl HonorService {
                             || m.stage.to_uppercase().contains("LOSERS_R3")
                     });
 
-                    println!("[infer_tournament_result] 双败淘汰赛推断季军殿军:");
-                    println!("  - LOSERS_FINAL 比赛: {:?}", losers_final.map(|m| format!("stage={}, winner_id={:?}", m.stage, m.winner_id)));
-                    println!("  - LOSERS_R3/R4 比赛: {:?}", losers_r3.map(|m| format!("stage={}, winner_id={:?}", m.stage, m.winner_id)));
+                    log::debug!("双败淘汰赛推断季军殿军:");
+                    log::debug!("  - LOSERS_FINAL 比赛: {:?}", losers_final.map(|m| format!("stage={}, winner_id={:?}", m.stage, m.winner_id)));
+                    log::debug!("  - LOSERS_R3/R4 比赛: {:?}", losers_r3.map(|m| format!("stage={}, winner_id={:?}", m.stage, m.winner_id)));
 
                     if let Some(lf) = losers_final {
                         // 败者决赛的败者是第三名
@@ -559,8 +559,8 @@ impl HonorService {
                             })
                         });
 
-                        println!("  - 推断季军 team_id: {:?}", third_id);
-                        println!("  - 推断殿军 team_id: {:?}", fourth_id);
+                        log::debug!("  - 推断季军 team_id: {:?}", third_id);
+                        log::debug!("  - 推断殿军 team_id: {:?}", fourth_id);
 
                         let third_team = if let Some(id) = third_id {
                             TeamRepository::get_by_id(pool, id).await.ok()
@@ -662,7 +662,7 @@ impl HonorService {
             .map_err(|e| format!("Failed to check existing honors: {}", e))?;
 
         if !existing_honors.is_empty() {
-            println!("[process_regular_season_honors] 荣誉已存在，跳过颁发: tournament_id={}, honor_count={}",
+            log::debug!("荣誉已存在，跳过颁发: tournament_id={}, honor_count={}",
                 tournament_id, existing_honors.len());
             return Ok(existing_honors);
         }
@@ -783,7 +783,7 @@ impl HonorService {
             .map_err(|e| format!("Failed to check existing honors: {}", e))?;
 
         if !existing_honors.is_empty() {
-            println!("[process_icp_tournament_completion] 荣誉已存在，跳过颁发: tournament_id={}, honor_count={}",
+            log::debug!("荣誉已存在，跳过颁发: tournament_id={}, honor_count={}",
                 tournament_id, existing_honors.len());
             return Ok(Self::build_tournament_honors_from_existing(&existing_honors));
         }
@@ -820,7 +820,7 @@ impl HonorService {
                 .push((team_id as u64, team_name, "".to_string()));
         }
 
-        println!("[process_icp_tournament_completion] 找到 {} 个赛区，共 {} 支队伍",
+        log::debug!("找到 {} 个赛区，共 {} 支队伍",
             region_teams.len(), team_rows.len());
 
         // 2. 从ICP_FINAL比赛确定赛区排名
@@ -926,7 +926,7 @@ impl HonorService {
             }
         };
 
-        println!("[process_icp_tournament_completion] 赛区排名: 冠军={}, 亚军={}, 季军={:?}, 殿军={:?}",
+        log::debug!("赛区排名: 冠军={}, 亚军={}, 季军={:?}, 殿军={:?}",
             champion_region_id, runner_up_region_id, third_region_id, fourth_region_id);
 
         // 3. 获取各赛区名称并准备结果
@@ -1098,7 +1098,7 @@ impl HonorService {
             all_honors.push(honor.clone());
         }
 
-        println!("[process_icp_tournament_completion] 总共保存 {} 个荣誉记录", all_honors.len());
+        log::debug!("总共保存 {} 个荣誉记录", all_honors.len());
 
         HonorRepository::create_batch(pool, save_id, &all_honors)
             .await

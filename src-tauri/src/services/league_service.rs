@@ -277,12 +277,12 @@ impl LeagueService {
         let has_losers_final = completed_matches.iter().any(|m| m.stage == "LOSERS_FINAL");
         let has_grand_final = completed_matches.iter().any(|m| m.stage == "GRAND_FINAL");
 
-        println!("[advance_playoff_bracket] winners_r1={}, losers_r1={}", winners_r1.len(), losers_r1.len());
-        println!("[advance_playoff_bracket] has_winners_final={}, has_losers_r2={}", has_winners_final, has_losers_r2);
+        log::debug!("winners_r1={}, losers_r1={}", winners_r1.len(), losers_r1.len());
+        log::debug!("has_winners_final={}, has_losers_r2={}", has_winners_final, has_losers_r2);
 
         // 1. 胜者组R1完成 -> 生成胜者组决赛
         if winners_r1.len() == 2 && !has_winners_final {
-            println!("[advance_playoff_bracket] 条件满足: 生成WINNERS_FINAL");
+            log::debug!("条件满足: 生成WINNERS_FINAL");
             let winner1 = winners_r1.iter().find(|m| m.match_order == Some(1)).unwrap();
             let winner2 = winners_r1.iter().find(|m| m.match_order == Some(2)).unwrap();
 
