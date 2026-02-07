@@ -266,7 +266,8 @@
 
       <template #footer>
         <el-button @click="showNewSaveDialog = false">取消</el-button>
-        <el-button type="primary" :loading="isLoading" @click="handleCreateSave">创建</el-button>
+        <el-button @click="handleCustomCreate">自定义创建</el-button>
+        <el-button type="primary" :loading="isLoading" @click="handleCreateSave">快速创建</el-button>
       </template>
     </el-dialog>
   </div>
@@ -275,6 +276,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Folder,
@@ -300,6 +302,7 @@ import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('Settings')
 
+const router = useRouter()
 const gameStore = useGameStore()
 const { saves, currentSave, isLoading, isInitialized } = storeToRefs(gameStore)
 
@@ -410,6 +413,24 @@ const handleCreateSave = async () => {
   } catch (e) {
     ElMessage.error(`存档创建失败: ${e}`)
   }
+}
+
+// 自定义创建存档
+const handleCustomCreate = () => {
+  if (!isInitialized.value) {
+    ElMessage.error('请先初始化数据库！')
+    return
+  }
+
+  if (!newSaveForm.name.trim()) {
+    ElMessage.warning('请输入存档名称')
+    return
+  }
+
+  const name = newSaveForm.name.trim()
+  showNewSaveDialog.value = false
+  newSaveForm.name = ''
+  router.push({ path: '/save-customize', query: { name } })
 }
 
 // 加载存档

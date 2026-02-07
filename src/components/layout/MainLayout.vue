@@ -254,6 +254,7 @@ const breadcrumbs = computed(() => {
     honors: '荣誉殿堂',
     performance: '性能监测',
     settings: '系统设置',
+    'save-customize': '自定义存档',
     lpl: 'LPL 中国赛区',
     lck: 'LCK 韩国赛区',
     lec: 'LEC 欧洲赛区',

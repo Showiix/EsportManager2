@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { createLogger } from '@/utils/logger'
 import { usePerformanceStoreRaw } from '@/stores/usePerformanceStore'
+import type { GameInitConfig } from '@/types/initConfig'
 
 const logger = createLogger('TauriAPI')
 
@@ -170,6 +171,12 @@ export const saveApi = {
 
   advancePhase: () =>
     invokeCommand<GameState>('advance_phase'),
+
+  getDefaultGameConfig: () =>
+    invokeCommand<GameInitConfig>('get_default_game_config'),
+
+  createSaveWithConfig: (name: string, config: GameInitConfig) =>
+    invokeCommand<SaveInfo>('create_save_with_config', { name, config }),
 }
 
 // ========================================

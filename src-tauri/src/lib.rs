@@ -9,6 +9,7 @@ use commands::{
     get_app_info, simulate_test_match,
     // 存档命令
     init_database, create_save, get_saves, load_save, delete_save, get_current_save_id, delete_database,
+    get_default_game_config, create_save_with_config,
     // 队伍命令
     get_teams_by_region, get_all_teams, get_all_players, get_team, get_team_roster, get_team_starters, get_player, set_starter,
     update_player_market_value, update_all_market_values, update_player,
@@ -132,6 +133,8 @@ pub fn run() {
             delete_save,
             get_current_save_id,
             delete_database,
+            get_default_game_config,
+            create_save_with_config,
             // 队伍命令
             get_teams_by_region,
             get_all_teams,

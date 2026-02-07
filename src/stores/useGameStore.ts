@@ -5,6 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { saveApi, type SaveInfo, type GameState } from '@/api/tauri'
+import type { GameInitConfig } from '@/types/initConfig'
 import { usePlayerStore } from './usePlayerStore'
 import { useMatchDetailStore } from './useMatchDetailStore'
 import { useTransferWindowStore } from './useTransferWindowStore'
@@ -163,6 +164,39 @@ export const useGameStore = defineStore('game', () => {
         userAction: '创建存档',
         canRetry: true,
         retryFn: () => createSave(name)
+      })
+      throw e
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * 使用自定义配置创建新存档
+   */
+  const createSaveWithConfig = async (name: string, config: GameInitConfig) => {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      logger.info('使用自定义配置创建存档', { name })
+      const saveInfo = await logger.timed('创建自定义存档', () => saveApi.createSaveWithConfig(name, config))
+      logger.info('自定义存档创建成功', { saveId: saveInfo.id, name })
+
+      // 重新加载存档列表
+      await loadSaves()
+
+      // 自动加载新创建的存档
+      await loadSave(saveInfo.id)
+
+      return saveInfo.id
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to create save with config'
+      handleError(e, {
+        component: 'GameStore',
+        userAction: '创建自定义存档',
+        canRetry: true,
+        retryFn: () => createSaveWithConfig(name, config)
       })
       throw e
     } finally {
@@ -336,6 +370,7 @@ export const useGameStore = defineStore('game', () => {
     deleteDatabase,
     loadSaves,
     createSave,
+    createSaveWithConfig,
     loadSave,
     deleteSave,
     refreshGameState,

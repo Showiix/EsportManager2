@@ -139,7 +139,7 @@ impl InitService {
     }
 
     /// 获取队伍初始资金（固定值，单位：元）
-    fn get_team_initial_balance(short_name: &str) -> i64 {
+    pub fn get_team_initial_balance(short_name: &str) -> i64 {
         let balance_wan = match short_name {
             // LPL
             "TES" => 8700, "BLG" => 8400, "JDG" => 8850, "WBG" => 8400,
@@ -782,6 +782,149 @@ impl InitService {
         }
 
         Ok(updated_count)
+    }
+
+    /// 从自定义配置初始化所有数据
+    pub async fn initialize_game_data_with_config(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        current_season: u32,
+        config: &crate::models::init_config::GameInitConfig,
+    ) -> Result<(), String> {
+        let mut region_ids: Vec<u64> = Vec::new();
+
+        for region_config in &config.regions {
+            // 创建赛区
+            let result = sqlx::query(
+                "INSERT INTO regions (save_id, name, short_name, team_count) VALUES (?, ?, ?, ?)"
+            )
+            .bind(save_id)
+            .bind(&region_config.name)
+            .bind(&region_config.short_name)
+            .bind(region_config.teams.len() as i64)
+            .execute(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let actual_region_id = result.last_insert_rowid() as u64;
+            region_ids.push(actual_region_id);
+
+            // 创建队伍
+            for (rank, team_config) in region_config.teams.iter().enumerate() {
+                let power = Self::generate_team_power(region_config.id, rank);
+
+                let team = Team {
+                    id: 0,
+                    region_id: actual_region_id,
+                    name: team_config.name.clone(),
+                    short_name: Some(team_config.short_name.clone()),
+                    power_rating: power,
+                    total_matches: 0,
+                    wins: 0,
+                    win_rate: 0.0,
+                    annual_points: 0,
+                    cross_year_points: 0,
+                    balance: team_config.initial_balance,
+                };
+
+                let team_id = TeamRepository::create(pool, save_id, &team)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                let mut rng = StdRng::from_entropy();
+
+                // 尝试从 player_data 获取原始特性数据
+                let original_configs = get_team_players(&team_config.short_name);
+
+                for player_config in &team_config.players {
+                    let position = match player_config.position.as_str() {
+                        "Top" => Position::Top,
+                        "Jug" => Position::Jug,
+                        "Mid" => Position::Mid,
+                        "Adc" => Position::Adc,
+                        "Sup" => Position::Sup,
+                        _ => Position::Mid,
+                    };
+
+                    let tag = Self::determine_player_tag(player_config.ability, player_config.potential, player_config.age);
+                    let salary = Self::calculate_initial_salary(player_config.ability, player_config.potential, tag);
+                    let loyalty = Self::calculate_initial_loyalty(player_config.ability, player_config.potential, player_config.age, tag);
+                    let satisfaction = Self::calculate_initial_satisfaction(player_config.ability, player_config.potential, player_config.age, player_config.is_starter, tag);
+
+                    let player = Player {
+                        id: 0,
+                        game_id: player_config.game_id.clone(),
+                        real_name: player_config.real_name.clone(),
+                        nationality: Some(player_config.nationality.clone()),
+                        age: player_config.age,
+                        ability: player_config.ability,
+                        potential: player_config.potential,
+                        stability: Player::calculate_stability(player_config.age),
+                        tag,
+                        status: PlayerStatus::Active,
+                        position: Some(position),
+                        team_id: Some(team_id),
+                        salary,
+                        market_value: Self::calculate_market_value(player_config.ability, player_config.potential, player_config.age, tag, position),
+                        calculated_market_value: 0,
+                        contract_end_season: Some(current_season + rng.gen_range(1..4)),
+                        join_season: current_season,
+                        retire_season: None,
+                        is_starter: player_config.is_starter,
+                        loyalty,
+                        satisfaction,
+                    };
+
+                    let player_id = PlayerRepository::create(pool, save_id, &player)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    // 通过 game_id 匹配原始数据获取特性
+                    if let Some(orig) = original_configs.iter().find(|c| c.game_id == player_config.game_id) {
+                        for trait_type in orig.traits {
+                            let trait_str = serde_json::to_string(trait_type)
+                                .map(|s| s.trim_matches('"').to_string())
+                                .unwrap_or_else(|_| format!("{:?}", trait_type).to_lowercase());
+
+                            sqlx::query(
+                                "INSERT INTO player_traits (save_id, player_id, trait_type) VALUES (?, ?, ?)"
+                            )
+                            .bind(save_id)
+                            .bind(player_id as i64)
+                            .bind(&trait_str)
+                            .execute(pool)
+                            .await
+                            .map_err(|e| format!("Failed to insert trait for player {}: {}", player_id, e))?;
+                        }
+                    }
+
+                    // 初始化状态因子
+                    let form_cycle = rng.gen_range(0.0..100.0);
+                    sqlx::query(
+                        r#"
+                        INSERT INTO player_form_factors (
+                            save_id, player_id, form_cycle, momentum,
+                            last_performance, last_match_won, games_since_rest
+                        ) VALUES (?, ?, ?, 0, 0.0, 1, 0)
+                        "#
+                    )
+                    .bind(save_id)
+                    .bind(player_id as i64)
+                    .bind(form_cycle)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| format!("Failed to init form factors for player {}: {}", player_id, e))?;
+                }
+            }
+        }
+
+        // 创建初始赛事（春季常规赛）
+        Self::create_initial_tournaments(pool, save_id, current_season, &region_ids).await?;
+
+        // 创建初始选秀池
+        Self::create_initial_draft_pool(pool, save_id, current_season, &region_ids).await?;
+
+        Ok(())
     }
 }
 

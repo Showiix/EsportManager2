@@ -282,6 +282,12 @@ const router = createRouter({
       component: () => import('@/views/Settings.vue'),
       meta: { title: '系统设置' }
     },
+    {
+      path: '/save-customize',
+      name: 'SaveCustomize',
+      component: () => import('@/views/SaveCustomize.vue'),
+      meta: { title: '自定义存档' }
+    },
   ]
 });
 

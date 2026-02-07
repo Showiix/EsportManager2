@@ -1,7 +1,9 @@
 use crate::db::{DatabaseManager, SaveRepository};
 use crate::models::Save;
+use crate::models::init_config::{GameInitConfig, RegionInitConfig, TeamInitConfig, PlayerInitConfig};
 use crate::services::InitService;
 use crate::services::perf_service::PerfCollector;
+use crate::services::player_data::get_team_players;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
@@ -280,4 +282,115 @@ pub async fn delete_database(
     let _ = std::fs::remove_file(&shm_path);
 
     Ok(CommandResult::ok(()))
+}
+
+/// 获取默认游戏初始配置
+#[tauri::command]
+pub async fn get_default_game_config(
+    state: State<'_, AppState>,
+) -> Result<CommandResult<GameInitConfig>, String> {
+    // 不需要数据库，直接从硬编码数据组装
+    let _ = state; // 保持参数签名一致
+    let regions = InitService::get_regions();
+
+    let region_configs: Vec<RegionInitConfig> = regions
+        .iter()
+        .map(|region| {
+            let teams: Vec<TeamInitConfig> = region
+                .team_names
+                .iter()
+                .map(|(name, short_name)| {
+                    let balance = InitService::get_team_initial_balance(short_name);
+                    let player_configs = get_team_players(short_name);
+
+                    let players: Vec<PlayerInitConfig> = player_configs
+                        .iter()
+                        .map(|p| PlayerInitConfig {
+                            game_id: p.game_id.to_string(),
+                            real_name: p.real_name.map(|s| s.to_string()),
+                            nationality: p.nationality.to_string(),
+                            position: format!("{:?}", p.position),
+                            age: p.age,
+                            ability: p.ability,
+                            potential: p.potential,
+                            is_starter: p.is_starter,
+                        })
+                        .collect();
+
+                    TeamInitConfig {
+                        name: name.to_string(),
+                        short_name: short_name.to_string(),
+                        initial_balance: balance,
+                        players,
+                    }
+                })
+                .collect();
+
+            RegionInitConfig {
+                id: region.id,
+                name: region.name.to_string(),
+                short_name: region.short_name.to_string(),
+                teams,
+            }
+        })
+        .collect();
+
+    Ok(CommandResult::ok(GameInitConfig {
+        regions: region_configs,
+    }))
+}
+
+/// 使用自定义配置创建存档
+#[tauri::command]
+pub async fn create_save_with_config(
+    state: State<'_, AppState>,
+    name: String,
+    config: GameInitConfig,
+) -> Result<CommandResult<SaveListItem>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 检查是否已存在同名存档
+    let existing: Option<(String,)> = sqlx::query_as("SELECT id FROM saves WHERE name = ?")
+        .bind(&name)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if existing.is_some() {
+        return Ok(CommandResult::err(format!("存档名称「{}」已存在，请使用其他名称", name)));
+    }
+
+    let save = Save::new(name.clone());
+
+    if let Err(e) = SaveRepository::create(&pool, &save).await {
+        return Ok(CommandResult::err(format!("Failed to create save: {}", e)));
+    }
+
+    // 使用自定义配置初始化游戏数据
+    if let Err(e) = InitService::initialize_game_data_with_config(&pool, &save.id, save.current_season, &config).await {
+        let _ = SaveRepository::delete(&pool, &save.id).await;
+        return Ok(CommandResult::err(format!("Failed to initialize game data: {}", e)));
+    }
+
+    // 设置当前存档
+    let mut current = state.current_save_id.write().await;
+    *current = Some(save.id.clone());
+
+    Ok(CommandResult::ok(SaveListItem {
+        id: save.id,
+        name: save.name,
+        current_season: save.current_season,
+        current_phase: format!("{:?}", save.current_phase),
+        created_at: save.created_at.to_rfc3339(),
+        updated_at: save.updated_at.to_rfc3339(),
+    }))
 }
