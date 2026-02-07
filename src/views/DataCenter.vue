@@ -12,9 +12,7 @@
         </p>
       </div>
       <div class="header-actions">
-        <el-select v-model="selectedSeason" placeholder="选择赛季" style="width: 120px">
-          <el-option v-for="s in seasons" :key="s.value" :label="s.label" :value="s.value" />
-        </el-select>
+        <SeasonSelector v-model="selectedSeason" />
         <el-button type="primary" @click="refreshData" :loading="loading">
           <el-icon><Refresh /></el-icon>
           刷新数据
@@ -185,8 +183,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { DataLine, Refresh, ArrowRight } from '@element-plus/icons-vue'
 import { usePlayerStore } from '@/stores/usePlayerStore'
-import { useGameStore } from '@/stores/useGameStore'
 import { teamApi, devApi } from '@/api/tauri'
+import SeasonSelector from '@/components/common/SeasonSelector.vue'
 import { ElMessage } from 'element-plus'
 import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
@@ -196,13 +194,12 @@ const logger = createLogger('DataCenter')
 
 const router = useRouter()
 const playerStore = usePlayerStore()
-const gameStore = useGameStore()
 
 // 本地战队映射表
 const teamsMap = ref<Map<number, string>>(new Map())
 
 // 状态
-const selectedSeason = ref('S1')
+const selectedSeason = ref(1)
 const selectedPosition = ref('')
 const searchQuery = ref('')
 const loading = ref(false)
@@ -216,16 +213,6 @@ const sortOrder = ref<'asc' | 'desc'>('desc')
 const currentPage = ref(1)
 const pageSize = ref(20)
 
-// 赛季列表
-const seasons = computed(() => {
-  const currentSeason = gameStore.currentSeason || 1
-  const list = []
-  for (let i = 1; i <= currentSeason; i++) {
-    list.push({ label: `S${i}`, value: `S${i}` })
-  }
-  return list
-})
-
 // 位置筛选
 const positionFilters = [
   { label: '全部', value: '' },
@@ -236,23 +223,14 @@ const positionFilters = [
   { label: 'SUP', value: 'SUP' },
 ]
 
-// 将 S1 格式转换为数字格式（用于数据库查询）
-const getNumericSeasonId = (seasonValue: string): string => {
-  // 如果是 'S1' 格式，提取数字部分
-  if (seasonValue.startsWith('S')) {
-    return seasonValue.substring(1)
-  }
-  return seasonValue
-}
-
 // 异步获取排行数据
 const fetchRankings = async () => {
   loading.value = true
   try {
-    const numericSeasonId = getNumericSeasonId(selectedSeason.value)
-    logger.debug('[DataCenter] fetchRankings 开始, numericSeasonId:', numericSeasonId)
+    const seasonId = String(selectedSeason.value)
+    logger.debug('[DataCenter] fetchRankings 开始, seasonId:', seasonId)
     // 增大 limit 以显示所有有比赛记录的选手
-    const result = await playerStore.getSeasonImpactRanking(numericSeasonId, 500)
+    const result = await playerStore.getSeasonImpactRanking(seasonId, 500)
     logger.debug('[DataCenter] fetchRankings 结果:', result?.length || 0, '条数据')
     if (result && result.length > 0) {
       logger.debug('[DataCenter] 第一条数据:', JSON.stringify(result[0]))
@@ -367,7 +345,7 @@ const refreshData = async () => {
 const syncData = async () => {
   loading.value = true
   try {
-    const seasonNum = parseInt(selectedSeason.value.replace('S', '')) || 1
+    const seasonNum = selectedSeason.value
     logger.debug('[DataCenter] 开始同步数据, seasonNum:', seasonNum)
     const result = await devApi.syncPlayerGamesPlayed(seasonNum)
     logger.debug('[DataCenter] 同步结果:', result)
@@ -390,7 +368,7 @@ const syncData = async () => {
 }
 
 const goToPlayerDetail = (row: any) => {
-  router.push(`/data-center/player/${row.playerId}?season=${selectedSeason.value}`)
+  router.push(`/data-center/player/${row.playerId}?season=S${selectedSeason.value}`)
 }
 
 const getPositionName = (position: PlayerPosition): string => {

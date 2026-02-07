@@ -91,9 +91,7 @@
               <el-option label="LEC 欧洲赛区" value="LEC" />
               <el-option label="LCS 北美赛区" value="LCS" />
             </el-select>
-            <el-select v-model="selectedSeason" placeholder="选择赛季">
-              <el-option label="S1 赛季" value="S1" />
-            </el-select>
+            <SeasonSelector v-model="selectedSeason" />
           </div>
 
           <!-- 年度积分表格 -->
@@ -487,6 +485,7 @@ import {
   Star,
 } from '@element-plus/icons-vue'
 import { teamApi, queryApi, pointsApi } from '@/api/tauri'
+import SeasonSelector from '@/components/common/SeasonSelector.vue'
 import type { Team, Region, TeamAnnualPoints, AnnualPointsDetail } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
 
@@ -497,7 +496,7 @@ const router = useRouter()
 // 状态
 const activeTab = ref('annual')
 const selectedRegion = ref('')
-const selectedSeason = ref('S1')
+const selectedSeason = ref(1)
 const pointsDetailVisible = ref(false)
 const selectedTeam = ref<any>(null)
 const loading = ref(false)

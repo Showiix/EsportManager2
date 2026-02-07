@@ -12,11 +12,7 @@
         </p>
       </div>
       <div class="header-actions">
-        <el-select v-model="selectedSeason" placeholder="选择赛季" style="width: 140px">
-          <el-option label="S1赛季" value="S1" />
-          <el-option label="S2赛季" value="S2" />
-          <el-option label="S3赛季" value="S3" />
-        </el-select>
+        <SeasonSelector v-model="selectedSeason" width="140px" />
         <el-select v-model="selectedRegion" placeholder="全部赛区" style="width: 120px" clearable>
           <el-option label="LPL" value="LPL" />
           <el-option label="LCK" value="LCK" />
@@ -250,6 +246,7 @@ import { DataLine, Refresh, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
+import SeasonSelector from '@/components/common/SeasonSelector.vue'
 import type { PlayerPosition } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
 import { statsApi, devApi, type PlayerRankingItem } from '@/api/tauri'
@@ -261,7 +258,7 @@ const playerStore = usePlayerStore()
 const matchDetailStore = useMatchDetailStore()
 
 // 状态
-const selectedSeason = ref('S1')
+const selectedSeason = ref(1)
 const selectedRegion = ref('')
 const isLoading = ref(false)
 
@@ -279,17 +276,14 @@ const positionRankings = ref<Record<PlayerPosition, PlayerRankingItem[]>>({
 const loadRankingsFromDB = async () => {
   isLoading.value = true
   try {
-    // 将 S1 转换为数字 1
-    const seasonNum = parseInt(selectedSeason.value.replace('S', '')) || 1
-
     // 并行加载所有数据
     const [rankings, topRankings, jugRankings, midRankings, adcRankings, supRankings] = await Promise.all([
-      statsApi.getSeasonImpactRanking(seasonNum, 100),
-      statsApi.getPositionRanking(seasonNum, 'TOP', 100),
-      statsApi.getPositionRanking(seasonNum, 'JUG', 100),
-      statsApi.getPositionRanking(seasonNum, 'MID', 100),
-      statsApi.getPositionRanking(seasonNum, 'ADC', 100),
-      statsApi.getPositionRanking(seasonNum, 'SUP', 100)
+      statsApi.getSeasonImpactRanking(selectedSeason.value, 100),
+      statsApi.getPositionRanking(selectedSeason.value, 'TOP', 100),
+      statsApi.getPositionRanking(selectedSeason.value, 'JUG', 100),
+      statsApi.getPositionRanking(selectedSeason.value, 'MID', 100),
+      statsApi.getPositionRanking(selectedSeason.value, 'ADC', 100),
+      statsApi.getPositionRanking(selectedSeason.value, 'SUP', 100)
     ])
 
     rankingsData.value = rankings
@@ -312,7 +306,7 @@ const loadRankingsFromDB = async () => {
 
 // 计算属性 - 统计概览
 const overviewStats = computed(() => {
-  const upsetInfo = matchDetailStore.getUpsetRate(selectedSeason.value)
+  const upsetInfo = matchDetailStore.getUpsetRate(`S${selectedSeason.value}`)
 
   return {
     totalMatches: matchDetailStore.totalMatches,
@@ -359,8 +353,7 @@ watch(selectedSeason, () => {
 const syncData = async () => {
   isLoading.value = true
   try {
-    const seasonNum = parseInt(selectedSeason.value.replace('S', '')) || 1
-    const result = await devApi.syncPlayerGamesPlayed(seasonNum)
+    const result = await devApi.syncPlayerGamesPlayed(selectedSeason.value)
     if (result.success) {
       ElMessage.success(`数据同步成功: ${result.data?.updated_count || 0} 条记录已更新`)
       await loadRankingsFromDB()

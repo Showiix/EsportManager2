@@ -6,20 +6,11 @@
         <h1>战队评估中心</h1>
         <div class="header-sub-row">
           <p>查看各战队的赛季评估、策略分析与阵容需求</p>
-          <el-select
+          <SeasonSelector
             v-model="selectedSeason"
-            placeholder="选择赛季"
-            @change="onSeasonChange"
-            style="width: 140px"
-            class="season-select"
-          >
-            <el-option
-              v-for="s in seasonStore.availableSeasons"
-              :key="s.id"
-              :label="s.label"
-              :value="s.number"
-            />
-          </el-select>
+            @update:model-value="onSeasonChange"
+            width="140px"
+          />
         </div>
       </div>
       <div class="header-stats">
@@ -422,6 +413,7 @@ import {
 } from '@/api/tauri'
 import { formatBudget } from '@/utils'
 import { useSeasonStore } from '@/stores/useSeasonStore'
+import SeasonSelector from '@/components/common/SeasonSelector.vue'
 
 // 状态
 const loading = ref(false)
@@ -753,10 +745,7 @@ function getStayScoreColor(score: number): string {
 
 // 初始化
 onMounted(async () => {
-  await seasonStore.loadSeasons()
-  if (seasonStore.activeSeason) {
-    selectedSeason.value = seasonStore.activeSeason.number
-  }
+  selectedSeason.value = seasonStore.currentSeason
   loadEvaluations()
 })
 </script>

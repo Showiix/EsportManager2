@@ -7,11 +7,7 @@
         <p>记录所有赛事的冠军与荣誉</p>
       </div>
       <div class="header-actions">
-        <el-select v-model="selectedSeason" placeholder="选择赛季">
-          <el-option label="全部赛季" value="all" />
-          <el-option label="S1 赛季" value="S1" />
-          <el-option label="S2 赛季" value="S2" />
-        </el-select>
+        <SeasonSelector v-model="selectedSeason" :show-all="true" />
       </div>
     </div>
 
@@ -365,6 +361,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { Trophy, Medal, Star, Flag, ArrowRight } from '@element-plus/icons-vue'
 import { honorApi, teamApi, queryApi } from '@/api/tauri'
+import SeasonSelector from '@/components/common/SeasonSelector.vue'
 import type { Team } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
 
@@ -403,7 +400,7 @@ interface TeamHonor {
 }
 
 // 状态
-const selectedSeason = ref('all')
+const selectedSeason = ref(0)
 const tournamentFilter = ref('all')
 const showDetailDialog = ref(false)
 const selectedTournament = ref<Tournament | null>(null)
@@ -635,28 +632,28 @@ function isIcpType(tournamentType: string): boolean {
 
 // 计算属性
 const totalTournaments = computed(() => {
-  if (selectedSeason.value === 'all') return tournaments.value.length
-  return tournaments.value.filter(t => t.season === selectedSeason.value).length
+  if (selectedSeason.value === 0) return tournaments.value.length
+  return tournaments.value.filter(t => t.season === `S${selectedSeason.value}`).length
 })
 
 const internationalCount = computed(() => {
-  const filtered = selectedSeason.value === 'all'
+  const filtered = selectedSeason.value === 0
     ? tournaments.value
-    : tournaments.value.filter(t => t.season === selectedSeason.value)
+    : tournaments.value.filter(t => t.season === `S${selectedSeason.value}`)
   return filtered.filter(t => t.type === 'international').length
 })
 
 const leagueCount = computed(() => {
-  const filtered = selectedSeason.value === 'all'
+  const filtered = selectedSeason.value === 0
     ? tournaments.value
-    : tournaments.value.filter(t => t.season === selectedSeason.value)
+    : tournaments.value.filter(t => t.season === `S${selectedSeason.value}`)
   return filtered.filter(t => t.type === 'league').length
 })
 
 const mvpCount = computed(() => {
-  const filtered = selectedSeason.value === 'all'
+  const filtered = selectedSeason.value === 0
     ? tournaments.value
-    : tournaments.value.filter(t => t.season === selectedSeason.value)
+    : tournaments.value.filter(t => t.season === `S${selectedSeason.value}`)
   return filtered.filter(t => t.mvp).length
 })
 
@@ -664,8 +661,8 @@ const filteredTournaments = computed(() => {
   let result = tournaments.value
 
   // 按赛季筛选
-  if (selectedSeason.value !== 'all') {
-    result = result.filter(t => t.season === selectedSeason.value)
+  if (selectedSeason.value !== 0) {
+    result = result.filter(t => t.season === `S${selectedSeason.value}`)
   }
 
   // 按类型筛选

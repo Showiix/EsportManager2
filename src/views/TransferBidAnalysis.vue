@@ -11,20 +11,11 @@
         </h1>
         <div class="header-sub-row">
           <p>S{{ selectedSeason || seasonId }} 赛季 · R4/R5 竞价过程透明化</p>
-          <el-select
+          <SeasonSelector
             v-model="selectedSeason"
-            placeholder="选择赛季"
-            @change="onSeasonChange"
-            style="width: 140px"
-            class="season-select"
-          >
-            <el-option
-              v-for="s in seasonStore.availableSeasons"
-              :key="s.id"
-              :label="s.label"
-              :value="s.number"
-            />
-          </el-select>
+            @update:model-value="onSeasonChange"
+            width="140px"
+          />
         </div>
       </div>
       <div class="header-stats" v-if="overview">
@@ -393,6 +384,7 @@ import type { BidOverview, PlayerBidAnalysis } from '@/api/tauri'
 import { formatMoney } from '@/utils/format'
 import { Search, Loading, QuestionFilled } from '@element-plus/icons-vue'
 import { useSeasonStore } from '@/stores/useSeasonStore'
+import SeasonSelector from '@/components/common/SeasonSelector.vue'
 
 const route = useRoute()
 const seasonStore = useSeasonStore()
@@ -554,8 +546,6 @@ function getWillingnessColor(w: number) {
 }
 
 onMounted(async () => {
-  await seasonStore.loadSeasons()
-
   if (route.query.seasonId) {
     selectedSeason.value = Number(route.query.seasonId)
     seasonId.value = selectedSeason.value
@@ -577,8 +567,8 @@ onMounted(async () => {
   }
 
   // 如果仍然没有选中赛季，用当前活跃赛季
-  if (!selectedSeason.value && seasonStore.activeSeason) {
-    selectedSeason.value = seasonStore.activeSeason.number
+  if (!selectedSeason.value) {
+    selectedSeason.value = seasonStore.currentSeason
     seasonId.value = selectedSeason.value
   }
 

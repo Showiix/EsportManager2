@@ -5,7 +5,7 @@
       <div class="header-banner">
         <div class="banner-content">
           <h1 class="banner-title">IM 年度选手评选</h1>
-          <p class="banner-subtitle">{{ selectedSeason }} 赛季 年度最佳选手 TOP 20</p>
+          <p class="banner-subtitle">S{{ selectedSeason }} 赛季 年度最佳选手 TOP 20</p>
           <div class="scoring-rule">
             <el-tag type="warning" effect="dark" size="large">
               评选标准: 影响力(40%) + 出场(30%) + 冠军(30%)
@@ -28,9 +28,7 @@
           >
             刷新排名
           </el-button>
-          <el-select v-model="selectedSeason" placeholder="选择赛季" style="width: 100px">
-            <el-option v-for="s in seasons" :key="s.value" :label="s.label" :value="s.value" />
-          </el-select>
+          <SeasonSelector v-model="selectedSeason" width="100px" />
         </div>
       </div>
     </div>
@@ -284,8 +282,8 @@ import { useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { usePlayerStore } from '@/stores/usePlayerStore'
-import { useGameStore } from '@/stores/useGameStore'
 import { teamApi, statsApi } from '@/api/tauri'
+import SeasonSelector from '@/components/common/SeasonSelector.vue'
 import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
 import { createLogger } from '@/utils/logger'
@@ -294,26 +292,15 @@ const logger = createLogger('AnnualTop')
 
 const router = useRouter()
 const playerStore = usePlayerStore()
-const gameStore = useGameStore()
 
 // 本地战队映射表
 const teamsMap = ref<Map<number, string>>(new Map())
 
 // 状态
-const selectedSeason = ref('S1')
+const selectedSeason = ref(1)
 const rankings = ref<PlayerSeasonStats[]>([])
 const loading = ref(false)
 const recalculating = ref(false)
-
-// 赛季列表
-const seasons = computed(() => {
-  const currentSeason = gameStore.currentSeason || 1
-  const list = []
-  for (let i = 1; i <= currentSeason; i++) {
-    list.push({ label: `S${i}`, value: `S${i}` })
-  }
-  return list
-})
 
 // 异步获取排行数据
 const fetchRankings = async () => {
@@ -326,7 +313,7 @@ const fetchRankings = async () => {
         teamsMap.value.set(t.id, t.short_name || t.name)
       })
     }
-    rankings.value = await playerStore.getSeasonImpactRanking(selectedSeason.value, 20)
+    rankings.value = await playerStore.getSeasonImpactRanking(String(selectedSeason.value), 20)
   } catch (error) {
     logger.error('获取排行数据失败:', error)
     rankings.value = []
@@ -381,7 +368,7 @@ const regionDistribution = computed(() => {
 
 // 方法
 const goToDetail = (row: PlayerSeasonStats) => {
-  router.push(`/data-center/player/${row.playerId}?season=${selectedSeason.value}`)
+  router.push(`/data-center/player/${row.playerId}?season=S${selectedSeason.value}`)
 }
 
 const getPositionName = (position: PlayerPosition): string => {
@@ -415,8 +402,7 @@ onMounted(() => {
 const recalculateScores = async () => {
   recalculating.value = true
   try {
-    const seasonNum = Number(selectedSeason.value.replace('S', ''))
-    const count = await statsApi.recalculateYearlyScores(seasonNum)
+    const count = await statsApi.recalculateYearlyScores(selectedSeason.value)
     ElMessage.success(`已重新计算 ${count} 名选手的年度得分`)
     // 刷新排名数据
     await fetchRankings()
