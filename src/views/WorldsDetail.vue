@@ -362,7 +362,7 @@ import type { MatchDetail } from '@/types/matchDetail'
 import type { Player, PlayerPosition } from '@/types/player'
 import type { WorldsQualification, SwissStandings, WorldsSwissMatch, WorldsKnockoutMatch } from '@/types/index'
 import { createLogger } from '@/utils/logger'
-import { useBatchSimulation, buildMatchDetail, recordMatchPerformances } from '@/composables/useBatchSimulation'
+import { useBatchSimulation } from '@/composables/useBatchSimulation'
 
 const logger = createLogger('WorldsDetail')
 
@@ -384,8 +384,8 @@ const teamMap = ref<Map<number, { name: string; regionCode: string }>>(new Map()
 
 // 响应式状态
 const generatingKnockout = ref(false)
-const { simulationProgress: swissSimProgress, isSimulating: simulatingSwiss, batchSimulate: batchSimulateSwissComposable } = useBatchSimulation()
-const { simulationProgress: koSimProgress, isSimulating: simulatingKnockout, batchSimulate: batchSimulateKoComposable } = useBatchSimulation()
+const { simulationProgress: swissSimProgress, isSimulating: simulatingSwiss } = useBatchSimulation()
+const { simulationProgress: koSimProgress, isSimulating: simulatingKnockout } = useBatchSimulation()
 const activeSwissRound = ref('1')
 const currentSwissRound = ref(1)
 

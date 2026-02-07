@@ -359,7 +359,7 @@ const mockBracket = reactive({
 })
 
 // 响应式状态
-const { simulationProgress, isSimulating: batchSimulating, batchSimulate: batchSimulateComposable } = useBatchSimulation()
+const { simulationProgress, isSimulating: batchSimulating } = useBatchSimulation()
 
 // 比赛详情弹窗状态
 const showMatchDetailDialog = ref(false)

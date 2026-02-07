@@ -153,7 +153,7 @@ export interface BatchMatchInfo {
   /** 可选的后端数据库 ID（用于双重保存） */
   backendMatchId?: number
   /** 可选的前端自定义 ID（用于 matchDetailStore 的 key） */
-  frontendMatchId?: string
+  frontendMatchId?: string | number
 }
 
 export interface BatchSimulateOptions {
@@ -211,7 +211,7 @@ export function useBatchSimulation() {
         try {
           const result = await matchApi.simulateMatchDetailed(match.matchId)
 
-          const saveId = match.frontendMatchId || String(match.matchId)
+          const saveId = match.frontendMatchId ?? String(match.matchId)
           const matchDetail = buildMatchDetail({
             matchId: saveId,
             tournamentType: options.tournamentType,

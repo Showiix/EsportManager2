@@ -299,7 +299,7 @@ import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
 import { useTimeStore } from '@/stores/useTimeStore'
-import { internationalApi, matchApi, queryApi, statsApi, type BracketInfo, type MatchBracketInfo, type RecordPerformanceParams, type MsiTeamGroups } from '@/api/tauri'
+import { internationalApi, matchApi, queryApi, type BracketInfo, type MatchBracketInfo, type MsiTeamGroups } from '@/api/tauri'
 import type { Player, PlayerPosition } from '@/types/player'
 import type { MatchDetail } from '@/types/matchDetail'
 import { createLogger } from '@/utils/logger'
@@ -861,8 +861,8 @@ const simulateMSIMatch = async (match: any) => {
       // 获取队伍名称
       const teamA = mockMSIBracket.qualifiedTeams.find(t => t.teamId === match.teamAId)
       const teamB = mockMSIBracket.qualifiedTeams.find(t => t.teamId === match.teamBId)
-      const teamAName = teamA?.teamName || result.home_team_name || '队伍A'
-      const teamBName = teamB?.teamName || result.away_team_name || '队伍B'
+      const teamAName = teamA?.teamName || '队伍A'
+      const teamBName = teamB?.teamName || '队伍B'
 
       // 转换后端结果为 MatchDetail 格式并保存
       const matchDetail = buildMatchDetail({
@@ -1365,191 +1365,6 @@ const getMatchTypeBadgeType = (matchType: string) => {
 const formatDate = (dateString: string | undefined): string => {
   if (!dateString) return '未知时间'
   return new Date(dateString).toLocaleString('zh-CN')
-}
-
-/**
- * 从后端模拟结果记录选手表现到数据中心系统
- */
-const recordPlayerPerformancesFromBackend = async (result: any) => {
-  const seasonId = viewingSeason.value
-  const performances: RecordPerformanceParams[] = []
-
-  // 遍历每局比赛的选手表现
-  for (const game of result.games) {
-    // 主队选手
-    for (const player of (game.home_players || [])) {
-      performances.push({
-        player_id: player.player_id,
-        player_name: player.player_name,
-        team_id: result.home_team_id,
-        position: player.position,
-        impact_score: player.impact_score || 0,
-        actual_ability: player.actual_ability || 0,
-        season_id: Number(seasonId) || 1,
-        region_id: 'INTL' // 国际赛事标记
-      })
-    }
-
-    // 客队选手
-    for (const player of (game.away_players || [])) {
-      performances.push({
-        player_id: player.player_id,
-        player_name: player.player_name,
-        team_id: result.away_team_id,
-        position: player.position,
-        impact_score: player.impact_score || 0,
-        actual_ability: player.actual_ability || 0,
-        season_id: Number(seasonId) || 1,
-        region_id: 'INTL' // 国际赛事标记
-      })
-    }
-  }
-
-  // 批量记录到数据库
-  if (performances.length > 0) {
-    try {
-      const count = await statsApi.batchRecordPerformance(performances)
-      logger.debug(`[MSI] 已记录 ${count} 条选手表现数据`)
-    } catch (error) {
-      logger.error('[MSI] 记录选手表现失败:', error)
-    }
-  }
-}
-
-/**
- * 将后端 DetailedMatchResult 转换为前端 MatchDetail 格式
- */
-const convertBackendToMatchDetail = (result: any, match: any): MatchDetail => {
-  const teamA = mockMSIBracket.qualifiedTeams.find(t => t.teamId === match.teamAId)
-  const teamB = mockMSIBracket.qualifiedTeams.find(t => t.teamId === match.teamBId)
-  const teamAName = teamA?.teamName || result.home_team_name || '队伍A'
-  const teamBName = teamB?.teamName || result.away_team_name || '队伍B'
-
-  // 计算 MVP 信息
-  let mvpPlayerId: string | undefined
-  let mvpPlayerName: string | undefined
-  let mvpTeamId: string | undefined
-  let mvpTotalImpact: number | undefined
-
-  if (result.match_mvp) {
-    mvpPlayerId = String(result.match_mvp.player_id)
-    mvpPlayerName = result.match_mvp.player_name
-    mvpTeamId = String(result.match_mvp.team_id)
-    mvpTotalImpact = result.match_mvp.mvp_score
-  }
-
-  return {
-    matchId: match.id,
-    tournamentType: 'msi',
-    seasonId: String(mockMSIBracket.seasonYear),
-    teamAId: String(result.home_team_id),  // 使用数据库队伍ID
-    teamAName,
-    teamBId: String(result.away_team_id),  // 使用数据库队伍ID
-    teamBName,
-    bestOf: match.bestOf || 5,
-    finalScoreA: result.home_score,
-    finalScoreB: result.away_score,
-    winnerId: String(result.winner_id),
-    winnerName: result.winner_id === result.home_team_id ? teamAName : teamBName,
-    mvpPlayerId,
-    mvpPlayerName,
-    mvpTeamId,
-    mvpTotalImpact,
-    games: result.games.map((game: any, index: number) => {
-      const homePerf = game.home_performance || 0
-      const awayPerf = game.away_performance || 0
-      const perfDiff = homePerf - awayPerf
-
-      // 计算队伍战力（选手实际发挥能力平均值）- 每局不同
-      const homePlayers = game.home_players || []
-      const awayPlayers = game.away_players || []
-      const teamAPower = homePlayers.length > 0
-        ? Math.round(homePlayers.reduce((sum: number, p: any) => sum + (p.actual_ability || p.base_ability || 70), 0) / homePlayers.length)
-        : 0
-      const teamBPower = awayPlayers.length > 0
-        ? Math.round(awayPlayers.reduce((sum: number, p: any) => sum + (p.actual_ability || p.base_ability || 70), 0) / awayPlayers.length)
-        : 0
-      const powerDiff = teamAPower - teamBPower
-
-      // 爆冷判断：战力低的队伍赢了
-      const isUpset = (powerDiff > 0 && game.winner_id !== result.home_team_id) ||
-                      (powerDiff < 0 && game.winner_id === result.home_team_id)
-
-      return {
-        gameNumber: game.game_number || index + 1,
-        teamAId: String(result.home_team_id),  // 使用数据库队伍ID
-        teamAName,
-        teamBId: String(result.away_team_id),  // 使用数据库队伍ID
-        teamBName,
-        teamAPower,
-        teamBPower,
-        teamAPerformance: homePerf,
-        teamBPerformance: awayPerf,
-        winnerId: String(game.winner_id),
-        winnerName: game.winner_id === result.home_team_id ? teamAName : teamBName,
-        powerDifference: powerDiff,
-        performanceDifference: perfDiff,
-        isUpset,
-        teamAPlayers: (game.home_players || []).map((p: any) => ({
-          playerId: String(p.player_id),
-          playerName: p.player_name,
-          teamId: String(result.home_team_id),  // 使用数据库队伍ID
-          position: p.position,
-          baseAbility: p.base_ability || 70,
-          conditionBonus: p.condition_bonus || 0,
-          stabilityNoise: p.stability_noise || 0,
-          actualAbility: p.actual_ability || p.base_ability || 70,
-          kills: p.kills || 0,
-          deaths: p.deaths || 0,
-          assists: p.assists || 0,
-          cs: p.cs || 0,
-          gold: p.gold || 0,
-          damageDealt: p.damage_dealt || 0,
-          damageTaken: p.damage_taken || 0,
-          visionScore: p.vision_score || 0,
-          mvpScore: p.mvp_score || 0,
-          impactScore: p.impact_score || 0,
-          traits: p.traits || [],
-          activatedTraits: p.activated_traits?.map((t: any) => ({
-            type: t.trait_type,
-            name: t.name,
-            effect: t.effect,
-            value: t.value,
-            isPositive: t.is_positive
-          })) || []
-        })),
-        teamBPlayers: (game.away_players || []).map((p: any) => ({
-          playerId: String(p.player_id),
-          playerName: p.player_name,
-          teamId: String(result.away_team_id),  // 使用数据库队伍ID
-          position: p.position,
-          baseAbility: p.base_ability || 70,
-          conditionBonus: p.condition_bonus || 0,
-          stabilityNoise: p.stability_noise || 0,
-          actualAbility: p.actual_ability || p.base_ability || 70,
-          kills: p.kills || 0,
-          deaths: p.deaths || 0,
-          assists: p.assists || 0,
-          cs: p.cs || 0,
-          gold: p.gold || 0,
-          damageDealt: p.damage_dealt || 0,
-          damageTaken: p.damage_taken || 0,
-          visionScore: p.vision_score || 0,
-          mvpScore: p.mvp_score || 0,
-          impactScore: p.impact_score || 0,
-          traits: p.traits || [],
-          activatedTraits: p.activated_traits?.map((t: any) => ({
-            type: t.trait_type,
-            name: t.name,
-            effect: t.effect,
-            value: t.value,
-            isPositive: t.is_positive
-          })) || []
-        }))
-      }
-    }),
-    playedAt: new Date().toISOString()
-  }
 }
 
 /**

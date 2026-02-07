@@ -531,7 +531,7 @@ import type { PlayerPosition } from '@/types/player'
 import type { MatchDetail } from '@/types/matchDetail'
 import type { ICPTournament, ICPSeedGroup, ICPMatch, ICPRegionStats, ICPRegionMatch, ICPGroupStanding } from '@/types/icp'
 import { createLogger } from '@/utils/logger'
-import { useBatchSimulation, buildMatchDetail, recordMatchPerformances } from '@/composables/useBatchSimulation'
+import { useBatchSimulation } from '@/composables/useBatchSimulation'
 
 const logger = createLogger('ICPDetail')
 
@@ -578,8 +578,8 @@ const teamMap = ref<Map<number, { name: string; regionCode: string }>>(new Map()
 
 // 响应式状态
 const generatingRegionBattle = ref(false)
-const { simulationProgress: groupSimProgress, isSimulating: simulatingGroupStage, batchSimulate: batchSimulateGroupComposable } = useBatchSimulation()
-const { simulationProgress: battleSimProgress, isSimulating: simulatingRegionBattle, batchSimulate: batchSimulateBattleComposable } = useBatchSimulation()
+const { simulationProgress: groupSimProgress, isSimulating: simulatingGroupStage } = useBatchSimulation()
+const { simulationProgress: battleSimProgress, isSimulating: simulatingRegionBattle } = useBatchSimulation()
 const activeSeedGroup = ref('A')
 
 // ICP赛事数据 - 从后端加载

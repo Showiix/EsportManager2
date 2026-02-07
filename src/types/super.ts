@@ -19,6 +19,7 @@ export interface SuperMatch {
   roundNumber?: number
   matchType?: string
   completedAt?: Date | string
+  backendMatchId?: number | null
 }
 
 // Fighter组小组积分榜类型
