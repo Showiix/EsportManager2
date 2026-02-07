@@ -566,6 +566,11 @@ onMounted(async () => {
   gap: 6px;
 }
 
+.team-cell :deep(.el-tag) {
+  min-width: 36px;
+  text-align: center;
+}
+
 .team-name {
   color: #606266;
 }

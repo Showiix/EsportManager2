@@ -504,12 +504,12 @@ function handlePageChange(page: number) {
 }
 
 function getPositionShort(pos: string | null) {
-  const map: Record<string, string> = { Top: 'TOP', Jungle: 'JUG', Mid: 'MID', Bot: 'BOT', Support: 'SUP' }
+  const map: Record<string, string> = { Top: 'TOP', Jug: 'JUG', Mid: 'MID', Adc: 'BOT', Sup: 'SUP' }
   return map[pos || ''] || '?'
 }
 
 function getPositionClass(pos: string | null) {
-  const map: Record<string, string> = { Top: 'position-top', Jungle: 'position-jug', Mid: 'position-mid', Bot: 'position-bot', Support: 'position-sup' }
+  const map: Record<string, string> = { Top: 'position-top', Jug: 'position-jug', Mid: 'position-mid', Adc: 'position-bot', Sup: 'position-sup' }
   return map[pos || ''] || ''
 }
 
