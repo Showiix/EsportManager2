@@ -2222,7 +2222,7 @@ export interface AnnualAwardsData {
 export const awardsApi = {
   /** 获取年度颁奖数据 */
   getAnnualAwardsData: (seasonId?: number) =>
-    invokeCommand<AnnualAwardsData>('get_annual_awards_data', { seasonId }),
+    invokeCommand<AnnualAwardsData>('get_annual_awards_data', { season_id: seasonId }),
 }
 
 // ========================================

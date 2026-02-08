@@ -2,11 +2,8 @@
   <div class="annual-awards">
     <!-- 页面头部 -->
     <div class="ceremony-header">
-      <div class="header-decoration">
-        <div class="confetti" v-for="i in 20" :key="i" :style="getConfettiStyle(i)"></div>
-      </div>
       <div class="header-content">
-        <div class="season-badge">第 {{ selectedSeason }} 赛季</div>
+        <span class="season-badge">S{{ selectedSeason }}</span>
         <h1 class="ceremony-title">年度颁奖典礼</h1>
         <p class="ceremony-subtitle">表彰本赛季最出色的选手们</p>
         <div class="season-selector-wrapper" v-if="!isAwardsPhase || ceremonyComplete">
@@ -17,365 +14,305 @@
 
     <!-- 加载状态 -->
     <div v-if="loading" class="loading-container">
-      <el-skeleton :rows="10" animated />
+      <el-skeleton :rows="8" animated />
     </div>
 
-    <!-- 空状态：非颁奖阶段且无数据 -->
-    <div v-else-if="!awardsData && !isAwardsPhase" class="empty-state">
-      <div class="empty-icon"></div>
+    <!-- 空状态：非颁奖阶段且无已颁发数据 -->
+    <div v-else-if="!isAwardsPhase && !awardsData?.already_awarded && !demoMode" class="empty-state">
+      <div class="empty-icon-wrap">
+        <el-icon :size="48"><Trophy /></el-icon>
+      </div>
       <h2>颁奖典礼尚未开始</h2>
       <p>请推进赛季至年度颁奖阶段</p>
+      <el-button
+        type="warning"
+        size="large"
+        plain
+        :loading="starting"
+        @click="startDemo"
+      >
+        Demo 测试典礼流程
+      </el-button>
     </div>
 
     <!-- 颁奖阶段：开始按钮 -->
-    <div v-else-if="isAwardsPhase && !ceremonyStarted && !awardsData" class="start-ceremony">
-      <div class="start-icon"></div>
+    <div v-else-if="isAwardsPhase && !ceremonyStarted && !awardsData?.already_awarded" class="start-state">
+      <div class="start-icon-wrap">
+        <el-icon :size="56"><Trophy /></el-icon>
+      </div>
       <h2>年度颁奖典礼已就绪</h2>
-      <p>点击下方按钮开始颁奖</p>
+      <p>点击下方按钮，开始颁奖</p>
       <el-button type="warning" size="large" :loading="starting" @click="startCeremony">
         开始颁奖典礼
       </el-button>
     </div>
 
     <!-- 典礼内容 -->
-    <template v-else-if="awardsData">
-      <!-- 典礼阶段1: Top20 逐个揭晓 -->
-      <section
-        v-if="currentSection === 'top20' || ceremonyComplete"
-        class="awards-section top20-section"
-      >
-        <div class="section-header">
-          <h2>年度Top20选手</h2>
-          <span class="section-subtitle">ANNUAL TOP 20</span>
+    <div v-else-if="awardsData && awardsData.top20.length > 0" class="ceremony-body">
+      <!-- Demo 标记 -->
+      <el-alert
+        v-if="demoMode"
+        title="Demo 模式 — 仅预览典礼流程，不影响游戏数据"
+        type="info"
+        show-icon
+        :closable="false"
+        class="demo-alert"
+      />
+
+      <!-- 阶段1: Top20 -->
+      <section v-if="currentSection === 'top20' || ceremonyComplete" class="section">
+        <div class="section-hd">
+          <div class="section-tag">ANNUAL TOP 20</div>
+          <h2>年度 Top20 选手</h2>
         </div>
 
-        <div class="top20-list">
-          <TransitionGroup name="reveal">
+        <!-- 表格 -->
+        <div class="top20-table">
+          <!-- 表头 -->
+          <div class="top20-header">
+            <div class="col-rank">#</div>
+            <div class="col-player">选手</div>
+            <div class="col-dim" v-for="dim in dimLabels" :key="dim.key">
+              <span class="dim-dot" :style="{ background: dim.color }"></span>
+              {{ dim.label }}
+            </div>
+            <div class="col-score">总分</div>
+            <div class="col-tags">标签</div>
+          </div>
+
+          <!-- 数据行 -->
+          <TransitionGroup name="reveal" tag="div" class="top20-body">
             <div
               v-for="player in visibleTop20"
               :key="player.player_id"
-              class="top20-card"
-              :class="{
-                'is-mvp': player.rank === 1,
-                'is-top3': player.rank <= 3,
-                'is-top10': player.rank <= 10,
-              }"
+              class="top20-row"
+              :class="{ 'is-mvp': player.rank === 1, 'is-top3': player.rank <= 3 && player.rank > 1 }"
               @click="goToPlayer(player.player_id)"
             >
-              <div class="rank-badge" :class="getRankClass(player.rank)">
-                {{ player.rank }}
+              <div class="col-rank">
+                <span class="rank-badge" :class="getRankClass(player.rank)">{{ player.rank }}</span>
               </div>
-              <div class="player-info">
-                <div class="player-name">{{ player.player_name }}</div>
-                <div class="player-meta">
-                  <el-tag :type="getPositionTagType(player.position)" size="small">
-                    {{ getPositionName(player.position) }}
-                  </el-tag>
-                  <span class="team-name">{{ player.team_name }}</span>
-                  <span class="age-tag" v-if="player.age <= 20">{{ player.age }}岁</span>
+              <div class="col-player">
+                <span class="name">{{ player.player_name }}</span>
+                <span class="meta">
+                  <el-tag :type="getPositionTagType(player.position)" size="small" effect="dark">{{ getPositionName(player.position) }}</el-tag>
+                  <span class="team">{{ player.team_name }}</span>
+                </span>
+              </div>
+              <div class="col-dim" v-for="dim in getDimBars(player)" :key="dim.label">
+                <span class="dim-val">{{ dim.value.toFixed(0) }}</span>
+                <div class="dim-bar">
+                  <div class="dim-fill" :style="{ width: dim.value + '%', background: dim.color }"></div>
                 </div>
               </div>
-              <div class="player-dims">
-                <div class="dim-mini" v-for="dim in getDimBars(player)" :key="dim.label">
-                  <div class="dim-mini-bar"><div class="dim-mini-fill" :style="{ width: dim.value + '%', background: dim.color }"></div></div>
-                </div>
-              </div>
-              <div class="player-score">
-                <span class="score-value">{{ player.yearly_score.toFixed(1) }}</span>
-                <span class="score-label">得分</span>
-              </div>
-              <div class="player-tags" v-if="player.commentary.tags.length > 0">
-                <span class="tag-item" v-for="tag in player.commentary.tags.slice(0, 2)" :key="tag">{{ tag }}</span>
+              <div class="col-score">{{ player.yearly_score.toFixed(1) }}</div>
+              <div class="col-tags">
+                <span v-for="tag in player.commentary.tags.slice(0, 2)" :key="tag" class="tag-chip">{{ tag }}</span>
               </div>
             </div>
           </TransitionGroup>
         </div>
 
-        <!-- 揭晓按钮 -->
-        <div class="reveal-action" v-if="currentSection === 'top20' && !ceremonyComplete">
-          <el-button
-            v-if="revealedCount < 20"
-            type="warning"
-            size="large"
-            @click="revealNext"
-          >
-            揭晓 #{{ 20 - revealedCount }} {{ revealedCount >= 19 ? '— 年度MVP' : '' }}
+        <div class="actions" v-if="currentSection === 'top20' && !ceremonyComplete">
+          <el-button v-if="revealedCount < 20" type="warning" @click="revealNext">
+            揭晓 #{{ 20 - revealedCount }}{{ revealedCount >= 19 ? ' — MVP' : '' }}
           </el-button>
-          <el-button
-            v-if="revealedCount > 0 && revealedCount < 20"
-            type="default"
-            @click="revealAllTop20"
-          >
+          <el-button v-if="revealedCount > 0 && revealedCount < 20" @click="revealAllTop20">
             全部揭晓
           </el-button>
-          <el-button
-            v-if="revealedCount >= 20"
-            type="primary"
-            size="large"
-            @click="nextSection"
-          >
+          <el-button v-if="revealedCount >= 20" type="primary" @click="nextSection">
             继续 — 最佳阵容
           </el-button>
         </div>
       </section>
 
-      <!-- 典礼阶段2: 最佳阵容 -->
+      <!-- 阶段2: 最佳阵容 -->
       <section
         v-if="(currentSection === 'allpro' || sectionPassed('allpro')) && (revealedTier > 0 || ceremonyComplete)"
-        class="awards-section allpro-section"
+        class="section"
       >
-        <div class="section-header">
+        <div class="section-hd">
+          <div class="section-tag">ALL-PRO TEAMS</div>
           <h2>年度最佳阵容</h2>
-          <span class="section-subtitle">ALL-PRO TEAMS</span>
         </div>
 
-        <div class="allpro-tiers-reveal">
-          <!-- 三阵 -->
+        <div class="allpro-container">
           <Transition name="tier-reveal">
-            <div class="tier-block" v-if="revealedTier >= 1 || ceremonyComplete">
-              <div class="tier-label bronze">三阵</div>
-              <div class="tier-players">
-                <div
-                  class="tier-player-card"
-                  v-for="p in sortByPosition(awardsData.all_pro_3rd)"
-                  :key="p.player_id"
-                  @click="goToPlayer(p.player_id)"
-                >
-                  <span class="tp-pos">{{ getPositionName(p.position) }}</span>
-                  <span class="tp-name">{{ p.player_name }}</span>
-                  <span class="tp-team">{{ p.team_name }}</span>
-                  <span class="tp-score">{{ p.yearly_score.toFixed(1) }}</span>
+            <div class="tier" v-if="revealedTier >= 1 || ceremonyComplete">
+              <div class="tier-hd bronze">三阵</div>
+              <div class="tier-grid">
+                <div class="tier-card" v-for="p in sortByPosition(awardsData.all_pro_3rd)" :key="p.player_id" @click="goToPlayer(p.player_id)">
+                  <el-tag :type="getPositionTagType(p.position)" size="small" effect="dark">{{ getPositionName(p.position) }}</el-tag>
+                  <span class="tc-name">{{ p.player_name }}</span>
+                  <span class="tc-team">{{ p.team_name }}</span>
+                  <span class="tc-score">{{ p.yearly_score.toFixed(1) }}</span>
                 </div>
               </div>
             </div>
           </Transition>
 
-          <!-- 二阵 -->
           <Transition name="tier-reveal">
-            <div class="tier-block" v-if="revealedTier >= 2 || ceremonyComplete">
-              <div class="tier-label silver">二阵</div>
-              <div class="tier-players">
-                <div
-                  class="tier-player-card"
-                  v-for="p in sortByPosition(awardsData.all_pro_2nd)"
-                  :key="p.player_id"
-                  @click="goToPlayer(p.player_id)"
-                >
-                  <span class="tp-pos">{{ getPositionName(p.position) }}</span>
-                  <span class="tp-name">{{ p.player_name }}</span>
-                  <span class="tp-team">{{ p.team_name }}</span>
-                  <span class="tp-score">{{ p.yearly_score.toFixed(1) }}</span>
+            <div class="tier" v-if="revealedTier >= 2 || ceremonyComplete">
+              <div class="tier-hd silver">二阵</div>
+              <div class="tier-grid">
+                <div class="tier-card" v-for="p in sortByPosition(awardsData.all_pro_2nd)" :key="p.player_id" @click="goToPlayer(p.player_id)">
+                  <el-tag :type="getPositionTagType(p.position)" size="small" effect="dark">{{ getPositionName(p.position) }}</el-tag>
+                  <span class="tc-name">{{ p.player_name }}</span>
+                  <span class="tc-team">{{ p.team_name }}</span>
+                  <span class="tc-score">{{ p.yearly_score.toFixed(1) }}</span>
                 </div>
               </div>
             </div>
           </Transition>
 
-          <!-- 一阵 -->
           <Transition name="tier-reveal">
-            <div class="tier-block" v-if="revealedTier >= 3 || ceremonyComplete">
-              <div class="tier-label gold">一阵</div>
-              <div class="tier-players">
-                <div
-                  class="tier-player-card highlight"
-                  v-for="p in sortByPosition(awardsData.all_pro_1st)"
-                  :key="p.player_id"
-                  @click="goToPlayer(p.player_id)"
-                >
-                  <span class="tp-pos">{{ getPositionName(p.position) }}</span>
-                  <span class="tp-name">{{ p.player_name }}</span>
-                  <span class="tp-team">{{ p.team_name }}</span>
-                  <span class="tp-score">{{ p.yearly_score.toFixed(1) }}</span>
+            <div class="tier" v-if="revealedTier >= 3 || ceremonyComplete">
+              <div class="tier-hd gold">一阵</div>
+              <div class="tier-grid">
+                <div class="tier-card gold-border" v-for="p in sortByPosition(awardsData.all_pro_1st)" :key="p.player_id" @click="goToPlayer(p.player_id)">
+                  <el-tag :type="getPositionTagType(p.position)" size="small" effect="dark">{{ getPositionName(p.position) }}</el-tag>
+                  <span class="tc-name">{{ p.player_name }}</span>
+                  <span class="tc-team">{{ p.team_name }}</span>
+                  <span class="tc-score">{{ p.yearly_score.toFixed(1) }}</span>
                 </div>
               </div>
             </div>
           </Transition>
         </div>
 
-        <!-- 揭晓按钮 -->
-        <div class="reveal-action" v-if="currentSection === 'allpro' && !ceremonyComplete">
-          <el-button
-            v-if="revealedTier < 3"
-            type="warning"
-            size="large"
-            @click="revealNextTier"
-          >
+        <div class="actions" v-if="currentSection === 'allpro' && !ceremonyComplete">
+          <el-button v-if="revealedTier < 3" type="warning" @click="revealNextTier">
             揭晓{{ revealedTier === 0 ? '三阵' : revealedTier === 1 ? '二阵' : '一阵' }}
           </el-button>
-          <el-button
-            v-if="revealedTier >= 3"
-            type="primary"
-            size="large"
-            @click="nextSection"
-          >
+          <el-button v-if="revealedTier >= 3" type="primary" @click="nextSection">
             继续 — 特别奖项
           </el-button>
         </div>
       </section>
 
-      <!-- 典礼阶段3: 特别奖项 -->
+      <!-- 阶段3: 特别奖项 -->
       <section
         v-if="(currentSection === 'special' || sectionPassed('special')) && (revealedSpecial > 0 || ceremonyComplete)"
-        class="awards-section special-section"
+        class="section"
       >
-        <div class="section-header">
+        <div class="section-hd">
+          <div class="section-tag">SPECIAL AWARDS</div>
           <h2>特别奖项</h2>
-          <span class="section-subtitle">SPECIAL AWARDS</span>
         </div>
 
-        <div class="special-cards">
-          <!-- 最稳定选手 -->
+        <div class="special-grid">
           <Transition name="special-reveal">
-            <div
-              v-if="(revealedSpecial >= 1 || ceremonyComplete) && awardsData.most_consistent"
-              class="special-card stable"
-              @click="goToPlayer(awardsData.most_consistent.player_id)"
-            >
-              <div class="special-badge">最稳定选手</div>
-              <div class="special-name">{{ awardsData.most_consistent.player_name }}</div>
-              <div class="special-meta">
-                {{ awardsData.most_consistent.team_name }} · {{ getPositionName(awardsData.most_consistent.position) }}
-              </div>
-              <div class="special-desc">{{ awardsData.most_consistent.commentary.description }}</div>
-              <div class="special-tags">
-                <span class="stag" v-for="tag in awardsData.most_consistent.commentary.tags" :key="tag">{{ tag }}</span>
-              </div>
+            <div v-if="(revealedSpecial >= 1 || ceremonyComplete) && awardsData.most_consistent" class="sp-card" @click="goToPlayer(awardsData.most_consistent.player_id)">
+              <div class="sp-icon stable-icon"><el-icon :size="24"><Aim /></el-icon></div>
+              <div class="sp-label">最稳定选手</div>
+              <div class="sp-name">{{ awardsData.most_consistent.player_name }}</div>
+              <div class="sp-meta">{{ awardsData.most_consistent.team_name }} · {{ getPositionName(awardsData.most_consistent.position) }}</div>
+              <p class="sp-desc">{{ awardsData.most_consistent.commentary.description }}</p>
+              <div class="sp-tags"><span v-for="tag in awardsData.most_consistent.commentary.tags" :key="tag">{{ tag }}</span></div>
             </div>
           </Transition>
 
-          <!-- 最佳新秀 -->
           <Transition name="special-reveal">
-            <div
-              v-if="(revealedSpecial >= 2 || ceremonyComplete) && awardsData.rookie_of_the_year"
-              class="special-card rookie"
-              @click="goToPlayer(awardsData.rookie_of_the_year.player_id)"
-            >
-              <div class="special-badge">最佳新秀</div>
-              <div class="special-name">{{ awardsData.rookie_of_the_year.player_name }}</div>
-              <div class="special-meta">
-                {{ awardsData.rookie_of_the_year.team_name }} · {{ getPositionName(awardsData.rookie_of_the_year.position) }} · {{ awardsData.rookie_of_the_year.age }}岁
-              </div>
-              <div class="special-desc">{{ awardsData.rookie_of_the_year.commentary.description }}</div>
-              <div class="special-tags">
-                <span class="stag" v-for="tag in awardsData.rookie_of_the_year.commentary.tags" :key="tag">{{ tag }}</span>
-              </div>
+            <div v-if="(revealedSpecial >= 2 || ceremonyComplete) && awardsData.rookie_of_the_year" class="sp-card" @click="goToPlayer(awardsData.rookie_of_the_year.player_id)">
+              <div class="sp-icon rookie-icon"><el-icon :size="24"><Star /></el-icon></div>
+              <div class="sp-label">最佳新秀</div>
+              <div class="sp-name">{{ awardsData.rookie_of_the_year.player_name }}</div>
+              <div class="sp-meta">{{ awardsData.rookie_of_the_year.team_name }} · {{ getPositionName(awardsData.rookie_of_the_year.position) }} · {{ awardsData.rookie_of_the_year.age }}岁</div>
+              <p class="sp-desc">{{ awardsData.rookie_of_the_year.commentary.description }}</p>
+              <div class="sp-tags"><span v-for="tag in awardsData.rookie_of_the_year.commentary.tags" :key="tag">{{ tag }}</span></div>
             </div>
           </Transition>
 
-          <!-- 最具统治力 -->
           <Transition name="special-reveal">
-            <div
-              v-if="(revealedSpecial >= 3 || ceremonyComplete) && awardsData.most_dominant"
-              class="special-card dominant"
-              @click="goToPlayer(awardsData.most_dominant.player_id)"
-            >
-              <div class="special-badge">最具统治力</div>
-              <div class="special-name">{{ awardsData.most_dominant.player_name }}</div>
-              <div class="special-meta">
-                {{ awardsData.most_dominant.team_name }} · {{ getPositionName(awardsData.most_dominant.position) }}
-              </div>
-              <div class="special-desc">{{ awardsData.most_dominant.commentary.description }}</div>
-              <div class="special-tags">
-                <span class="stag" v-for="tag in awardsData.most_dominant.commentary.tags" :key="tag">{{ tag }}</span>
-              </div>
+            <div v-if="(revealedSpecial >= 3 || ceremonyComplete) && awardsData.most_dominant" class="sp-card" @click="goToPlayer(awardsData.most_dominant.player_id)">
+              <div class="sp-icon dominant-icon"><el-icon :size="24"><MagicStick /></el-icon></div>
+              <div class="sp-label">最具统治力</div>
+              <div class="sp-name">{{ awardsData.most_dominant.player_name }}</div>
+              <div class="sp-meta">{{ awardsData.most_dominant.team_name }} · {{ getPositionName(awardsData.most_dominant.position) }}</div>
+              <p class="sp-desc">{{ awardsData.most_dominant.commentary.description }}</p>
+              <div class="sp-tags"><span v-for="tag in awardsData.most_dominant.commentary.tags" :key="tag">{{ tag }}</span></div>
             </div>
           </Transition>
         </div>
 
-        <!-- 揭晓按钮 -->
-        <div class="reveal-action" v-if="currentSection === 'special' && !ceremonyComplete">
-          <el-button
-            v-if="revealedSpecial < 3"
-            type="warning"
-            size="large"
-            @click="revealNextSpecial"
-          >
+        <div class="actions" v-if="currentSection === 'special' && !ceremonyComplete">
+          <el-button v-if="revealedSpecial < 3" type="warning" @click="revealNextSpecial">
             揭晓{{ revealedSpecial === 0 ? '最稳定选手' : revealedSpecial === 1 ? '最佳新秀' : '最具统治力' }}
           </el-button>
-          <el-button
-            v-if="revealedSpecial >= 3"
-            type="primary"
-            size="large"
-            @click="nextSection"
-          >
-            继续 — 年度MVP揭晓
+          <el-button v-if="revealedSpecial >= 3" type="primary" @click="nextSection">
+            继续 — 年度MVP
           </el-button>
         </div>
       </section>
 
-      <!-- 典礼阶段4: MVP 终极揭晓 -->
-      <section
-        v-if="currentSection === 'mvp' || ceremonyComplete"
-        class="awards-section mvp-section"
-      >
-        <div class="section-header">
+      <!-- 阶段4: MVP -->
+      <section v-if="currentSection === 'mvp' || ceremonyComplete" class="section mvp-section">
+        <div class="section-hd">
+          <div class="section-tag mvp-tag">ANNUAL MVP</div>
           <h2>年度最有价值选手</h2>
-          <span class="section-subtitle">ANNUAL MVP</span>
         </div>
 
         <div class="mvp-card" v-if="mvpPlayer" @click="goToPlayer(mvpPlayer.player_id)">
-          <div class="mvp-spotlight"></div>
-          <div class="mvp-badge">MVP</div>
-          <div class="mvp-content">
+          <div class="mvp-glow"></div>
+          <div class="mvp-badge-float">MVP</div>
+          <div class="mvp-body">
             <div class="mvp-name">{{ mvpPlayer.player_name }}</div>
             <div class="mvp-meta">
-              <el-tag :type="getPositionTagType(mvpPlayer.position)" effect="dark">
-                {{ getPositionName(mvpPlayer.position) }}
-              </el-tag>
+              <el-tag :type="getPositionTagType(mvpPlayer.position)" effect="dark" size="large">{{ getPositionName(mvpPlayer.position) }}</el-tag>
               <span class="mvp-team">{{ mvpPlayer.team_name }}</span>
             </div>
-            <div class="mvp-stats">
-              <div class="stat-item">
-                <span class="stat-value">{{ mvpPlayer.yearly_score.toFixed(1) }}</span>
-                <span class="stat-label">年度得分</span>
-              </div>
-              <div class="stat-item">
-                <span class="stat-value">{{ mvpPlayer.avg_impact.toFixed(1) }}</span>
-                <span class="stat-label">场均影响力</span>
-              </div>
-              <div class="stat-item">
-                <span class="stat-value">{{ mvpPlayer.games_played }}</span>
-                <span class="stat-label">出场次数</span>
-              </div>
+            <div class="mvp-numbers">
+              <div><strong>{{ mvpPlayer.yearly_score.toFixed(1) }}</strong><span>年度得分</span></div>
+              <div><strong>{{ mvpPlayer.avg_impact.toFixed(1) }}</strong><span>场均影响力</span></div>
+              <div><strong>{{ mvpPlayer.games_played }}</strong><span>出场次数</span></div>
             </div>
-            <div class="mvp-commentary" v-if="mvpPlayer.commentary.description">
-              <p>{{ mvpPlayer.commentary.description }}</p>
+            <div class="mvp-quote" v-if="mvpPlayer.commentary.description">
+              <p>"{{ mvpPlayer.commentary.description }}"</p>
               <div class="mvp-tags">
-                <span class="mtag" v-for="tag in mvpPlayer.commentary.tags" :key="tag">{{ tag }}</span>
+                <span v-for="tag in mvpPlayer.commentary.tags" :key="tag">{{ tag }}</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="reveal-action" v-if="currentSection === 'mvp' && !ceremonyComplete">
-          <el-button type="success" size="large" @click="completeCeremony">
-            典礼完成
-          </el-button>
+        <div class="actions" v-if="currentSection === 'mvp' && !ceremonyComplete">
+          <el-button type="success" @click="completeCeremony">典礼完成</el-button>
         </div>
       </section>
 
-      <!-- 已完成提示 -->
+      <!-- 完成提示 -->
       <el-alert
-        v-if="ceremonyComplete"
+        v-if="ceremonyComplete && !demoMode"
         title="本赛季年度颁奖典礼已完成"
         type="success"
         show-icon
         :closable="false"
-        class="awarded-alert"
+        class="done-alert"
       />
 
-      <!-- 返回 -->
-      <div class="action-footer">
-        <el-button type="primary" size="large" @click="goBack">
-          返回时间控制面板
-        </el-button>
+      <!-- 底部 -->
+      <div class="footer-actions">
+        <el-button @click="goBack">返回时间面板</el-button>
+        <el-button v-if="demoMode" type="danger" plain @click="exitDemo">退出 Demo</el-button>
       </div>
-    </template>
+    </div>
+
+    <!-- 有数据但 top20 为空 -->
+    <div v-else-if="awardsData && awardsData.top20.length === 0 && !loading" class="empty-state">
+      <div class="empty-icon-wrap">
+        <el-icon :size="48"><Trophy /></el-icon>
+      </div>
+      <h2>暂无评选数据</h2>
+      <p>当前赛季尚无足够的比赛数据，请先模拟更多比赛</p>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { Trophy, Aim, Star, MagicStick } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { useSeasonStore } from '@/stores/useSeasonStore'
 import { useTimeStore } from '@/stores/useTimeStore'
 import { awardsApi } from '@/api/tauri'
@@ -386,7 +323,6 @@ import { createLogger } from '@/utils/logger'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
 
 const logger = createLogger('AnnualAwards')
-
 const router = useRouter()
 const seasonStore = useSeasonStore()
 const timeStore = useTimeStore()
@@ -399,52 +335,50 @@ const selectedSeason = ref(seasonStore.currentSeason)
 // 典礼状态
 const ceremonyStarted = ref(false)
 const ceremonyComplete = ref(false)
+const demoMode = ref(false)
 const revealedCount = ref(0)
 const currentSection = ref<'top20' | 'allpro' | 'special' | 'mvp' | 'complete'>('top20')
 const revealedTier = ref(0)
 const revealedSpecial = ref(0)
 
-// 是否在颁奖阶段
 const isAwardsPhase = computed(() => timeStore.isAnnualAwardsPhase)
-
-// MVP 选手
 const mvpPlayer = computed(() => awardsData.value?.top20[0] || null)
 
-// 可见的 Top20（从 #20 往前揭晓）
 const visibleTop20 = computed(() => {
   if (ceremonyComplete.value) return awardsData.value?.top20 ?? []
   const all = awardsData.value?.top20 ?? []
-  // 显示从 #20 开始的 revealedCount 个
-  return all.slice(all.length - revealedCount.value).reverse()
+  return all.slice(all.length - revealedCount.value)
     .sort((a, b) => a.rank - b.rank)
-    // 实际上按 rank 从小到大展示已揭晓的
-    .concat() // 展示顺序：rank 小在前
 })
 
-// 按位置排序
 const sortByPosition = (players: AllProPlayer[]) => {
   const order: Record<string, number> = { TOP: 0, JUG: 1, MID: 2, ADC: 3, SUP: 4 }
   return [...players].sort((a, b) => (order[a.position] ?? 99) - (order[b.position] ?? 99))
 }
 
-// 判断某个阶段是否已过
 const sectionPassed = (section: string) => {
   const order = ['top20', 'allpro', 'special', 'mvp', 'complete']
-  const currentIdx = order.indexOf(currentSection.value)
-  const targetIdx = order.indexOf(section)
-  return ceremonyComplete.value || currentIdx > targetIdx
+  return ceremonyComplete.value || order.indexOf(currentSection.value) > order.indexOf(section)
 }
 
-// 五维条
-const getDimBars = (player: Top20Player) => [
-  { label: '影响', value: player.dimensions.impact_norm, color: '#3b82f6' },
-  { label: '发挥', value: player.dimensions.performance_norm, color: '#10b981' },
-  { label: '稳定', value: player.dimensions.stability_norm, color: '#8b5cf6' },
-  { label: '出场', value: player.dimensions.appearance_norm, color: '#f59e0b' },
-  { label: '荣誉', value: player.dimensions.honor_norm, color: '#ef4444' },
+const dimLabels = [
+  { key: 'impact', label: '影响力', color: '#60a5fa' },
+  { key: 'performance', label: '发挥', color: '#34d399' },
+  { key: 'stability', label: '稳定', color: '#a78bfa' },
+  { key: 'appearance', label: '出场', color: '#fbbf24' },
+  { key: 'honor', label: '荣誉', color: '#f87171' },
 ]
 
-// 获取颁奖数据
+const getDimBars = (player: Top20Player) => [
+  { label: '影响力', value: player.dimensions.impact_norm, color: '#60a5fa' },
+  { label: '发挥', value: player.dimensions.performance_norm, color: '#34d399' },
+  { label: '稳定', value: player.dimensions.stability_norm, color: '#a78bfa' },
+  { label: '出场', value: player.dimensions.appearance_norm, color: '#fbbf24' },
+  { label: '荣誉', value: player.dimensions.honor_norm, color: '#f87171' },
+]
+
+// --- Actions ---
+
 const fetchAwardsData = async (seasonId?: number) => {
   loading.value = true
   try {
@@ -460,13 +394,20 @@ const fetchAwardsData = async (seasonId?: number) => {
   }
 }
 
-// 开始颁奖典礼
+const resetCeremonyState = () => {
+  ceremonyStarted.value = false
+  ceremonyComplete.value = false
+  demoMode.value = false
+  revealedCount.value = 0
+  revealedTier.value = 0
+  revealedSpecial.value = 0
+  currentSection.value = 'top20'
+}
+
 const startCeremony = async () => {
   starting.value = true
   try {
-    // 触发后端颁奖
     await timeStore.completeAndAdvance()
-    // 拉取颁奖数据
     await fetchAwardsData(selectedSeason.value)
     ceremonyStarted.value = true
     ceremonyComplete.value = false
@@ -481,167 +422,106 @@ const startCeremony = async () => {
   }
 }
 
-// Top20 揭晓下一位
-const revealNext = () => {
-  if (revealedCount.value < 20) {
-    revealedCount.value++
+// Demo: 仅拉取数据、不推进游戏
+const startDemo = async () => {
+  starting.value = true
+  try {
+    await fetchAwardsData(selectedSeason.value)
+    if (!awardsData.value || awardsData.value.top20.length === 0) {
+      ElMessage.warning('当前赛季暂无评选数据，请先模拟比赛')
+      return
+    }
+    demoMode.value = true
+    ceremonyStarted.value = true
+    ceremonyComplete.value = false
+    currentSection.value = 'top20'
+    revealedCount.value = 0
+    revealedTier.value = 0
+    revealedSpecial.value = 0
+  } catch (error) {
+    logger.error('Demo启动失败:', error)
+  } finally {
+    starting.value = false
   }
 }
 
-// 全部揭晓 Top20
-const revealAllTop20 = () => {
-  revealedCount.value = 20
+const exitDemo = () => {
+  resetCeremonyState()
+  awardsData.value = null
 }
 
-// 揭晓下一阵
-const revealNextTier = () => {
-  if (revealedTier.value < 3) {
-    revealedTier.value++
-  }
-}
+const revealNext = () => { if (revealedCount.value < 20) revealedCount.value++ }
+const revealAllTop20 = () => { revealedCount.value = awardsData.value?.top20.length ?? 20 }
+const revealNextTier = () => { if (revealedTier.value < 3) revealedTier.value++ }
+const revealNextSpecial = () => { if (revealedSpecial.value < 3) revealedSpecial.value++ }
 
-// 揭晓下一个特别奖
-const revealNextSpecial = () => {
-  if (revealedSpecial.value < 3) {
-    revealedSpecial.value++
-  }
-}
-
-// 下一个阶段
 const nextSection = () => {
   const order: Array<typeof currentSection.value> = ['top20', 'allpro', 'special', 'mvp', 'complete']
   const idx = order.indexOf(currentSection.value)
-  if (idx < order.length - 1) {
-    currentSection.value = order[idx + 1]
-  }
+  if (idx < order.length - 1) currentSection.value = order[idx + 1]
 }
 
-// 完成典礼
 const completeCeremony = () => {
   ceremonyComplete.value = true
   currentSection.value = 'complete'
 }
 
-// 方法
-const goToPlayer = (playerId: number) => {
-  router.push(`/data-center/player/${playerId}?season=S${selectedSeason.value}`)
-}
+const goToPlayer = (id: number) => router.push(`/data-center/player/${id}?season=S${selectedSeason.value}`)
+const goBack = () => router.push('/time')
 
-const goBack = () => {
-  router.push('/time')
-}
-
-const getPositionName = (position: string): string => {
-  return POSITION_NAMES[position as PlayerPosition] || position
-}
-
-const getPositionTagType = (position: string) => {
-  const types: Record<string, string> = {
-    TOP: 'danger', JUG: 'warning', MID: 'primary', ADC: 'success', SUP: 'info'
-  }
-  return types[position] || 'info'
-}
-
-const getRankClass = (rank: number) => {
-  if (rank === 1) return 'gold'
-  if (rank === 2) return 'silver'
-  if (rank === 3) return 'bronze'
-  return ''
-}
-
-const getConfettiStyle = (index: number) => {
-  const colors = ['#ffd700', '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9']
-  return {
-    left: `${Math.random() * 100}%`,
-    animationDelay: `${Math.random() * 3}s`,
-    backgroundColor: colors[index % colors.length]
-  }
-}
+const getPositionName = (pos: string) => POSITION_NAMES[pos as PlayerPosition] || pos
+const getPositionTagType = (pos: string) => ({ TOP: 'danger', JUG: 'warning', MID: 'primary', ADC: 'success', SUP: 'info' }[pos] || 'info')
+const getRankClass = (r: number) => r === 1 ? 'gold' : r === 2 ? 'silver' : r === 3 ? 'bronze' : ''
 
 onMounted(async () => {
   await timeStore.fetchTimeState()
-  if (isAwardsPhase.value) {
-    // 如果已经颁发过，直接拉取数据
-    await fetchAwardsData(selectedSeason.value)
-  } else {
-    // 非颁奖阶段，尝试拉取历史数据
-    await fetchAwardsData(selectedSeason.value)
-  }
+  await fetchAwardsData(selectedSeason.value)
 })
 
-watch(selectedSeason, (newSeason) => {
-  ceremonyComplete.value = false
-  ceremonyStarted.value = false
-  revealedCount.value = 0
-  revealedTier.value = 0
-  revealedSpecial.value = 0
-  currentSection.value = 'top20'
-  fetchAwardsData(newSeason)
+watch(selectedSeason, (s) => {
+  resetCeremonyState()
+  fetchAwardsData(s)
 })
 </script>
 
 <style scoped lang="scss">
+/* ========== 全局 ========== */
 .annual-awards {
-  min-height: 100vh;
-  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-  padding: 0;
+  min-height: 100%;
+  background: #0f1923;
+  color: #c8d6e5;
 }
 
-// 头部
+/* ========== Header ========== */
 .ceremony-header {
-  position: relative;
-  padding: 60px 40px;
+  padding: 48px 32px 32px;
   text-align: center;
-  overflow: hidden;
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%);
-
-  .header-decoration {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-  }
-
-  .confetti {
-    position: absolute;
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
-    animation: confetti-fall 5s linear infinite;
-    opacity: 0.8;
-  }
-
-  @keyframes confetti-fall {
-    0% { transform: translateY(-100px) rotate(0deg); opacity: 1; }
-    100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
-  }
-
-  .header-content {
-    position: relative;
-    z-index: 1;
-  }
+  background: linear-gradient(180deg, #1a2940 0%, #0f1923 100%);
+  border-bottom: 1px solid rgba(255, 215, 0, 0.08);
 
   .season-badge {
     display: inline-block;
-    padding: 8px 24px;
-    background: rgba(255, 215, 0, 0.2);
-    border: 2px solid #ffd700;
-    border-radius: 30px;
-    color: #ffd700;
-    font-weight: 600;
-    margin-bottom: 16px;
+    padding: 4px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.4);
+    border-radius: 20px;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
   }
 
   .ceremony-title {
-    font-size: 48px;
+    font-size: 32px;
     font-weight: 800;
-    color: white;
-    margin: 0 0 12px 0;
-    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    color: #f1f5f9;
+    margin: 0 0 8px;
+    letter-spacing: 2px;
   }
 
   .ceremony-subtitle {
-    font-size: 18px;
-    color: rgba(255, 255, 255, 0.8);
+    font-size: 14px;
+    color: #64748b;
     margin: 0;
   }
 
@@ -652,331 +532,488 @@ watch(selectedSeason, (newSeason) => {
   }
 }
 
-// 加载
-.loading-container {
-  padding: 40px;
-  background: rgba(255, 255, 255, 0.05);
-  margin: 20px;
-  border-radius: 16px;
-}
-
-// 空状态
-.empty-state, .start-ceremony {
-  padding: 80px 40px;
+/* ========== 空状态 / 开始 ========== */
+.empty-state, .start-state {
+  padding: 80px 32px;
   text-align: center;
 
-  .empty-icon, .start-icon {
-    width: 80px; height: 80px; border-radius: 50%;
+  .empty-icon-wrap, .start-icon-wrap {
+    width: 88px;
+    height: 88px;
     margin: 0 auto 24px;
-  }
-  .empty-icon { background: rgba(255, 255, 255, 0.1); }
-  .start-icon { background: linear-gradient(135deg, #ffd700, #ff8c00); }
-
-  h2 { font-size: 24px; color: white; margin: 0 0 12px; }
-  p { font-size: 16px; color: rgba(255, 255, 255, 0.6); margin: 0 0 24px; }
-}
-
-// 通用section
-.awards-section {
-  padding: 40px;
-  margin: 20px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 20px;
-  backdrop-filter: blur(10px);
-
-  .section-header {
-    text-align: center;
-    margin-bottom: 32px;
-
-    h2 {
-      font-size: 28px;
-      font-weight: 700;
-      color: white;
-      margin: 0 0 8px 0;
-    }
-    .section-subtitle {
-      font-size: 14px;
-      color: rgba(255, 255, 255, 0.5);
-      letter-spacing: 4px;
-    }
-  }
-}
-
-// Top20 列表
-.top20-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.top20-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 20px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.3s;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    transform: translateX(8px);
-  }
-
-  &.is-mvp {
-    background: linear-gradient(135deg, rgba(255, 215, 0, 0.2) 0%, rgba(255, 165, 0, 0.1) 100%);
-    border: 1px solid rgba(255, 215, 0, 0.3);
-    padding: 18px 20px;
-  }
-  &.is-top3:not(.is-mvp) {
-    background: rgba(192, 192, 192, 0.1);
-    border: 1px solid rgba(192, 192, 192, 0.2);
-  }
-  &.is-top10:not(.is-top3) {
-    background: rgba(102, 126, 234, 0.1);
-  }
-
-  .rank-badge {
-    width: 40px; height: 40px;
-    display: flex; align-items: center; justify-content: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 50%;
-    font-weight: 700; font-size: 16px;
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.8);
-    flex-shrink: 0;
-
-    &.gold { background: linear-gradient(135deg, #ffd700, #ff8c00); color: #1a1a2e; }
-    &.silver { background: linear-gradient(135deg, #c0c0c0, #a8a8a8); color: #1a1a2e; }
-    &.bronze { background: linear-gradient(135deg, #cd7f32, #b8860b); color: #1a1a2e; }
+    background: rgba(251, 191, 36, 0.08);
+    color: #fbbf24;
   }
 
-  .player-info {
-    flex: 1; min-width: 0;
-    .player-name {
-      font-size: 16px; font-weight: 600; color: white;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .player-meta {
-      display: flex; align-items: center; gap: 8px; margin-top: 4px;
-      .team-name { font-size: 12px; color: rgba(255, 255, 255, 0.6); }
-      .age-tag { font-size: 11px; color: #2ed573; }
-    }
+  h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #e2e8f0;
+    margin: 0 0 8px;
   }
 
-  .player-dims {
-    display: flex; gap: 3px; width: 120px; flex-shrink: 0;
-    .dim-mini {
-      flex: 1;
-      .dim-mini-bar {
-        height: 24px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;
-        .dim-mini-fill { height: 100%; border-radius: 3px; }
-      }
-    }
-  }
-
-  .player-score {
-    text-align: right; flex-shrink: 0; width: 60px;
-    .score-value { display: block; font-size: 20px; font-weight: 700; color: #ffd700; }
-    .score-label { font-size: 10px; color: rgba(255, 255, 255, 0.5); }
-  }
-
-  .player-tags {
-    display: flex; gap: 4px; flex-shrink: 0;
-    .tag-item {
-      padding: 2px 8px; border-radius: 10px; font-size: 11px;
-      background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.7);
-    }
+  p {
+    font-size: 14px;
+    color: #64748b;
+    margin: 0 0 28px;
   }
 }
 
-// 揭晓动画
-.reveal-enter-active {
-  transition: all 0.5s ease-out;
-}
-.reveal-enter-from {
-  opacity: 0;
-  transform: translateY(30px);
+/* ========== Loading ========== */
+.loading-container {
+  padding: 40px 32px;
 }
 
-// 揭晓按钮
-.reveal-action {
+/* ========== Demo alert ========== */
+.demo-alert {
+  margin: 16px 24px 0;
+  border-radius: 8px;
+}
+
+/* ========== Ceremony Body ========== */
+.ceremony-body {
+  padding: 0 24px 40px;
+}
+
+/* ========== Section 通用 ========== */
+.section {
+  margin-top: 24px;
+  padding: 28px;
+  background: #151f2e;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+}
+
+.section-hd {
   text-align: center;
-  margin-top: 32px;
+  margin-bottom: 24px;
+
+  .section-tag {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: #475569;
+    margin-bottom: 4px;
+
+    &.mvp-tag { color: #fbbf24; }
+  }
+
+  h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin: 0;
+  }
+}
+
+.actions {
   display: flex;
   justify-content: center;
   gap: 12px;
+  margin-top: 24px;
 }
 
-// 最佳阵容
-.allpro-tiers-reveal {
-  display: flex; flex-direction: column; gap: 24px;
+/* ========== Top20 表格 (CSS Grid) ========== */
+$grid-cols: 40px 1fr 72px 72px 72px 72px 72px 56px 120px;
 
-  .tier-block {
-    .tier-label {
-      font-size: 16px; font-weight: 700; padding: 10px 20px;
-      border-radius: 10px; margin-bottom: 12px; color: white; text-align: center;
-      &.gold { background: linear-gradient(135deg, #fbbf24, #f59e0b); }
-      &.silver { background: linear-gradient(135deg, #94a3b8, #64748b); }
-      &.bronze { background: linear-gradient(135deg, #cd7f32, #a0522d); }
+.top20-table {
+  overflow-x: auto;
+}
+
+.top20-header {
+  display: grid;
+  grid-template-columns: $grid-cols;
+  gap: 0 8px;
+  padding: 0 12px 10px;
+  border-bottom: 1px solid #1e293b;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  align-items: center;
+
+  .col-score { text-align: right; }
+
+  .col-dim {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+
+    .dim-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+  }
+}
+
+.top20-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.top20-row {
+  display: grid;
+  grid-template-columns: $grid-cols;
+  gap: 0 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  align-items: center;
+  transition: background 0.2s;
+
+  &:hover { background: rgba(255, 255, 255, 0.04); }
+
+  &.is-mvp {
+    background: rgba(251, 191, 36, 0.06);
+    border: 1px solid rgba(251, 191, 36, 0.15);
+  }
+
+  &.is-top3 {
+    background: rgba(148, 163, 184, 0.06);
+  }
+
+  .col-rank {
+    .rank-badge {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      font-weight: 800;
+      font-size: 13px;
+      color: #64748b;
+      background: #1e293b;
+
+      &.gold { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #1a1a2e; }
+      &.silver { background: linear-gradient(135deg, #94a3b8, #64748b); color: #1a1a2e; }
+      &.bronze { background: linear-gradient(135deg, #cd7f32, #b8860b); color: #1a1a2e; }
+    }
+  }
+
+  .col-player {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    .name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #e2e8f0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .tier-players {
-      display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+    .meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      .team { font-size: 12px; color: #64748b; }
+    }
+  }
 
-      .tier-player-card {
-        display: flex; align-items: center; gap: 12px;
-        padding: 12px 20px; border-radius: 10px;
-        background: rgba(255, 255, 255, 0.05);
-        cursor: pointer; transition: all 0.2s;
-        &:hover { background: rgba(255, 255, 255, 0.1); }
-        &.highlight { border: 1px solid rgba(255, 215, 0, 0.3); }
+  .col-dim {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
 
-        .tp-pos { font-size: 12px; color: rgba(255, 255, 255, 0.5); width: 40px; }
-        .tp-name { font-weight: 600; color: white; flex: 1; min-width: 80px; }
-        .tp-team { font-size: 13px; color: rgba(255, 255, 255, 0.6); }
-        .tp-score { font-weight: 700; color: #ffd700; }
+    .dim-val {
+      font-size: 12px;
+      font-weight: 700;
+      color: #cbd5e1;
+    }
+
+    .dim-bar {
+      height: 4px;
+      background: #1e293b;
+      border-radius: 2px;
+      overflow: hidden;
+
+      .dim-fill {
+        height: 100%;
+        border-radius: 2px;
+        transition: width 0.3s ease;
       }
     }
   }
-}
 
-.tier-reveal-enter-active { transition: all 0.6s ease-out; }
-.tier-reveal-enter-from { opacity: 0; transform: translateY(40px); }
-
-// 特别奖项
-.special-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
-}
-
-.special-card {
-  padding: 24px; border-radius: 16px; cursor: pointer;
-  transition: all 0.3s;
-
-  &:hover { transform: translateY(-4px); }
-  &.stable {
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(109, 40, 217, 0.1));
-    border: 1px solid rgba(139, 92, 246, 0.3);
-  }
-  &.rookie {
-    background: linear-gradient(135deg, rgba(46, 213, 115, 0.2), rgba(39, 174, 96, 0.1));
-    border: 1px solid rgba(46, 213, 115, 0.3);
-  }
-  &.dominant {
-    background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(220, 38, 38, 0.1));
-    border: 1px solid rgba(239, 68, 68, 0.3);
+  .col-score {
+    text-align: right;
+    font-size: 17px;
+    font-weight: 800;
+    color: #fbbf24;
   }
 
-  .special-badge {
-    font-size: 12px; font-weight: 700;
-    color: rgba(255, 255, 255, 0.6);
-    margin-bottom: 8px; letter-spacing: 2px;
-  }
-  .special-name {
-    font-size: 24px; font-weight: 800; color: white; margin-bottom: 8px;
-  }
-  .special-meta {
-    font-size: 14px; color: rgba(255, 255, 255, 0.6); margin-bottom: 12px;
-  }
-  .special-desc {
-    font-size: 14px; color: rgba(255, 255, 255, 0.8); line-height: 1.6; margin-bottom: 12px;
-  }
-  .special-tags {
-    display: flex; gap: 6px; flex-wrap: wrap;
-    .stag {
-      padding: 3px 10px; border-radius: 12px; font-size: 11px;
-      background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.7);
+  .col-tags {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+
+    .tag-chip {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      background: #1e293b;
+      color: #94a3b8;
     }
   }
 }
 
-.special-reveal-enter-active { transition: all 0.6s ease-out; }
-.special-reveal-enter-from { opacity: 0; transform: scale(0.9) translateY(20px); }
+/* ========== 揭晓动画 ========== */
+.reveal-enter-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.reveal-enter-from { opacity: 0; transform: translateY(20px); }
 
-// MVP section
+/* ========== 最佳阵容 ========== */
+.allpro-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.tier {
+  .tier-hd {
+    font-size: 14px;
+    font-weight: 700;
+    padding: 8px 16px;
+    border-radius: 6px;
+    text-align: center;
+    color: white;
+    margin-bottom: 10px;
+
+    &.gold { background: linear-gradient(135deg, #b8860b, #daa520); }
+    &.silver { background: linear-gradient(135deg, #64748b, #94a3b8); }
+    &.bronze { background: linear-gradient(135deg, #8b5e3c, #cd7f32); }
+  }
+
+  .tier-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
+
+  .tier-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 8px;
+    border-radius: 8px;
+    background: #1a2636;
+    border: 1px solid #1e293b;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover { background: #1e2d40; border-color: #334155; }
+
+    &.gold-border { border-color: rgba(251, 191, 36, 0.25); }
+
+    .tc-name { font-size: 14px; font-weight: 700; color: #e2e8f0; text-align: center; }
+    .tc-team { font-size: 12px; color: #64748b; }
+    .tc-score { font-size: 16px; font-weight: 800; color: #fbbf24; }
+  }
+}
+
+.tier-reveal-enter-active { transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+.tier-reveal-enter-from { opacity: 0; transform: translateY(30px); }
+
+/* ========== 特别奖项 ========== */
+.special-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.sp-card {
+  padding: 24px;
+  border-radius: 10px;
+  background: #1a2636;
+  border: 1px solid #1e293b;
+  cursor: pointer;
+  transition: all 0.25s;
+
+  &:hover { border-color: #334155; transform: translateY(-2px); }
+
+  .sp-icon {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    margin-bottom: 14px;
+
+    &.stable-icon { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+    &.rookie-icon { background: rgba(52, 211, 153, 0.15); color: #34d399; }
+    &.dominant-icon { background: rgba(248, 113, 113, 0.15); color: #f87171; }
+  }
+
+  .sp-label { font-size: 12px; font-weight: 600; color: #64748b; letter-spacing: 1px; margin-bottom: 6px; }
+  .sp-name { font-size: 22px; font-weight: 800; color: #f1f5f9; margin-bottom: 4px; }
+  .sp-meta { font-size: 13px; color: #64748b; margin-bottom: 14px; }
+  .sp-desc { font-size: 13px; color: #94a3b8; line-height: 1.6; margin: 0 0 12px; }
+  .sp-tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    span {
+      padding: 2px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      background: #1e293b;
+      color: #94a3b8;
+    }
+  }
+}
+
+.special-reveal-enter-active { transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+.special-reveal-enter-from { opacity: 0; transform: translateY(20px) scale(0.97); }
+
+/* ========== MVP ========== */
 .mvp-section {
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.15) 0%, rgba(255, 165, 0, 0.1) 100%);
+  border-color: rgba(251, 191, 36, 0.12) !important;
+  background: linear-gradient(180deg, #1a2233 0%, #151f2e 100%);
 }
 
 .mvp-card {
   position: relative;
-  max-width: 600px;
+  max-width: 560px;
   margin: 0 auto;
-  padding: 40px;
-  background: linear-gradient(135deg, #1a1a2e 0%, #2d2d44 100%);
-  border: 3px solid #ffd700;
-  border-radius: 20px;
+  padding: 36px;
+  background: #111a27;
+  border: 2px solid rgba(251, 191, 36, 0.3);
+  border-radius: 16px;
   cursor: pointer;
   overflow: hidden;
   transition: transform 0.3s, box-shadow 0.3s;
 
   &:hover {
-    transform: translateY(-8px);
-    box-shadow: 0 20px 40px rgba(255, 215, 0, 0.3);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(251, 191, 36, 0.12);
   }
 
-  .mvp-spotlight {
+  .mvp-glow {
     position: absolute;
-    top: -100px; left: 50%; transform: translateX(-50%);
-    width: 200px; height: 200px;
-    background: radial-gradient(circle, rgba(255, 215, 0, 0.3) 0%, transparent 70%);
-    animation: pulse 2s ease-in-out infinite;
+    top: -80px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 240px;
+    height: 160px;
+    background: radial-gradient(ellipse, rgba(251, 191, 36, 0.12) 0%, transparent 70%);
+    pointer-events: none;
   }
 
-  @keyframes pulse {
-    0%, 100% { opacity: 0.5; transform: translateX(-50%) scale(1); }
-    50% { opacity: 1; transform: translateX(-50%) scale(1.2); }
-  }
-
-  .mvp-badge {
+  .mvp-badge-float {
     position: absolute;
-    top: 20px; right: 20px;
-    padding: 8px 20px;
-    background: linear-gradient(135deg, #ffd700, #ff8c00);
+    top: 16px;
+    right: 16px;
+    padding: 4px 16px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
     color: #1a1a2e;
-    font-weight: 800; font-size: 14px;
-    border-radius: 20px;
+    font-weight: 800;
+    font-size: 13px;
+    border-radius: 6px;
+    letter-spacing: 2px;
   }
 
-  .mvp-content {
-    position: relative; z-index: 1; text-align: center;
+  .mvp-body {
+    position: relative;
+    z-index: 1;
+    text-align: center;
   }
+
   .mvp-name {
-    font-size: 36px; font-weight: 800; color: #ffd700; margin-bottom: 16px;
+    font-size: 30px;
+    font-weight: 800;
+    color: #fbbf24;
+    margin-bottom: 12px;
   }
+
   .mvp-meta {
-    display: flex; justify-content: center; align-items: center; gap: 12px; margin-bottom: 24px;
-    .mvp-team { color: rgba(255, 255, 255, 0.8); font-size: 16px; }
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 24px;
+    .mvp-team { color: #94a3b8; font-size: 15px; }
   }
-  .mvp-stats {
-    display: flex; justify-content: center; gap: 40px; margin-bottom: 24px;
-    .stat-item {
+
+  .mvp-numbers {
+    display: flex;
+    justify-content: center;
+    gap: 36px;
+    margin-bottom: 24px;
+
+    div {
       text-align: center;
-      .stat-value { display: block; font-size: 28px; font-weight: 700; color: white; }
-      .stat-label { font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+      strong { display: block; font-size: 24px; font-weight: 800; color: #f1f5f9; }
+      span { font-size: 11px; color: #64748b; }
     }
   }
-  .mvp-commentary {
-    padding: 16px; background: rgba(255, 255, 255, 0.05); border-radius: 12px;
-    p { color: rgba(255, 255, 255, 0.8); font-size: 15px; line-height: 1.6; margin: 0 0 12px; }
+
+  .mvp-quote {
+    padding: 16px;
+    background: rgba(251, 191, 36, 0.04);
+    border: 1px solid rgba(251, 191, 36, 0.1);
+    border-radius: 8px;
+
+    p {
+      color: #cbd5e1;
+      font-size: 14px;
+      line-height: 1.7;
+      margin: 0 0 10px;
+      font-style: italic;
+    }
+
     .mvp-tags {
-      display: flex; gap: 6px; justify-content: center;
-      .mtag {
-        padding: 4px 12px; border-radius: 12px; font-size: 12px;
-        background: rgba(255, 215, 0, 0.2); color: #ffd700;
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+      span {
+        padding: 3px 12px;
+        border-radius: 4px;
+        font-size: 11px;
+        background: rgba(251, 191, 36, 0.1);
+        color: #fbbf24;
       }
     }
   }
 }
 
-// 已颁发提示
-.awarded-alert { margin: 20px; }
+/* ========== Footer ========== */
+.done-alert {
+  margin: 24px 0 0;
+  border-radius: 8px;
+}
 
-// 底部
-.action-footer {
-  padding: 40px;
-  text-align: center;
+.footer-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 0 16px;
+}
+
+/* ========== Responsive ========== */
+@media (max-width: 900px) {
+  .special-grid { grid-template-columns: 1fr; }
+  .tier .tier-grid { grid-template-columns: repeat(3, 1fr); }
+  .top20-header,
+  .top20-row {
+    grid-template-columns: 40px 1fr 56px;
+  }
+  .top20-header .col-dim,
+  .top20-header .col-tags,
+  .top20-row .col-dim,
+  .top20-row .col-tags {
+    display: none;
+  }
 }
 </style>

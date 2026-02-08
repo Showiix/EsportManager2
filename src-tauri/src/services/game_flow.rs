@@ -8,7 +8,7 @@ use crate::models::{
     HonorType, LeagueStanding, SeasonPhase, Tournament, TournamentStatus,
     TournamentType, GameTimeState, PhaseStatus, PhaseProgress, TournamentProgress,
     SeasonProgress, PhaseInfo, TimeAction, FastForwardTarget, FastForwardResult,
-    CompleteAndAdvanceResult, HonorInfo,
+    CompleteAndAdvanceResult, HonorInfo, PlayerSeasonStatistics,
 };
 use crate::services::{LeagueService, HonorService, TournamentService};
 use serde::{Deserialize, Serialize};
@@ -2179,10 +2179,20 @@ impl GameFlowService {
                     log::debug!("Player {} now has {} regional titles", player_id, stats.regional_titles);
                 }
 
-                // 重新计算冠军加成和年度Top得分（综合三要素：影响力40% + 出场30% + 冠军30%）
+                // 重新计算冠军加成和年度Top得分（五维归一化加权）
                 stats.champion_bonus = (stats.international_titles * 3 + stats.regional_titles) as f64;
-                let games_bonus = stats.games_played as f64 / 10.0;
-                stats.yearly_top_score = stats.avg_impact * 0.4 + games_bonus * 0.3 + stats.champion_bonus * 0.3;
+                stats.yearly_top_score = PlayerSeasonStatistics::calculate_yearly_top_score(
+                    stats.avg_impact,
+                    stats.avg_performance,
+                    stats.consistency_score,
+                    stats.games_played,
+                    stats.champion_bonus,
+                );
+                stats.dominance_score = PlayerSeasonStatistics::calculate_dominance_score(
+                    stats.best_performance,
+                    stats.avg_impact,
+                    stats.avg_performance,
+                );
 
                 // 保存更新
                 PlayerStatsRepository::update(pool, &stats)

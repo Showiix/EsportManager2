@@ -110,9 +110,9 @@ pub struct Honor {
 | 最佳阵容一阵 | 各位置 #1 | 5 |
 | 最佳阵容二阵 | 各位置 #2 | 5 |
 | 最佳阵容三阵 | 各位置 #3 | 5 |
-| 特别奖 | 最稳定选手（consistency_score 最高，≥30 场） | 1 |
-| 特别奖 | 最佳新秀（yearly_top_score，age ≤ 20，≥10 场） | 1 |
-| 特别奖 | 最具统治力选手（dominance_score 最高，≥20 场） | 1 |
+| 特别奖 | 最稳定选手（consistency_score 最高，games_played > 0） | 1 |
+| 特别奖 | 最佳新秀（yearly_top_score，age ≤ 20，games_played > 0） | 1 |
+| 特别奖 | 最具统治力选手（dominance_score 最高，games_played > 0） | 1 |
 
 ### 颁奖数据结构
 
@@ -173,15 +173,19 @@ interface PlayerCommentary {
 #### 年度颁奖典礼页（AnnualAwards.vue）
 
 三种状态：
-1. 非颁奖阶段 + 无数据 → 空状态
+1. 非颁奖阶段 + 无数据 → 空状态（含 Demo 按钮）
 2. 有历史数据 → 静态查看模式（赛季选择器）
 3. 颁奖阶段 → 实时典礼模式
+
+Demo 模式：非颁奖阶段可通过 Demo 按钮预览典礼流程，仅拉取数据不推进游戏状态。
 
 典礼流程（4 阶段）：
 ```
 [开始颁奖典礼] → 后端颁奖（completeAndAdvance）
     ↓
 阶段1: Top20 逐个揭晓（#20→#1）
+    CSS Grid 表格布局，列标签：影响力/发挥/稳定/出场/荣誉/总分/标签
+    每列含数值 + 进度条
     ↓
 阶段2: 最佳阵容（三阵→二阵→一阵）
     ↓

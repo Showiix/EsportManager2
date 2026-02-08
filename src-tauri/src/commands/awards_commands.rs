@@ -247,11 +247,14 @@ pub async fn get_annual_awards_data(
         }
     };
 
+    log::info!("get_annual_awards_data: season_id={:?}, resolved_season={}", season_id, current_season);
+
     // 检查是否已颁发过年度奖项
     let already_awarded = check_annual_awards_exist(&pool, &save_id, current_season).await;
 
     // 获取年度Top20（按 yearly_top_score 排序）
     let top20 = get_top20_players(&pool, &save_id, current_season).await?;
+    log::info!("get_annual_awards_data: top20 count={}", top20.len());
 
     // 获取三阵
     let (all_pro_1st, all_pro_2nd, all_pro_3rd) = get_all_pro_teams(&pool, &save_id, current_season).await?;
@@ -338,7 +341,7 @@ async fn get_top20_players(
             GROUP BY gpp.save_id, gpp.player_id
         ) gpp_count ON pss.save_id = gpp_count.save_id AND pss.player_id = gpp_count.player_id
         WHERE pss.save_id = ? AND pss.season_id = ?
-          AND COALESCE(gpp_count.real_games_played, pss.games_played) >= 10
+          AND (pss.games_played > 0 OR COALESCE(gpp_count.real_games_played, 0) > 0)
         ORDER BY pss.yearly_top_score DESC
         LIMIT 20
         "#
@@ -438,7 +441,7 @@ async fn get_all_pro_teams(
                 GROUP BY gpp.save_id, gpp.player_id
             ) gpp_count ON pss.save_id = gpp_count.save_id AND pss.player_id = gpp_count.player_id
             WHERE pss.save_id = ? AND pss.season_id = ? AND pss.position = ?
-              AND COALESCE(gpp_count.real_games_played, pss.games_played) >= 10
+              AND (pss.games_played > 0 OR COALESCE(gpp_count.real_games_played, 0) > 0)
             ORDER BY pss.yearly_top_score DESC
             LIMIT 3
             "#
@@ -526,7 +529,7 @@ async fn get_most_consistent(
             GROUP BY gpp.save_id, gpp.player_id
         ) gpp_count ON pss.save_id = gpp_count.save_id AND pss.player_id = gpp_count.player_id
         WHERE pss.save_id = ? AND pss.season_id = ?
-          AND COALESCE(gpp_count.real_games_played, pss.games_played) >= 30
+          AND (pss.games_played > 0 OR COALESCE(gpp_count.real_games_played, 0) > 0)
         ORDER BY pss.consistency_score DESC
         LIMIT 1
         "#
@@ -609,7 +612,7 @@ async fn get_most_dominant(
             GROUP BY gpp.save_id, gpp.player_id
         ) gpp_count ON pss.save_id = gpp_count.save_id AND pss.player_id = gpp_count.player_id
         WHERE pss.save_id = ? AND pss.season_id = ?
-          AND COALESCE(gpp_count.real_games_played, pss.games_played) >= 20
+          AND (pss.games_played > 0 OR COALESCE(gpp_count.real_games_played, 0) > 0)
         ORDER BY COALESCE(pss.dominance_score, 0.0) DESC
         LIMIT 1
         "#
@@ -691,7 +694,7 @@ async fn get_rookie_of_the_year(
             GROUP BY gpp.save_id, gpp.player_id
         ) gpp_count ON pss.save_id = gpp_count.save_id AND pss.player_id = gpp_count.player_id
         WHERE pss.save_id = ? AND pss.season_id = ? AND p.age <= 20
-          AND COALESCE(gpp_count.real_games_played, pss.games_played) >= 10
+          AND (pss.games_played > 0 OR COALESCE(gpp_count.real_games_played, 0) > 0)
         ORDER BY pss.yearly_top_score DESC
         LIMIT 1
         "#
