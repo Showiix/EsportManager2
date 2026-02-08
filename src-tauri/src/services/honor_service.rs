@@ -84,7 +84,7 @@ impl HonorService {
             .map_err(|e| format!("Failed to get tournament: {}", e))?;
 
         let tournament_type = format!("{:?}", tournament.tournament_type);
-        let is_international = tournament.tournament_type.is_international();
+        let _is_international = tournament.tournament_type.is_international();
         let has_third_place = tournament.tournament_type.has_third_fourth(); // 国际赛事和季后赛有季军殿军
 
         // 检查是否是需要从冠军队伍选择MVP的赛事类型

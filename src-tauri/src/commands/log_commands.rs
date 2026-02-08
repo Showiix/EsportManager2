@@ -50,7 +50,7 @@ pub async fn log_frontend_event(entries: Vec<FrontendLogEntry>) -> ApiResponse<u
     let count = entries.len() as u32;
 
     for entry in entries {
-        let target = format!("frontend::{}", entry.module);
+        let _target = format!("frontend::{}", entry.module);
 
         match entry.level.to_uppercase().as_str() {
             "ERROR" => {

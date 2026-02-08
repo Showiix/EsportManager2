@@ -283,6 +283,12 @@ const router = createRouter({
       meta: { title: '性能监测' }
     },
     {
+      path: '/guide',
+      name: 'GameGuide',
+      component: () => import('@/views/GameGuidePage.vue'),
+      meta: { title: '游戏指南' }
+    },
+    {
       path: '/settings',
       name: 'Settings',
       component: () => import('@/views/Settings.vue'),

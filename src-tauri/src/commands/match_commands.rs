@@ -177,8 +177,8 @@ pub async fn simulate_match_detailed(
     let tournament_id: i64 = match_row.get("tournament_id");
     let home_team_id: i64 = match_row.get("home_team_id");
     let away_team_id: i64 = match_row.get("away_team_id");
-    let home_power: f64 = match_row.get("home_power");
-    let away_power: f64 = match_row.get("away_power");
+    let _home_power: f64 = match_row.get("home_power");
+    let _away_power: f64 = match_row.get("away_power");
     let format_str: String = match_row.get("format");
     let stage: String = match_row.get("stage");
     let home_team_name: String = match_row.get("home_team_name");

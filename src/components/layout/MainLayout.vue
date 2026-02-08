@@ -153,6 +153,11 @@
             <span>性能监测</span>
           </el-menu-item>
 
+          <el-menu-item index="/guide">
+            <el-icon><Reading /></el-icon>
+            <span>游戏指南</span>
+          </el-menu-item>
+
           <el-menu-item index="/settings">
             <el-icon><Setting /></el-icon>
             <span>系统设置</span>
@@ -211,6 +216,7 @@ import {
   Histogram,
   TrendCharts,
   Refresh,
+  Reading,
 } from '@element-plus/icons-vue'
 import { useGameStore } from '@/stores/useGameStore'
 
@@ -260,6 +266,7 @@ const breadcrumbs = computed(() => {
     'annual-awards': '年度颁奖典礼',
     honors: '荣誉殿堂',
     performance: '性能监测',
+    guide: '游戏指南',
     settings: '系统设置',
     'save-customize': '自定义存档',
     lpl: 'LPL 中国赛区',
