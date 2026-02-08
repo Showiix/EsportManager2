@@ -1,5 +1,5 @@
 use crate::commands::{ApiResponse, AppState};
-use crate::db::{HonorRepository, PlayerRepository, TeamRepository, TournamentResultRepository};
+use crate::db::{HonorRepository, PlayerRepository, TournamentResultRepository};
 use crate::engines::HonorEngine;
 use crate::models::Honor;
 use serde::{Deserialize, Serialize};
@@ -345,9 +345,14 @@ pub async fn get_team_honor_stats(
         Err(e) => return Ok(ApiResponse::error(&format!("Failed to count champions: {}", e))),
     };
 
+    let mvp_count = match HonorRepository::count_team_mvps(&pool, &save_id, team_id).await {
+        Ok(c) => c,
+        Err(e) => return Ok(ApiResponse::error(&format!("Failed to count MVPs: {}", e))),
+    };
+
     Ok(ApiResponse::success(HonorCountResponse {
         champion_count,
-        mvp_count: 0,
+        mvp_count,
     }))
 }
 
@@ -627,39 +632,23 @@ pub async fn get_player_honor_rankings(
         Err(e) => return Ok(ApiResponse::error(&format!("Failed to get rankings: {}", e))),
     };
 
-    // 获取选手当前信息
-    let mut result = Vec::new();
-    for (i, (player_id, player_name, champion_count, mvp_count, intl_count)) in rankings.into_iter().enumerate() {
-        // 尝试获取选手当前信息
-        let (team_id, team_name, position) = match PlayerRepository::get_by_id(&pool, player_id).await {
-            Ok(player) => {
-                let pos = player.position.map(|p| format!("{:?}", p));
-                // 获取队伍名称
-                let t_name = if let Some(tid) = player.team_id {
-                    TeamRepository::get_by_id(&pool, tid)
-                        .await
-                        .ok()
-                        .map(|t| t.name)
-                } else {
-                    None
-                };
-                (player.team_id, t_name, pos)
+    let result: Vec<PlayerHonorRanking> = rankings
+        .into_iter()
+        .enumerate()
+        .map(|(i, (player_id, player_name, champion_count, mvp_count, intl_count, team_id, team_name, position))| {
+            PlayerHonorRanking {
+                rank: (i + 1) as u32,
+                player_id,
+                player_name,
+                team_id,
+                team_name,
+                position,
+                champion_count,
+                mvp_count,
+                international_champion_count: intl_count,
             }
-            Err(_) => (None, None, None),
-        };
-
-        result.push(PlayerHonorRanking {
-            rank: (i + 1) as u32,
-            player_id,
-            player_name,
-            team_id,
-            team_name,
-            position,
-            champion_count,
-            mvp_count,
-            international_champion_count: intl_count,
-        });
-    }
+        })
+        .collect();
 
     Ok(ApiResponse::success(result))
 }
@@ -965,17 +954,7 @@ pub async fn regenerate_tournament_honors(
         .map_err(|e| format!("Failed to regenerate honors: {}", e))?;
 
     // 计算创建的荣誉数量
-    let mut created_count = 0u32;
-    if tournament_honors.team_champion.is_some() { created_count += 1; }
-    if tournament_honors.team_runner_up.is_some() { created_count += 1; }
-    if tournament_honors.team_third.is_some() { created_count += 1; }
-    if tournament_honors.team_fourth.is_some() { created_count += 1; }
-    created_count += tournament_honors.player_champions.len() as u32;
-    created_count += tournament_honors.player_runner_ups.len() as u32;
-    created_count += tournament_honors.player_thirds.len() as u32;
-    created_count += tournament_honors.player_fourths.len() as u32;
-    if tournament_honors.tournament_mvp.is_some() { created_count += 1; }
-    if tournament_honors.finals_mvp.is_some() { created_count += 1; }
+    let created_count = tournament_honors.count();
 
     let message = format!(
         "成功重新生成赛事荣誉：删除 {} 条旧记录，创建 {} 条新记录",
@@ -1044,17 +1023,7 @@ pub async fn regenerate_all_honors(
         // 重新生成荣誉
         match honor_service.process_tournament_completion(&pool, &save_id, tournament.id).await {
             Ok(honors) => {
-                let mut count = 0u32;
-                if honors.team_champion.is_some() { count += 1; }
-                if honors.team_runner_up.is_some() { count += 1; }
-                if honors.team_third.is_some() { count += 1; }
-                if honors.team_fourth.is_some() { count += 1; }
-                count += honors.player_champions.len() as u32;
-                count += honors.player_runner_ups.len() as u32;
-                count += honors.player_thirds.len() as u32;
-                count += honors.player_fourths.len() as u32;
-                if honors.tournament_mvp.is_some() { count += 1; }
-                if honors.finals_mvp.is_some() { count += 1; }
+                let count = honors.count();
                 total_created += count;
                 log::debug!("赛事 {} ({}) 生成了 {} 条荣誉",
                     tournament.name, tournament.id, count);

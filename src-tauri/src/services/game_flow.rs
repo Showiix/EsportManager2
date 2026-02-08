@@ -4359,8 +4359,8 @@ impl GameFlowService {
                     }
                 }
                 // 团队荣誉 - 季军/殿军
-                "PLAYER_THIRD_PLACE" | "TEAM_THIRD_PLACE" => 0.06,
-                "PLAYER_FOURTH_PLACE" | "TEAM_FOURTH_PLACE" => 0.04,
+                "PLAYER_THIRD" | "TEAM_THIRD" => 0.06,
+                "PLAYER_FOURTH" | "TEAM_FOURTH" => 0.04,
 
                 // 个人荣誉 - MVP
                 "TOURNAMENT_MVP" | "FINALS_MVP" => {
@@ -4371,28 +4371,22 @@ impl GameFlowService {
                     }
                 }
                 "REGULAR_SEASON_MVP" => 0.12,
-                "PLAYOFF_FMVP" => 0.15,
+                "PLAYOFFS_FMVP" => 0.15,
 
                 // 年度荣誉
                 "ANNUAL_MVP" => 0.35,
                 "ANNUAL_TOP20" => {
                     // 从 tournament_name 提取排名 (年度Top1, 年度Top5, etc.)
-                    if tournament_name.contains("Top1") && !tournament_name.contains("Top1") {
-                        0.20
-                    } else if tournament_name.contains("Top") {
-                        let rank = tournament_name
-                            .chars()
-                            .filter(|c| c.is_ascii_digit())
-                            .collect::<String>()
-                            .parse::<u32>()
-                            .unwrap_or(20);
-                        if rank <= 3 { 0.18 }
-                        else if rank <= 5 { 0.15 }
-                        else if rank <= 10 { 0.10 }
-                        else { 0.05 }
-                    } else {
-                        0.08
-                    }
+                    let rank = tournament_name
+                        .chars()
+                        .filter(|c| c.is_ascii_digit())
+                        .collect::<String>()
+                        .parse::<u32>()
+                        .unwrap_or(20);
+                    if rank <= 3 { 0.18 }
+                    else if rank <= 5 { 0.15 }
+                    else if rank <= 10 { 0.10 }
+                    else { 0.05 }
                 }
                 "ANNUAL_ALL_PRO_1ST" => 0.15,
                 "ANNUAL_ALL_PRO_2ND" => 0.10,

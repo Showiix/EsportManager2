@@ -31,6 +31,38 @@ impl HonorService {
         Self::default()
     }
 
+    /// 获取某队在赛事中的选手信息
+    /// 优先从赛事统计表获取（避免赛后转会导致记录错误），回退到当前阵容
+    async fn get_team_players_info(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        tournament_id: u64,
+        team_id: u64,
+    ) -> Vec<(u64, String, String)> {
+        let stats = PlayerTournamentStatsRepository::get_by_team_tournament(
+            pool, save_id, tournament_id, team_id
+        ).await.unwrap_or_default();
+
+        if !stats.is_empty() {
+            return stats.iter()
+                .map(|s| (s.player_id, s.player_name.clone(), s.position.clone()))
+                .collect();
+        }
+
+        // 回退到当前队伍成员
+        let current_players = PlayerRepository::get_by_team(pool, team_id)
+            .await.unwrap_or_default();
+        current_players.iter()
+            .filter(|p| p.is_starter)
+            .map(|p| {
+                let pos_str = p.position.as_ref()
+                    .map(|pos| format!("{:?}", pos))
+                    .unwrap_or_else(|| "Unknown".to_string());
+                (p.id, p.game_id.clone(), pos_str)
+            })
+            .collect()
+    }
+
     /// 处理赛事结束 - 推断结果并颁发荣誉
     ///
     /// # Arguments
@@ -111,37 +143,9 @@ impl HonorService {
 
         // 4. 获取冠军队选手 - 从赛事统计表获取实际参与过该赛事的选手
         // 这样即使选手在赛后转会，也能正确记录冠军成员
-        let champion_player_stats = PlayerTournamentStatsRepository::get_by_team_tournament(
+        let champion_players_info = Self::get_team_players_info(
             pool, save_id, tournament_id, result.champion_team_id
-        )
-        .await
-        .map_err(|e| format!("Failed to get champion players from tournament stats: {}", e))?;
-
-        log::debug!("从赛事统计获取冠军队选手: {} 人", champion_player_stats.len());
-
-        // 如果赛事统计表没有数据，回退到当前队伍成员
-        let champion_players_info: Vec<(u64, String, String)> = if champion_player_stats.is_empty() {
-            log::debug!("赛事统计无数据，回退到当前队伍成员");
-            let current_players = PlayerRepository::get_by_team(pool, result.champion_team_id)
-                .await
-                .map_err(|e| format!("Failed to get champion players: {}", e))?;
-
-            current_players.iter()
-                .filter(|p| p.is_starter)
-                .map(|p| {
-                    let pos_str = p.position
-                        .as_ref()
-                        .map(|pos| format!("{:?}", pos))
-                        .unwrap_or_else(|| "Unknown".to_string());
-                    (p.id, p.game_id.clone(), pos_str)
-                })
-                .collect()
-        } else {
-            // 从赛事统计获取选手信息
-            champion_player_stats.iter()
-                .map(|stats| (stats.player_id, stats.player_name.clone(), stats.position.clone()))
-                .collect()
-        };
+        ).await;
 
         log::debug!("冠军队选手数量: {}", champion_players_info.len());
 
@@ -239,22 +243,9 @@ impl HonorService {
         log::debug!("创建了 {} 个选手冠军荣誉", tournament_honors.player_champions.len());
 
         // 7.6 亚军队选手荣誉
-        let runner_up_player_stats = PlayerTournamentStatsRepository::get_by_team_tournament(
+        let runner_up_players_info = Self::get_team_players_info(
             pool, save_id, tournament_id, result.runner_up_team_id
-        ).await.unwrap_or_default();
-
-        let runner_up_players_info: Vec<(u64, String, String)> = if runner_up_player_stats.is_empty() {
-            let current_players = PlayerRepository::get_by_team(pool, result.runner_up_team_id)
-                .await.unwrap_or_default();
-            current_players.iter()
-                .filter(|p| p.is_starter)
-                .map(|p| {
-                    let pos_str = p.position.as_ref().map(|pos| format!("{:?}", pos)).unwrap_or_else(|| "Unknown".to_string());
-                    (p.id, p.game_id.clone(), pos_str)
-                }).collect()
-        } else {
-            runner_up_player_stats.iter().map(|s| (s.player_id, s.player_name.clone(), s.position.clone())).collect()
-        };
+        ).await;
 
         for (player_id, player_name, position) in &runner_up_players_info {
             tournament_honors.player_runner_ups.push(self.honor_engine.create_player_runner_up(
@@ -275,22 +266,9 @@ impl HonorService {
 
         // 7.7 季军队选手荣誉（如果有季军）
         if let (Some(third_id), Some(third_name)) = (result.third_team_id, &result.third_team_name) {
-            let third_player_stats = PlayerTournamentStatsRepository::get_by_team_tournament(
+            let third_players_info = Self::get_team_players_info(
                 pool, save_id, tournament_id, third_id
-            ).await.unwrap_or_default();
-
-            let third_players_info: Vec<(u64, String, String)> = if third_player_stats.is_empty() {
-                let current_players = PlayerRepository::get_by_team(pool, third_id)
-                    .await.unwrap_or_default();
-                current_players.iter()
-                    .filter(|p| p.is_starter)
-                    .map(|p| {
-                        let pos_str = p.position.as_ref().map(|pos| format!("{:?}", pos)).unwrap_or_else(|| "Unknown".to_string());
-                        (p.id, p.game_id.clone(), pos_str)
-                    }).collect()
-            } else {
-                third_player_stats.iter().map(|s| (s.player_id, s.player_name.clone(), s.position.clone())).collect()
-            };
+            ).await;
 
             for (player_id, player_name, position) in &third_players_info {
                 tournament_honors.player_thirds.push(self.honor_engine.create_player_third(
@@ -312,22 +290,9 @@ impl HonorService {
 
         // 7.8 殿军队选手荣誉（如果有殿军）
         if let (Some(fourth_id), Some(fourth_name)) = (result.fourth_team_id, &result.fourth_team_name) {
-            let fourth_player_stats = PlayerTournamentStatsRepository::get_by_team_tournament(
+            let fourth_players_info = Self::get_team_players_info(
                 pool, save_id, tournament_id, fourth_id
-            ).await.unwrap_or_default();
-
-            let fourth_players_info: Vec<(u64, String, String)> = if fourth_player_stats.is_empty() {
-                let current_players = PlayerRepository::get_by_team(pool, fourth_id)
-                    .await.unwrap_or_default();
-                current_players.iter()
-                    .filter(|p| p.is_starter)
-                    .map(|p| {
-                        let pos_str = p.position.as_ref().map(|pos| format!("{:?}", pos)).unwrap_or_else(|| "Unknown".to_string());
-                        (p.id, p.game_id.clone(), pos_str)
-                    }).collect()
-            } else {
-                fourth_player_stats.iter().map(|s| (s.player_id, s.player_name.clone(), s.position.clone())).collect()
-            };
+            ).await;
 
             for (player_id, player_name, position) in &fourth_players_info {
                 tournament_honors.player_fourths.push(self.honor_engine.create_player_fourth(
@@ -363,30 +328,7 @@ impl HonorService {
         // 可以在后续版本中实现
 
         // 8. 保存荣誉到数据库
-        let mut all_honors = Vec::new();
-
-        if let Some(ref honor) = tournament_honors.team_champion {
-            all_honors.push(honor.clone());
-        }
-        if let Some(ref honor) = tournament_honors.team_runner_up {
-            all_honors.push(honor.clone());
-        }
-        if let Some(ref honor) = tournament_honors.team_third {
-            all_honors.push(honor.clone());
-        }
-        if let Some(ref honor) = tournament_honors.team_fourth {
-            all_honors.push(honor.clone());
-        }
-        all_honors.extend(tournament_honors.player_champions.clone());
-        all_honors.extend(tournament_honors.player_runner_ups.clone());
-        all_honors.extend(tournament_honors.player_thirds.clone());
-        all_honors.extend(tournament_honors.player_fourths.clone());
-        if let Some(ref honor) = tournament_honors.tournament_mvp {
-            all_honors.push(honor.clone());
-        }
-        if let Some(ref honor) = tournament_honors.finals_mvp {
-            all_honors.push(honor.clone());
-        }
+        let all_honors = tournament_honors.to_vec();
 
         log::debug!("总共保存 {} 个荣誉记录", all_honors.len());
 

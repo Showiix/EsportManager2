@@ -1217,6 +1217,27 @@ impl HonorRepository {
         Ok(row.get::<i64, _>("count") as u32)
     }
 
+    /// 统计战队MVP数量（该战队选手获得的MVP荣誉）
+    pub async fn count_team_mvps(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        team_id: u64,
+    ) -> Result<u32, DatabaseError> {
+        let row = sqlx::query(
+            r#"
+            SELECT COUNT(*) as count FROM honors
+            WHERE save_id = ? AND team_id = ? AND honor_type IN ('TOURNAMENT_MVP', 'FINALS_MVP', 'REGULAR_SEASON_MVP', 'PLAYOFFS_FMVP')
+            "#
+        )
+        .bind(save_id)
+        .bind(team_id as i64)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(row.get::<i64, _>("count") as u32)
+    }
+
     /// 统计选手冠军数量
     pub async fn count_player_champions(
         pool: &Pool<Sqlite>,
@@ -1244,7 +1265,7 @@ impl HonorRepository {
         let row = sqlx::query(
             r#"
             SELECT COUNT(*) as count FROM honors
-            WHERE save_id = ? AND player_id = ? AND honor_type IN ('TOURNAMENT_MVP', 'FINALS_MVP', 'REGULAR_SEASON_MVP', 'PLAYOFFS_MVP')
+            WHERE save_id = ? AND player_id = ? AND honor_type IN ('TOURNAMENT_MVP', 'FINALS_MVP', 'REGULAR_SEASON_MVP', 'PLAYOFFS_FMVP')
             "#
         )
         .bind(save_id)
@@ -1296,24 +1317,29 @@ impl HonorRepository {
         Ok(rows.iter().map(row_to_honor).collect())
     }
 
-    /// 获取选手荣誉排行榜（按冠军数+MVP数排序）
+    /// 获取选手荣誉排行榜（按冠军数+MVP数排序，含选手当前信息）
     pub async fn get_player_honor_rankings(
         pool: &Pool<Sqlite>,
         save_id: &str,
         limit: i32,
-    ) -> Result<Vec<(u64, String, u32, u32, u32)>, DatabaseError> {
-        // 返回: (player_id, player_name, champion_count, mvp_count, international_champion_count)
+    ) -> Result<Vec<(u64, String, u32, u32, u32, Option<u64>, Option<String>, Option<String>)>, DatabaseError> {
+        // 返回: (player_id, player_name, champion_count, mvp_count, international_champion_count, team_id, team_name, position)
         let rows = sqlx::query(
             r#"
             SELECT
-                player_id,
-                player_name,
-                SUM(CASE WHEN honor_type = 'PLAYER_CHAMPION' THEN 1 ELSE 0 END) as champion_count,
-                SUM(CASE WHEN honor_type IN ('TOURNAMENT_MVP', 'FINALS_MVP', 'REGULAR_SEASON_MVP', 'PLAYOFFS_MVP') THEN 1 ELSE 0 END) as mvp_count,
-                SUM(CASE WHEN honor_type = 'PLAYER_CHAMPION' AND tournament_type IN ('Msi', 'WorldChampionship', 'MadridMasters', 'ShanghaiMasters', 'ClaudeIntercontinental', 'IcpIntercontinental', 'SuperIntercontinental') THEN 1 ELSE 0 END) as intl_count
-            FROM honors
-            WHERE save_id = ? AND player_id IS NOT NULL
-            GROUP BY player_id, player_name
+                h.player_id,
+                h.player_name,
+                SUM(CASE WHEN h.honor_type = 'PLAYER_CHAMPION' THEN 1 ELSE 0 END) as champion_count,
+                SUM(CASE WHEN h.honor_type IN ('TOURNAMENT_MVP', 'FINALS_MVP', 'REGULAR_SEASON_MVP', 'PLAYOFFS_FMVP') THEN 1 ELSE 0 END) as mvp_count,
+                SUM(CASE WHEN h.honor_type = 'PLAYER_CHAMPION' AND h.tournament_type IN ('Msi', 'WorldChampionship', 'MadridMasters', 'ShanghaiMasters', 'ClaudeIntercontinental', 'IcpIntercontinental', 'SuperIntercontinental') THEN 1 ELSE 0 END) as intl_count,
+                p.team_id,
+                t.name as team_name,
+                p.position
+            FROM honors h
+            LEFT JOIN players p ON h.player_id = p.id
+            LEFT JOIN teams t ON p.team_id = t.id
+            WHERE h.save_id = ? AND h.player_id IS NOT NULL
+            GROUP BY h.player_id, h.player_name
             ORDER BY champion_count DESC, mvp_count DESC, intl_count DESC
             LIMIT ?
             "#
@@ -1331,6 +1357,9 @@ impl HonorRepository {
                 row.get::<i64, _>("champion_count") as u32,
                 row.get::<i64, _>("mvp_count") as u32,
                 row.get::<i64, _>("intl_count") as u32,
+                row.get::<Option<i64>, _>("team_id").map(|id| id as u64),
+                row.get::<Option<String>, _>("team_name"),
+                row.get::<Option<String>, _>("position"),
             )
         }).collect())
     }

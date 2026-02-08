@@ -303,3 +303,37 @@ pub struct TournamentHonors {
     pub tournament_mvp: Option<super::Honor>,
     pub finals_mvp: Option<super::Honor>,
 }
+
+impl TournamentHonors {
+    /// 将所有荣誉收集到一个 Vec 中
+    pub fn to_vec(&self) -> Vec<super::Honor> {
+        let mut all = Vec::new();
+        if let Some(ref h) = self.team_champion { all.push(h.clone()); }
+        if let Some(ref h) = self.team_runner_up { all.push(h.clone()); }
+        if let Some(ref h) = self.team_third { all.push(h.clone()); }
+        if let Some(ref h) = self.team_fourth { all.push(h.clone()); }
+        all.extend(self.player_champions.clone());
+        all.extend(self.player_runner_ups.clone());
+        all.extend(self.player_thirds.clone());
+        all.extend(self.player_fourths.clone());
+        if let Some(ref h) = self.tournament_mvp { all.push(h.clone()); }
+        if let Some(ref h) = self.finals_mvp { all.push(h.clone()); }
+        all
+    }
+
+    /// 统计荣誉总数
+    pub fn count(&self) -> u32 {
+        let mut count = 0u32;
+        if self.team_champion.is_some() { count += 1; }
+        if self.team_runner_up.is_some() { count += 1; }
+        if self.team_third.is_some() { count += 1; }
+        if self.team_fourth.is_some() { count += 1; }
+        count += self.player_champions.len() as u32;
+        count += self.player_runner_ups.len() as u32;
+        count += self.player_thirds.len() as u32;
+        count += self.player_fourths.len() as u32;
+        if self.tournament_mvp.is_some() { count += 1; }
+        if self.finals_mvp.is_some() { count += 1; }
+        count
+    }
+}

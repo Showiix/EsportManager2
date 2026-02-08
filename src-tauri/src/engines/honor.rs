@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::models::honor::{
     Honor, HonorHallData, HonorStats, HonorType,
 };
-use crate::models::tournament_result::{PlayerTournamentStats, TournamentHonors};
+use crate::models::tournament_result::PlayerTournamentStats;
 
 /// 荣誉引擎 - 统一管理所有荣誉记录
 pub struct HonorEngine;
@@ -457,137 +457,6 @@ impl HonorEngine {
             })
     }
 
-    // ========== 赛事结束统一处理 ==========
-
-    /// 处理赛事结束时的所有荣誉
-    ///
-    /// # Arguments
-    /// * `save_id` - 存档ID
-    /// * `season_id` - 赛季ID
-    /// * `tournament_id` - 赛事ID
-    /// * `tournament_name` - 赛事名称
-    /// * `tournament_type` - 赛事类型
-    /// * `champion` - 冠军 (team_id, team_name)
-    /// * `runner_up` - 亚军 (team_id, team_name)
-    /// * `third` - 季军 (team_id, team_name) - 可选
-    /// * `fourth` - 殿军 (team_id, team_name) - 可选
-    /// * `champion_players` - 冠军队选手列表 [(player_id, player_name, position)]
-    /// * `tournament_mvp` - 赛事MVP统计
-    /// * `finals_mvp` - 决赛MVP信息 (player_id, player_name, team_id, team_name, position, stats)
-    #[allow(clippy::too_many_arguments)]
-    pub fn process_tournament_honors(
-        &self,
-        save_id: &str,
-        season_id: u64,
-        tournament_id: u64,
-        tournament_name: &str,
-        tournament_type: &str,
-        champion: (u64, &str),
-        runner_up: (u64, &str),
-        third: Option<(u64, &str)>,
-        fourth: Option<(u64, &str)>,
-        champion_players: &[(u64, &str, &str)], // (player_id, player_name, position)
-        tournament_mvp: Option<&PlayerTournamentStats>,
-        finals_mvp: Option<(u64, &str, u64, &str, &str, HonorStats)>,
-    ) -> TournamentHonors {
-        let mut honors = TournamentHonors::default();
-
-        // 1. 战队冠军
-        honors.team_champion = Some(self.create_team_champion(
-            save_id,
-            season_id,
-            tournament_id,
-            tournament_name,
-            tournament_type,
-            champion.0,
-            champion.1,
-        ));
-
-        // 2. 战队亚军
-        honors.team_runner_up = Some(self.create_team_runner_up(
-            save_id,
-            season_id,
-            tournament_id,
-            tournament_name,
-            tournament_type,
-            runner_up.0,
-            runner_up.1,
-        ));
-
-        // 3. 战队季军
-        if let Some((team_id, team_name)) = third {
-            honors.team_third = Some(self.create_team_third(
-                save_id,
-                season_id,
-                tournament_id,
-                tournament_name,
-                tournament_type,
-                team_id,
-                team_name,
-            ));
-        }
-
-        // 4. 战队殿军
-        if let Some((team_id, team_name)) = fourth {
-            honors.team_fourth = Some(self.create_team_fourth(
-                save_id,
-                season_id,
-                tournament_id,
-                tournament_name,
-                tournament_type,
-                team_id,
-                team_name,
-            ));
-        }
-
-        // 5. 冠军队选手荣誉
-        for (player_id, player_name, position) in champion_players {
-            honors.player_champions.push(self.create_player_champion(
-                save_id,
-                season_id,
-                tournament_id,
-                tournament_name,
-                tournament_type,
-                champion.0,
-                champion.1,
-                *player_id,
-                player_name,
-                position,
-            ));
-        }
-
-        // 6. 赛事MVP
-        if let Some(mvp_stats) = tournament_mvp {
-            honors.tournament_mvp = Some(self.create_tournament_mvp(
-                save_id,
-                season_id,
-                tournament_id,
-                tournament_name,
-                tournament_type,
-                mvp_stats,
-            ));
-        }
-
-        // 7. 决赛MVP
-        if let Some((player_id, player_name, team_id, team_name, position, stats)) = finals_mvp {
-            honors.finals_mvp = Some(self.create_finals_mvp(
-                save_id,
-                season_id,
-                tournament_id,
-                tournament_name,
-                tournament_type,
-                team_id,
-                team_name,
-                player_id,
-                player_name,
-                position,
-                stats,
-            ));
-        }
-
-        honors
-    }
-
     // ========== 数据聚合 ==========
 
     /// 构建荣誉殿堂数据
@@ -734,53 +603,6 @@ mod tests {
         assert_eq!(mvp.games_played, 2);
         assert_eq!(mvp.games_won, 2);
         assert_eq!(mvp.game_mvp_count, 1);
-    }
-
-    #[test]
-    fn test_process_tournament_honors() {
-        let engine = HonorEngine::new();
-
-        let mvp_stats = PlayerTournamentStats::new(
-            "save1".to_string(),
-            1,
-            100,
-            "worlds".to_string(),
-            1,
-            "Faker".to_string(),
-            1,
-            "T1".to_string(),
-            "MID".to_string(),
-        );
-
-        let champion_players = vec![
-            (1, "Faker", "MID"),
-            (2, "Zeus", "TOP"),
-            (3, "Oner", "JUG"),
-            (4, "Gumayusi", "ADC"),
-            (5, "Keria", "SUP"),
-        ];
-
-        let honors = engine.process_tournament_honors(
-            "save1",
-            1,
-            100,
-            "S1 世界赛",
-            "worlds",
-            (1, "T1"),
-            (2, "GEN"),
-            Some((3, "JDG")),
-            Some((4, "BLG")),
-            &champion_players,
-            Some(&mvp_stats),
-            None,
-        );
-
-        assert!(honors.team_champion.is_some());
-        assert!(honors.team_runner_up.is_some());
-        assert!(honors.team_third.is_some());
-        assert!(honors.team_fourth.is_some());
-        assert_eq!(honors.player_champions.len(), 5);
-        assert!(honors.tournament_mvp.is_some());
     }
 
     #[test]
