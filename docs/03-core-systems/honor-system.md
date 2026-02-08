@@ -250,10 +250,40 @@ dominance_score = 巅峰表现(35%) + 影响力(45%) + 发挥(20%)
 | 文件 | 说明 |
 |------|------|
 | `src-tauri/src/models/honor.rs` | 荣誉数据模型（HonorType 枚举） |
-| `src-tauri/src/engines/honor.rs` | 荣誉引擎 |
-| `src-tauri/src/services/honor_service.rs` | 荣誉服务 |
-| `src-tauri/src/commands/honor_commands.rs` | 荣誉命令接口 |
+| `src-tauri/src/models/tournament_result.rs` | TournamentHonors 结构（含 to_vec/count） |
+| `src-tauri/src/engines/honor.rs` | 荣誉引擎（创建荣誉对象、数据聚合） |
+| `src-tauri/src/services/honor_service.rs` | 荣誉服务（赛事结果推断、荣誉颁发） |
+| `src-tauri/src/commands/honor_commands.rs` | 荣誉命令接口（殿堂、排行、重生成） |
 | `src-tauri/src/commands/awards_commands.rs` | 年度颁奖命令（数据结构 + 查询 + 评语生成） |
-| `src-tauri/src/services/game_flow.rs` | 游戏流程（颁奖逻辑 + 身价加成） |
+| `src-tauri/src/services/game_flow.rs` | 游戏流程（颁奖逻辑 + 身价加成 + 荣誉因子计算） |
 | `src/views/AnnualTop.vue` | 年度评选数据分析页 |
 | `src/views/AnnualAwards.vue` | 年度颁奖典礼页 |
+
+## 架构说明
+
+### 层次结构
+
+```
+game_flow.rs (调度层) → 根据赛季阶段触发荣誉分发
+    ├── honor_service.rs (业务逻辑层) → 推断赛事结果 + 编排荣誉创建
+    │   └── honor.rs engine (创建层) → 创建荣誉对象 + MVP计算
+    └── awards_commands.rs (查询/展示层) → Top20/三阵/特别奖查询 + 评语生成
+```
+
+### 荣誉分发时机
+
+| 阶段 | 调用方式 | 荣誉 |
+|------|---------|------|
+| 常规赛结束 | `honor_service.process_regular_season_honors()` | 常规赛第一、常规赛MVP |
+| 季后赛/国际赛结束 | `honor_service.process_tournament_completion()` | 冠亚季殿军（战队+选手）、赛事MVP |
+| 年度颁奖典礼 | `game_flow.rs` 直接调用 `HonorRepository::create()` | 年度MVP、Top20、三阵、特别奖 |
+
+### 身价影响（两阶段）
+
+1. **即时加成**（年度颁奖时）：直接乘数应用到 `market_value`，同一选手取最高加成不叠加
+2. **全量重算**（年度颁奖后）：`calculate_honor_factor` 基于全部历史荣誉累加计算荣誉因子（上限 4.0x）
+
+### 关键辅助方法
+
+- `HonorService::get_team_players_info()` — 获取队伍在赛事中的选手信息（优先赛事统计表，回退当前阵容）
+- `TournamentHonors::to_vec()` / `count()` — 收集/统计所有荣誉
