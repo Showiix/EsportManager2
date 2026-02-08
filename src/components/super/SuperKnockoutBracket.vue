@@ -65,9 +65,10 @@
 
         <!-- 连接线 -->
         <div class="bracket-connector vertical">
-          <svg class="connector-svg" viewBox="0 0 60 200" preserveAspectRatio="none">
-            <path d="M 30 0 L 30 100 L 60 100" stroke="#e4e7ed" stroke-width="2" fill="none" />
-            <path d="M 30 200 L 30 100" stroke="#e4e7ed" stroke-width="2" fill="none" />
+          <svg class="connector-svg">
+            <line x1="50%" y1="0%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
+            <line x1="50%" y1="50%" x2="100%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
+            <line x1="50%" y1="100%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
           </svg>
         </div>
 
@@ -89,8 +90,9 @@
 
         <!-- 连接线 -->
         <div class="bracket-connector vertical">
-          <svg class="connector-svg" viewBox="0 0 60 200" preserveAspectRatio="none">
-            <path d="M 0 100 L 30 100 L 30 200" stroke="#e4e7ed" stroke-width="2" fill="none" />
+          <svg class="connector-svg">
+            <line x1="0%" y1="50%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
+            <line x1="50%" y1="50%" x2="50%" y2="100%" stroke="#e4e7ed" stroke-width="2" />
           </svg>
         </div>
 
@@ -134,11 +136,11 @@
 
         <!-- 连接线 -->
         <div class="bracket-connector">
-          <svg class="connector-svg" viewBox="0 0 100 300" preserveAspectRatio="none">
-            <line x1="0" y1="25%" x2="50" y2="37.5%" stroke="#e4e7ed" stroke-width="2" />
-            <line x1="0" y1="75%" x2="50" y2="62.5%" stroke="#e4e7ed" stroke-width="2" />
-            <line x1="50" y1="37.5%" x2="100" y2="37.5%" stroke="#e4e7ed" stroke-width="2" />
-            <line x1="50" y1="62.5%" x2="100" y2="62.5%" stroke="#e4e7ed" stroke-width="2" />
+          <svg class="connector-svg">
+            <line x1="0%" y1="25%" x2="50%" y2="37.5%" stroke="#e4e7ed" stroke-width="2" />
+            <line x1="0%" y1="75%" x2="50%" y2="62.5%" stroke="#e4e7ed" stroke-width="2" />
+            <line x1="50%" y1="37.5%" x2="100%" y2="37.5%" stroke="#e4e7ed" stroke-width="2" />
+            <line x1="50%" y1="62.5%" x2="100%" y2="62.5%" stroke="#e4e7ed" stroke-width="2" />
           </svg>
         </div>
 
@@ -161,10 +163,10 @@
 
         <!-- 连接线 -->
         <div class="bracket-connector">
-          <svg class="connector-svg" viewBox="0 0 100 300" preserveAspectRatio="none">
-            <line x1="0" y1="37.5%" x2="50" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-            <line x1="0" y1="62.5%" x2="50" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-            <line x1="50" y1="50%" x2="100" y2="50%" stroke="#e4e7ed" stroke-width="2" />
+          <svg class="connector-svg">
+            <line x1="0%" y1="37.5%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
+            <line x1="0%" y1="62.5%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
+            <line x1="50%" y1="50%" x2="100%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
           </svg>
         </div>
 
@@ -428,7 +430,7 @@ const handleViewMatch = (match: SuperMatch) => {
 .bracket-connector.vertical {
   width: 60px;
   min-width: 60px;
-  height: 200px;
+  align-self: stretch;
 }
 
 .connector-svg {
@@ -488,8 +490,7 @@ const handleViewMatch = (match: SuperMatch) => {
 .bracket-connector {
   width: 100px;
   min-width: 100px;
-  display: flex;
-  align-items: center;
+  align-self: stretch;
 }
 
 .final-match {

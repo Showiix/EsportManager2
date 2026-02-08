@@ -27,8 +27,8 @@
     <!-- 主体内容 -->
     <template v-else-if="config">
       <!-- 赛区 Tab -->
-      <el-tabs v-model="activeRegion" type="border-card" class="region-tabs">
-        <el-tab-pane
+      <el-tabs v-model="activeRegion" type="border-card" class="region-tabs" lazy>
+1        <el-tab-pane
           v-for="region in config.regions"
           :key="region.id"
           :label="region.name"
@@ -51,7 +51,7 @@
               </template>
 
               <!-- 队伍编辑区 -->
-              <div class="team-edit-section">
+              <div v-if="expandedTeams === `${region.id}-${teamIdx}`" class="team-edit-section">
                 <el-form :inline="true" class="team-basic-form">
                   <el-form-item label="全称">
                     <el-input v-model="team.name" style="width: 200px" />
@@ -148,166 +148,173 @@
             </el-collapse-item>
           </el-collapse>
 
-          <!-- 自由选手区域 -->
-          <div class="section-block">
-            <div class="section-header">
-              <span class="section-title">自由选手</span>
-              <el-tag size="small">{{ region.free_agents.length }} 人</el-tag>
-            </div>
-            <el-table
-              v-if="region.free_agents.length > 0"
-              :data="region.free_agents"
-              border
-              stripe
-              size="small"
-              class="player-table"
-            >
-              <el-table-column label="ID" width="120">
-                <template #default="{ row }">
-                  <el-input v-model="row.game_id" size="small" />
-                </template>
-              </el-table-column>
-              <el-table-column label="真名" width="120">
-                <template #default="{ row }">
-                  <el-input v-model="row.real_name" size="small" placeholder="-" />
-                </template>
-              </el-table-column>
-              <el-table-column label="国籍" width="80">
-                <template #default="{ row }">
-                  <el-input v-model="row.nationality" size="small" />
-                </template>
-              </el-table-column>
-              <el-table-column label="位置" width="100">
-                <template #default="{ row }">
-                  <el-select v-model="row.position" size="small">
-                    <el-option label="Top" value="Top" />
-                    <el-option label="Jug" value="Jug" />
-                    <el-option label="Mid" value="Mid" />
-                    <el-option label="Adc" value="Adc" />
-                    <el-option label="Sup" value="Sup" />
-                  </el-select>
-                </template>
-              </el-table-column>
-              <el-table-column label="年龄" width="100">
-                <template #default="{ row }">
-                  <el-input-number v-model="row.age" size="small" :min="16" :max="40" controls-position="right" />
-                </template>
-              </el-table-column>
-              <el-table-column label="能力" width="100">
-                <template #default="{ row }">
-                  <el-input-number v-model="row.ability" size="small" :min="40" :max="80" controls-position="right" />
-                </template>
-              </el-table-column>
-              <el-table-column label="潜力" width="100">
-                <template #default="{ row }">
-                  <el-input-number v-model="row.potential" size="small" :min="40" :max="80" controls-position="right" />
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="60" align="center">
-                <template #default="{ $index }">
-                  <el-button
-                    link
-                    type="danger"
-                    size="small"
-                    @click="removeFreeAgent(region, $index)"
-                  >
-                    <el-icon><Delete /></el-icon>
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <div class="section-actions">
-              <el-button size="small" @click="addFreeAgent(region)">
-                <el-icon><Plus /></el-icon>
-                添加自由选手
-              </el-button>
-            </div>
-          </div>
+          <!-- 自由选手 & 选秀池折叠区域 -->
+          <el-collapse v-model="expandedSections" class="section-collapse">
+            <el-collapse-item :name="`free-${region.id}`">
+              <template #title>
+                <div class="section-collapse-title">
+                  <span class="section-title">自由选手</span>
+                  <el-tag size="small">{{ region.free_agents.length }} 人</el-tag>
+                </div>
+              </template>
+              <el-table
+                v-if="region.free_agents.length > 0"
+                :data="region.free_agents"
+                border
+                stripe
+                size="small"
+                class="player-table"
+                max-height="400"
+              >
+                <el-table-column label="ID" width="120">
+                  <template #default="{ row }">
+                    <el-input v-model="row.game_id" size="small" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="真名" width="120">
+                  <template #default="{ row }">
+                    <el-input v-model="row.real_name" size="small" placeholder="-" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="国籍" width="80">
+                  <template #default="{ row }">
+                    <el-input v-model="row.nationality" size="small" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="位置" width="100">
+                  <template #default="{ row }">
+                    <el-select v-model="row.position" size="small">
+                      <el-option label="Top" value="Top" />
+                      <el-option label="Jug" value="Jug" />
+                      <el-option label="Mid" value="Mid" />
+                      <el-option label="Adc" value="Adc" />
+                      <el-option label="Sup" value="Sup" />
+                    </el-select>
+                  </template>
+                </el-table-column>
+                <el-table-column label="年龄" width="100">
+                  <template #default="{ row }">
+                    <el-input-number v-model="row.age" size="small" :min="16" :max="40" controls-position="right" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="能力" width="100">
+                  <template #default="{ row }">
+                    <el-input-number v-model="row.ability" size="small" :min="40" :max="80" controls-position="right" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="潜力" width="100">
+                  <template #default="{ row }">
+                    <el-input-number v-model="row.potential" size="small" :min="40" :max="80" controls-position="right" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="60" align="center">
+                  <template #default="{ $index }">
+                    <el-button
+                      link
+                      type="danger"
+                      size="small"
+                      @click="removeFreeAgent(region, $index)"
+                    >
+                      <el-icon><Delete /></el-icon>
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <div class="section-actions">
+                <el-button size="small" @click="addFreeAgent(region)">
+                  <el-icon><Plus /></el-icon>
+                  添加自由选手
+                </el-button>
+              </div>
+            </el-collapse-item>
 
-          <!-- 选秀池区域 -->
-          <div class="section-block">
-            <div class="section-header">
-              <span class="section-title">选秀池</span>
-              <el-tag size="small">{{ region.draft_pool.length }} 人</el-tag>
-            </div>
-            <el-table
-              v-if="region.draft_pool.length > 0"
-              :data="region.draft_pool"
-              border
-              stripe
-              size="small"
-              class="player-table"
-            >
-              <el-table-column label="ID" width="120">
-                <template #default="{ row }">
-                  <el-input v-model="row.game_id" size="small" />
-                </template>
-              </el-table-column>
-              <el-table-column label="真名" width="120">
-                <template #default="{ row }">
-                  <el-input v-model="row.real_name" size="small" />
-                </template>
-              </el-table-column>
-              <el-table-column label="位置" width="110">
-                <template #default="{ row }">
-                  <el-select v-model="row.position" size="small">
-                    <el-option label="Top" value="Top" />
-                    <el-option label="Jungle" value="Jungle" />
-                    <el-option label="Mid" value="Mid" />
-                    <el-option label="Bot" value="Bot" />
-                    <el-option label="Support" value="Support" />
-                  </el-select>
-                </template>
-              </el-table-column>
-              <el-table-column label="年龄" width="100">
-                <template #default="{ row }">
-                  <el-input-number v-model="row.age" size="small" :min="16" :max="40" controls-position="right" />
-                </template>
-              </el-table-column>
-              <el-table-column label="能力" width="100">
-                <template #default="{ row }">
-                  <el-input-number v-model="row.ability" size="small" :min="40" :max="80" controls-position="right" />
-                </template>
-              </el-table-column>
-              <el-table-column label="潜力" width="100">
-                <template #default="{ row }">
-                  <el-input-number v-model="row.potential" size="small" :min="40" :max="80" controls-position="right" />
-                </template>
-              </el-table-column>
-              <el-table-column label="稳定性" width="100">
-                <template #default="{ row }">
-                  <el-input-number v-model="row.stability" size="small" :min="40" :max="100" controls-position="right" />
-                </template>
-              </el-table-column>
-              <el-table-column label="标签" width="110">
-                <template #default="{ row }">
-                  <el-select v-model="row.tag" size="small">
-                    <el-option label="Genius" value="Genius" />
-                    <el-option label="Normal" value="Normal" />
-                    <el-option label="Ordinary" value="Ordinary" />
-                  </el-select>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="60" align="center">
-                <template #default="{ $index }">
-                  <el-button
-                    link
-                    type="danger"
-                    size="small"
-                    @click="removeDraftPlayer(region, $index)"
-                  >
-                    <el-icon><Delete /></el-icon>
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <div class="section-actions">
-              <el-button size="small" @click="addDraftPlayer(region)">
-                <el-icon><Plus /></el-icon>
-                添加选秀池选手
-              </el-button>
-            </div>
-          </div>
+            <el-collapse-item :name="`draft-${region.id}`">
+              <template #title>
+                <div class="section-collapse-title">
+                  <span class="section-title">选秀池</span>
+                  <el-tag size="small">{{ region.draft_pool.length }} 人</el-tag>
+                </div>
+              </template>
+              <el-table
+                v-if="region.draft_pool.length > 0"
+                :data="region.draft_pool"
+                border
+                stripe
+                size="small"
+                class="player-table"
+                max-height="400"
+              >
+                <el-table-column label="ID" width="120">
+                  <template #default="{ row }">
+                    <el-input v-model="row.game_id" size="small" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="真名" width="120">
+                  <template #default="{ row }">
+                    <el-input v-model="row.real_name" size="small" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="位置" width="110">
+                  <template #default="{ row }">
+                    <el-select v-model="row.position" size="small">
+                      <el-option label="Top" value="Top" />
+                      <el-option label="Jungle" value="Jungle" />
+                      <el-option label="Mid" value="Mid" />
+                      <el-option label="Bot" value="Bot" />
+                      <el-option label="Support" value="Support" />
+                    </el-select>
+                  </template>
+                </el-table-column>
+                <el-table-column label="年龄" width="100">
+                  <template #default="{ row }">
+                    <el-input-number v-model="row.age" size="small" :min="16" :max="40" controls-position="right" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="能力" width="100">
+                  <template #default="{ row }">
+                    <el-input-number v-model="row.ability" size="small" :min="40" :max="80" controls-position="right" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="潜力" width="100">
+                  <template #default="{ row }">
+                    <el-input-number v-model="row.potential" size="small" :min="40" :max="80" controls-position="right" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="稳定性" width="100">
+                  <template #default="{ row }">
+                    <el-input-number v-model="row.stability" size="small" :min="40" :max="100" controls-position="right" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="标签" width="110">
+                  <template #default="{ row }">
+                    <el-select v-model="row.tag" size="small">
+                      <el-option label="Genius" value="Genius" />
+                      <el-option label="Normal" value="Normal" />
+                      <el-option label="Ordinary" value="Ordinary" />
+                    </el-select>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="60" align="center">
+                  <template #default="{ $index }">
+                    <el-button
+                      link
+                      type="danger"
+                      size="small"
+                      @click="removeDraftPlayer(region, $index)"
+                    >
+                      <el-icon><Delete /></el-icon>
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <div class="section-actions">
+                <el-button size="small" @click="addDraftPlayer(region)">
+                  <el-icon><Plus /></el-icon>
+                  添加选秀池选手
+                </el-button>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
         </el-tab-pane>
       </el-tabs>
     </template>
@@ -340,6 +347,7 @@ const config = ref<GameInitConfig | null>(null)
 const defaultConfig = ref<GameInitConfig | null>(null)
 const activeRegion = ref('1')
 const expandedTeams = ref<string>('')
+const expandedSections = ref<string[]>([])
 
 // 格式化金额（元 → 万元）
 const formatMoney = (value: number) => {
@@ -640,19 +648,15 @@ const handleCreate = async () => {
   gap: 8px;
 }
 
-/* 自由选手 / 选秀池区域 */
-.section-block {
+/* 自由选手 / 选秀池折叠区域 */
+.section-collapse {
   margin-top: 20px;
-  padding: 16px;
-  background: var(--el-fill-color-lighter, #fafafa);
-  border-radius: 8px;
 }
 
-.section-header {
+.section-collapse-title {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
 }
 
 .section-title {

@@ -1,5 +1,5 @@
 use crate::commands::save_commands::{AppState, CommandResult};
-use crate::engines::{MatchSimulationEngine, ConditionEngine, PlayerFormFactors, TraitType, TraitEngine, TraitContext};
+use crate::engines::{MatchSimulationEngine, ConditionEngine, PlayerFormFactors, TraitType, TraitEngine, TraitContext, MetaEngine, MetaWeights};
 use crate::models::MatchFormat;
 use crate::models::tournament_result::PlayerTournamentStats;
 use crate::services::LeagueService;
@@ -229,6 +229,11 @@ pub async fn simulate_match_detailed(
     let mut total_home_stats = TeamMatchStats::default(home_team_id as u64);
     let mut total_away_stats = TeamMatchStats::default(away_team_id as u64);
 
+    // 获取当前 Meta 权重
+    let meta_weights = MetaEngine::get_current_weights(&pool, &save_id, current_season as i64)
+        .await
+        .unwrap_or_else(|_| MetaWeights::balanced());
+
     while home_score < wins_needed && away_score < wins_needed {
         let duration = 25 + rng.gen_range(0..25); // 25-50分钟
 
@@ -258,6 +263,7 @@ pub async fn simulate_match_detailed(
             &home_players, &away_players,
             duration,
             &trait_ctx,
+            &meta_weights,
             &mut rng,
         );
 
@@ -828,7 +834,7 @@ async fn get_starting_players(
                 .unwrap_or_default()
                 .trim_start_matches("Some(")
                 .trim_end_matches(")")
-                .to_string(),
+                .to_uppercase(),
             ability,
             age,
             stability: r.get::<Option<i64>, _>("stability").unwrap_or(70) as u8,
@@ -937,6 +943,7 @@ fn simulate_game_with_players(
     away_players: &[PlayerData],
     duration: u32,
     trait_ctx: &TraitContext,
+    meta_weights: &MetaWeights,
     rng: &mut impl Rng,
 ) -> (Vec<PlayerGameStats>, Vec<PlayerGameStats>, f64, f64) {
     // 使用 Box-Muller 变换生成高斯随机数
@@ -951,13 +958,15 @@ fn simulate_game_with_players(
         players: &[PlayerData],
         duration: u32,
         trait_ctx: &TraitContext,
+        meta_weights: &MetaWeights,
         rng: &mut impl Rng
     ) -> (Vec<PlayerGameStats>, f64) {
         let mut stats = Vec::new();
-        let mut total_actual_ability = 0.0;
 
         // 第一遍：计算每个选手的发挥值（应用特性修正）
         let mut player_performances: Vec<(f64, f64, f64, f64, Vec<ActivatedTraitInfo>)> = Vec::new();
+        let mut player_abilities_with_pos: Vec<(f64, String)> = Vec::new();
+        let mut total_actual_ability = 0.0;
         for player in players {
             // 构建选手专属的特性上下文
             let player_trait_ctx = TraitContext {
@@ -1047,9 +1056,15 @@ fn simulate_game_with_players(
             let actual_ability = raw_ability.clamp(min_ability, max_ability);
 
             total_actual_ability += actual_ability;
+            player_abilities_with_pos.push((actual_ability, player.position.clone()));
             player_performances.push((player.ability as f64, condition_bonus, stability_noise, actual_ability, activated_traits));
         }
 
+        // 使用 Meta 加权计算队伍战力（与快进模拟一致）
+        let weighted_input: Vec<(f64, &str)> = player_abilities_with_pos.iter()
+            .map(|(a, p)| (*a, p.as_str()))
+            .collect();
+        let team_power = MetaEngine::calculate_team_power_weighted(&weighted_input, meta_weights);
         let team_avg = if !players.is_empty() { total_actual_ability / players.len() as f64 } else { 0.0 };
 
         // 第二遍：生成详细统计
@@ -1099,12 +1114,12 @@ fn simulate_game_with_players(
             });
         }
 
-        (stats, team_avg)
+        (stats, team_power)
     }
 
     // 生成双方统计
-    let (home_stats, home_avg) = generate_team_stats(home_players, duration, trait_ctx, rng);
-    let (away_stats, away_avg) = generate_team_stats(away_players, duration, trait_ctx, rng);
+    let (home_stats, home_avg) = generate_team_stats(home_players, duration, trait_ctx, meta_weights, rng);
+    let (away_stats, away_avg) = generate_team_stats(away_players, duration, trait_ctx, meta_weights, rng);
 
     (home_stats, away_stats, home_avg, away_avg)
 }

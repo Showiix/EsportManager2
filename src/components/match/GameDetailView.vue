@@ -1,7 +1,7 @@
 <template>
   <div class="game-detail-view">
-    <!-- 局数标题 -->
-    <div class="game-header">
+    <!-- 局数标题 + 战力/发挥对比（紧凑并排） -->
+    <div class="game-header-row">
       <div class="game-title">
         <el-tag :type="game.isUpset ? 'warning' : 'info'" size="small">
           第{{ game.gameNumber }}局
@@ -9,70 +9,46 @@
         <el-tag v-if="game.isUpset" type="danger" size="small" effect="dark">
           爆冷
         </el-tag>
-      </div>
-      <div class="game-winner">
-        <span class="winner-label">获胜方:</span>
-        <span class="winner-name">{{ game.winnerName }}</span>
-      </div>
-    </div>
-
-    <!-- 战力对比 -->
-    <div class="power-comparison">
-      <div class="comparison-header">
-        <span class="team-label">{{ game.teamAName }}</span>
-        <span class="vs-label">战力对比</span>
-        <span class="team-label">{{ game.teamBName }}</span>
-      </div>
-
-      <div class="power-bars">
-        <div class="power-value team-a">{{ formatPower(game.teamAPower) }}</div>
-        <div class="progress-container">
-          <div
-            class="progress-bar team-a"
-            :style="{ width: teamAPowerPercent + '%' }"
-            :class="{ winner: game.winnerId === game.teamAId }"
-          ></div>
-          <div
-            class="progress-bar team-b"
-            :style="{ width: teamBPowerPercent + '%' }"
-            :class="{ winner: game.winnerId === game.teamBId }"
-          ></div>
-        </div>
-        <div class="power-value team-b">{{ formatPower(game.teamBPower) }}</div>
-      </div>
-
-      <div class="power-diff" :class="powerDiffClass">
-        战力差: {{ formatDiff(game.powerDifference) }}
+        <span class="winner-info">
+          <span class="winner-label">获胜:</span>
+          <span class="winner-name">{{ game.winnerName }}</span>
+        </span>
       </div>
     </div>
 
-    <!-- 发挥值对比 -->
-    <div class="performance-comparison">
-      <div class="comparison-header">
-        <span class="team-label">{{ game.teamAName }}</span>
-        <span class="vs-label">发挥值</span>
-        <span class="team-label">{{ game.teamBName }}</span>
-      </div>
-
-      <div class="perf-bars">
-        <div class="perf-value team-a">{{ formatPower(game.teamAPerformance) }}</div>
-        <div class="progress-container">
-          <div
-            class="progress-bar team-a"
-            :style="{ width: teamAPerfPercent + '%' }"
-            :class="{ winner: game.winnerId === game.teamAId }"
-          ></div>
-          <div
-            class="progress-bar team-b"
-            :style="{ width: teamBPerfPercent + '%' }"
-            :class="{ winner: game.winnerId === game.teamBId }"
-          ></div>
+    <!-- 战力 + 发挥对比（并排两列） -->
+    <div class="comparison-row">
+      <div class="comparison-block">
+        <div class="comparison-label">
+          <span class="team-label">{{ game.teamAName }}</span>
+          <span class="vs-label">战力</span>
+          <span class="team-label">{{ game.teamBName }}</span>
         </div>
-        <div class="perf-value team-b">{{ formatPower(game.teamBPerformance) }}</div>
+        <div class="bar-row">
+          <span class="bar-value team-a">{{ formatPower(game.teamAPower) }}</span>
+          <div class="progress-container">
+            <div class="progress-bar team-a" :style="{ width: teamAPowerPercent + '%' }" :class="{ winner: game.winnerId === game.teamAId }"></div>
+            <div class="progress-bar team-b" :style="{ width: teamBPowerPercent + '%' }" :class="{ winner: game.winnerId === game.teamBId }"></div>
+          </div>
+          <span class="bar-value team-b">{{ formatPower(game.teamBPower) }}</span>
+        </div>
+        <div class="bar-diff" :class="powerDiffClass">{{ formatDiff(game.powerDifference) }}</div>
       </div>
-
-      <div class="perf-diff" :class="perfDiffClass">
-        发挥差: {{ formatDiff(game.performanceDifference) }}
+      <div class="comparison-block">
+        <div class="comparison-label">
+          <span class="team-label">{{ game.teamAName }}</span>
+          <span class="vs-label">发挥</span>
+          <span class="team-label">{{ game.teamBName }}</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-value team-a">{{ formatPower(game.teamAPerformance) }}</span>
+          <div class="progress-container">
+            <div class="progress-bar team-a" :style="{ width: teamAPerfPercent + '%' }" :class="{ winner: game.winnerId === game.teamAId }"></div>
+            <div class="progress-bar team-b" :style="{ width: teamBPerfPercent + '%' }" :class="{ winner: game.winnerId === game.teamBId }"></div>
+          </div>
+          <span class="bar-value team-b">{{ formatPower(game.teamBPerformance) }}</span>
+        </div>
+        <div class="bar-diff" :class="perfDiffClass">{{ formatDiff(game.performanceDifference) }}</div>
       </div>
     </div>
 
@@ -86,17 +62,17 @@
         <span class="col-condition">状态</span>
         <span class="col-noise">波动</span>
         <span class="col-actual">发挥</span>
-        <span class="col-impact">影响</span>
+        <span class="col-impact">影响力</span>
       </div>
 
       <!-- A队选手 -->
       <div class="team-section">
-        <div class="team-section-header">
+        <div class="team-section-header team-a-header">
           <span>{{ game.teamAName }}</span>
           <span class="team-power">战力: {{ formatPower(game.teamAPower) }}</span>
         </div>
         <div
-          v-for="player in game.teamAPlayers"
+          v-for="player in sortedTeamAPlayers"
           :key="player.playerId"
           class="player-row"
           :class="{ 'high-impact': player.impactScore > 3, 'low-impact': player.impactScore < -3 }"
@@ -134,28 +110,45 @@
             </template>
             <span v-else class="no-trait">-</span>
           </span>
-          <span class="col-base">{{ player.baseAbility }}</span>
+          <span class="col-base">
+            <span class="base-value">{{ player.baseAbility }}</span>
+            <div class="mini-bar"><div class="mini-bar-fill base-fill" :style="{ width: player.baseAbility + '%' }"></div></div>
+          </span>
           <span class="col-condition" :class="getConditionClass(player.conditionBonus)">
             {{ formatBonus(player.conditionBonus) }}
           </span>
           <span class="col-noise" :class="getNoiseClass(player.stabilityNoise)">
             {{ formatBonus(player.stabilityNoise) }}
           </span>
-          <span class="col-actual">{{ player.actualAbility }}</span>
-          <span class="col-impact" :class="getImpactClass(player.impactScore)">
-            {{ formatImpact(player.impactScore) }}
+          <span class="col-actual" :class="getActualClass(player.actualAbility, player.baseAbility)">
+            {{ player.actualAbility }}
+          </span>
+          <span class="col-impact">
+            <div class="impact-bar-wrapper">
+              <div
+                v-if="player.impactScore >= 0"
+                class="impact-bar positive-bar"
+                :style="{ width: Math.min(Math.abs(player.impactScore) * 8, 100) + '%' }"
+              ></div>
+              <div
+                v-else
+                class="impact-bar negative-bar"
+                :style="{ width: Math.min(Math.abs(player.impactScore) * 8, 100) + '%' }"
+              ></div>
+            </div>
+            <span class="impact-value" :class="getImpactClass(player.impactScore)">{{ formatImpact(player.impactScore) }}</span>
           </span>
         </div>
       </div>
 
       <!-- B队选手 -->
       <div class="team-section">
-        <div class="team-section-header">
+        <div class="team-section-header team-b-header">
           <span>{{ game.teamBName }}</span>
           <span class="team-power">战力: {{ formatPower(game.teamBPower) }}</span>
         </div>
         <div
-          v-for="player in game.teamBPlayers"
+          v-for="player in sortedTeamBPlayers"
           :key="player.playerId"
           class="player-row"
           :class="{ 'high-impact': player.impactScore > 3, 'low-impact': player.impactScore < -3 }"
@@ -193,17 +186,100 @@
             </template>
             <span v-else class="no-trait">-</span>
           </span>
-          <span class="col-base">{{ player.baseAbility }}</span>
+          <span class="col-base">
+            <span class="base-value">{{ player.baseAbility }}</span>
+            <div class="mini-bar"><div class="mini-bar-fill base-fill" :style="{ width: player.baseAbility + '%' }"></div></div>
+          </span>
           <span class="col-condition" :class="getConditionClass(player.conditionBonus)">
             {{ formatBonus(player.conditionBonus) }}
           </span>
           <span class="col-noise" :class="getNoiseClass(player.stabilityNoise)">
             {{ formatBonus(player.stabilityNoise) }}
           </span>
-          <span class="col-actual">{{ player.actualAbility }}</span>
-          <span class="col-impact" :class="getImpactClass(player.impactScore)">
-            {{ formatImpact(player.impactScore) }}
+          <span class="col-actual" :class="getActualClass(player.actualAbility, player.baseAbility)">
+            {{ player.actualAbility }}
           </span>
+          <span class="col-impact">
+            <div class="impact-bar-wrapper">
+              <div
+                v-if="player.impactScore >= 0"
+                class="impact-bar positive-bar"
+                :style="{ width: Math.min(Math.abs(player.impactScore) * 8, 100) + '%' }"
+              ></div>
+              <div
+                v-else
+                class="impact-bar negative-bar"
+                :style="{ width: Math.min(Math.abs(player.impactScore) * 8, 100) + '%' }"
+              ></div>
+            </div>
+            <span class="impact-value" :class="getImpactClass(player.impactScore)">{{ formatImpact(player.impactScore) }}</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 发挥分解折叠面板 -->
+    <div class="breakdown-panel">
+      <button class="breakdown-toggle" @click="breakdownOpen = !breakdownOpen">
+        <span class="toggle-arrow" :class="{ open: breakdownOpen }">&#9654;</span>
+        <span>发挥分解</span>
+      </button>
+      <div v-if="breakdownOpen" class="breakdown-content">
+        <div class="breakdown-grid">
+          <!-- Team A -->
+          <div class="breakdown-team">
+            <div class="breakdown-team-name team-a-accent">{{ game.teamAName }}</div>
+            <div class="breakdown-header-row">
+              <span class="bd-col-name">选手</span>
+              <span class="bd-col-base">基础</span>
+              <span class="bd-col-cond">状态</span>
+              <span class="bd-col-noise">波动</span>
+              <span class="bd-col-arrow"></span>
+              <span class="bd-col-result">发挥</span>
+            </div>
+            <div v-for="mp in matchedPlayers" :key="'a-' + mp.positionKey" class="breakdown-row">
+              <span class="bd-col-name">{{ mp.playerA?.playerName || '-' }}</span>
+              <span class="bd-col-base">
+                <div class="bd-bar"><div class="bd-bar-fill" :style="{ width: (mp.playerA?.baseAbility || 0) + '%' }"></div></div>
+                <span>{{ mp.playerA?.baseAbility || '-' }}</span>
+              </span>
+              <span class="bd-col-cond" :class="getConditionClass(mp.playerA?.conditionBonus || 0)">
+                {{ formatBonus(mp.playerA?.conditionBonus) }}
+              </span>
+              <span class="bd-col-noise bd-noise-val">
+                {{ formatBonus(mp.playerA?.stabilityNoise) }}
+              </span>
+              <span class="bd-col-arrow">→</span>
+              <span class="bd-col-result bd-result-val">{{ mp.playerA?.actualAbility || '-' }}</span>
+            </div>
+          </div>
+          <!-- Team B -->
+          <div class="breakdown-team">
+            <div class="breakdown-team-name team-b-accent">{{ game.teamBName }}</div>
+            <div class="breakdown-header-row">
+              <span class="bd-col-name">选手</span>
+              <span class="bd-col-base">基础</span>
+              <span class="bd-col-cond">状态</span>
+              <span class="bd-col-noise">波动</span>
+              <span class="bd-col-arrow"></span>
+              <span class="bd-col-result">发挥</span>
+            </div>
+            <div v-for="mp in matchedPlayers" :key="'b-' + mp.positionKey" class="breakdown-row">
+              <span class="bd-col-name">{{ mp.playerB?.playerName || '-' }}</span>
+              <span class="bd-col-base">
+                <div class="bd-bar"><div class="bd-bar-fill" :style="{ width: (mp.playerB?.baseAbility || 0) + '%' }"></div></div>
+                <span>{{ mp.playerB?.baseAbility || '-' }}</span>
+              </span>
+              <span class="bd-col-cond" :class="getConditionClass(mp.playerB?.conditionBonus || 0)">
+                {{ formatBonus(mp.playerB?.conditionBonus) }}
+              </span>
+              <span class="bd-col-noise bd-noise-val">
+                {{ formatBonus(mp.playerB?.stabilityNoise) }}
+              </span>
+              <span class="bd-col-arrow">→</span>
+              <span class="bd-col-result bd-result-val">{{ mp.playerB?.actualAbility || '-' }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -235,7 +311,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { GameDetail } from '@/types/matchDetail'
 import type { PlayerPosition } from '@/types/player'
 import { POSITION_NAMES, getTraitDescription, getTraitName } from '@/types/player'
@@ -245,6 +321,33 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+const breakdownOpen = ref(false)
+
+// 位置排序顺序
+const POSITION_ORDER: Record<string, number> = { TOP: 0, JUG: 1, MID: 2, ADC: 3, SUP: 4 }
+const POSITION_KEYS = ['TOP', 'JUG', 'MID', 'ADC', 'SUP'] as const
+
+const sortedTeamAPlayers = computed(() =>
+  [...(props.game.teamAPlayers || [])].sort(
+    (a, b) => (POSITION_ORDER[a.position] ?? 99) - (POSITION_ORDER[b.position] ?? 99)
+  )
+)
+
+const sortedTeamBPlayers = computed(() =>
+  [...(props.game.teamBPlayers || [])].sort(
+    (a, b) => (POSITION_ORDER[a.position] ?? 99) - (POSITION_ORDER[b.position] ?? 99)
+  )
+)
+
+// 按位置配对两队选手（用于折叠面板对比）
+const matchedPlayers = computed(() => {
+  return POSITION_KEYS.map(pos => ({
+    positionKey: pos,
+    playerA: sortedTeamAPlayers.value.find(p => p.position === pos) || null,
+    playerB: sortedTeamBPlayers.value.find(p => p.position === pos) || null,
+  }))
+})
 
 // 计算战力百分比
 const totalPower = computed(() => props.game.teamAPower + props.game.teamBPower)
@@ -290,14 +393,14 @@ const formatBonus = (value: number | undefined): string => {
   return value.toFixed(1)
 }
 
-// 格式化影响力分数 (保留两位小数)
+// 格式化影响力分数
 const formatImpact = (value: number | undefined): string => {
   if (value === undefined || value === null) return '-'
   if (value > 0) return `+${value.toFixed(2)}`
   return value.toFixed(2)
 }
 
-// 格式化战力/发挥值 (保留两位小数)
+// 格式化战力/发挥值
 const formatPower = (value: number | undefined): string => {
   if (value === undefined || value === null) return '-'
   return value.toFixed(2)
@@ -336,22 +439,25 @@ const getImpactClass = (value: number): string => {
   return ''
 }
 
+// 发挥值与基础值对比样式
+const getActualClass = (actual: number, base: number): string => {
+  if (actual > base) return 'actual-above'
+  if (actual < base) return 'actual-below'
+  return ''
+}
 </script>
 
 <style scoped>
 .game-detail-view {
-  background: #fff;
-  border-radius: 8px;
-  padding: 20px;
+  padding: 24px;
 }
 
-.game-header {
+/* 局数头部 */
+.game-header-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #e4e7ed;
+  margin-bottom: 16px;
 }
 
 .game-title {
@@ -360,228 +466,433 @@ const getImpactClass = (value: number): string => {
   align-items: center;
 }
 
-.game-winner {
-  font-size: 14px;
+.winner-info {
+  margin-left: 8px;
+  font-size: 13px;
 }
 
 .winner-label {
-  color: #909399;
+  color: #86909c;
 }
 
 .winner-name {
-  color: #67c23a;
-  font-weight: bold;
-  margin-left: 8px;
+  color: #10b981;
+  font-weight: 700;
+  margin-left: 4px;
 }
 
-/* 战力/发挥对比 */
-.power-comparison,
-.performance-comparison {
-  margin-bottom: 20px;
-  padding: 16px;
-  background: #f5f7fa;
-  border-radius: 8px;
+/* 战力/发挥对比并排 */
+.comparison-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
-.comparison-header {
+.comparison-block {
+  padding: 14px 16px;
+  background: #f7f8fa;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.03);
+}
+
+.comparison-label {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 12px;
-  font-size: 14px;
+  margin-bottom: 10px;
+  font-size: 12px;
 }
 
 .team-label {
-  font-weight: bold;
-  color: #303133;
+  font-weight: 700;
+  color: #1d2129;
 }
 
 .vs-label {
-  color: #909399;
+  color: #86909c;
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.5px;
 }
 
-.power-bars,
-.perf-bars {
+.bar-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
-.power-value,
-.perf-value {
-  font-size: 18px;
-  font-weight: bold;
-  min-width: 50px;
+.bar-value {
+  font-size: 14px;
+  font-weight: 800;
+  min-width: 48px;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
-.power-value.team-a,
-.perf-value.team-a {
-  color: #409eff;
-}
-
-.power-value.team-b,
-.perf-value.team-b {
-  color: #e6a23c;
-}
+.bar-value.team-a { color: #3b82f6; }
+.bar-value.team-b { color: #f59e0b; }
 
 .progress-container {
   flex: 1;
   display: flex;
-  height: 24px;
-  background: #e4e7ed;
-  border-radius: 12px;
+  height: 16px;
+  background: #e5e7eb;
+  border-radius: 10px;
   overflow: hidden;
 }
 
 .progress-bar {
   height: 100%;
-  transition: width 0.3s ease;
+  transition: width 0.4s ease;
 }
 
 .progress-bar.team-a {
-  background: linear-gradient(to right, #409eff, #66b1ff);
+  background: linear-gradient(to right, #60a5fa, #3b82f6);
 }
 
 .progress-bar.team-b {
-  background: linear-gradient(to left, #e6a23c, #f0c78a);
+  background: linear-gradient(to left, #fbbf24, #f59e0b);
 }
 
 .progress-bar.winner {
-  box-shadow: 0 0 8px rgba(103, 194, 58, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
 }
 
-.power-diff,
-.perf-diff {
+.bar-diff {
   text-align: center;
   margin-top: 8px;
-  font-size: 13px;
-  color: #606266;
+  font-size: 11px;
+  color: #86909c;
+  font-weight: 500;
 }
 
-.power-diff.positive,
-.perf-diff.positive {
-  color: #409eff;
-}
+.bar-diff.positive { color: #3b82f6; }
+.bar-diff.negative { color: #f59e0b; }
 
-.power-diff.negative,
-.perf-diff.negative {
-  color: #e6a23c;
-}
-
-/* 选手表格 */
+/* 选手数据表格 */
 .players-table {
-  margin-top: 20px;
+  margin-top: 4px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
 }
 
 .table-header {
   display: grid;
-  grid-template-columns: 60px 1fr 80px 60px 60px 60px 60px 60px;
-  gap: 8px;
-  padding: 12px 16px;
-  background: #303133;
-  color: white;
-  border-radius: 8px 8px 0 0;
-  font-size: 13px;
-  font-weight: bold;
-}
-
-.team-section {
-  border: 1px solid #e4e7ed;
-  border-top: none;
-}
-
-.team-section:last-child {
-  border-radius: 0 0 8px 8px;
+  grid-template-columns: 52px 1fr 80px 80px 52px 52px 64px 90px;
+  gap: 6px;
+  padding: 10px 16px;
+  background: #1d2129;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .team-section-header {
   display: flex;
   justify-content: space-between;
-  padding: 10px 16px;
-  background: #f5f7fa;
-  font-weight: bold;
-  font-size: 14px;
-  border-bottom: 1px solid #e4e7ed;
+  padding: 8px 16px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #1d2129;
+  border-bottom: 1px solid #e5e7eb;
+  border-top: 1px solid #e5e7eb;
+}
+
+.team-a-header {
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.team-b-header {
+  background: rgba(245, 158, 11, 0.04);
 }
 
 .team-power {
-  color: #909399;
-  font-weight: normal;
+  color: #86909c;
+  font-weight: 500;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .player-row {
   display: grid;
-  grid-template-columns: 60px 1fr 80px 60px 60px 60px 60px 60px;
-  gap: 8px;
-  padding: 10px 16px;
+  grid-template-columns: 52px 1fr 80px 80px 52px 52px 64px 90px;
+  gap: 6px;
+  padding: 8px 16px;
   font-size: 13px;
-  border-bottom: 1px solid #ebeef5;
-  transition: background 0.2s;
-}
-
-.player-row:last-child {
-  border-bottom: none;
+  border-bottom: 1px solid #f0f1f3;
+  transition: background 0.15s ease;
+  align-items: center;
 }
 
 .player-row:hover {
-  background: #f5f7fa;
+  background: #f7f8fa;
 }
 
 .player-row.high-impact {
-  background: linear-gradient(to right, rgba(103, 194, 58, 0.1), transparent);
+  background: linear-gradient(to right, rgba(16, 185, 129, 0.06), transparent);
 }
 
 .player-row.low-impact {
-  background: linear-gradient(to right, rgba(245, 108, 108, 0.1), transparent);
+  background: linear-gradient(to right, rgba(239, 68, 68, 0.05), transparent);
+}
+
+.team-section:last-child .player-row:last-child {
+  border-bottom: none;
 }
 
 .col-position {
-  color: #909399;
+  color: #86909c;
+  font-weight: 500;
+  font-size: 12px;
 }
 
 .col-name {
-  font-weight: 500;
+  font-weight: 600;
+  color: #1d2129;
 }
 
-.col-base,
+/* 基础能力列（含迷你条形图） */
+.col-base {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.base-value {
+  min-width: 24px;
+  text-align: right;
+}
+
+.mini-bar {
+  flex: 1;
+  height: 4px;
+  background: #e5e7eb;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mini-bar-fill.base-fill {
+  height: 100%;
+  background: #93c5fd;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+/* 发挥列 */
 .col-actual {
   text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.col-actual.actual-above {
+  color: #10b981;
+}
+
+.col-actual.actual-below {
+  color: #ef4444;
 }
 
 .col-condition,
-.col-noise,
-.col-impact {
+.col-noise {
   text-align: center;
-  font-weight: 500;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
-.positive {
-  color: #67c23a;
+/* 影响力列 */
+.col-impact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.negative {
-  color: #f56c6c;
+.impact-bar-wrapper {
+  width: 100%;
+  height: 4px;
+  background: #f0f1f3;
+  border-radius: 2px;
+  overflow: hidden;
 }
 
-.very-positive {
-  color: #67c23a;
-  font-weight: bold;
+.impact-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s;
 }
 
-.very-negative {
-  color: #f56c6c;
-  font-weight: bold;
+.positive-bar {
+  background: #10b981;
+}
+
+.negative-bar {
+  background: #ef4444;
+}
+
+.impact-value {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.positive { color: #10b981; }
+.negative { color: #ef4444; }
+.very-positive { color: #059669; font-weight: 800; }
+.very-negative { color: #dc2626; font-weight: 800; }
+
+/* 发挥分解折叠面板 */
+.breakdown-panel {
+  margin-top: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.breakdown-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 16px;
+  background: #f7f8fa;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1d2129;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.breakdown-toggle:hover {
+  background: #f0f1f3;
+}
+
+.toggle-arrow {
+  font-size: 10px;
+  color: #86909c;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+
+.toggle-arrow.open {
+  transform: rotate(90deg);
+}
+
+.breakdown-content {
+  padding: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.breakdown-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.breakdown-team-name {
+  font-weight: 800;
+  font-size: 13px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.team-a-accent { color: #3b82f6; border-color: #3b82f6; }
+.team-b-accent { color: #f59e0b; border-color: #f59e0b; }
+
+.breakdown-header-row {
+  display: grid;
+  grid-template-columns: 1fr 100px 48px 48px 20px 48px;
+  gap: 4px;
+  font-size: 10px;
+  color: #86909c;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 4px 0;
+  margin-bottom: 2px;
+}
+
+.breakdown-row {
+  display: grid;
+  grid-template-columns: 1fr 100px 48px 48px 20px 48px;
+  gap: 4px;
+  padding: 4px 0;
+  font-size: 12px;
+  border-bottom: 1px solid #f7f8fa;
+  align-items: center;
+}
+
+.bd-col-name {
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.bd-col-base {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bd-bar {
+  flex: 1;
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.bd-bar-fill {
+  height: 100%;
+  background: #60a5fa;
+  border-radius: 3px;
+}
+
+.bd-col-cond {
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.bd-noise-val {
+  text-align: center;
+  color: #86909c;
+  font-variant-numeric: tabular-nums;
+}
+
+.bd-col-arrow {
+  text-align: center;
+  color: #c0c4cc;
+  font-size: 11px;
+}
+
+.bd-result-val {
+  text-align: center;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #1d2129;
 }
 
 /* 图例 */
 .legend {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 16px;
   margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid #e4e7ed;
+  padding-top: 14px;
+  border-top: 1px solid #f0f1f3;
   font-size: 12px;
-  color: #909399;
+  color: #86909c;
 }
 
 .legend-item {
@@ -591,55 +902,40 @@ const getImpactClass = (value: number): string => {
 }
 
 .legend-color {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
 }
 
-.legend-color.positive {
-  background: #67c23a;
-}
-
-.legend-color.negative {
-  background: #f56c6c;
-}
-
+.legend-color.positive { background: #10b981; }
+.legend-color.negative { background: #ef4444; }
 .legend-color.high-impact {
-  background: linear-gradient(to right, rgba(103, 194, 58, 0.3), rgba(245, 108, 108, 0.3));
+  background: linear-gradient(to right, #10b981, #ef4444);
 }
 
-/* 特性列样式 */
+/* 特性标签 */
 .col-traits {
   display: flex;
-  gap: 4px;
+  gap: 3px;
   align-items: center;
   flex-wrap: wrap;
 }
 
 .trait-tag {
-  font-size: 11px;
-  padding: 2px 6px;
+  font-size: 10px;
+  padding: 1px 5px;
   height: auto;
   line-height: 1.2;
+  border-radius: 4px;
 }
 
 .trait-tag.inactive {
-  opacity: 0.6;
+  opacity: 0.5;
   border-style: dashed;
-}
-
-.trait-icon {
-  font-size: 14px;
-  cursor: pointer;
-  transition: transform 0.2s;
-}
-
-.trait-icon:hover {
-  transform: scale(1.2);
 }
 
 .no-trait {
   color: #c0c4cc;
-  font-size: 12px;
+  font-size: 11px;
 }
 </style>

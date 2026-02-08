@@ -1,74 +1,80 @@
 <template>
   <el-dialog
     v-model="dialogVisible"
-    :title="dialogTitle"
-    width="900px"
+    :show-header="false"
+    width="1080px"
     :close-on-click-modal="false"
     class="match-detail-dialog"
     @close="handleClose"
   >
     <template v-if="matchDetail">
-      <!-- 比赛概要 -->
-      <div class="match-summary">
-        <div class="summary-teams">
-          <div class="team-block team-a" :class="{ winner: matchDetail.winnerId === matchDetail.teamAId }">
+      <!-- 记分牌头部 -->
+      <div class="scoreboard">
+        <div class="scoreboard-main">
+          <div class="scoreboard-team team-a" :class="{ winner: matchDetail.winnerId === matchDetail.teamAId }">
             <span class="team-name">{{ matchDetail.teamAName }}</span>
-            <span class="team-score">{{ matchDetail.finalScoreA }}</span>
           </div>
-          <div class="vs-block">
-            <span class="vs-text">VS</span>
-            <el-tag v-if="matchDetail.bestOf" size="small" type="info">
-              BO{{ matchDetail.bestOf }}
-            </el-tag>
+          <div class="scoreboard-center">
+            <div class="score-line">
+              <span class="team-score" :class="{ winner: matchDetail.winnerId === matchDetail.teamAId }">{{ matchDetail.finalScoreA }}</span>
+              <span class="vs-text">VS</span>
+              <span class="team-score" :class="{ winner: matchDetail.winnerId === matchDetail.teamBId }">{{ matchDetail.finalScoreB }}</span>
+            </div>
+            <span class="bo-label">BO{{ matchDetail.bestOf }}</span>
           </div>
-          <div class="team-block team-b" :class="{ winner: matchDetail.winnerId === matchDetail.teamBId }">
-            <span class="team-score">{{ matchDetail.finalScoreB }}</span>
+          <div class="scoreboard-team team-b" :class="{ winner: matchDetail.winnerId === matchDetail.teamBId }">
             <span class="team-name">{{ matchDetail.teamBName }}</span>
           </div>
         </div>
 
-        <!-- MVP 展示 -->
-        <div v-if="matchDetail.mvpPlayerId" class="mvp-section">
-          <div class="mvp-badge">
-            <span class="mvp-icon">MVP</span>
+        <!-- 局数胜负时间线 -->
+        <div v-if="gameTimeline.length > 1" class="game-timeline">
+          <span
+            v-for="(g, i) in gameTimeline"
+            :key="i"
+            class="timeline-dot"
+            :class="g.side"
+            :title="`第${g.gameNumber}局 ${g.winnerName}胜`"
+          ></span>
+        </div>
+
+        <!-- MVP + 关键人物 -->
+        <div class="scoreboard-meta">
+          <div v-if="matchDetail.mvpPlayerId" class="meta-item">
+            <span class="meta-badge mvp-badge">MVP</span>
+            <span class="meta-name">{{ matchDetail.mvpPlayerName }}</span>
+            <span class="meta-detail">累计影响力: {{ formatNumber(matchDetail.mvpTotalImpact) }}</span>
           </div>
-          <div class="mvp-info">
-            <span class="mvp-name">{{ matchDetail.mvpPlayerName }}</span>
-            <span class="mvp-impact">
-              累计影响力: <strong>{{ formatNumber(matchDetail.mvpTotalImpact) }}</strong>
+          <div v-if="matchDetail.keyPlayer" class="meta-item">
+            <span class="meta-badge key-badge" :class="matchDetail.keyPlayer.reason === '高发挥' ? 'positive' : 'negative'">关键人物</span>
+            <span class="meta-name">{{ matchDetail.keyPlayer.playerName }}</span>
+            <span class="meta-detail">
+              第{{ matchDetail.keyPlayer.gameNumber }}局{{ matchDetail.keyPlayer.reason }}
+              ({{ formatBonus(matchDetail.keyPlayer.impactScore) }})
             </span>
           </div>
         </div>
-
-        <!-- 关键选手 -->
-        <div v-if="matchDetail.keyPlayer" class="key-player-section">
-          <el-tag
-            :type="matchDetail.keyPlayer.reason === '高发挥' ? 'success' : 'danger'"
-            size="small"
-          >
-            关键人物
-          </el-tag>
-          <span class="key-player-name">{{ matchDetail.keyPlayer.playerName }}</span>
-          <span class="key-player-reason">
-            第{{ matchDetail.keyPlayer.gameNumber }}局{{ matchDetail.keyPlayer.reason }}
-            ({{ formatBonus(matchDetail.keyPlayer.impactScore) }})
-          </span>
-        </div>
       </div>
 
-      <!-- 每局选项卡 -->
-      <el-tabs v-model="activeTab" class="game-tabs">
-        <el-tab-pane
+      <!-- 局数选择器 -->
+      <div class="game-selector">
+        <button
           v-for="game in matchDetail.games"
           :key="game.gameNumber"
-          :label="getTabLabel(game)"
-          :name="String(game.gameNumber)"
+          class="game-card"
+          :class="{ active: activeTab === String(game.gameNumber) }"
+          @click="activeTab = String(game.gameNumber)"
         >
-          <GameDetailView :game="game" />
-        </el-tab-pane>
-      </el-tabs>
+          <span class="game-card-num">G{{ game.gameNumber }}</span>
+          <span class="game-card-winner">{{ game.winnerId === game.teamAId ? game.teamAName : game.teamBName }}胜</span>
+          <span v-if="game.isUpset" class="game-card-upset">爆冷</span>
+        </button>
+      </div>
 
-      <!-- 比赛统计 -->
+      <!-- 当前局详情 -->
+      <GameDetailView v-if="currentGame" :game="currentGame" />
+
+      <!-- 底部统计栏 -->
       <div class="match-stats">
         <div class="stat-item">
           <span class="stat-label">总局数</span>
@@ -104,7 +110,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import type { MatchDetail, GameDetail } from '@/types/matchDetail'
+import type { MatchDetail } from '@/types/matchDetail'
 import GameDetailView from './GameDetailView.vue'
 import { ElMessage } from 'element-plus'
 
@@ -133,10 +139,20 @@ watch(() => props.matchDetail, (newVal) => {
   }
 })
 
-// 弹窗标题
-const dialogTitle = computed(() => {
-  if (!props.matchDetail) return '比赛详情'
-  return `${props.matchDetail.teamAName} vs ${props.matchDetail.teamBName} 比赛详情`
+// 当前选中的局
+const currentGame = computed(() => {
+  if (!props.matchDetail) return null
+  return props.matchDetail.games.find(g => String(g.gameNumber) === activeTab.value) || props.matchDetail.games[0]
+})
+
+// 局数胜负时间线
+const gameTimeline = computed(() => {
+  if (!props.matchDetail) return []
+  return props.matchDetail.games.map(g => ({
+    gameNumber: g.gameNumber,
+    winnerName: g.winnerName,
+    side: g.winnerId === props.matchDetail!.teamAId ? 'team-a' : 'team-b'
+  }))
 })
 
 // 爆冷局数
@@ -151,16 +167,6 @@ const avgPowerDiff = computed(() => {
   const totalDiff = props.matchDetail.games.reduce((sum, g) => sum + Math.abs(g.powerDifference), 0)
   return (totalDiff / props.matchDetail.games.length).toFixed(1)
 })
-
-// 获取选项卡标签
-const getTabLabel = (game: GameDetail): string => {
-  const winner = game.winnerId === game.teamAId ? game.teamAName : game.teamBName
-  let label = `第${game.gameNumber}局 - ${winner}胜`
-  if (game.isUpset) {
-    label += ' (爆冷)'
-  }
-  return label
-}
 
 // 格式化数字
 const formatNumber = (value: number | undefined): string => {
@@ -216,179 +222,274 @@ const handleExport = () => {
 </script>
 
 <style scoped>
+/* 弹窗基础 */
+.match-detail-dialog :deep(.el-dialog) {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
 .match-detail-dialog :deep(.el-dialog__body) {
-  padding: 20px;
-  max-height: 70vh;
+  padding: 0;
+  max-height: 80vh;
   overflow-y: auto;
 }
 
-/* 比赛概要 */
-.match-summary {
+.match-detail-dialog :deep(.el-dialog__footer) {
+  border-top: 1px solid #f0f1f3;
+  padding: 16px 24px;
+}
+
+/* 记分牌 */
+.scoreboard {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
-  padding: 24px;
-  margin-bottom: 20px;
+  padding: 28px 32px 20px;
   color: white;
 }
 
-.summary-teams {
+.scoreboard-main {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 30px;
+  gap: 24px;
 }
 
-.team-block {
+.scoreboard-team {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 24px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  transition: all 0.3s;
+  min-width: 180px;
+  justify-content: center;
 }
 
-.team-block.winner {
-  background: rgba(255, 255, 255, 0.25);
-  box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+.scoreboard-team.team-a {
+  justify-content: flex-end;
 }
 
-.team-block.team-b {
-  flex-direction: row-reverse;
+.scoreboard-team.team-b {
+  justify-content: flex-start;
 }
 
 .team-name {
-  font-size: 18px;
-  font-weight: bold;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  opacity: 0.9;
+}
+
+.scoreboard-team.winner .team-name {
+  opacity: 1;
 }
 
 .team-score {
-  font-size: 32px;
-  font-weight: bold;
+  font-size: 48px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  opacity: 0.85;
 }
 
-.team-block.winner .team-score {
-  color: #ffd700;
-  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+.team-score.winner {
+  color: #fbbf24;
+  text-shadow: 0 0 20px rgba(251, 191, 36, 0.5);
+  opacity: 1;
 }
 
-.vs-block {
+.scoreboard-center {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-}
-
-.vs-text {
-  font-size: 14px;
-  font-weight: bold;
-  opacity: 0.8;
-}
-
-/* MVP 区域 */
-.mvp-section {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.mvp-badge {
-  background: linear-gradient(45deg, #ffd700, #ffb347);
-  padding: 6px 12px;
-  border-radius: 20px;
-}
-
-.mvp-icon {
-  font-weight: bold;
-  color: #1a1a2e;
-  font-size: 14px;
-}
-
-.mvp-info {
-  display: flex;
-  flex-direction: column;
   gap: 4px;
 }
 
-.mvp-name {
-  font-size: 16px;
-  font-weight: bold;
-}
-
-.mvp-impact {
-  font-size: 13px;
-  opacity: 0.9;
-}
-
-.mvp-impact strong {
-  color: #ffd700;
-}
-
-/* 关键选手 */
-.key-player-section {
+.score-line {
   display: flex;
   align-items: center;
+  gap: 16px;
+}
+
+.vs-text {
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0.5;
+  letter-spacing: 2px;
+}
+
+.bo-label {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.4;
+  letter-spacing: 1px;
+}
+
+/* 局数时间线 */
+.game-timeline {
+  display: flex;
   justify-content: center;
-  gap: 12px;
-  margin-top: 12px;
-  font-size: 14px;
+  gap: 8px;
+  margin-top: 16px;
 }
 
-.key-player-name {
-  font-weight: bold;
+.timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  cursor: default;
 }
 
-.key-player-reason {
-  opacity: 0.9;
+.timeline-dot.team-a {
+  background: #60a5fa;
+  box-shadow: 0 0 6px rgba(96, 165, 250, 0.5);
 }
 
-/* 局数选项卡 */
-.game-tabs {
-  margin-top: 20px;
+.timeline-dot.team-b {
+  background: #fbbf24;
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.5);
 }
 
-.game-tabs :deep(.el-tabs__item) {
-  font-size: 14px;
+/* MVP / 关键人物 */
+.scoreboard-meta {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  flex-wrap: wrap;
 }
 
-.game-tabs :deep(.el-tabs__content) {
-  padding: 0;
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
 }
 
-/* 比赛统计 */
+.meta-badge {
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-weight: 800;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
+.mvp-badge {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #1a1a2e;
+}
+
+.key-badge {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+}
+
+.key-badge.positive {
+  background: rgba(16, 185, 129, 0.3);
+}
+
+.key-badge.negative {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+.meta-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.meta-detail {
+  opacity: 0.7;
+  font-size: 11px;
+}
+
+/* 局数选择器 */
+.game-selector {
+  display: flex;
+  gap: 8px;
+  padding: 16px 24px;
+  background: #f7f8fa;
+  border-bottom: 1px solid #f0f1f3;
+}
+
+.game-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 12px;
+  color: #86909c;
+  outline: none;
+}
+
+.game-card:hover {
+  border-color: #c0c4cc;
+}
+
+.game-card.active {
+  border-color: #667eea;
+  color: #1d2129;
+  background: rgba(102, 126, 234, 0.04);
+  box-shadow: 0 0 0 1px rgba(102, 126, 234, 0.15);
+}
+
+.game-card-num {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.game-card-winner {
+  font-weight: 600;
+}
+
+.game-card-upset {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #fef3c7;
+  color: #d97706;
+  font-weight: 700;
+}
+
+/* 底部比赛统计 */
 .match-stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-top: 20px;
-  padding: 16px;
-  background: #f5f7fa;
-  border-radius: 8px;
+  gap: 12px;
+  margin: 0 24px 24px;
+  padding: 18px;
+  background: #f7f8fa;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .stat-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  padding: 8px 0;
 }
 
 .stat-label {
-  font-size: 12px;
-  color: #909399;
+  font-size: 11px;
+  color: #86909c;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .stat-value {
-  font-size: 18px;
-  font-weight: bold;
-  color: #303133;
+  font-size: 20px;
+  font-weight: 800;
+  color: #1d2129;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
 }
 
 .stat-value.upset {
-  color: #e6a23c;
+  color: #f59e0b;
 }
 </style>

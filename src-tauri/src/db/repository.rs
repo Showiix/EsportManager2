@@ -954,12 +954,15 @@ fn parse_honor_type(s: &str) -> HonorType {
         "PLAYER_FOURTH" => HonorType::PlayerFourth,
         "ANNUAL_MVP" => HonorType::AnnualMvp,
         "ANNUAL_TOP20" => HonorType::AnnualTop20,
-        "ANNUAL_BEST_TOP" => HonorType::AnnualBestTop,
-        "ANNUAL_BEST_JUNGLE" => HonorType::AnnualBestJungle,
-        "ANNUAL_BEST_MID" => HonorType::AnnualBestMid,
-        "ANNUAL_BEST_ADC" => HonorType::AnnualBestAdc,
-        "ANNUAL_BEST_SUPPORT" => HonorType::AnnualBestSupport,
+        "ANNUAL_ALL_PRO_1ST" => HonorType::AnnualAllPro1st,
+        "ANNUAL_ALL_PRO_2ND" => HonorType::AnnualAllPro2nd,
+        "ANNUAL_ALL_PRO_3RD" => HonorType::AnnualAllPro3rd,
+        "ANNUAL_MOST_CONSISTENT" => HonorType::AnnualMostConsistent,
+        "ANNUAL_MOST_DOMINANT" => HonorType::AnnualMostDominant,
         "ANNUAL_ROOKIE" => HonorType::AnnualRookie,
+        // 兼容旧存档
+        "ANNUAL_BEST_TOP" | "ANNUAL_BEST_JUNGLE" | "ANNUAL_BEST_MID"
+        | "ANNUAL_BEST_ADC" | "ANNUAL_BEST_SUPPORT" => HonorType::AnnualAllPro1st,
         _ => HonorType::TeamChampion,
     }
 }
@@ -981,11 +984,11 @@ fn honor_type_to_db_string(honor_type: &HonorType) -> &'static str {
         HonorType::PlayerFourth => "PLAYER_FOURTH",
         HonorType::AnnualMvp => "ANNUAL_MVP",
         HonorType::AnnualTop20 => "ANNUAL_TOP20",
-        HonorType::AnnualBestTop => "ANNUAL_BEST_TOP",
-        HonorType::AnnualBestJungle => "ANNUAL_BEST_JUNGLE",
-        HonorType::AnnualBestMid => "ANNUAL_BEST_MID",
-        HonorType::AnnualBestAdc => "ANNUAL_BEST_ADC",
-        HonorType::AnnualBestSupport => "ANNUAL_BEST_SUPPORT",
+        HonorType::AnnualAllPro1st => "ANNUAL_ALL_PRO_1ST",
+        HonorType::AnnualAllPro2nd => "ANNUAL_ALL_PRO_2ND",
+        HonorType::AnnualAllPro3rd => "ANNUAL_ALL_PRO_3RD",
+        HonorType::AnnualMostConsistent => "ANNUAL_MOST_CONSISTENT",
+        HonorType::AnnualMostDominant => "ANNUAL_MOST_DOMINANT",
         HonorType::AnnualRookie => "ANNUAL_ROOKIE",
     }
 }
@@ -1777,8 +1780,8 @@ impl PlayerStatsRepository {
             (save_id, player_id, player_name, season_id, team_id, region_id, position,
              matches_played, games_played, total_impact, avg_impact, avg_performance,
              best_performance, worst_performance, consistency_score,
-             international_titles, regional_titles, champion_bonus, yearly_top_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, 0.0, 0.0, 0.0, 100.0, 100.0, 0, 0, 0.0, 0.0)
+             international_titles, regional_titles, champion_bonus, yearly_top_score, dominance_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0.0, 0.0, 0.0, 0.0, 100.0, 100.0, 0, 0, 0.0, 0.0, 0.0)
             "#
         )
         .bind(save_id)
@@ -1813,6 +1816,7 @@ impl PlayerStatsRepository {
             regional_titles: 0,
             champion_bonus: 0.0,
             yearly_top_score: 0.0,
+            dominance_score: 0.0,
         })
     }
 
@@ -1838,6 +1842,7 @@ impl PlayerStatsRepository {
                 regional_titles = ?,
                 champion_bonus = ?,
                 yearly_top_score = ?,
+                dominance_score = ?,
                 updated_at = datetime('now')
             WHERE save_id = ? AND player_id = ? AND season_id = ?
             "#
@@ -1856,6 +1861,7 @@ impl PlayerStatsRepository {
         .bind(stats.regional_titles)
         .bind(stats.champion_bonus)
         .bind(stats.yearly_top_score)
+        .bind(stats.dominance_score)
         .bind(&stats.save_id)
         .bind(stats.player_id)
         .bind(stats.season_id)
@@ -2128,6 +2134,7 @@ fn row_to_player_stats(row: &sqlx::sqlite::SqliteRow) -> PlayerSeasonStatistics 
         regional_titles: row.get("regional_titles"),
         champion_bonus: row.get("champion_bonus"),
         yearly_top_score: row.get("yearly_top_score"),
+        dominance_score: row.try_get("dominance_score").unwrap_or(0.0),
     }
 }
 

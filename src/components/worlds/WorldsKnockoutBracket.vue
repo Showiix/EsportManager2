@@ -22,14 +22,14 @@
 
       <!-- 连接线 八强->半决赛 -->
       <div class="bracket-connector">
-        <svg class="connector-svg" viewBox="0 0 60 400" preserveAspectRatio="none">
-          <line x1="0" y1="12.5%" x2="30" y2="25%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="0" y1="37.5%" x2="30" y2="25%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="30" y1="25%" x2="60" y2="25%" stroke="#e4e7ed" stroke-width="2" />
+        <svg class="connector-svg">
+          <line x1="0%" y1="12.5%" x2="50%" y2="25%" stroke="#e4e7ed" stroke-width="2" />
+          <line x1="0%" y1="37.5%" x2="50%" y2="25%" stroke="#e4e7ed" stroke-width="2" />
+          <line x1="50%" y1="25%" x2="100%" y2="25%" stroke="#e4e7ed" stroke-width="2" />
 
-          <line x1="0" y1="62.5%" x2="30" y2="75%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="0" y1="87.5%" x2="30" y2="75%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="30" y1="75%" x2="60" y2="75%" stroke="#e4e7ed" stroke-width="2" />
+          <line x1="0%" y1="62.5%" x2="50%" y2="75%" stroke="#e4e7ed" stroke-width="2" />
+          <line x1="0%" y1="87.5%" x2="50%" y2="75%" stroke="#e4e7ed" stroke-width="2" />
+          <line x1="50%" y1="75%" x2="100%" y2="75%" stroke="#e4e7ed" stroke-width="2" />
         </svg>
       </div>
 
@@ -54,10 +54,10 @@
 
       <!-- 连接线 半决赛->决赛 -->
       <div class="bracket-connector">
-        <svg class="connector-svg" viewBox="0 0 60 400" preserveAspectRatio="none">
-          <line x1="0" y1="25%" x2="30" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="0" y1="75%" x2="30" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="30" y1="50%" x2="60" y2="50%" stroke="#e4e7ed" stroke-width="2" />
+        <svg class="connector-svg">
+          <line x1="0%" y1="25%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
+          <line x1="0%" y1="75%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
+          <line x1="50%" y1="50%" x2="100%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
         </svg>
       </div>
 
@@ -220,8 +220,7 @@ const handleViewMatch = (match: WorldsKnockoutMatch) => {
   .bracket-connector {
     width: 60px;
     min-width: 60px;
-    display: flex;
-    align-items: center;
+    align-self: stretch;
   }
 
   .connector-svg {

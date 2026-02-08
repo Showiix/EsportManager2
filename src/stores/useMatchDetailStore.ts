@@ -62,7 +62,7 @@ function convertFromDbFormat(matchId: number, dbData: MatchFullDetails): MatchDe
         playerId: String(p.player_id),
         playerName: p.player_name,           // 直接使用数据库中的名称
         teamId: String(p.team_id),
-        position: p.position as PlayerPosition,
+        position: (p.position || 'MID').toUpperCase() as PlayerPosition,
         baseAbility: p.base_ability,         // 直接使用数据库中的基础能力
         conditionBonus: p.condition_bonus,   // 直接使用数据库中的状态加成
         stabilityNoise: p.stability_noise,   // 直接使用数据库中的稳定性波动
@@ -89,7 +89,7 @@ function convertFromDbFormat(matchId: number, dbData: MatchFullDetails): MatchDe
         playerId: String(p.player_id),
         playerName: p.player_name,
         teamId: String(p.team_id),
-        position: p.position as PlayerPosition,
+        position: (p.position || 'MID').toUpperCase() as PlayerPosition,
         baseAbility: p.base_ability,
         conditionBonus: p.condition_bonus,
         stabilityNoise: p.stability_noise,

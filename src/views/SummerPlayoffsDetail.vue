@@ -138,16 +138,13 @@
               </div>
 
               <!-- SVG连接线: 第一轮 -> 胜者组决赛 -->
-              <div class="bracket-connector winners-connector">
-                <svg class="connector-svg" viewBox="0 0 100 400" preserveAspectRatio="none">
-                  <!-- 上方比赛出线 -->
-                  <line x1="0" y1="25%" x2="50" y2="25%" stroke="#22c55e" stroke-width="2" />
-                  <line x1="50" y1="25%" x2="50" y2="50%" stroke="#22c55e" stroke-width="2" />
-                  <!-- 下方比赛出线 -->
-                  <line x1="0" y1="75%" x2="50" y2="75%" stroke="#22c55e" stroke-width="2" />
-                  <line x1="50" y1="75%" x2="50" y2="50%" stroke="#22c55e" stroke-width="2" />
-                  <!-- 汇合线 -->
-                  <line x1="50" y1="50%" x2="100" y2="50%" stroke="#22c55e" stroke-width="2" />
+              <div class="bracket-connector">
+                <svg class="connector-svg">
+                  <line x1="0%" y1="25%" x2="50%" y2="25%" stroke="#22c55e" stroke-width="2" />
+                  <line x1="50%" y1="25%" x2="50%" y2="50%" stroke="#22c55e" stroke-width="2" />
+                  <line x1="0%" y1="75%" x2="50%" y2="75%" stroke="#22c55e" stroke-width="2" />
+                  <line x1="50%" y1="75%" x2="50%" y2="50%" stroke="#22c55e" stroke-width="2" />
+                  <line x1="50%" y1="50%" x2="100%" y2="50%" stroke="#22c55e" stroke-width="2" />
                 </svg>
               </div>
 
@@ -252,10 +249,10 @@
               </div>
 
               <!-- SVG连接线: 败者组第一轮 -> 第二轮 -->
-              <div class="bracket-connector losers-connector">
-                <svg class="connector-svg" viewBox="0 0 100 400" preserveAspectRatio="none">
-                  <line x1="0" y1="25%" x2="100" y2="25%" stroke="#f59e0b" stroke-width="2" />
-                  <line x1="0" y1="75%" x2="100" y2="75%" stroke="#f59e0b" stroke-width="2" />
+              <div class="bracket-connector">
+                <svg class="connector-svg">
+                  <line x1="0%" y1="25%" x2="100%" y2="25%" stroke="#f59e0b" stroke-width="2" />
+                  <line x1="0%" y1="75%" x2="100%" y2="75%" stroke="#f59e0b" stroke-width="2" />
                 </svg>
               </div>
 
@@ -309,16 +306,13 @@
               </div>
 
               <!-- SVG连接线: 败者组第二轮 -> 第三轮 -->
-              <div class="bracket-connector losers-connector">
-                <svg class="connector-svg" viewBox="0 0 100 400" preserveAspectRatio="none">
-                  <!-- 上方比赛出线 -->
-                  <line x1="0" y1="25%" x2="50" y2="25%" stroke="#f59e0b" stroke-width="2" />
-                  <line x1="50" y1="25%" x2="50" y2="50%" stroke="#f59e0b" stroke-width="2" />
-                  <!-- 下方比赛出线 -->
-                  <line x1="0" y1="75%" x2="50" y2="75%" stroke="#f59e0b" stroke-width="2" />
-                  <line x1="50" y1="75%" x2="50" y2="50%" stroke="#f59e0b" stroke-width="2" />
-                  <!-- 汇合线 -->
-                  <line x1="50" y1="50%" x2="100" y2="50%" stroke="#f59e0b" stroke-width="2" />
+              <div class="bracket-connector">
+                <svg class="connector-svg">
+                  <line x1="0%" y1="25%" x2="50%" y2="25%" stroke="#f59e0b" stroke-width="2" />
+                  <line x1="50%" y1="25%" x2="50%" y2="50%" stroke="#f59e0b" stroke-width="2" />
+                  <line x1="0%" y1="75%" x2="50%" y2="75%" stroke="#f59e0b" stroke-width="2" />
+                  <line x1="50%" y1="75%" x2="50%" y2="50%" stroke="#f59e0b" stroke-width="2" />
+                  <line x1="50%" y1="50%" x2="100%" y2="50%" stroke="#f59e0b" stroke-width="2" />
                 </svg>
               </div>
 
@@ -365,9 +359,9 @@
               </div>
 
               <!-- SVG连接线: 败者组第三轮 -> 败者组决赛 -->
-              <div class="bracket-connector losers-connector single">
-                <svg class="connector-svg" viewBox="0 0 100 400" preserveAspectRatio="none">
-                  <line x1="0" y1="50%" x2="100" y2="50%" stroke="#f59e0b" stroke-width="2" />
+              <div class="bracket-connector">
+                <svg class="connector-svg">
+                  <line x1="0%" y1="50%" x2="100%" y2="50%" stroke="#f59e0b" stroke-width="2" />
                 </svg>
               </div>
 
@@ -1778,20 +1772,7 @@ onMounted(async () => {
     width: 100px;
     min-width: 100px;
     flex-shrink: 0;
-    display: flex;
-    align-items: center;
-
-    &.winners-connector {
-      height: 220px;
-    }
-
-    &.losers-connector {
-      height: 220px;
-
-      &.single {
-        height: 100px;
-      }
-    }
+    align-self: stretch;
 
     .connector-svg {
       width: 100%;

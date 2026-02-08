@@ -503,10 +503,20 @@ pub async fn recalculate_yearly_scores(
 
     let mut updated_count = 0;
     for mut stats in all_stats {
-        // 重新计算（综合三要素：影响力40% + 出场30% + 冠军30%）
+        // 重新计算（五维归一化加权）
         stats.champion_bonus = (stats.international_titles * 3 + stats.regional_titles) as f64;
-        let games_bonus = stats.games_played as f64 / 10.0;
-        stats.yearly_top_score = stats.avg_impact * 0.4 + games_bonus * 0.3 + stats.champion_bonus * 0.3;
+        stats.yearly_top_score = PlayerSeasonStatistics::calculate_yearly_top_score(
+            stats.avg_impact,
+            stats.avg_performance,
+            stats.consistency_score,
+            stats.games_played,
+            stats.champion_bonus,
+        );
+        stats.dominance_score = PlayerSeasonStatistics::calculate_dominance_score(
+            stats.best_performance,
+            stats.avg_impact,
+            stats.avg_performance,
+        );
 
         if PlayerStatsRepository::update(&pool, &stats).await.is_ok() {
             updated_count += 1;

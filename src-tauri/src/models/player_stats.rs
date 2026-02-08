@@ -36,6 +36,9 @@ pub struct PlayerSeasonStatistics {
 
     // 年度Top得分
     pub yearly_top_score: f64,
+
+    // 统治力得分
+    pub dominance_score: f64,
 }
 
 impl PlayerSeasonStatistics {
@@ -70,7 +73,39 @@ impl PlayerSeasonStatistics {
             regional_titles: 0,
             champion_bonus: 0.0,
             yearly_top_score: 0.0,
+            dominance_score: 0.0,
         }
+    }
+
+    /// 五维归一化年度Top评分
+    pub fn calculate_yearly_top_score(
+        avg_impact: f64,
+        avg_performance: f64,
+        consistency_score: f64,
+        games_played: i32,
+        champion_bonus: f64,
+    ) -> f64 {
+        let impact_norm = ((avg_impact + 10.0) * 3.33).clamp(0.0, 100.0);
+        let perf_norm = ((avg_performance - 50.0) * 2.0).clamp(0.0, 100.0);
+        let stability_norm = consistency_score.clamp(0.0, 100.0);
+        let appearance_norm = (games_played as f64 * 0.83).clamp(0.0, 100.0);
+        let honor_norm = (champion_bonus * 6.67).clamp(0.0, 100.0);
+
+        impact_norm * 0.35 + perf_norm * 0.20 + stability_norm * 0.15
+            + appearance_norm * 0.10 + honor_norm * 0.20
+    }
+
+    /// 统治力评分（独立公式）
+    pub fn calculate_dominance_score(
+        best_performance: f64,
+        avg_impact: f64,
+        avg_performance: f64,
+    ) -> f64 {
+        let peak_norm = ((best_performance - 60.0) * 2.5).clamp(0.0, 100.0);
+        let impact_norm = ((avg_impact + 5.0) * 5.0).clamp(0.0, 100.0);
+        let perf_norm = ((avg_performance - 50.0) * 2.0).clamp(0.0, 100.0);
+
+        peak_norm * 0.35 + impact_norm * 0.45 + perf_norm * 0.20
     }
 
     /// 记录一局比赛的表现
@@ -94,8 +129,21 @@ impl PlayerSeasonStatistics {
         // 计算稳定性评分
         self.consistency_score = (100.0 - (self.best_performance - self.worst_performance) * 2.0).max(0.0);
 
-        // 更新年度Top得分
-        self.yearly_top_score = self.avg_impact * 0.7 + self.champion_bonus * 0.3;
+        // 更新年度Top得分（五维归一化）
+        self.yearly_top_score = Self::calculate_yearly_top_score(
+            self.avg_impact,
+            self.avg_performance,
+            self.consistency_score,
+            self.games_played,
+            self.champion_bonus,
+        );
+
+        // 更新统治力得分
+        self.dominance_score = Self::calculate_dominance_score(
+            self.best_performance,
+            self.avg_impact,
+            self.avg_performance,
+        );
     }
 
     /// 记录比赛结束（增加比赛场数）
@@ -112,8 +160,14 @@ impl PlayerSeasonStatistics {
         }
         // 更新冠军加成: 国际赛冠军+3, 赛区冠军+1
         self.champion_bonus = (self.international_titles * 3 + self.regional_titles) as f64;
-        // 更新年度Top得分
-        self.yearly_top_score = self.avg_impact * 0.7 + self.champion_bonus * 0.3;
+        // 更新年度Top得分（五维归一化）
+        self.yearly_top_score = Self::calculate_yearly_top_score(
+            self.avg_impact,
+            self.avg_performance,
+            self.consistency_score,
+            self.games_played,
+            self.champion_bonus,
+        );
     }
 }
 
@@ -152,6 +206,7 @@ pub struct PlayerRankingItem {
     pub consistency_score: f64,
     pub champion_bonus: f64,
     pub yearly_top_score: f64,
+    pub dominance_score: f64,
 }
 
 impl From<PlayerSeasonStatistics> for PlayerRankingItem {
@@ -168,6 +223,7 @@ impl From<PlayerSeasonStatistics> for PlayerRankingItem {
             consistency_score: stats.consistency_score,
             champion_bonus: stats.champion_bonus,
             yearly_top_score: stats.yearly_top_score,
+            dominance_score: stats.dominance_score,
         }
     }
 }

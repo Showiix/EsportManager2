@@ -41,16 +41,16 @@ pub enum HonorType {
     AnnualMvp,
     /// 年度Top20
     AnnualTop20,
-    /// 年度最佳上单
-    AnnualBestTop,
-    /// 年度最佳打野
-    AnnualBestJungle,
-    /// 年度最佳中单
-    AnnualBestMid,
-    /// 年度最佳ADC
-    AnnualBestAdc,
-    /// 年度最佳辅助
-    AnnualBestSupport,
+    /// 年度最佳阵容一阵
+    AnnualAllPro1st,
+    /// 年度最佳阵容二阵
+    AnnualAllPro2nd,
+    /// 年度最佳阵容三阵
+    AnnualAllPro3rd,
+    /// 年度最稳定选手
+    AnnualMostConsistent,
+    /// 年度最具统治力选手
+    AnnualMostDominant,
     /// 年度最佳新秀
     AnnualRookie,
 }
@@ -73,11 +73,11 @@ impl HonorType {
             HonorType::PlayerFourth => "殿军成员",
             HonorType::AnnualMvp => "年度MVP",
             HonorType::AnnualTop20 => "年度Top20",
-            HonorType::AnnualBestTop => "年度最佳上单",
-            HonorType::AnnualBestJungle => "年度最佳打野",
-            HonorType::AnnualBestMid => "年度最佳中单",
-            HonorType::AnnualBestAdc => "年度最佳ADC",
-            HonorType::AnnualBestSupport => "年度最佳辅助",
+            HonorType::AnnualAllPro1st => "年度最佳阵容一阵",
+            HonorType::AnnualAllPro2nd => "年度最佳阵容二阵",
+            HonorType::AnnualAllPro3rd => "年度最佳阵容三阵",
+            HonorType::AnnualMostConsistent => "年度最稳定选手",
+            HonorType::AnnualMostDominant => "年度最具统治力",
             HonorType::AnnualRookie => "年度最佳新秀",
         }
     }
@@ -123,11 +123,11 @@ impl HonorType {
             self,
             HonorType::AnnualMvp
                 | HonorType::AnnualTop20
-                | HonorType::AnnualBestTop
-                | HonorType::AnnualBestJungle
-                | HonorType::AnnualBestMid
-                | HonorType::AnnualBestAdc
-                | HonorType::AnnualBestSupport
+                | HonorType::AnnualAllPro1st
+                | HonorType::AnnualAllPro2nd
+                | HonorType::AnnualAllPro3rd
+                | HonorType::AnnualMostConsistent
+                | HonorType::AnnualMostDominant
                 | HonorType::AnnualRookie
         )
     }

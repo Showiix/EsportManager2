@@ -1675,6 +1675,24 @@ impl DatabaseManager {
             log::info!("✅ 选秀池持久化表创建成功");
         }
 
+        // 迁移12: 为 player_season_stats 添加 dominance_score 字段
+        let pss_columns: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM pragma_table_info('player_season_stats')"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        let pss_column_names: Vec<&str> = pss_columns.iter().map(|c| c.0.as_str()).collect();
+
+        if !pss_column_names.contains(&"dominance_score") {
+            sqlx::query("ALTER TABLE player_season_stats ADD COLUMN dominance_score REAL NOT NULL DEFAULT 0.0")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            log::info!("✅ player_season_stats 添加 dominance_score 列成功");
+        }
+
         Ok(())
     }
 }

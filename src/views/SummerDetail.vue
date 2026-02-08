@@ -213,7 +213,7 @@
 
               <el-table-column label="战队" width="80" align="center">
                 <template #default="{ row }">
-                  <span class="team-name">{{ row.team_name }}</span>
+                  <span class="team-name">{{ teamMap.get(row.team_id)?.short_name || row.team_name }}</span>
                 </template>
               </el-table-column>
 
@@ -253,13 +253,17 @@
             </template>
 
             <div class="matches-list">
-              <div
-                v-for="match in filteredMatches"
-                :key="match.id"
-                class="match-item"
-                :class="match.status"
-              >
-                <div class="match-week">第{{ match.week }}周</div>
+              <div v-for="group in groupedMatches" :key="group.week" class="match-week-group">
+                <div class="week-header">
+                  <span class="week-label">第{{ group.week }}周</span>
+                  <span class="week-count">{{ group.matches.length }}场</span>
+                </div>
+                <div
+                  v-for="match in group.matches"
+                  :key="match.id"
+                  class="match-item"
+                  :class="match.status"
+                >
                 <div class="match-teams">
                   <div class="team home" :class="{ winner: match.winnerId === match.homeTeamId }">
                     <span class="team-name">{{ match.homeTeam }}</span>
@@ -293,6 +297,7 @@
                       模拟
                     </el-button>
                   </template>
+                </div>
                 </div>
               </div>
 
@@ -563,6 +568,20 @@ const progress = computed(() => (completedMatches.value / totalMatches.value) * 
 const filteredMatches = computed(() => {
   if (matchFilter.value === 'all') return matches.value
   return matches.value.filter(m => m.status === matchFilter.value)
+})
+
+// 按周分组
+const groupedMatches = computed(() => {
+  const groups: { week: number; matches: typeof filteredMatches.value }[] = []
+  let currentWeek = -1
+  for (const match of filteredMatches.value) {
+    if (match.week !== currentWeek) {
+      currentWeek = match.week
+      groups.push({ week: currentWeek, matches: [] })
+    }
+    groups[groups.length - 1].matches.push(match)
+  }
+  return groups
 })
 
 // 方法
@@ -1019,6 +1038,40 @@ watch(
   color: var(--text-primary, #303133);
 }
 
+/* 统计图标 */
+.stat-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.stat-icon.small {
+  width: 48px;
+  height: 48px;
+}
+
+.stat-icon.blue {
+  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+  color: #3b82f6;
+}
+
+.stat-icon.green {
+  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+  color: #22c55e;
+}
+
+.stat-icon.orange {
+  background: linear-gradient(135deg, #ffedd5, #fed7aa);
+  color: #f97316;
+}
+
+.stat-icon.purple {
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  color: #8b5cf6;
+}
+
 /* 统计卡片 */
 .stats-row {
   margin-bottom: 20px;
@@ -1111,8 +1164,35 @@ watch(
 }
 
 .matches-list {
-  max-height: 500px;
+  max-height: 600px;
   overflow-y: auto;
+}
+
+.match-week-group {
+  margin-bottom: 4px;
+}
+
+.week-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #edf2f7;
+  border-radius: 8px 8px 0 0;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.week-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #4a5568;
+}
+
+.week-count {
+  font-size: 11px;
+  color: #a0aec0;
 }
 
 .match-item {
@@ -1136,12 +1216,6 @@ watch(
 .match-item.active {
   background: #fef3c7;
   border: 1px solid #f59e0b;
-}
-
-.match-week {
-  width: 60px;
-  font-size: 12px;
-  color: var(--text-tertiary, #909399);
 }
 
 .match-teams {

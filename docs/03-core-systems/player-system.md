@@ -223,6 +223,43 @@ pub fn calculate_market_value(player: &Player, honors: &[Honor]) -> u64 {
 willingness = base_willingness × (100 - region_loyalty) / 100
 ```
 
+## 自由选手
+
+自由选手是不属于任何战队的选手（`team_id = NULL`），可在转会期被签约。
+
+### 初始自由选手
+
+游戏初始化时包含 **110 名**预定义自由选手（LPL 28 / LCK 28 / LEC 27 / LCS 27）：
+
+| 赛区 | 人数 | 数据来源 |
+|------|------|---------|
+| LPL | 28 | `free_agent_data.rs` |
+| LCK | 28 | `free_agent_data.rs` |
+| LEC | 27 | `free_agent_data.rs` |
+| LCS | 27 | `free_agent_data.rs` |
+
+**属性范围**：
+
+| 属性 | 范围 | 说明 |
+|------|------|------|
+| 能力值 | 34-62 | 整体低于战队选手 |
+| 潜力值 | 58-64 | 部分年轻选手有成长空间 |
+| 年龄 | 17-25 | 覆盖新人到老将 |
+| 标签 | Ordinary/Normal | 无 Genius |
+
+**初始化路径**：
+
+```
+快速创建 → init_service 直接创建战队选手（无自由选手）
+自定义创建 → get_default_game_config 加载 free_agent_data → 用户可编辑 → init_service 创建
+```
+
+自定义创建时，自由选手特点：
+- `team_id: None`（无所属战队）
+- `is_starter: false`
+- `contract_end_season: None`（无合同）
+- 忠诚度、满意度、身价等根据属性自动计算
+
 ## API 接口
 
 | 接口 | 描述 |
@@ -244,4 +281,5 @@ willingness = base_willingness × (100 - region_loyalty) / 100
 | `src-tauri/src/engines/satisfaction.rs` | 选手满意度引擎 |
 | `src-tauri/src/engines/player_decision.rs` | AI 选手决策 |
 | `src-tauri/src/engines/player_performance.rs` | 选手表现评估 |
+| `src-tauri/src/services/free_agent_data.rs` | 预定义自由选手数据（110人） |
 | `src-tauri/src/commands/query_commands.rs` | 选手查询命令接口 |

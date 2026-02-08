@@ -33,7 +33,8 @@ draft_results (被队伍选中 → 创建 player)
 ### 数据流
 
 ```
-新建存档 → init_service 读 draft_pool_data.rs → 写入 draft_pool (200人)
+快速创建 → init_service 读 draft_pool_data.rs → 写入 draft_pool (200人)
+自定义创建 → get_default_game_config 读 draft_pool_data.rs → 用户可编辑 → init_service 写入 draft_pool
 选秀阶段 → generate_draft_pool → draft_pool 随机抽14人 → 写入 draft_players
 选手被选 → make_draft_pick → draft_pool.status='drafted' + 创建 player
 ```
@@ -69,9 +70,19 @@ CREATE TABLE draft_pool (
 
 ### 选秀池初始化
 
-- 新建存档时，从 `draft_pool_data.rs` 读取预定义数据
+选秀池有两条初始化路径：
+
+**快速创建**：
+- 从 `draft_pool_data.rs` 读取预定义数据
 - 每赛区50人，共200人写入 `draft_pool` 表
 - 初始状态均为 `available`
+
+**自定义创建**：
+- `get_default_game_config` 从 `draft_pool_data.rs` 加载默认选秀池数据到 `GameInitConfig`
+- 用户可在 `SaveCustomize.vue` 中编辑选秀池选手（增删改属性）
+- 选秀池位置使用 `Top/Jungle/Mid/Bot/Support` 命名（不同于选手系统的 `Top/Jug/Mid/Adc/Sup`）
+- 标签选项：`Genius/Normal/Ordinary`
+- 提交后 `initialize_game_data_with_config` 从配置写入 `draft_pool` 表
 
 ### 选秀名单生成
 
@@ -152,6 +163,8 @@ fn draft_lottery(team_rank: u32) -> f64 {
 | `src-tauri/src/commands/draft_commands.rs` | 选秀命令接口 |
 | `src-tauri/src/engines/draft.rs` | 选秀引擎（抽签算法） |
 | `src-tauri/src/services/draft_pool_data.rs` | 预定义选秀池数据（200人） |
+| `src-tauri/src/models/init_config.rs` | 自定义配置模型（含 `DraftPoolPlayerInitConfig`） |
+| `src-tauri/src/commands/save_commands.rs` | `get_default_game_config` 加载默认选秀池 |
 | `src-tauri/src/services/init_service.rs` | 初始化写入 draft_pool |
 | `src-tauri/src/db/connection.rs` | draft_pool 表迁移 |
 | `src/views/DraftRegion.vue` | 选秀页面前端 |
