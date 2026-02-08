@@ -41,9 +41,19 @@ pub struct SeasonProgressEngine {
 - `get_time_state()` - 获取完整游戏时间状态
 - `initialize_phase()` - 初始化当前阶段（创建赛事）
 - `complete_and_advance()` - 完成当前阶段并推进
+- `complete_phase()` - 完成阶段并颁发荣誉（**含幂等保护**：已完成的阶段不会重复执行）
 - `fast_forward_to()` - 快进到指定目标阶段
 - `execute_season_settlement()` - 执行赛季结算
 - `advance_to_new_season()` - 推进到新赛季
+
+**初始化辅助方法** (由 `initialize_phase` 调用，避免春/夏季重复代码):
+- `init_regional_regular_season(pool, save_id, season_id, tournament_type, season_label)` - 赛区常规赛通用初始化
+- `init_regional_playoffs(pool, save_id, season_id, playoff_type, regular_type_str, season_label)` - 赛区季后赛通用初始化
+- `init_32team_masters(pool, save_id, season_id, tournament_type, source_regular, tournament_name)` - 32队大师赛通用初始化
+
+**工具方法**:
+- `get_all_region_ids(pool, save_id)` - 获取所有赛区 ID
+- `count_tournament_matches(pool, tournament_id)` - 统计赛事比赛数
 
 ## 数据结构
 
@@ -70,6 +80,21 @@ pub enum SeasonPhase {
     SeasonEnd,              // 赛季结束
 }
 ```
+
+**SeasonPhase 实用方法** (集中映射，避免在各处重复 match):
+
+| 方法 | 返回类型 | 说明 |
+|------|----------|------|
+| `to_tournament_type()` | `Option<TournamentType>` | 转换为赛事类型枚举 |
+| `tournament_type_str()` | `Option<&'static str>` | 赛事类型字符串（用于 DB 查询） |
+| `is_playoff()` | `bool` | 是否季后赛（SpringPlayoffs / SummerPlayoffs） |
+| `is_international()` | `bool` | 是否国际赛 |
+| `is_non_tournament()` | `bool` | 是否无赛事阶段（颁奖/转会/选秀/赛季结束） |
+| `display_name()` | `&'static str` | 中文显示名（如 "春季常规赛"） |
+| `order()` | `u8` | 阶段顺序号 (0-14) |
+| `is_before(target)` | `bool` | 是否在目标阶段之前 |
+
+> **注意**: 不要在 `game_flow.rs` 或 `time_commands.rs` 中重新编写阶段→赛事类型映射，统一使用 `SeasonPhase` 上的方法。
 
 ### GameTimeState (游戏时间状态)
 
@@ -251,3 +276,6 @@ console.log(`跳过了 ${result.skipped_phases.length} 个阶段`)
 2. **季后赛特殊处理**: 使用逐场模拟确保正确生成对阵
 3. **选秀年判断**: `is_draft_year` 规则为 `(season - 2) % 4 == 0`
 4. **赛季结算顺序**: 必须在 `SeasonEnd` 阶段调用，包含退役、合同过期等处理
+5. **幂等性保护**: `complete_phase` 会检查赛事是否已完成，重复调用安全返回
+6. **映射方法统一**: 阶段→赛事类型映射统一使用 `SeasonPhase` 上的方法（`to_tournament_type()`, `tournament_type_str()`, `display_name()` 等），不要在业务代码中重复编写 match 映射
+7. **初始化方法复用**: 春/夏季常规赛、季后赛、大师赛使用 `init_regional_regular_season`、`init_regional_playoffs`、`init_32team_masters` 通用方法，新增类似赛制时优先复用
