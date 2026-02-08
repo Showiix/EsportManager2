@@ -47,6 +47,16 @@ pub enum TraitType {
     Veteran,
     /// 团队核心：队友 condition +1（需要特殊处理）
     TeamLeader,
+
+    // === 成长类 ===
+    /// 大器晚成：成长/衰退年龄按 age-2 计算，延长2年巅峰期
+    LateBlocker,
+    /// 神童：20岁前成长×1.5，25岁后成长×0.8
+    Prodigy,
+    /// 抗衰老：衰退速率×0.5
+    Resilient,
+    /// 易碎：衰退速率×1.5，但能力上限+3
+    GlassCannon,
 }
 
 impl TraitType {
@@ -67,6 +77,10 @@ impl TraitType {
             TraitType::RisingStar => "新星",
             TraitType::Veteran => "老将风范",
             TraitType::TeamLeader => "团队核心",
+            TraitType::LateBlocker => "大器晚成",
+            TraitType::Prodigy => "神童",
+            TraitType::Resilient => "抗衰老",
+            TraitType::GlassCannon => "易碎",
         }
     }
 
@@ -87,6 +101,10 @@ impl TraitType {
             TraitType::RisingStar => "新人赛季潜力爆发",
             TraitType::Veteran => "老将经验丰富，发挥更稳",
             TraitType::TeamLeader => "带动队友发挥",
+            TraitType::LateBlocker => "大器晚成，成长期和巅峰期延长2年",
+            TraitType::Prodigy => "年少成名，但后期成长放缓",
+            TraitType::Resilient => "身体素质出众，衰退速度减半",
+            TraitType::GlassCannon => "巅峰更高但衰退更快",
         }
     }
 
@@ -107,12 +125,16 @@ impl TraitType {
             TraitType::RisingStar => 3,
             TraitType::Veteran => 3,
             TraitType::TeamLeader => 5,
+            TraitType::LateBlocker => 3,
+            TraitType::Prodigy => 4,
+            TraitType::Resilient => 4,
+            TraitType::GlassCannon => 2,
         }
     }
 
     /// 是否为负面特性
     pub fn is_negative(&self) -> bool {
-        matches!(self, TraitType::Tilter | TraitType::Fragile | TraitType::Volatile)
+        matches!(self, TraitType::Tilter | TraitType::Fragile | TraitType::Volatile | TraitType::GlassCannon)
     }
 
     /// 从字符串解析特性类型
@@ -132,6 +154,10 @@ impl TraitType {
             "rising_star" | "risingstar" => Some(Self::RisingStar),
             "veteran" => Some(Self::Veteran),
             "team_leader" | "teamleader" => Some(Self::TeamLeader),
+            "late_blocker" | "lateblocker" => Some(Self::LateBlocker),
+            "prodigy" => Some(Self::Prodigy),
+            "resilient" => Some(Self::Resilient),
+            "glass_cannon" | "glasscannon" => Some(Self::GlassCannon),
             _ => None,
         }
     }
@@ -308,6 +334,14 @@ impl TraitEngine {
             TraitType::TeamLeader => {
                 // 队友加成需要特殊处理，这里不做
             }
+
+            // 成长类特性：在赛季结算时处理，比赛中不生效
+            TraitType::LateBlocker | TraitType::Prodigy | TraitType::Resilient => {}
+
+            TraitType::GlassCannon => {
+                // 比赛中：能力上限+3
+                mods.ability_ceiling_mod = 3;
+            }
         }
 
         mods
@@ -391,6 +425,7 @@ impl TraitEngine {
         // 年龄相关特性
         if age <= 20 {
             available.push(TraitType::RisingStar);
+            available.push(TraitType::Prodigy);
         }
         if age >= 28 {
             available.push(TraitType::Veteran);
@@ -398,6 +433,10 @@ impl TraitEngine {
         if ability >= 65 {
             available.push(TraitType::TeamLeader);
         }
+        // 成长类特性（所有年龄可获得）
+        available.push(TraitType::LateBlocker);
+        available.push(TraitType::Resilient);
+        available.push(TraitType::GlassCannon);
 
         // 按稀有度加权随机选择
         for _ in 0..trait_count {
@@ -443,6 +482,10 @@ impl TraitEngine {
             TraitType::Tilter => vec![TraitType::ComebackKing, TraitType::MentalFortress],
             TraitType::MentalFortress => vec![TraitType::Fragile, TraitType::Tilter],
             TraitType::Fragile => vec![TraitType::MentalFortress],
+            TraitType::LateBlocker => vec![TraitType::Prodigy],
+            TraitType::Prodigy => vec![TraitType::LateBlocker],
+            TraitType::Resilient => vec![TraitType::GlassCannon],
+            TraitType::GlassCannon => vec![TraitType::Resilient],
             _ => vec![],
         };
 

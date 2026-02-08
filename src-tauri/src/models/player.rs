@@ -31,6 +31,15 @@ impl PlayerTag {
             PlayerTag::Ordinary => 0.9,
         }
     }
+
+    /// 获取衰退速率系数（天才衰退慢，平庸衰退快）
+    pub fn decay_factor(&self) -> f64 {
+        match self {
+            PlayerTag::Genius => 0.7,
+            PlayerTag::Normal => 1.0,
+            PlayerTag::Ordinary => 1.2,
+        }
+    }
 }
 
 /// 选手状态

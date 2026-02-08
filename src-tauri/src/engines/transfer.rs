@@ -11,6 +11,7 @@ use crate::models::transfer::*;
 use crate::models::player::Position;
 use crate::models::team::FinancialStatus;
 use crate::engines::market_value::MarketValueEngine;
+use crate::engines::traits::TraitType;
 
 /// 缓存的选手信息（避免反复查询 SqliteRow）
 #[derive(Debug, Clone)]
@@ -340,6 +341,17 @@ pub struct PlayerCacheUpdate {
     pub contract_end_season: Option<i64>,
 }
 
+/// 概率取整：2.7 → 70%概率得3，30%概率得2
+fn probabilistic_round(value: f64, rng: &mut impl Rng) -> i64 {
+    let floor = value.floor() as i64;
+    let frac = value - value.floor();
+    if frac > 0.0 && rng.gen::<f64>() < frac {
+        floor + 1
+    } else {
+        floor
+    }
+}
+
 /// 转会引擎
 pub struct TransferEngine {
     config: TransferConfig,
@@ -487,12 +499,61 @@ impl TransferEngine {
         pool: &Pool<Sqlite>,
         window_id: i64,
         save_id: &str,
-        _season_id: i64,
+        season_id: i64,
         cache: &mut TransferCache,
     ) -> Result<RoundResult, String> {
         let mut events = Vec::new();
+        let mut rng = rand::rngs::StdRng::from_entropy();
 
-        // 使用缓存获取所有活跃选手（遍历所有队伍阵容）
+        // === 预加载：赛季统计数据（表现关联成长 + 潜力微漂移） ===
+        let stats_rows = sqlx::query(
+            "SELECT player_id, games_played, avg_performance \
+             FROM player_season_stats WHERE save_id = ? AND season_id = ?"
+        )
+        .bind(save_id)
+        .bind(season_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("查询赛季统计失败: {}", e))?;
+
+        let stats_map: HashMap<i64, (i32, f64)> = stats_rows.iter()
+            .map(|row| {
+                let pid: i64 = row.get("player_id");
+                let gp: i32 = row.get("games_played");
+                let avg_perf: f64 = row.get("avg_performance");
+                (pid, (gp, avg_perf))
+            })
+            .collect();
+
+        // === 预加载：选手特性（成长类特性判定） ===
+        let all_player_ids: Vec<i64> = cache.team_rosters.values()
+            .flat_map(|roster| roster.iter().map(|p| p.id))
+            .collect();
+
+        let mut traits_map: HashMap<i64, Vec<TraitType>> = HashMap::new();
+        if !all_player_ids.is_empty() {
+            let placeholders: String = all_player_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let query_str = format!(
+                "SELECT player_id, trait_type FROM player_traits WHERE save_id = ? AND player_id IN ({})",
+                placeholders
+            );
+            let mut query = sqlx::query(&query_str).bind(save_id);
+            for pid in &all_player_ids {
+                query = query.bind(pid);
+            }
+            let trait_rows = query.fetch_all(pool).await
+                .map_err(|e| format!("查询特性失败: {}", e))?;
+
+            for row in &trait_rows {
+                let pid: i64 = row.get("player_id");
+                let trait_str: String = row.get("trait_type");
+                if let Some(tt) = TraitType::from_str(&trait_str) {
+                    traits_map.entry(pid).or_default().push(tt);
+                }
+            }
+        }
+
+        // === 遍历所有选手，执行成长/衰退/退役 ===
         let all_players: Vec<CachedPlayer> = cache.team_rosters.values()
             .flat_map(|roster| roster.iter().cloned())
             .collect();
@@ -508,27 +569,152 @@ impl TransferEngine {
 
             let new_age = age + 1;
 
-            // 能力增长（tag 大小写不敏感匹配）
-            let growth = match tag.to_uppercase().as_str() {
-                "GENIUS" => 3i64,
-                "NORMAL" => 2,
-                _ => 1, // ORDINARY
-            };
+            // 获取选手特性
+            let player_traits = traits_map.get(&player_id).cloned().unwrap_or_default();
+            let has_late_blocker = player_traits.contains(&TraitType::LateBlocker);
+            let has_prodigy = player_traits.contains(&TraitType::Prodigy);
+            let has_resilient = player_traits.contains(&TraitType::Resilient);
+            let has_glass_cannon = player_traits.contains(&TraitType::GlassCannon);
 
-            let new_ability = if new_age <= 30 && ability < potential {
-                (ability + growth).min(potential).min(100)
-            } else if new_age > 30 {
-                (ability - 1).max(50)
+            // 成长上限年龄（LateBlocker 延长2年）
+            let growth_cap: i64 = if has_late_blocker { 32 } else { 30 };
+            // 用于年龄系数查表的等效年龄
+            let effective_age = if has_late_blocker { new_age - 2 } else { new_age };
+
+            let mut perf_desc = String::new();
+
+            let new_ability = if new_age <= growth_cap && ability < potential {
+                // ========== 成长期 ==========
+
+                // ① 随机基础成长 (A)
+                let base_growth: i64 = match tag.to_uppercase().as_str() {
+                    "GENIUS" => rng.gen_range(2..=4),
+                    "NORMAL" => rng.gen_range(1..=3),
+                    _ => rng.gen_range(0..=2), // ORDINARY
+                };
+
+                // ② 突破/停滞事件 (A) — 互斥，10%总事件率
+                let event_roll: f64 = rng.gen();
+                let base_growth = if event_roll < 0.05 {
+                    perf_desc = "突破赛季".to_string();
+                    base_growth + 1
+                } else if event_roll < 0.10 {
+                    perf_desc = "停滞赛季".to_string();
+                    0
+                } else {
+                    base_growth
+                };
+
+                // ③ 年龄系数 (B) — 平滑渐变替代30岁硬截断
+                let age_coeff: f64 = match effective_age {
+                    0..=24 => 1.0,
+                    25..=26 => 0.7,
+                    27..=28 => 0.4,
+                    29..=30 => 0.15,
+                    _ => 0.0, // LateBlocker 31-32 也用 effective_age-2
+                };
+
+                // ④ 神童特性修正 (F)
+                let prodigy_mod = if has_prodigy {
+                    if new_age <= 20 { 1.5 } else if new_age >= 25 { 0.8 } else { 1.0 }
+                } else {
+                    1.0
+                };
+
+                // ⑤ 年龄衰减后成长 = probabilistic_round(base × 系数)
+                let growth_after_age = probabilistic_round(
+                    base_growth as f64 * age_coeff * prodigy_mod, &mut rng
+                );
+
+                // ⑥ 表现加成 (D) — 基于赛季统计
+                let perf_bonus = match stats_map.get(&player_id) {
+                    Some(&(gp, avg_perf)) if gp >= 20 && avg_perf > ability as f64 + 5.0 => {
+                        if perf_desc.is_empty() { perf_desc = "超常发挥".to_string(); }
+                        else { perf_desc.push_str("+超常发挥"); }
+                        1i64
+                    }
+                    Some(&(gp, avg_perf)) if gp >= 20 && avg_perf > ability as f64 => {
+                        if rng.gen_bool(0.5) {
+                            if perf_desc.is_empty() { perf_desc = "突破成长".to_string(); }
+                            else { perf_desc.push_str("+突破成长"); }
+                            1
+                        } else { 0 }
+                    }
+                    Some(&(gp, _)) if gp == 0 => {
+                        if perf_desc.is_empty() { perf_desc = "缺乏实战".to_string(); }
+                        else { perf_desc.push_str("+缺乏实战"); }
+                        // 缺乏实战：成长减半（向上取整保留最低1点成长机会）
+                        -((growth_after_age + 1) / 2)
+                    }
+                    Some(&(gp, avg_perf)) if gp > 0 && avg_perf < (ability as f64) - 5.0 => {
+                        if perf_desc.is_empty() { perf_desc = "表现低迷".to_string(); }
+                        else { perf_desc.push_str("+表现低迷"); }
+                        -1
+                    }
+                    _ => 0,
+                };
+
+                // ⑦ 最终成长值
+                let final_growth = (growth_after_age + perf_bonus).max(0);
+                (ability + final_growth).min(potential).min(100)
+
+            } else if new_age > growth_cap {
+                // ========== 衰退期 ==========
+
+                // ① 基础衰退率 (B) — 渐进式衰退
+                let base_decline: f64 = match effective_age {
+                    0..=30 => 0.0,
+                    31 => 0.5,
+                    32..=33 => 1.0,
+                    34..=35 => 1.5,
+                    _ => 2.0, // 36+
+                };
+
+                // ② 标签系数 (C) — 天才衰退慢，平庸衰退快
+                let tag_decay = match tag.to_uppercase().as_str() {
+                    "GENIUS" => 0.7,
+                    "ORDINARY" => 1.2,
+                    _ => 1.0, // NORMAL
+                };
+
+                // ③ 特性修正 (F) — Resilient 减缓，GlassCannon 加速
+                let trait_decay = if has_resilient { 0.5 }
+                    else if has_glass_cannon { 1.5 }
+                    else { 1.0 };
+
+                // ④ 概率取整
+                let final_decline = probabilistic_round(
+                    base_decline * tag_decay * trait_decay, &mut rng
+                );
+                (ability - final_decline).max(50)
+
             } else {
+                // 已达潜力上限且在成长期，不成长也不衰退
                 ability
             };
 
-            // 更新选手（数据库）
+            // ========== 潜力微漂移 (E) ==========
+            let mut new_potential = potential;
+            if let Some(&(gp, avg_perf)) = stats_map.get(&player_id) {
+                if gp >= 30 && avg_perf > ability as f64 + 5.0 && rng.gen_bool(0.08) {
+                    new_potential = (potential + 1).min(100);
+                    if perf_desc.is_empty() { perf_desc = "潜力↑".to_string(); }
+                    else { perf_desc.push_str("+潜力↑"); }
+                } else if gp >= 20 && avg_perf < (ability as f64) - 5.0
+                    && new_age > 28 && rng.gen_bool(0.12) {
+                    new_potential = (potential - 1).max(50);
+                    if perf_desc.is_empty() { perf_desc = "潜力↓".to_string(); }
+                    else { perf_desc.push_str("+潜力↓"); }
+                }
+            }
+
+            // ========== 更新数据库 ==========
             sqlx::query(
-                "UPDATE players SET age = ?, ability = ? WHERE id = ? AND save_id = ?"
+                "UPDATE players SET age = ?, ability = ?, potential = ? WHERE id = ? AND save_id = ?"
             )
             .bind(new_age)
             .bind(new_ability)
+            .bind(new_potential)
             .bind(player_id)
             .bind(save_id)
             .execute(pool)
@@ -538,16 +724,32 @@ impl TransferEngine {
             // 更新缓存
             cache.update_player_stats(player_id, team_id, new_age, new_ability);
 
+            // ========== 事件记录 ==========
             let ability_change = new_ability - ability;
             let change_desc = if ability_change > 0 {
-                format!("+{}", ability_change)
+                if !perf_desc.is_empty() {
+                    format!("+{}({})", ability_change, perf_desc)
+                } else {
+                    format!("+{}", ability_change)
+                }
             } else if ability_change < 0 {
-                format!("{}", ability_change)
+                if !perf_desc.is_empty() {
+                    format!("{}({})", ability_change, perf_desc)
+                } else {
+                    format!("{}", ability_change)
+                }
+            } else if !perf_desc.is_empty() {
+                format!("不变({})", perf_desc)
             } else {
                 "不变".to_string()
             };
 
-            // 使用缓存获取队名
+            let potential_desc = if new_potential != potential {
+                format!("，潜力 {} → {}", potential, new_potential)
+            } else {
+                String::new()
+            };
+
             let from_team_name = if let Some(tid) = team_id {
                 cache.get_team_name(tid)
             } else {
@@ -570,12 +772,24 @@ impl TransferEngine {
                 team_id, if from_team_name.is_empty() { None } else { Some(&from_team_name) },
                 team_id, if from_team_name.is_empty() { None } else { Some(&from_team_name) },
                 0, 0, 0,
-                &format!("年龄 {} → {}，能力 {} → {} ({})", age, new_age, ability, new_ability, change_desc),
+                &format!("年龄 {} → {}，能力 {} → {} ({}){}", age, new_age, ability, new_ability, change_desc, potential_desc),
             ).await?;
             events.push(event);
 
-            // 退役检查
-            if new_age >= 35 && new_ability < 51 {
+            // ========== 退役判定 (G) — 概率制 ==========
+            let retire_chance: f64 = if new_age >= 37 {
+                1.0
+            } else if new_age >= 35 && new_ability < 50 {
+                0.8
+            } else if new_age >= 35 && new_ability < 60 {
+                0.5
+            } else if new_age >= 33 && new_ability < 55 {
+                0.2
+            } else {
+                0.0
+            };
+
+            if retire_chance > 0.0 && rng.gen::<f64>() < retire_chance {
                 sqlx::query(
                     "UPDATE players SET status = 'RETIRED', team_id = NULL WHERE id = ? AND save_id = ?"
                 )
@@ -585,8 +799,13 @@ impl TransferEngine {
                 .await
                 .map_err(|e| format!("更新退役状态失败: {}", e))?;
 
-                // 更新缓存
                 cache.retire_player(player_id, team_id);
+
+                let retire_desc = if retire_chance < 1.0 {
+                    format!("{}岁退役，能力值{}（退役概率{}%）", new_age, new_ability, (retire_chance * 100.0) as i32)
+                } else {
+                    format!("{}岁退役，能力值{}", new_age, new_ability)
+                };
 
                 let event = self.record_event(
                     pool, window_id, 1,
@@ -596,20 +815,20 @@ impl TransferEngine {
                     team_id, if from_team_name.is_empty() { None } else { Some(&from_team_name) },
                     None, None,
                     0, 0, 0,
-                    &format!("{}岁退役，能力值{}", new_age, new_ability),
+                    &retire_desc,
                 ).await?;
                 events.push(event);
             }
         }
 
-        // 更新所有球队战力（单条SQL优化）
+        // 更新所有球队战力
         self.recalculate_team_powers_optimized(pool, save_id).await?;
 
         Ok(RoundResult {
             round: 1,
             round_name: "赛季结算".to_string(),
             events,
-            summary: "已完成赛季结算：选手年龄+1、能力值更新、退役处理".to_string(),
+            summary: "已完成赛季结算：选手年龄+1、能力值更新（含表现加成/年龄曲线/特性影响）、潜力微调、退役处理".to_string(),
         })
     }
 
@@ -883,6 +1102,7 @@ impl TransferEngine {
     }
 
     /// 计算战绩稳定性评分
+    #[allow(overlapping_range_endpoints)]
     fn calculate_stability_score(&self, current_rank: i32, last_rank: i32) -> i32 {
         let change = current_rank - last_rank;  // 正数=下滑
 
@@ -2042,7 +2262,7 @@ impl TransferEngine {
 
         for team in &all_teams {
             let team_id: i64 = team.get("id");
-            let team_name: String = team.get("name");
+            let _team_name: String = team.get("name");
 
             // 计算该队年薪总额（优先从合同表查 annual_salary）
             let team_annual_salary: i64 = sqlx::query_scalar(

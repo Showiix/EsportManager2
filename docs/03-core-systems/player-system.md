@@ -85,28 +85,98 @@ pub enum LoyaltyType {
 
 ## 选手生命周期
 
-### 成长阶段 (16-29岁)
+### 成长阶段
 
-每赛季结束时：
-
-```
-if age < 30 && ability < potential:
-    ability += tag.growth_per_season()
-```
-
-### 衰退阶段 (30岁+)
+每赛季结算时，按以下流程计算能力变化：
 
 ```
-if age >= 30:
-    ability -= 1  // 每赛季-1能力
+成长 = f(标签随机基础, 突破/停滞事件, 年龄系数, 特性修正, 赛季表现)
 ```
 
-### 退役判定
+#### ① 随机基础成长
+
+| 标签 | 成长范围 | 期望值 |
+|------|---------|--------|
+| Genius | 2~4 | 3.0 |
+| Normal | 1~3 | 2.0 |
+| Ordinary | 0~2 | 1.0 |
+
+#### ② 突破/停滞事件（互斥，10%总事件率）
+
+- 5% 概率"突破赛季"：基础成长 +1
+- 5% 概率"停滞赛季"：基础成长 = 0
+
+#### ③ 年龄系数（平滑渐变）
+
+| 年龄 | 系数 | 说明 |
+|------|------|------|
+| 16-24 | 1.0 | 全速成长 |
+| 25-26 | 0.7 | 开始放缓 |
+| 27-28 | 0.4 | 明显放缓 |
+| 29-30 | 0.15 | 几乎停止 |
+
+成长值 = `probabilistic_round(基础成长 × 年龄系数 × 特性修正)`
+
+`probabilistic_round`: 2.7 → 70%概率得3，30%概率得2
+
+#### ④ 表现加成（基于 player_season_stats）
+
+| 条件 | 效果 | 说明 |
+|------|------|------|
+| games≥20 且 avg_perf > ability+5 | +1 成长 | 超常发挥 |
+| games≥20 且 avg_perf > ability | 50%概率 +1 | 突破成长 |
+| games==0 | 成长÷2 | 缺乏实战 |
+| games>0 且 avg_perf < ability-5 | -1 成长 | 表现低迷 |
+
+#### ⑤ 最终计算
 
 ```
-if age >= 35 && ability < 65:
-    status = Retired
+final_growth = max(0, 年龄衰减后成长 + 表现加成)
+new_ability = min(ability + final_growth, potential, 100)
 ```
+
+### 衰退阶段
+
+成长上限年龄后开始衰退（默认31岁，LateBlocker特性延至33岁）：
+
+| 等效年龄 | 基础衰退 | 说明 |
+|---------|---------|------|
+| 31 | 0.5/季 | 缓慢衰退 |
+| 32-33 | 1.0/季 | 正常衰退 |
+| 34-35 | 1.5/季 | 加速衰退 |
+| 36+ | 2.0/季 | 快速衰退 |
+
+**标签影响衰退速率：**
+
+| 标签 | 衰退系数 | 说明 |
+|------|---------|------|
+| Genius | ×0.7 | 天才保持更久 |
+| Normal | ×1.0 | 标准 |
+| Ordinary | ×1.2 | 衰退更快 |
+
+最终衰退 = `probabilistic_round(基础衰退 × 标签系数 × 特性系数)`，能力最低 50。
+
+### 潜力微漂移
+
+每赛季结算时小概率调整潜力值：
+
+| 条件 | 概率 | 效果 |
+|------|------|------|
+| games≥30 且 avg_perf > ability+5 | 8% | potential +1 |
+| games≥20 且 avg_perf < ability-5 且 age>28 | 12% | potential -1 |
+
+潜力值范围：50-100。
+
+### 退役判定（概率制）
+
+| 条件 | 退役概率 |
+|------|---------|
+| age ≥ 37 | 100% |
+| age ≥ 35 且 ability < 50 | 80% |
+| age ≥ 35 且 ability < 60 | 50% |
+| age ≥ 33 且 ability < 55 | 20% |
+
+按最严格匹配，不叠加。
 
 ## 稳定性与年龄
 
@@ -146,7 +216,7 @@ pub fn calculate_market_value(player: &Player, honors: &[Honor]) -> u64 {
 
 特性影响选手在不同情境下的表现，通过修改 ability/stability/condition 实现。
 
-### 特性类型（14种）
+### 特性类型（18种）
 
 **大赛表现类:**
 
@@ -187,12 +257,23 @@ pub fn calculate_market_value(player: &Player, honors: &[Honor]) -> u64 {
 | 老将风范 | `Veteran` | 30岁后 stability +15 |
 | 团队核心 | `TeamLeader` | 队友 condition +1 |
 
+**成长类:**
+
+| 特性 | 英文名 | 效果 |
+|------|--------|------|
+| 大器晚成 | `LateBlocker` | 成长/衰退年龄按 age-2 计算，延长2年巅峰期 |
+| 神童 | `Prodigy` | 20岁前成长×1.5，25岁后成长×0.8 |
+| 抗衰老 | `Resilient` | 衰退速率×0.5 |
+| 易碎 | `GlassCannon` | 衰退速率×1.5，但能力上限+3 [负面] |
+
 ### 互斥规则
 
 - SlowStarter 与 FastStarter
 - Explosive 与 Consistent
 - ComebackKing 与 Tilter
 - MentalFortress 与 Fragile/Tilter
+- LateBlocker 与 Prodigy
+- Resilient 与 GlassCannon
 
 ## 选手满意度
 
