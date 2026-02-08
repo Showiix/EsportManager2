@@ -30,6 +30,7 @@ pub struct CachedPlayer {
     pub region_loyalty: i64,
     pub contract_end_season: Option<i64>,
     pub status: String,
+    pub stability: i64,
 }
 
 impl CachedPlayer {
@@ -51,6 +52,7 @@ impl CachedPlayer {
             region_loyalty: row.try_get("region_loyalty").unwrap_or(70),
             contract_end_season: row.try_get("contract_end_season").ok(),
             status: row.try_get("status").unwrap_or_else(|_| "Active".to_string()),
+            stability: row.try_get("stability").unwrap_or(60),
         }
     }
 }
@@ -64,6 +66,7 @@ pub struct TransferCache {
     pub team_personalities: HashMap<i64, TeamPersonalityConfig>,
     pub player_recent_honors: HashSet<i64>,
     pub team_annual_ranks: HashMap<i64, i32>,
+    pub team_reputations: HashMap<i64, i64>,
 }
 
 impl TransferCache {
@@ -172,6 +175,53 @@ impl TransferCache {
             team_annual_ranks.insert(id, rank);
         }
 
+        // 6. 批量计算球队声望（简化版：基于荣誉+近期积分）
+        let mut team_reputations = HashMap::new();
+        for &team_id in team_names.keys() {
+            // 历史荣誉声望
+            let honor_rows: Vec<(String,)> = sqlx::query_as(
+                "SELECT honor_type FROM honors WHERE team_id = ? AND save_id = ?"
+            )
+            .bind(team_id)
+            .bind(save_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+            let mut historical: i64 = 0;
+            for (honor_type,) in &honor_rows {
+                historical += match honor_type.as_str() {
+                    "TeamChampion" => 20,
+                    "TeamRunnerUp" => 10,
+                    "TeamThird" => 5,
+                    "TeamFourth" => 3,
+                    _ => 0,
+                };
+            }
+            historical = historical.min(100);
+
+            // 近期积分声望
+            let recent_points: Option<(i64,)> = sqlx::query_as(
+                r#"SELECT COALESCE(SUM(points), 0)
+                   FROM annual_points_detail
+                   WHERE team_id = ? AND save_id = ? AND season_id > ? AND season_id <= ?"#
+            )
+            .bind(team_id)
+            .bind(save_id)
+            .bind(season_id - 3)
+            .bind(season_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+
+            let recent = recent_points
+                .map(|(pts,)| (pts as f64 / 200.0 * 100.0).min(100.0) as i64)
+                .unwrap_or(30);
+
+            let overall = (historical as f64 * 0.4 + recent as f64 * 0.6).min(100.0) as i64;
+            team_reputations.insert(team_id, overall);
+        }
+
         Ok(Self {
             team_names,
             team_balances,
@@ -180,6 +230,7 @@ impl TransferCache {
             team_personalities,
             player_recent_honors,
             team_annual_ranks,
+            team_reputations,
         })
     }
 
@@ -209,6 +260,11 @@ impl TransferCache {
     /// 获取球队年度排名
     pub fn get_team_rank(&self, team_id: i64) -> i32 {
         self.team_annual_ranks.get(&team_id).copied().unwrap_or(99)
+    }
+
+    /// 获取球队综合声望（0-100）
+    pub fn get_team_reputation(&self, team_id: i64) -> i64 {
+        *self.team_reputations.get(&team_id).unwrap_or(&30)
     }
 
     /// 转会后更新缓存：将选手从旧队移到新队
@@ -1169,17 +1225,62 @@ impl TransferEngine {
         let wants_to_leave = stay_score < 40.0;
 
         let leave_reason = if wants_to_leave {
-            if salary_score < -15.0 {
-                "薪资被严重低估".to_string()
-            } else if team_rank_score < -10.0 {
-                "战队战绩太差".to_string()
-            } else if teammate_score < -10.0 {
-                "队友水平跟不上".to_string()
-            } else if age >= 28 && team_eval.current_rank > 8 {
-                "想去强队冲击荣誉".to_string()
-            } else {
-                "对现状不满意".to_string()
+            // 收集所有负面因素，按影响程度排序，取最严重的作为离队原因
+            let mut factors: Vec<(f64, &str)> = Vec::new();
+
+            // 薪资因素
+            if salary_score <= -15.0 {
+                factors.push((salary_score, "薪资被严重低估"));
+            } else if salary_score < 0.0 {
+                factors.push((salary_score, "对薪资待遇不满"));
             }
+
+            // 战队排名因素
+            if team_rank_score <= -10.0 {
+                factors.push((team_rank_score, "战队战绩太差"));
+            } else if team_rank_score < 0.0 {
+                factors.push((team_rank_score, "战队缺乏竞争力"));
+            }
+
+            // 战绩趋势因素
+            if team_trend_score <= -9.0 {
+                factors.push((team_trend_score, "战队成绩大幅下滑"));
+            } else if team_trend_score < -3.0 {
+                factors.push((team_trend_score, "战队近期状态下滑"));
+            }
+
+            // 队友水平因素
+            if teammate_score < 0.0 {
+                factors.push((teammate_score, "队友水平跟不上"));
+            }
+
+            // 荣誉渴望因素
+            if honor_score < 0.0 {
+                factors.push((honor_score, "渴望在强队证明自己"));
+            }
+
+            // 满意度因素
+            if satisfaction_score <= -10.0 {
+                factors.push((satisfaction_score, "对球队管理非常不满"));
+            } else if satisfaction_score < -3.0 {
+                factors.push((satisfaction_score, "对球队现状不太满意"));
+            }
+
+            // 年龄+弱队因素
+            if age >= 28 && team_eval.current_rank > 8 {
+                factors.push((-20.0, "想去强队冲击荣誉"));
+            }
+
+            // 忠诚度因素
+            let loyalty_contribution = (loyalty as f64 - 70.0) * 0.3;
+            if loyalty_contribution <= -6.0 {
+                factors.push((loyalty_contribution, "缺乏归属感"));
+            }
+
+            // 按负面程度排序（最负面的排最前）
+            factors.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+            factors.first().map_or("对现状不满意".to_string(), |(_, reason)| reason.to_string())
         } else {
             "".to_string()
         };
@@ -1364,7 +1465,7 @@ impl TransferEngine {
         // 获取所有自由球员（不在任何队伍中的选手，需从数据库查询，因为缓存只存有队伍的选手）
         let free_agents: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
             r#"SELECT id, game_id, ability, salary, age, position, loyalty, potential, tag,
-                      home_region_id, region_loyalty
+                      home_region_id, region_loyalty, stability
                FROM players
                WHERE save_id = ? AND status = 'Active' AND team_id IS NULL
                ORDER BY ability DESC"#
@@ -1388,6 +1489,8 @@ impl TransferEngine {
             let home_region_id: Option<i64> = free_agent.try_get("home_region_id").ok();
             let region_loyalty: i64 = free_agent.try_get("region_loyalty").unwrap_or(70);
             let potential: i64 = free_agent.try_get("potential").unwrap_or(0);
+            let tag: String = free_agent.try_get("tag").unwrap_or_else(|_| "NORMAL".to_string());
+            let stability: i64 = free_agent.try_get("stability").unwrap_or(60);
 
             let expected_salary = self.calculate_expected_salary(ability as u8, age as u8);
 
@@ -1449,6 +1552,7 @@ impl TransferEngine {
                 let match_score = self.calculate_match_score(
                     ability as u8, age as u8, &position, &weights, balance,
                     &roster, team_rank,
+                    potential as u8, stability as u8, &tag,
                 );
 
                 if match_score < 50.0 {
@@ -1494,6 +1598,16 @@ impl TransferEngine {
             // 按匹配度排序
             offers.sort_by(|a, b| b.match_score.partial_cmp(&a.match_score).unwrap_or(std::cmp::Ordering::Equal));
 
+            // 市场竞争效应：多个球队竞争时，选手提高薪资期望基准
+            let offer_count = offers.len();
+            let market_premium = if offer_count >= 3 {
+                1.0 + (offer_count as f64 - 2.0) * 0.05  // 每多一个竞争者+5%
+            } else {
+                1.0
+            };
+            // 调整薪资比较基准（选手期望更高）
+            let adjusted_expected_salary = (expected_salary as f64 * market_premium) as i64;
+
             // 对所有 offers 计算 willingness，收集竞价数据
             struct BidRecord {
                 offer_idx: usize,
@@ -1504,10 +1618,15 @@ impl TransferEngine {
             let mut bid_records: Vec<BidRecord> = Vec::new();
 
             for (idx, offer) in offers.iter().enumerate() {
+                let target_roster = cache.get_roster(offer.team_id);
+                let target_team_rank = cache.get_team_rank(offer.team_id);
+                let target_team_reputation = cache.get_team_reputation(offer.team_id);
                 let willingness = self.calculate_willingness(
                     ability as u8, loyalty as u8, age as u8,
-                    offer.offered_salary, expected_salary,
+                    offer.offered_salary, adjusted_expected_salary,
                     home_region_id, offer.target_region_id, region_loyalty,
+                    target_team_rank, target_team_reputation,
+                    &target_roster, &position,
                     &mut rng,
                 );
                 let team_name = cache.get_team_name(offer.team_id);
@@ -1601,6 +1720,7 @@ impl TransferEngine {
                     region_loyalty,
                     contract_end_season: Some(season_id + offer.contract_years),
                     status: "Active".to_string(),
+                    stability: free_agent.try_get("stability").unwrap_or(60),
                 };
                 cache.team_rosters.entry(to_team_id).or_default().push(new_player);
 
@@ -1652,7 +1772,7 @@ impl TransferEngine {
         let listings: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
             r#"SELECT pl.id as listing_id, pl.player_id, pl.listed_by_team_id, pl.listing_price, pl.min_accept_price,
                       p.game_id, p.ability, p.age, p.position, p.salary, p.loyalty,
-                      p.home_region_id, p.region_loyalty,
+                      p.home_region_id, p.region_loyalty, p.potential, p.tag, p.stability,
                       t.name as from_team_name
                FROM player_listings pl
                JOIN players p ON pl.player_id = p.id
@@ -1683,6 +1803,9 @@ impl TransferEngine {
             let from_team_name: String = listing.get("from_team_name");
             let home_region_id: Option<i64> = listing.try_get("home_region_id").ok();
             let region_loyalty: i64 = listing.try_get("region_loyalty").unwrap_or(70);
+            let potential: i64 = listing.try_get("potential").unwrap_or(0);
+            let tag: String = listing.try_get("tag").unwrap_or_else(|_| "NORMAL".to_string());
+            let stability: i64 = listing.try_get("stability").unwrap_or(60);
 
             let mut all_bids: Vec<(i64, String, i64, i64, i64, Option<i64>, f64)> = Vec::new();
             // (team_id, team_name, bid_price, expected_salary, contract_years, target_region_id, match_score)
@@ -1719,6 +1842,7 @@ impl TransferEngine {
                 let match_score = self.calculate_match_score(
                     ability as u8, age as u8, &position, &weights, balance,
                     &roster, team_rank,
+                    potential as u8, stability as u8, &tag,
                 );
 
                 if match_score < 50.0 {
@@ -1762,6 +1886,14 @@ impl TransferEngine {
             // 按出价金额降序排列
             all_bids.sort_by(|a, b| b.2.cmp(&a.2));
 
+            // 竞价升温：多个球队竞标时推高出价
+            if all_bids.len() >= 2 {
+                let bid_premium = 1.0 + (all_bids.len() as f64 - 1.0) * 0.08;
+                for bid in all_bids.iter_mut() {
+                    bid.2 = (bid.2 as f64 * bid_premium) as i64;  // 推高转会费
+                }
+            }
+
             // 对所有竞标计算 willingness
             struct R5BidRecord {
                 idx: usize,
@@ -1770,10 +1902,15 @@ impl TransferEngine {
             let mut bid_records: Vec<R5BidRecord> = Vec::new();
 
             for (idx, bid) in all_bids.iter().enumerate() {
+                let target_roster = cache.get_roster(bid.0);
+                let target_team_rank = cache.get_team_rank(bid.0);
+                let target_team_reputation = cache.get_team_reputation(bid.0);
                 let willingness = self.calculate_willingness(
                     ability as u8, loyalty as u8, age as u8,
                     bid.3, salary,
                     home_region_id, bid.5, region_loyalty,
+                    target_team_rank, target_team_reputation,
+                    &target_roster, &position,
                     &mut rng,
                 );
                 bid_records.push(R5BidRecord { idx, willingness });
@@ -2206,6 +2343,7 @@ impl TransferEngine {
                         region_loyalty: 70,
                         contract_end_season: Some(season_id + contract_years),
                         status: "Active".to_string(),
+                        stability: 60,
                     };
                     cache.team_rosters.entry(team_id).or_default().push(new_player);
 
@@ -2815,6 +2953,9 @@ impl TransferEngine {
         balance: i64,
         roster: &[CachedPlayer],
         team_rank: i32,
+        potential: u8,
+        stability: u8,
+        tag: &str,
     ) -> f64 {
         // 1. 能力匹配（0-100）
         let ability_score = match ability {
@@ -2902,22 +3043,60 @@ impl TransferEngine {
             _ => 1.0,
         };
 
+        // 7. 潜力因素（0-100）：23岁以下更看重潜力
+        let potential_score = if age <= 23 {
+            match potential {
+                80..=100 => 100.0,
+                70..=79 => 80.0,
+                60..=69 => 60.0,
+                _ => 40.0,
+            }
+        } else {
+            match potential {
+                80..=100 => 80.0,
+                70..=79 => 65.0,
+                _ => 50.0,
+            }
+        };
+
+        // 8. 稳定性因素（0-100）
+        let stability_score = match stability {
+            80..=100 => 100.0,
+            65..=79 => 80.0,
+            50..=64 => 60.0,
+            _ => 40.0,
+        };
+
+        // 9. 成长标签乘数
+        let tag_multiplier = match tag {
+            "GENIUS" | "Genius" => 1.08,
+            "NORMAL" | "Normal" => 1.0,
+            "ORDINARY" | "Ordinary" => 0.95,
+            _ => 1.0,
+        };
+
         // 根据 AI 性格动态调整各项权重比例
         let w_ability = 0.25 + 0.15 * weights.short_term_focus;      // 0.25 ~ 0.40
         let w_age = 0.15 + 0.15 * weights.youth_preference.max(weights.short_term_focus); // 0.15 ~ 0.30
         let w_finance = 0.10 + 0.10 * weights.bargain_hunting;       // 0.10 ~ 0.20
         let w_need = 0.20;                                            // 固定 0.20
         let w_upgrade = 0.15 + 0.10 * weights.short_term_focus;      // 0.15 ~ 0.25
-        let total_w = w_ability + w_age + w_finance + w_need + w_upgrade;
+        // 潜力权重受AI性格影响：发展型球队更看重潜力
+        let w_potential = 0.05 + 0.10 * weights.youth_preference;     // 0.05 ~ 0.15
+        // 稳定性权重受AI性格影响：保守型球队更看重稳定性
+        let w_stability = 0.05 + 0.05 * (1.0 - weights.risk_tolerance); // 0.05 ~ 0.10
+        let total_w = w_ability + w_age + w_finance + w_need + w_upgrade + w_potential + w_stability;
 
-        // 归一化后加权求和，再乘以排名因子
+        // 归一化后加权求和，再乘以排名因子和成长标签乘数
         let raw = (ability_score * w_ability
             + age_score * w_age
             + finance_score * w_finance
             + need_score * w_need
-            + upgrade_score * w_upgrade) / total_w;
+            + upgrade_score * w_upgrade
+            + potential_score * w_potential
+            + stability_score * w_stability) / total_w;
 
-        (raw * rank_factor).clamp(0.0, 100.0)
+        (raw * rank_factor * tag_multiplier).clamp(0.0, 100.0)
     }
 
     /// 写入一条竞价记录到 transfer_bids 表
@@ -2979,22 +3158,24 @@ impl TransferEngine {
     }
 
     /// 计算球员转会意愿（0-100）
-    /// home_region_id: 选手出生赛区ID
-    /// target_region_id: 目标球队赛区ID
-    /// region_loyalty: 赛区偏好值（0-100，越高越不愿意离开本赛区）
+    /// 8 因素 + 年龄优先级权重系统
     fn calculate_willingness(
         &self,
-        _ability: u8,
+        ability: u8,
         loyalty: u8,
-        _age: u8,
+        age: u8,
         offered_salary: i64,
         current_salary: i64,
         home_region_id: Option<i64>,
         target_region_id: Option<i64>,
         region_loyalty: i64,
+        target_team_rank: i32,
+        target_team_reputation: i64,
+        target_roster: &[CachedPlayer],
+        position: &str,
         rng: &mut impl Rng,
     ) -> f64 {
-        // 薪资满意度
+        // 1. 薪资满意度（20-100）
         let salary_ratio = if current_salary > 0 {
             offered_salary as f64 / current_salary as f64
         } else {
@@ -3006,26 +3187,95 @@ impl TransferEngine {
             else if salary_ratio >= 0.6 { 40.0 }
             else { 20.0 };
 
-        // 忠诚度影响（高忠诚度降低转会意愿）
-        let loyalty_impact = (100.0 - loyalty as f64) * 0.5;
+        // 2. 球队竞争力（20-100）：基于目标球队排名
+        let competitiveness_score = match target_team_rank {
+            1..=3 => 100.0,
+            4..=6 => 80.0,
+            7..=10 => 60.0,
+            11..=14 => 40.0,
+            _ => 20.0,
+        };
 
-        // 随机波动
-        let random_factor: f64 = rng.gen_range(-5.0..5.0);
+        // 3. 首发机会（30-100）：比较自己能力 vs 目标队该位置首发能力
+        let best_at_pos = target_roster.iter()
+            .filter(|p| p.position == position)
+            .map(|p| p.ability)
+            .max()
+            .unwrap_or(0);
+        let starting_chance_score = if best_at_pos == 0 {
+            100.0  // 该位置空缺，必定首发
+        } else {
+            let diff = ability as i64 - best_at_pos;
+            if diff >= 5 { 100.0 }       // 明显更强
+            else if diff >= 0 { 85.0 }   // 略强或持平
+            else if diff >= -5 { 70.0 }   // 略弱，有竞争
+            else { 30.0 }                 // 明显更弱
+        };
 
-        let base = salary_score * 0.4 + loyalty_impact * 0.3 + 50.0 * 0.3;
-        let base_willingness = (base + random_factor).clamp(0.0, 100.0);
+        // 4. 球队声望（20-100）：基于 target_team_reputation 线性映射
+        let reputation_score = (target_team_reputation as f64 / 100.0 * 80.0 + 20.0).clamp(20.0, 100.0);
+
+        // 5. 队友质量（30-100）：目标队平均能力映射
+        let avg_ability = if target_roster.is_empty() {
+            50.0
+        } else {
+            target_roster.iter().map(|p| p.ability as f64).sum::<f64>() / target_roster.len() as f64
+        };
+        let teammate_quality_score = if avg_ability >= 70.0 { 100.0 }
+            else if avg_ability >= 65.0 { 80.0 }
+            else if avg_ability >= 60.0 { 65.0 }
+            else { 40.0 };
+
+        // 6. 忠诚影响（0-50）
+        let loyalty_factor = (100.0 - loyalty as f64) * 0.5;
+
+        // 7. 发展空间（30-100）：仅对年轻选手有效
+        let development_score = if age <= 23 {
+            // 检查目标队是否有高能力同位置老将可学习
+            let has_mentor = target_roster.iter().any(|p| {
+                p.position == position && p.age >= 26 && p.ability >= 70
+            });
+            let team_avg_high = avg_ability >= 65.0;
+            if has_mentor && team_avg_high { 100.0 }
+            else if has_mentor || team_avg_high { 75.0 }
+            else { 45.0 }
+        } else {
+            50.0  // 非年轻选手，发展空间中性
+        };
+
+        // 8. 随机波动（-8 ~ +8）
+        let random_noise: f64 = rng.gen_range(-8.0..8.0);
+
+        // 年龄优先级权重系统
+        let (w_salary, w_compete, w_start, w_reputation, w_teammate, w_develop) = match age {
+            17..=21 => (0.10, 0.10, 0.25, 0.10, 0.10, 0.20),  // 新秀期
+            22..=25 => (0.15, 0.20, 0.20, 0.10, 0.10, 0.10),  // 成长期
+            26..=28 => (0.20, 0.30, 0.10, 0.15, 0.10, 0.00),  // 巅峰期
+            29..=31 => (0.35, 0.15, 0.10, 0.15, 0.10, 0.00),  // 老将期
+            _       => (0.40, 0.10, 0.10, 0.15, 0.10, 0.00),  // 退役前
+        };
+        // 忠诚影响固定 0.15 权重
+        let w_loyalty = 0.15;
+
+        let weighted_score = salary_score * w_salary
+            + competitiveness_score * w_compete
+            + starting_chance_score * w_start
+            + reputation_score * w_reputation
+            + teammate_quality_score * w_teammate
+            + development_score * w_develop
+            + loyalty_factor * w_loyalty
+            + random_noise;
+
+        let base_willingness = weighted_score.clamp(0.0, 100.0);
 
         // 跨赛区惩罚
         let cross_region_factor = match (home_region_id, target_region_id) {
             (Some(home), Some(target)) if home != target => {
-                // 跨赛区转会，意愿度乘以 (100 - region_loyalty) / 100
-                // region_loyalty = 80 -> factor = 0.2（大幅降低）
-                // region_loyalty = 50 -> factor = 0.5（中度降低）
                 (100.0 - region_loyalty as f64) / 100.0
             }
-            _ => 1.0  // 本赛区或无法判断时无惩罚
+            _ => 1.0
         };
 
-        base_willingness * cross_region_factor
+        (base_willingness * cross_region_factor).clamp(0.0, 100.0)
     }
 }
