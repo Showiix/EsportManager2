@@ -23,6 +23,87 @@
       </div>
     </div>
 
+    <!-- 概览统计行 -->
+    <div class="dashboard-stats" v-if="rankings.length > 0">
+      <el-card class="stat-card">
+        <div class="stat-icon players">
+          <el-icon><User /></el-icon>
+        </div>
+        <div class="stat-content">
+          <div class="stat-value">{{ dashboardStats.totalPlayers }}</div>
+          <div class="stat-label">参赛选手</div>
+        </div>
+      </el-card>
+      <el-card class="stat-card">
+        <div class="stat-icon impact">
+          <el-icon><TrendCharts /></el-icon>
+        </div>
+        <div class="stat-content">
+          <div class="stat-value" :class="dashboardStats.avgImpact >= 0 ? 'positive' : 'negative'">
+            {{ dashboardStats.avgImpact >= 0 ? '+' : '' }}{{ dashboardStats.avgImpact.toFixed(1) }}
+          </div>
+          <div class="stat-label">平均影响力</div>
+        </div>
+      </el-card>
+      <el-card class="stat-card">
+        <div class="stat-icon top-score">
+          <el-icon><Star /></el-icon>
+        </div>
+        <div class="stat-content">
+          <div class="stat-value highlight">{{ dashboardStats.topScore.toFixed(1) }}</div>
+          <div class="stat-label">最高得分</div>
+        </div>
+      </el-card>
+      <el-card class="stat-card">
+        <div class="stat-icon games">
+          <el-icon><VideoCamera /></el-icon>
+        </div>
+        <div class="stat-content">
+          <div class="stat-value">{{ dashboardStats.avgGames.toFixed(0) }}</div>
+          <div class="stat-label">平均场次</div>
+        </div>
+      </el-card>
+    </div>
+
+    <!-- 位置对比图表 + Top5 侧边栏 -->
+    <div class="charts-dashboard-row" v-if="rankings.length > 0">
+      <el-card class="position-chart-card">
+        <template #header>
+          <span class="card-title">各位置对比分析</span>
+        </template>
+        <div class="chart-container">
+          <v-chart class="chart" :option="positionComparisonOption" autoresize />
+        </div>
+      </el-card>
+
+      <el-card class="top5-card">
+        <template #header>
+          <span class="card-title">TOP 5 选手</span>
+        </template>
+        <div class="top5-list">
+          <div
+            class="top5-item"
+            v-for="(player, index) in top5Players"
+            :key="player.playerId"
+            @click="goToPlayerDetail(player)"
+          >
+            <div class="top5-rank" :class="getRankClass(index)">{{ index + 1 }}</div>
+            <div class="top5-info">
+              <div class="top5-name">{{ player.playerName }}</div>
+              <div class="top5-meta">
+                <el-tag :type="getPositionTagType(player.position)" size="small">
+                  {{ getPositionName(player.position) }}
+                </el-tag>
+                <span class="top5-team">{{ getTeamName(player.teamId) }}</span>
+              </div>
+            </div>
+            <div class="top5-score">{{ (player.yearlyTopScore || player.avgImpact || 0).toFixed(1) }}</div>
+          </div>
+          <el-empty v-if="top5Players.length === 0" description="暂无数据" :image-size="60" />
+        </div>
+      </el-card>
+    </div>
+
     <!-- 筛选栏 -->
     <div class="filter-bar">
       <div class="position-filters">
@@ -181,7 +262,17 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { DataLine, Refresh, ArrowRight } from '@element-plus/icons-vue'
+import { DataLine, Refresh, ArrowRight, User, VideoCamera, TrendCharts, Star } from '@element-plus/icons-vue'
+import { use } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import { BarChart } from 'echarts/charts'
+import {
+  TitleComponent,
+  TooltipComponent,
+  GridComponent,
+  LegendComponent
+} from 'echarts/components'
+import VChart from 'vue-echarts'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useSeasonStore } from '@/stores/useSeasonStore'
 import { teamApi, devApi } from '@/api/tauri'
@@ -190,6 +281,16 @@ import { ElMessage } from 'element-plus'
 import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
 import { createLogger } from '@/utils/logger'
+
+// 注册 ECharts 组件
+use([
+  CanvasRenderer,
+  BarChart,
+  TitleComponent,
+  TooltipComponent,
+  GridComponent,
+  LegendComponent
+])
 
 const logger = createLogger('DataCenter')
 
@@ -246,6 +347,88 @@ const fetchRankings = async () => {
     loading.value = false
   }
 }
+
+// 概览统计数据
+const dashboardStats = computed(() => {
+  const data = rankings.value
+  if (!data || data.length === 0) {
+    return { totalPlayers: 0, avgImpact: 0, topScore: 0, avgGames: 0 }
+  }
+  const totalPlayers = data.length
+  const avgImpact = data.reduce((sum, r) => sum + (r.avgImpact || 0), 0) / totalPlayers
+  const topScore = Math.max(...data.map(r => r.yearlyTopScore || r.avgImpact || 0))
+  const avgGames = data.reduce((sum, r) => sum + (r.gamesPlayed || 0), 0) / totalPlayers
+  return { totalPlayers, avgImpact, topScore, avgGames }
+})
+
+// 位置对比图表配置
+const positionComparisonOption = computed(() => {
+  const positions = ['TOP', 'JUG', 'MID', 'ADC', 'SUP']
+  const posNames = ['上单', '打野', '中单', '下路', '辅助']
+  const data = rankings.value
+
+  const avgImpacts = positions.map(pos => {
+    const players = data.filter(r => r.position === pos)
+    if (players.length === 0) return 0
+    return +(players.reduce((sum, r) => sum + (r.avgImpact || 0), 0) / players.length).toFixed(1)
+  })
+
+  const avgScores = positions.map(pos => {
+    const players = data.filter(r => r.position === pos)
+    if (players.length === 0) return 0
+    return +(players.reduce((sum, r) => sum + (r.yearlyTopScore || r.avgImpact || 0), 0) / players.length).toFixed(1)
+  })
+
+  return {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' }
+    },
+    legend: {
+      data: ['平均影响力', '平均得分'],
+      top: 0,
+      textStyle: { color: '#6b7280', fontSize: 12 }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      top: '36px',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      data: posNames,
+      axisLabel: { color: '#6b7280' },
+      axisLine: { lineStyle: { color: '#e5e7eb' } }
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#9ca3af' },
+      splitLine: { lineStyle: { color: '#f3f4f6' } }
+    },
+    series: [
+      {
+        name: '平均影响力',
+        type: 'bar',
+        data: avgImpacts,
+        itemStyle: { color: '#3b82f6', borderRadius: [4, 4, 0, 0] },
+        barGap: '20%'
+      },
+      {
+        name: '平均得分',
+        type: 'bar',
+        data: avgScores,
+        itemStyle: { color: '#8b5cf6', borderRadius: [4, 4, 0, 0] }
+      }
+    ]
+  }
+})
+
+// Top5 选手
+const top5Players = computed(() => {
+  return filteredRankings.value.slice(0, 5)
+})
 
 // 计算属性 - 过滤后的排行榜
 const filteredRankings = computed(() => {
@@ -492,6 +675,166 @@ watch([selectedPosition, searchQuery], () => {
     }
   }
 
+  // 概览统计卡片
+  .dashboard-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+
+    .stat-card {
+      :deep(.el-card__body) {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 20px;
+      }
+
+      .stat-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        color: white;
+
+        &.players { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+        &.impact { background: linear-gradient(135deg, #10b981, #059669); }
+        &.top-score { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        &.games { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+      }
+
+      .stat-content {
+        .stat-value {
+          font-size: 24px;
+          font-weight: 700;
+          color: #1f2937;
+
+          &.positive { color: #059669; }
+          &.negative { color: #ef4444; }
+          &.highlight { color: #d97706; }
+        }
+
+        .stat-label {
+          font-size: 13px;
+          color: #6b7280;
+          margin-top: 2px;
+        }
+      }
+    }
+  }
+
+  // 图表仪表盘行
+  .charts-dashboard-row {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 16px;
+    margin-bottom: 24px;
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+  }
+
+  .position-chart-card {
+    .chart-container {
+      height: 280px;
+
+      .chart {
+        width: 100%;
+        height: 100%;
+      }
+    }
+  }
+
+  .top5-card {
+    .top5-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .top5-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+
+      &:hover {
+        background: #f0f9ff;
+      }
+
+      .top5-rank {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 13px;
+        background: #f3f4f6;
+        color: #6b7280;
+        flex-shrink: 0;
+
+        &.rank-gold {
+          background: linear-gradient(135deg, #ffd700, #ffb347);
+          color: #1a1a2e;
+        }
+
+        &.rank-silver {
+          background: linear-gradient(135deg, #c0c0c0, #a8a8a8);
+          color: #1a1a2e;
+        }
+
+        &.rank-bronze {
+          background: linear-gradient(135deg, #cd7f32, #b87333);
+          color: white;
+        }
+      }
+
+      .top5-info {
+        flex: 1;
+        min-width: 0;
+
+        .top5-name {
+          font-weight: 600;
+          font-size: 14px;
+          color: #1f2937;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .top5-meta {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 2px;
+
+          .top5-team {
+            font-size: 12px;
+            color: #9ca3af;
+          }
+        }
+      }
+
+      .top5-score {
+        font-size: 18px;
+        font-weight: 700;
+        color: #7c3aed;
+        flex-shrink: 0;
+      }
+    }
+  }
+
   .filter-bar {
     display: flex;
     justify-content: space-between;
@@ -663,6 +1006,32 @@ watch([selectedPosition, searchQuery], () => {
 
   :deep(.top-rank-row) {
     background-color: #fefce8 !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  .data-center {
+    .dashboard-stats {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .charts-dashboard-row {
+      grid-template-columns: 1fr;
+    }
+  }
+}
+
+@media (max-width: 640px) {
+  .data-center {
+    .dashboard-stats {
+      grid-template-columns: 1fr;
+    }
+
+    .filter-bar {
+      flex-direction: column;
+      gap: 12px;
+      align-items: stretch;
+    }
   }
 }
 </style>
