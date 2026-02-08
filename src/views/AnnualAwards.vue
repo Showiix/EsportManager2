@@ -18,21 +18,12 @@
     </div>
 
     <!-- 空状态：非颁奖阶段且无已颁发数据 -->
-    <div v-else-if="!isAwardsPhase && !awardsData?.already_awarded && !demoMode" class="empty-state">
+    <div v-else-if="!isAwardsPhase && !awardsData?.already_awarded" class="empty-state">
       <div class="empty-icon-wrap">
         <el-icon :size="48"><Trophy /></el-icon>
       </div>
       <h2>颁奖典礼尚未开始</h2>
       <p>请推进赛季至年度颁奖阶段</p>
-      <el-button
-        type="warning"
-        size="large"
-        plain
-        :loading="starting"
-        @click="startDemo"
-      >
-        Demo 测试典礼流程
-      </el-button>
     </div>
 
     <!-- 颁奖阶段：开始按钮 -->
@@ -49,18 +40,9 @@
 
     <!-- 典礼内容 -->
     <div v-else-if="awardsData && awardsData.top20.length > 0" class="ceremony-body">
-      <!-- Demo 标记 -->
-      <el-alert
-        v-if="demoMode"
-        title="Demo 模式 — 仅预览典礼流程，不影响游戏数据"
-        type="info"
-        show-icon
-        :closable="false"
-        class="demo-alert"
-      />
 
       <!-- 阶段1: Top20 -->
-      <section v-if="currentSection === 'top20' || ceremonyComplete" class="section">
+      <section v-if="currentSection === 'top20' || sectionPassed('top20')" class="section">
         <div class="section-hd">
           <div class="section-tag">ANNUAL TOP 20</div>
           <h2>年度 Top20 选手</h2>
@@ -128,7 +110,7 @@
 
       <!-- 阶段2: 最佳阵容 -->
       <section
-        v-if="(currentSection === 'allpro' || sectionPassed('allpro')) && (revealedTier > 0 || ceremonyComplete)"
+        v-if="currentSection === 'allpro' || sectionPassed('allpro')"
         class="section"
       >
         <div class="section-hd">
@@ -192,7 +174,7 @@
 
       <!-- 阶段3: 特别奖项 -->
       <section
-        v-if="(currentSection === 'special' || sectionPassed('special')) && (revealedSpecial > 0 || ceremonyComplete)"
+        v-if="currentSection === 'special' || sectionPassed('special')"
         class="section"
       >
         <div class="section-hd">
@@ -246,7 +228,7 @@
       </section>
 
       <!-- 阶段4: MVP -->
-      <section v-if="currentSection === 'mvp' || ceremonyComplete" class="section mvp-section">
+      <section v-if="currentSection === 'mvp' || sectionPassed('mvp')" class="section mvp-section">
         <div class="section-hd">
           <div class="section-tag mvp-tag">ANNUAL MVP</div>
           <h2>年度最有价值选手</h2>
@@ -282,7 +264,7 @@
 
       <!-- 完成提示 -->
       <el-alert
-        v-if="ceremonyComplete && !demoMode"
+        v-if="ceremonyComplete"
         title="本赛季年度颁奖典礼已完成"
         type="success"
         show-icon
@@ -293,7 +275,6 @@
       <!-- 底部 -->
       <div class="footer-actions">
         <el-button @click="goBack">返回时间面板</el-button>
-        <el-button v-if="demoMode" type="danger" plain @click="exitDemo">退出 Demo</el-button>
       </div>
     </div>
 
@@ -312,7 +293,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Trophy, Aim, Star, MagicStick } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import { useSeasonStore } from '@/stores/useSeasonStore'
 import { useTimeStore } from '@/stores/useTimeStore'
 import { awardsApi } from '@/api/tauri'
@@ -335,7 +315,6 @@ const selectedSeason = ref(seasonStore.currentSeason)
 // 典礼状态
 const ceremonyStarted = ref(false)
 const ceremonyComplete = ref(false)
-const demoMode = ref(false)
 const revealedCount = ref(0)
 const currentSection = ref<'top20' | 'allpro' | 'special' | 'mvp' | 'complete'>('top20')
 const revealedTier = ref(0)
@@ -345,9 +324,9 @@ const isAwardsPhase = computed(() => timeStore.isAnnualAwardsPhase)
 const mvpPlayer = computed(() => awardsData.value?.top20[0] || null)
 
 const visibleTop20 = computed(() => {
-  if (ceremonyComplete.value) return awardsData.value?.top20 ?? []
+  if (ceremonyComplete.value || sectionPassed('top20')) return awardsData.value?.top20 ?? []
   const all = awardsData.value?.top20 ?? []
-  return all.slice(all.length - revealedCount.value)
+  return all.slice(Math.max(0, all.length - revealedCount.value))
     .sort((a, b) => a.rank - b.rank)
 })
 
@@ -397,7 +376,6 @@ const fetchAwardsData = async (seasonId?: number) => {
 const resetCeremonyState = () => {
   ceremonyStarted.value = false
   ceremonyComplete.value = false
-  demoMode.value = false
   revealedCount.value = 0
   revealedTier.value = 0
   revealedSpecial.value = 0
@@ -422,36 +400,8 @@ const startCeremony = async () => {
   }
 }
 
-// Demo: 仅拉取数据、不推进游戏
-const startDemo = async () => {
-  starting.value = true
-  try {
-    await fetchAwardsData(selectedSeason.value)
-    if (!awardsData.value || awardsData.value.top20.length === 0) {
-      ElMessage.warning('当前赛季暂无评选数据，请先模拟比赛')
-      return
-    }
-    demoMode.value = true
-    ceremonyStarted.value = true
-    ceremonyComplete.value = false
-    currentSection.value = 'top20'
-    revealedCount.value = 0
-    revealedTier.value = 0
-    revealedSpecial.value = 0
-  } catch (error) {
-    logger.error('Demo启动失败:', error)
-  } finally {
-    starting.value = false
-  }
-}
-
-const exitDemo = () => {
-  resetCeremonyState()
-  awardsData.value = null
-}
-
 const revealNext = () => { if (revealedCount.value < 20) revealedCount.value++ }
-const revealAllTop20 = () => { revealedCount.value = awardsData.value?.top20.length ?? 20 }
+const revealAllTop20 = () => { revealedCount.value = 20 }
 const revealNextTier = () => { if (revealedTier.value < 3) revealedTier.value++ }
 const revealNextSpecial = () => { if (revealedSpecial.value < 3) revealedSpecial.value++ }
 
@@ -566,12 +516,6 @@ watch(selectedSeason, (s) => {
 /* ========== Loading ========== */
 .loading-container {
   padding: 40px 32px;
-}
-
-/* ========== Demo alert ========== */
-.demo-alert {
-  margin: 16px 24px 0;
-  border-radius: 8px;
 }
 
 /* ========== Ceremony Body ========== */
