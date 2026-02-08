@@ -5,7 +5,7 @@
 use crate::commands::save_commands::{AppState, CommandResult};
 use crate::engines::{DraftAuctionEngine, TeamAuctionInfo, AuctionRoundResult};
 use crate::models::{
-    AuctionStatus, DraftPickAuction, DraftPickAuctionEvent, DraftPickBid, DraftPickListing,
+    AuctionStatus, DraftPickListing,
     DraftListingStatus, get_draft_pick_pricing,
 };
 use serde::{Deserialize, Serialize};
@@ -208,6 +208,7 @@ pub async fn start_draft_auction(
             annual_points: 0,
             cross_year_points: 0,
             balance: row.get("balance"),
+            brand_value: 50.0,
         }
     }).collect();
 

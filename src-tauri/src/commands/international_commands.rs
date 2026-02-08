@@ -900,6 +900,7 @@ async fn get_teams_by_ids(pool: &sqlx::SqlitePool, ids: &[u64]) -> Result<Vec<cr
                 annual_points: r.get::<i64, _>("annual_points") as u32,
                 cross_year_points: r.get::<i64, _>("cross_year_points") as u32,
                 balance: r.get("balance"),
+                brand_value: r.get("brand_value"),
             });
         }
     }
@@ -2334,6 +2335,7 @@ pub async fn regenerate_msi_bracket(
                     annual_points: 0,
                     cross_year_points: 0,
                     balance: 0,
+                    brand_value: 0.0,
                 });
             }
 
@@ -2350,6 +2352,7 @@ pub async fn regenerate_msi_bracket(
                     annual_points: 0,
                     cross_year_points: 0,
                     balance: 0,
+                    brand_value: 0.0,
                 });
             }
 
@@ -2366,6 +2369,7 @@ pub async fn regenerate_msi_bracket(
                     annual_points: 0,
                     cross_year_points: 0,
                     balance: 0,
+                    brand_value: 0.0,
                 });
             }
         }
@@ -3139,7 +3143,7 @@ pub async fn generate_champion_prep_stage(
     };
 
     let current_save = state.current_save_id.read().await;
-    let save_id = match current_save.as_ref() {
+    let _save_id = match current_save.as_ref() {
         Some(id) => id.clone(),
         None => return Ok(CommandResult::err("No save loaded")),
     };
@@ -3212,7 +3216,7 @@ pub async fn generate_champion_prep_stage(
     let mut updated_match_ids: Vec<u64> = Vec::new();
 
     // 更新胜者组对决：定位赛胜者1 vs 定位赛胜者2
-    let result = sqlx::query(
+    let _result = sqlx::query(
         r#"
         UPDATE matches
         SET home_team_id = ?, away_team_id = ?, status = 'Scheduled'

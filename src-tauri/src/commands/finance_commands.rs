@@ -22,6 +22,8 @@ pub struct TeamFinanceSummary {
     pub max_new_salary: u64,
     pub projected_season_profit: i64,
     pub total_salary: u64,
+    pub brand_value: f64,
+    pub sponsorship: u64,
 }
 
 /// 财务交易记录
@@ -98,7 +100,7 @@ pub async fn get_team_finance_summary(
     let team_row = sqlx::query(
         r#"
         SELECT t.id, t.name, t.short_name, t.balance, t.power_rating, t.win_rate,
-               t.region_id, r.short_name as region_code
+               t.region_id, t.brand_value, r.short_name as region_code
         FROM teams t
         LEFT JOIN regions r ON t.region_id = r.id AND r.save_id = t.save_id
         WHERE t.id = ? AND t.save_id = ?
@@ -122,6 +124,7 @@ pub async fn get_team_finance_summary(
     let region_code: String = team_row.try_get("region_code").unwrap_or_else(|_| "".to_string());
     let power_rating: f64 = team_row.get("power_rating");
     let win_rate: f64 = team_row.get("win_rate");
+    let brand_value: f64 = team_row.get("brand_value");
 
     // 计算总薪资
     let total_salary: i64 = sqlx::query_scalar(
@@ -171,6 +174,7 @@ pub async fn get_team_finance_summary(
         annual_points: 0,
         cross_year_points: 0,
         balance,
+        brand_value,
     };
 
     let status = engine.get_financial_status(&team, total_salary as u64);
@@ -188,6 +192,8 @@ pub async fn get_team_finance_summary(
         "Bankrupt"
     };
 
+    let sponsorship = engine.calculate_sponsorship(&team);
+
     Ok(CommandResult::ok(TeamFinanceSummary {
         team_id,
         team_name,
@@ -203,6 +209,8 @@ pub async fn get_team_finance_summary(
         max_new_salary: status.max_new_salary,
         projected_season_profit: status.projected_season_profit,
         total_salary: total_salary as u64,
+        brand_value,
+        sponsorship,
     }))
 }
 
@@ -242,7 +250,7 @@ pub async fn get_all_teams_finance(
         sqlx::query(
             r#"
             SELECT t.id, t.name, t.short_name, t.balance, t.power_rating, t.win_rate,
-                   t.region_id, r.short_name as region_code
+                   t.region_id, t.brand_value, r.short_name as region_code
             FROM teams t
             LEFT JOIN regions r ON t.region_id = r.id AND r.save_id = t.save_id
             WHERE t.save_id = ? AND t.region_id = ?
@@ -258,7 +266,7 @@ pub async fn get_all_teams_finance(
         sqlx::query(
             r#"
             SELECT t.id, t.name, t.short_name, t.balance, t.power_rating, t.win_rate,
-                   t.region_id, r.short_name as region_code
+                   t.region_id, t.brand_value, r.short_name as region_code
             FROM teams t
             LEFT JOIN regions r ON t.region_id = r.id AND r.save_id = t.save_id
             WHERE t.save_id = ?
@@ -283,6 +291,7 @@ pub async fn get_all_teams_finance(
         let region_code: String = row.try_get("region_code").unwrap_or_else(|_| "".to_string());
         let power_rating: f64 = row.get("power_rating");
         let win_rate: f64 = row.get("win_rate");
+        let brand_value: f64 = row.get("brand_value");
 
         // 计算总薪资
         let total_salary: i64 = sqlx::query_scalar(
@@ -328,9 +337,11 @@ pub async fn get_all_teams_finance(
             annual_points: 0,
             cross_year_points: 0,
             balance,
+            brand_value,
         };
 
         let status = engine.get_financial_status(&team, total_salary as u64);
+        let sponsorship = engine.calculate_sponsorship(&team);
 
         let financial_status = if balance > 10_000_000 {
             "Wealthy"
@@ -359,6 +370,8 @@ pub async fn get_all_teams_finance(
             max_new_salary: status.max_new_salary,
             projected_season_profit: status.projected_season_profit,
             total_salary: total_salary as u64,
+            brand_value,
+            sponsorship,
         });
     }
 
@@ -570,6 +583,49 @@ pub async fn get_season_finance_report(
     .map_err(|e| e.to_string())?;
 
     if let Some(row) = report_row {
+        // 从交易记录中汇总明细数据
+        let saved_salary: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(ABS(amount)), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND transaction_type = 'Salary'"
+        )
+        .bind(&save_id).bind(team_id as i64).bind(target_season)
+        .fetch_one(&pool).await.unwrap_or(0);
+
+        let saved_prize: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(amount), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND (transaction_type = 'PlayoffBonus' OR transaction_type = 'InternationalBonus')"
+        )
+        .bind(&save_id).bind(team_id as i64).bind(target_season)
+        .fetch_one(&pool).await.unwrap_or(0);
+
+        let saved_sponsorship: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(amount), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND transaction_type = 'Sponsorship'"
+        )
+        .bind(&save_id).bind(team_id as i64).bind(target_season)
+        .fetch_one(&pool).await.unwrap_or(0);
+
+        let saved_league_share: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(amount), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND transaction_type = 'LeagueShare'"
+        )
+        .bind(&save_id).bind(team_id as i64).bind(target_season)
+        .fetch_one(&pool).await.unwrap_or(0);
+
+        let saved_transfer_in: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(amount), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND transaction_type = 'TransferIn'"
+        )
+        .bind(&save_id).bind(team_id as i64).bind(target_season)
+        .fetch_one(&pool).await.unwrap_or(0);
+
+        let saved_transfer_out: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(ABS(amount)), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND transaction_type = 'TransferOut'"
+        )
+        .bind(&save_id).bind(team_id as i64).bind(target_season)
+        .fetch_one(&pool).await.unwrap_or(0);
+
+        let saved_operating: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(ABS(amount)), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND transaction_type = 'OperatingCost'"
+        )
+        .bind(&save_id).bind(team_id as i64).bind(target_season)
+        .fetch_one(&pool).await.unwrap_or(0);
+
         return Ok(CommandResult::ok(SeasonFinanceReport {
             team_id,
             season_id: target_season as u64,
@@ -578,18 +634,24 @@ pub async fn get_season_finance_report(
             total_income: row.get::<i64, _>("total_income") as u64,
             total_expense: row.get::<i64, _>("total_expense") as u64,
             financial_status: row.get("financial_status"),
-            salary_expense: row.get::<i64, _>("salary_cap_used") as u64,
-            prize_money: 0,
-            sponsorship: 0,
-            league_share: 0,
-            transfer_net: 0,
-            operating_cost: 0,
+            salary_expense: saved_salary as u64,
+            prize_money: saved_prize as u64,
+            sponsorship: saved_sponsorship as u64,
+            league_share: saved_league_share as u64,
+            transfer_net: saved_transfer_in - saved_transfer_out,
+            operating_cost: saved_operating as u64,
         }));
     }
 
     // 动态计算财务报告
     let team_row = sqlx::query(
-        "SELECT balance, power_rating, win_rate FROM teams WHERE id = ? AND save_id = ?"
+        r#"
+        SELECT t.balance, t.power_rating, t.win_rate, t.brand_value, t.region_id,
+               r.short_name as region_code
+        FROM teams t
+        LEFT JOIN regions r ON t.region_id = r.id AND r.save_id = t.save_id
+        WHERE t.id = ? AND t.save_id = ?
+        "#
     )
     .bind(team_id as i64)
     .bind(&save_id)
@@ -600,6 +662,8 @@ pub async fn get_season_finance_report(
     let balance: i64 = team_row.get("balance");
     let power_rating: f64 = team_row.get("power_rating");
     let win_rate: f64 = team_row.get("win_rate");
+    let brand_value: f64 = team_row.get("brand_value");
+    let region_code: String = team_row.try_get("region_code").unwrap_or_else(|_| "".to_string());
 
     let engine = FinancialEngine::new();
 
@@ -657,11 +721,12 @@ pub async fn get_season_finance_report(
         annual_points: 0,
         cross_year_points: 0,
         balance,
+        brand_value,
     };
 
     let sponsorship = engine.calculate_sponsorship(&team);
-    let league_share = engine.calculate_league_share();
-    let operating_cost = engine.calculate_operating_cost();
+    let league_share = engine.calculate_league_share(&region_code, None);
+    let operating_cost = engine.calculate_operating_cost(salary_expense as u64);
 
     let transfer_net = transfer_income - transfer_expense;
     let total_income = sponsorship + league_share + prize_money as u64
@@ -805,9 +870,25 @@ pub async fn distribute_league_share(
         .map_err(|e| e.to_string())?;
     let current_season: i64 = save_row.get("current_season");
 
-    // 获取赛区所有队伍
+    // 获取赛区 region_code
+    let region_row = sqlx::query("SELECT short_name FROM regions WHERE id = ? AND save_id = ?")
+        .bind(region_id as i64)
+        .bind(&save_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let region_code: String = region_row
+        .map(|r| r.get("short_name"))
+        .unwrap_or_else(|| "".to_string());
+
+    // 获取赛区所有队伍（含余额和排名信息）
     let team_rows = sqlx::query(
-        "SELECT id FROM teams WHERE save_id = ? AND region_id = ?"
+        r#"
+        SELECT t.id, t.balance
+        FROM teams t
+        WHERE t.save_id = ? AND t.region_id = ?
+        ORDER BY t.balance DESC
+        "#
     )
     .bind(&save_id)
     .bind(region_id as i64)
@@ -815,13 +896,51 @@ pub async fn distribute_league_share(
     .await
     .map_err(|e| e.to_string())?;
 
-    let engine = FinancialEngine::new();
-    let league_share = engine.calculate_league_share();
+    // 查询上赛季常规赛排名（从 league_standings 表）
+    let standing_rows = sqlx::query(
+        r#"
+        SELECT ls.team_id, ls.rank
+        FROM league_standings ls
+        JOIN tournaments t ON ls.tournament_id = t.id
+        WHERE t.save_id = ? AND t.region_id = ? AND t.season_id = ?
+          AND (t.tournament_type = 'SummerRegular' OR t.tournament_type = 'SpringRegular')
+        ORDER BY t.tournament_type DESC
+        "#
+    )
+    .bind(&save_id)
+    .bind(region_id as i64)
+    .bind(current_season)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
 
+    // 构建 team_id -> rank 映射
+    let mut rank_map: std::collections::HashMap<i64, u32> = std::collections::HashMap::new();
+    for sr in &standing_rows {
+        let tid: i64 = sr.get("team_id");
+        let rank: i64 = sr.get("rank");
+        rank_map.entry(tid).or_insert(rank as u32);
+    }
+
+    let total_teams = team_rows.len() as u32;
+
+    // 计算赛区平均余额（用于弱队补贴）
+    let avg_balance: i64 = if total_teams > 0 {
+        team_rows.iter().map(|r| r.get::<i64, _>("balance")).sum::<i64>() / total_teams as i64
+    } else {
+        0
+    };
+
+    let engine = FinancialEngine::new();
     let mut results = Vec::new();
 
-    for row in team_rows {
+    for row in &team_rows {
         let team_id: i64 = row.get("id");
+        let team_balance: i64 = row.get("balance");
+        let rank = rank_map.get(&team_id).copied();
+
+        // 计算差异化联赛分成
+        let league_share = engine.calculate_league_share(&region_code, rank);
 
         // 记录联赛分成
         sqlx::query(
@@ -848,7 +967,38 @@ pub async fn distribute_league_share(
             .await
             .map_err(|e| e.to_string())?;
 
-        results.push((team_id as u64, league_share));
+        let mut total_amount = league_share;
+
+        // 计算弱队补贴金
+        let subsidy = engine.calculate_weak_team_subsidy(team_balance, avg_balance, rank, total_teams);
+        if subsidy > 0 {
+            sqlx::query(
+                r#"
+                INSERT INTO financial_transactions (
+                    save_id, team_id, season_id, transaction_type, amount, description
+                ) VALUES (?, ?, ?, 'LeagueShare', ?, '联盟弱队补贴金')
+                "#,
+            )
+            .bind(&save_id)
+            .bind(team_id)
+            .bind(current_season)
+            .bind(subsidy as i64)
+            .execute(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            sqlx::query("UPDATE teams SET balance = balance + ? WHERE id = ? AND save_id = ?")
+                .bind(subsidy as i64)
+                .bind(team_id)
+                .bind(&save_id)
+                .execute(&pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            total_amount += subsidy;
+        }
+
+        results.push((team_id as u64, total_amount));
     }
 
     Ok(CommandResult::ok(results))

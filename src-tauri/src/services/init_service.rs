@@ -466,6 +466,7 @@ impl InitService {
                     annual_points: 0,
                     cross_year_points: 0,
                     balance,
+                    brand_value: ((power - 50.0) * 2.0).clamp(0.0, 100.0),
                 };
 
                 let team_id = TeamRepository::create(pool, save_id, &team)
@@ -875,6 +876,7 @@ impl InitService {
                     annual_points: 0,
                     cross_year_points: 0,
                     balance: team_config.initial_balance,
+                    brand_value: ((power - 50.0) * 2.0).clamp(0.0, 100.0),
                 };
 
                 let team_id = TeamRepository::create(pool, save_id, &team)

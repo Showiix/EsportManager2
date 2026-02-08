@@ -675,6 +675,7 @@ mod tests {
             annual_points: 0,
             cross_year_points: 0,
             balance: 1000,
+            brand_value: 50.0,
         }
     }
 
@@ -691,6 +692,7 @@ mod tests {
             annual_points: 0,
             cross_year_points: 0,
             balance: 100, // 财务紧张
+            brand_value: 30.0,
         }
     }
 

@@ -29,6 +29,10 @@
           <div class="overview-label">转会预算</div>
           <div class="overview-value budget">{{ formatMoney(team.transfer_budget) }}</div>
         </div>
+        <div class="overview-item">
+          <div class="overview-label">品牌价值</div>
+          <div class="overview-value budget">{{ team.brand_value?.toFixed(1) || '0.0' }}</div>
+        </div>
       </div>
 
       <!-- 收支明细 -->
@@ -42,19 +46,19 @@
             <div class="detail-content">
               <div class="detail-item">
                 <span class="item-label">联赛分成</span>
-                <span class="item-value">{{ formatMoney(report?.breakdown?.league_share || 0) }}</span>
+                <span class="item-value">{{ formatMoney(report?.league_share || 0) }}</span>
               </div>
               <div class="detail-item">
                 <span class="item-label">赛事奖金</span>
-                <span class="item-value">{{ formatMoney(report?.breakdown?.prize_money || 0) }}</span>
+                <span class="item-value">{{ formatMoney(report?.prize_money || 0) }}</span>
               </div>
               <div class="detail-item">
                 <span class="item-label">赞助收入</span>
-                <span class="item-value">{{ formatMoney(report?.breakdown?.transfers_in || 0) }}</span>
+                <span class="item-value">{{ formatMoney(report?.sponsorship || 0) }}</span>
               </div>
-              <div class="detail-item" v-if="(report?.breakdown?.transfers_in || 0) > 0">
+              <div class="detail-item" v-if="(report?.transfer_net || 0) > 0">
                 <span class="item-label">转会收入</span>
-                <span class="item-value">{{ formatMoney(report?.breakdown?.transfers_in || 0) }}</span>
+                <span class="item-value">{{ formatMoney(report?.transfer_net || 0) }}</span>
               </div>
               <el-divider />
               <div class="detail-total">
@@ -73,15 +77,15 @@
             <div class="detail-content">
               <div class="detail-item">
                 <span class="item-label">选手薪资</span>
-                <span class="item-value">{{ formatMoney(team.total_salary) }}</span>
+                <span class="item-value">{{ formatMoney(report?.salary_expense || team.total_salary) }}</span>
               </div>
               <div class="detail-item">
                 <span class="item-label">运营成本</span>
-                <span class="item-value">{{ formatMoney(report?.breakdown?.other || 0) }}</span>
+                <span class="item-value">{{ formatMoney(report?.operating_cost || 0) }}</span>
               </div>
-              <div class="detail-item" v-if="(report?.breakdown?.transfers_out || 0) > 0">
+              <div class="detail-item" v-if="(report?.transfer_net || 0) < 0">
                 <span class="item-label">转会支出</span>
-                <span class="item-value">{{ formatMoney(Math.abs(report?.breakdown?.transfers_out || 0)) }}</span>
+                <span class="item-value">{{ formatMoney(Math.abs(report?.transfer_net || 0)) }}</span>
               </div>
               <el-divider />
               <div class="detail-total">

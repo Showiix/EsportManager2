@@ -204,8 +204,8 @@ impl TeamRepository {
     ) -> Result<u64, DatabaseError> {
         let result = sqlx::query(
             r#"
-            INSERT INTO teams (save_id, region_id, name, short_name, power_rating, balance)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO teams (save_id, region_id, name, short_name, power_rating, balance, brand_value)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(save_id)
@@ -214,6 +214,7 @@ impl TeamRepository {
         .bind(&team.short_name)
         .bind(team.power_rating)
         .bind(team.balance as i64)
+        .bind(team.brand_value)
         .execute(pool)
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -267,7 +268,8 @@ impl TeamRepository {
                 win_rate = ?,
                 annual_points = ?,
                 cross_year_points = ?,
-                balance = ?
+                balance = ?,
+                brand_value = ?
             WHERE id = ?
             "#,
         )
@@ -280,6 +282,7 @@ impl TeamRepository {
         .bind(team.annual_points as i64)
         .bind(team.cross_year_points as i64)
         .bind(team.balance as i64)
+        .bind(team.brand_value)
         .bind(team.id as i64)
         .execute(pool)
         .await
@@ -785,6 +788,7 @@ fn row_to_team(row: &sqlx::sqlite::SqliteRow) -> Team {
         annual_points: row.get::<i64, _>("annual_points") as u32,
         cross_year_points: row.get::<i64, _>("cross_year_points") as u32,
         balance: row.get::<i64, _>("balance"),
+        brand_value: row.get("brand_value"),
     }
 }
 

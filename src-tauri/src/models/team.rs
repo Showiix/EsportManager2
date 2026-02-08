@@ -26,6 +26,7 @@ pub struct Team {
     pub annual_points: u32,
     pub cross_year_points: u32,
     pub balance: i64,
+    pub brand_value: f64,
 }
 
 impl Team {

@@ -483,6 +483,7 @@ mod tests {
                 annual_points: 0,
                 cross_year_points: 0,
                 balance: 5000000,
+                brand_value: 50.0,
             })
             .collect()
     }

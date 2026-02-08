@@ -195,38 +195,83 @@ impl FinancialEngine {
         players.iter().map(|(_, salary)| salary).sum()
     }
 
-    /// 计算赞助收入
+    /// 计算赞助收入（品牌价值驱动）
     pub fn calculate_sponsorship(&self, team: &Team) -> u64 {
-        let base = match team.power_rating as u32 {
-            68..=100 => 200,
-            65..=67 => 150,
-            62..=64 => 120,
-            60..=61 => 90,
-            55..=59 => 70,
-            50..=54 => 50,
-            _ => 30,
+        // 品牌基础：brand_value 0-100 映射到 50万-500万
+        let brand_factor = (team.brand_value / 100.0).clamp(0.1, 1.0);
+        let base = 500_000.0 + brand_factor * 4_500_000.0; // 50万~500万
+
+        // 战力系数
+        let power_factor = match team.power_rating as u32 {
+            70..=100 => 1.4,
+            65..=69 => 1.2,
+            60..=64 => 1.0,
+            55..=59 => 0.85,
+            50..=54 => 0.7,
+            _ => 0.5,
         };
 
-        // 战绩加成
-        let win_rate_bonus = if team.win_rate > 0.7 {
-            1.5
-        } else if team.win_rate > 0.5 {
-            1.2
-        } else {
-            1.0
+        // 胜率加成
+        let win_bonus = if team.win_rate > 0.7 { 1.3 }
+                        else if team.win_rate > 0.5 { 1.1 }
+                        else { 1.0 };
+
+        (base * power_factor * win_bonus) as u64
+    }
+
+    /// 计算联赛分成（赛区+排名差异化）
+    pub fn calculate_league_share(&self, region_code: &str, rank: Option<u32>) -> u64 {
+        let base = match region_code {
+            "CN" => 2_000_000,  // LPL 200万
+            "KR" => 1_750_000,  // LCK 175万
+            "EU" => 1_500_000,  // LEC 150万
+            "NA" => 1_250_000,  // LCS 125万
+            _ => 1_500_000,
         };
-
-        (base as f64 * win_rate_bonus * self.config.sponsorship_coefficient * 10000.0) as u64
+        let rank_bonus = match rank {
+            Some(1..=3) => 500_000,   // 前三 +50万
+            Some(4..=7) => 250_000,   // 中上 +25万
+            Some(8..=10) => 100_000,  // 中游 +10万
+            _ => 0,                   // 下游或无排名
+        };
+        (base + rank_bonus) as u64
     }
 
-    /// 计算联赛分成
-    pub fn calculate_league_share(&self) -> u64 {
-        self.config.league_revenue_share
+    /// 计算运营成本（阵容挂钩）
+    pub fn calculate_operating_cost(&self, total_salary: u64) -> u64 {
+        let base = 1_500_000_u64; // 150万基础
+        let salary_overhead = (total_salary as f64 * 0.15) as u64; // 薪资的15%作为附加运营成本
+        base + salary_overhead
     }
 
-    /// 计算运营成本
-    pub fn calculate_operating_cost(&self) -> u64 {
-        self.config.base_operating_cost
+    /// 计算弱队补贴金
+    pub fn calculate_weak_team_subsidy(
+        &self,
+        team_balance: i64,
+        league_avg_balance: i64,
+        rank: Option<u32>,
+        total_teams: u32,
+    ) -> u64 {
+        let mut subsidy: u64 = 0;
+
+        // 1. 余额差距补贴：低于联盟平均余额时触发
+        let gap = league_avg_balance - team_balance;
+        if gap > 2_000_000 { // 差距超过200万才触发
+            let balance_subsidy = (gap as f64 * 0.20) as u64; // 差距的20%
+            subsidy += balance_subsidy.min(5_000_000); // 上限500万
+        }
+
+        // 2. 排名补贴：赛区倒数4名额外补贴
+        if let Some(r) = rank {
+            let bottom_threshold = total_teams.saturating_sub(3); // 倒数4名
+            if r >= bottom_threshold {
+                subsidy += if r >= total_teams { 1_000_000 } // 末位 +100万
+                           else if r >= total_teams - 1 { 750_000 } // 倒数第2 +75万
+                           else { 500_000 }; // 倒数第3-4 +50万
+            }
+        }
+
+        subsidy
     }
 
     /// 确定财务状态
@@ -242,10 +287,12 @@ impl FinancialEngine {
         salary_expense: u64,
         prize_money: u64,
         transfer_income: i64, // 转会净收入 (可为负)
+        region_code: &str,
+        rank: Option<u32>,
     ) -> TeamSeasonFinance {
         let sponsorship = self.calculate_sponsorship(team);
-        let league_share = self.calculate_league_share();
-        let operating_cost = self.calculate_operating_cost();
+        let league_share = self.calculate_league_share(region_code, rank);
+        let operating_cost = self.calculate_operating_cost(salary_expense);
 
         let total_income = sponsorship + league_share + prize_money
             + if transfer_income > 0 { transfer_income as u64 } else { 0 };
@@ -316,7 +363,7 @@ impl FinancialEngine {
 
     /// 计算最大可承受薪资
     pub fn max_affordable_salary(&self, team: &Team, current_salary_total: u64) -> u64 {
-        let projected_income = self.calculate_sponsorship(team) + self.calculate_league_share();
+        let projected_income = self.calculate_sponsorship(team) + self.calculate_league_share("CN", None);
 
         // 薪资支出不应超过预计收入的60%
         let max_salary_budget = (projected_income as f64 * 0.6) as u64;
@@ -384,8 +431,8 @@ impl FinancialEngine {
         team: &Team,
         current_salary_total: u64,
     ) -> FinancialStatusSummary {
-        let projected_income = self.calculate_sponsorship(team) + self.calculate_league_share();
-        let projected_expense = current_salary_total + self.calculate_operating_cost();
+        let projected_income = self.calculate_sponsorship(team) + self.calculate_league_share("CN", None);
+        let projected_expense = current_salary_total + self.calculate_operating_cost(current_salary_total);
         let projected_profit = projected_income as i64 - projected_expense as i64;
 
         FinancialStatusSummary {
@@ -416,6 +463,7 @@ mod tests {
             annual_points: 50,
             cross_year_points: 100,
             balance,
+            brand_value: ((power - 50.0) * 2.0).clamp(0.0, 100.0),
         }
     }
 

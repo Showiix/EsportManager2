@@ -1150,6 +1150,8 @@ export interface TeamFinanceSummary {
   max_new_salary: number
   projected_season_profit: number
   total_salary: number
+  brand_value: number
+  sponsorship: number
 }
 
 export interface FinanceTransaction {
@@ -1163,19 +1165,18 @@ export interface FinanceTransaction {
 
 export interface SeasonFinanceReport {
   team_id: number
-  team_name: string
   season_id: number
+  opening_balance: number
+  closing_balance: number
   total_income: number
   total_expense: number
-  net_profit: number
-  breakdown: {
-    prize_money: number
-    league_share: number
-    transfers_in: number
-    salaries_paid: number
-    transfers_out: number
-    other: number
-  }
+  financial_status: string
+  salary_expense: number
+  prize_money: number
+  sponsorship: number
+  league_share: number
+  transfer_net: number
+  operating_cost: number
 }
 
 export interface PrizePoolInfo {

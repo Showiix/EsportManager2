@@ -1693,6 +1693,24 @@ impl DatabaseManager {
             log::info!("✅ player_season_stats 添加 dominance_score 列成功");
         }
 
+        // 迁移13: 为 teams 表添加 brand_value 字段（品牌价值）
+        let team_columns: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM pragma_table_info('teams')"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        let team_column_names: Vec<&str> = team_columns.iter().map(|c| c.0.as_str()).collect();
+
+        if !team_column_names.contains(&"brand_value") {
+            sqlx::query("ALTER TABLE teams ADD COLUMN brand_value REAL NOT NULL DEFAULT 50.0")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            log::info!("✅ teams 添加 brand_value 列成功");
+        }
+
         Ok(())
     }
 }

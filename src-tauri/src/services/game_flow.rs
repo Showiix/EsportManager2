@@ -1243,6 +1243,13 @@ impl GameFlowService {
                 Ok(count) => log::debug!("年度身价重算完成，共更新 {} 名选手", count),
                 Err(e) => log::error!("[complete_phase] 年度身价重算失败: {}", e),
             }
+
+            // 更新所有队伍的品牌价值
+            log::debug!("开始更新品牌价值...");
+            match self.update_all_brand_values(pool, save_id, season_id).await {
+                Ok(count) => log::debug!("品牌价值更新完成，共更新 {} 支队伍", count),
+                Err(e) => log::error!("[complete_phase] 品牌价值更新失败: {}", e),
+            }
         }
 
         // 颁发年度积分（季后赛和国际赛事，Super赛除外）
@@ -3442,7 +3449,7 @@ impl GameFlowService {
         // 完成当前阶段（颁发荣誉）
         let complete_result = self.complete_phase(pool, save_id, season_id, current_phase).await?;
 
-        let mut honors_awarded: Vec<HonorInfo> = complete_result.honors_awarded.iter().map(|h| {
+        let honors_awarded: Vec<HonorInfo> = complete_result.honors_awarded.iter().map(|h| {
             HonorInfo {
                 honor_type: h.honor_type.clone(),
                 recipient_name: h.recipient_name.clone(),
@@ -3461,7 +3468,7 @@ impl GameFlowService {
                 .map_err(|e| e.to_string())?;
 
             // 自动初始化下一阶段
-            let init_result = self.initialize_phase(pool, save_id, season_id, next).await?;
+            let _init_result = self.initialize_phase(pool, save_id, season_id, next).await?;
 
             Some(next.name().to_string())
         } else {
@@ -3534,7 +3541,7 @@ impl GameFlowService {
                 }
                 PhaseStatus::Completed => {
                     // 完成并推进
-                    let result = self.complete_and_advance(pool, save_id).await?;
+                    let _result = self.complete_and_advance(pool, save_id).await?;
                     phases_advanced += 1;
 
                     // 更新当前阶段
@@ -3938,13 +3945,13 @@ impl GameFlowService {
 // ===== 年度颁奖典礼辅助结构和方法 =====
 
 /// 年度选手信息结构
+#[allow(dead_code)]
 struct AnnualPlayerInfo {
     player_id: u64,
     player_name: String,
     team_id: u64,
     team_name: String,
     position: String,
-    #[allow(dead_code)]
     yearly_score: f64,
     age: u8,
     consistency_score: f64,
@@ -4377,6 +4384,107 @@ impl GameFlowService {
         }
 
         log::debug!("完成 {} 名选手身价重算", count);
+        Ok(count)
+    }
+
+    /// 更新所有队伍的品牌价值
+    async fn update_all_brand_values(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+    ) -> Result<u32, String> {
+        // 获取所有队伍
+        let team_rows = sqlx::query(
+            "SELECT id, brand_value FROM teams WHERE save_id = ?"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to get teams: {}", e))?;
+
+        let mut count = 0u32;
+
+        for row in &team_rows {
+            let team_id: i64 = row.get("id");
+            let old_brand: f64 = row.get("brand_value");
+
+            // 15%自然衰减
+            let mut new_brand = old_brand * 0.85;
+
+            // 查询本赛季该队伍的所有荣誉记录
+            let honors = sqlx::query(
+                r#"
+                SELECT h.honor_type, t.tournament_type
+                FROM honors h
+                LEFT JOIN tournaments t ON h.tournament_id = t.id
+                WHERE h.save_id = ? AND h.season_id = ? AND h.team_id = ?
+                  AND h.honor_type IN ('TEAM_CHAMPION', 'TEAM_RUNNER_UP', 'TEAM_THIRD', 'TEAM_FOURTH')
+                "#
+            )
+            .bind(save_id)
+            .bind(season_id as i64)
+            .bind(team_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+            for honor in &honors {
+                let honor_type: String = honor.get("honor_type");
+                let tournament_type: Option<String> = honor.try_get("tournament_type").ok();
+                let tt = tournament_type.as_deref().unwrap_or("");
+
+                let bonus = match (tt, honor_type.as_str()) {
+                    // 世界赛
+                    ("WorldChampionship", "TEAM_CHAMPION") => 25.0,
+                    ("WorldChampionship", "TEAM_RUNNER_UP") => 15.0,
+                    ("WorldChampionship", "TEAM_THIRD") => 10.0,
+                    ("WorldChampionship", "TEAM_FOURTH") => 5.0,
+                    // Super洲际赛
+                    ("SuperIntercontinental", "TEAM_CHAMPION") => 20.0,
+                    ("SuperIntercontinental", "TEAM_RUNNER_UP") => 12.0,
+                    ("SuperIntercontinental", "TEAM_THIRD") => 8.0,
+                    ("SuperIntercontinental", "TEAM_FOURTH") => 5.0,
+                    // MSI
+                    ("Msi", "TEAM_CHAMPION") => 10.0,
+                    ("Msi", "TEAM_RUNNER_UP") => 6.0,
+                    ("Msi", "TEAM_THIRD") => 3.0,
+                    // 联赛季后赛（夏季）
+                    ("SummerPlayoffs", "TEAM_CHAMPION") => 8.0,
+                    ("SummerPlayoffs", "TEAM_RUNNER_UP") => 4.0,
+                    ("SummerPlayoffs", "TEAM_THIRD") => 3.0,
+                    // 联赛季后赛（春季）
+                    ("SpringPlayoffs", "TEAM_CHAMPION") => 5.0,
+                    ("SpringPlayoffs", "TEAM_RUNNER_UP") => 3.0,
+                    ("SpringPlayoffs", "TEAM_THIRD") => 2.0,
+                    // 其他国际赛事四强
+                    (_, "TEAM_CHAMPION") => 5.0,
+                    (_, "TEAM_RUNNER_UP") => 3.0,
+                    (_, "TEAM_THIRD") | (_, "TEAM_FOURTH") => 2.0,
+                    _ => 0.0,
+                };
+
+                new_brand += bonus;
+            }
+
+            new_brand = new_brand.clamp(0.0, 100.0);
+
+            // 更新品牌价值
+            sqlx::query("UPDATE teams SET brand_value = ? WHERE id = ? AND save_id = ?")
+                .bind(new_brand)
+                .bind(team_id)
+                .bind(save_id)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("Failed to update brand_value: {}", e))?;
+
+            if (new_brand - old_brand).abs() > 0.1 {
+                log::debug!("队伍 {} 品牌价值: {:.1} -> {:.1}", team_id, old_brand, new_brand);
+            }
+
+            count += 1;
+        }
+
         Ok(count)
     }
 }
