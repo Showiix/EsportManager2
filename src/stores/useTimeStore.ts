@@ -103,6 +103,9 @@ export const useTimeStore = defineStore('time', () => {
   // 是否在赛季结束阶段
   const isSeasonEnd = computed(() => currentPhase.value === 'SeasonEnd')
 
+  // 是否在年度颁奖阶段
+  const isAnnualAwardsPhase = computed(() => currentPhase.value === 'AnnualAwards')
+
   // ========================================
   // Actions
   // ========================================
@@ -398,6 +401,7 @@ export const useTimeStore = defineStore('time', () => {
     isInTransferWindow,
     isInDraft,
     isSeasonEnd,
+    isAnnualAwardsPhase,
 
     // Actions
     fetchTimeState,

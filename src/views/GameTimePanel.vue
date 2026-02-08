@@ -210,19 +210,19 @@
             <div class="awards-list">
               <div class="award-item">
                 <span class="award-icon">👑</span>
-                <span class="award-name">年度MVP</span>
-              </div>
-              <div class="award-item">
-                <el-icon class="award-icon" color="#f59e0b"><StarFilled /></el-icon>
-                <span class="award-name">年度Top20选手</span>
+                <span class="award-name">年度MVP + Top20选手</span>
               </div>
               <div class="award-item">
                 <el-icon class="award-icon" color="#3b82f6"><Medal /></el-icon>
-                <span class="award-name">各位置最佳选手</span>
+                <span class="award-name">最佳阵容一/二/三阵</span>
               </div>
               <div class="award-item">
                 <span class="award-icon">🌱</span>
-                <span class="award-name">年度最佳新秀</span>
+                <span class="award-name">最佳新秀</span>
+              </div>
+              <div class="award-item">
+                <el-icon class="award-icon" color="#f59e0b"><StarFilled /></el-icon>
+                <span class="award-name">最稳定 / 最具统治力</span>
               </div>
             </div>
           </div>
@@ -357,7 +357,7 @@ const { fetchTimeState } = timeStore
 
 // 判断是否是年度颁奖典礼阶段
 const isAnnualAwardsPhase = computed(() => {
-  return phaseDisplayName.value === '年度颁奖典礼'
+  return timeStore.isAnnualAwardsPhase
 })
 
 // 判断是否可以执行某个操作

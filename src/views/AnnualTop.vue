@@ -8,7 +8,7 @@
           <p class="banner-subtitle">S{{ selectedSeason }} 赛季 年度最佳选手 TOP 20</p>
           <div class="scoring-rule">
             <el-tag type="warning" effect="dark" size="large">
-              评选标准: 影响力(40%) + 出场(30%) + 冠军(30%)
+              评选标准: 影响力(35%) + 发挥(20%) + 稳定性(15%) + 出场(10%) + 冠军(20%)
             </el-tag>
           </div>
           <div class="scoring-detail">
@@ -16,7 +16,7 @@
             <span class="divider">|</span>
             <span>赛区冠军 +1分</span>
             <span class="divider">|</span>
-            <span>每10场 +1分</span>
+            <span>五维归一化加权评分</span>
           </div>
         </div>
         <div class="header-actions">
@@ -33,145 +33,111 @@
       </div>
     </div>
 
-    <!-- 前三名展示 -->
-    <div class="top-three" v-if="topThree.length > 0">
-      <!-- 第二名 -->
-      <div class="top-card silver" v-if="topThree[1]" @click="goToDetail(topThree[1])">
-        <div class="rank-medal">🥈</div>
-        <div class="player-name">{{ topThree[1].playerName }}</div>
-        <div class="player-meta">
-          <el-tag :type="getPositionTagType(topThree[1].position)" size="small">
-            {{ getPositionName(topThree[1].position) }}
-          </el-tag>
-          <span>{{ getTeamName(topThree[1].teamId) }}</span>
-        </div>
-        <div class="score-breakdown">
-          <div class="score-item">
-            <span class="label">影响力</span>
-            <span class="value">{{ (topThree[1].avgImpact || 0).toFixed(1) }}</span>
+    <!-- 前三名 + 雷达图 -->
+    <div class="top-section" v-if="top20.length > 0">
+      <!-- 前三名展示 -->
+      <div class="top-three">
+        <!-- 第二名 -->
+        <div class="top-card silver" v-if="top20[1]" @click="goToDetail(top20[1])">
+          <div class="rank-badge">2</div>
+          <div class="player-name">{{ top20[1].player_name }}</div>
+          <div class="player-meta">
+            <el-tag :type="getPositionTagType(top20[1].position)" size="small">
+              {{ getPositionName(top20[1].position) }}
+            </el-tag>
+            <span>{{ top20[1].team_name }}</span>
           </div>
-          <div class="score-item">
-            <span class="label">出场</span>
-            <span class="value games">{{ topThree[1].gamesPlayed || 0 }}场</span>
+          <div class="dim-bars">
+            <div class="dim-row" v-for="dim in getDimBars(top20[1])" :key="dim.label">
+              <span class="dim-label">{{ dim.label }}</span>
+              <div class="dim-bar-bg"><div class="dim-bar-fill" :style="{ width: dim.value + '%', background: dim.color }"></div></div>
+              <span class="dim-val">{{ dim.value.toFixed(0) }}</span>
+            </div>
           </div>
-          <div class="score-item">
-            <span class="label">冠军加成</span>
-            <span class="value bonus">+{{ (topThree[1].championBonus || 0).toFixed(1) }}</span>
+          <div class="total-score">
+            <span class="label">年度得分</span>
+            <span class="value">{{ top20[1].yearly_score.toFixed(1) }}</span>
           </div>
         </div>
-        <div class="total-score">
-          <span class="label">年度得分</span>
-          <span class="value">{{ (topThree[1].yearlyTopScore || topThree[1].avgImpact || 0).toFixed(1) }}</span>
+
+        <!-- 第一名 -->
+        <div class="top-card gold" v-if="top20[0]" @click="goToDetail(top20[0])">
+          <div class="crown-icon"></div>
+          <div class="rank-badge mvp">MVP</div>
+          <div class="player-name">{{ top20[0].player_name }}</div>
+          <div class="player-meta">
+            <el-tag :type="getPositionTagType(top20[0].position)" size="small">
+              {{ getPositionName(top20[0].position) }}
+            </el-tag>
+            <span>{{ top20[0].team_name }}</span>
+          </div>
+          <div class="dim-bars">
+            <div class="dim-row" v-for="dim in getDimBars(top20[0])" :key="dim.label">
+              <span class="dim-label">{{ dim.label }}</span>
+              <div class="dim-bar-bg"><div class="dim-bar-fill" :style="{ width: dim.value + '%', background: dim.color }"></div></div>
+              <span class="dim-val">{{ dim.value.toFixed(0) }}</span>
+            </div>
+          </div>
+          <div class="total-score">
+            <span class="label">年度得分</span>
+            <span class="value">{{ top20[0].yearly_score.toFixed(1) }}</span>
+          </div>
         </div>
-        <div class="champion-badges">
-          <span v-if="topThree[1].internationalTitles" class="badge intl">
-            🏆×{{ topThree[1].internationalTitles }}
-          </span>
-          <span v-if="topThree[1].regionalTitles" class="badge regional">
-            🏅×{{ topThree[1].regionalTitles }}
-          </span>
+
+        <!-- 第三名 -->
+        <div class="top-card bronze" v-if="top20[2]" @click="goToDetail(top20[2])">
+          <div class="rank-badge">3</div>
+          <div class="player-name">{{ top20[2].player_name }}</div>
+          <div class="player-meta">
+            <el-tag :type="getPositionTagType(top20[2].position)" size="small">
+              {{ getPositionName(top20[2].position) }}
+            </el-tag>
+            <span>{{ top20[2].team_name }}</span>
+          </div>
+          <div class="dim-bars">
+            <div class="dim-row" v-for="dim in getDimBars(top20[2])" :key="dim.label">
+              <span class="dim-label">{{ dim.label }}</span>
+              <div class="dim-bar-bg"><div class="dim-bar-fill" :style="{ width: dim.value + '%', background: dim.color }"></div></div>
+              <span class="dim-val">{{ dim.value.toFixed(0) }}</span>
+            </div>
+          </div>
+          <div class="total-score">
+            <span class="label">年度得分</span>
+            <span class="value">{{ top20[2].yearly_score.toFixed(1) }}</span>
+          </div>
         </div>
       </div>
 
-      <!-- 第一名 -->
-      <div class="top-card gold" v-if="topThree[0]" @click="goToDetail(topThree[0])">
-        <div class="crown">👑</div>
-        <div class="rank-medal">🥇</div>
-        <div class="mvp-label">年度最佳</div>
-        <div class="player-name">{{ topThree[0].playerName }}</div>
-        <div class="player-meta">
-          <el-tag :type="getPositionTagType(topThree[0].position)" size="small">
-            {{ getPositionName(topThree[0].position) }}
-          </el-tag>
-          <span>{{ getTeamName(topThree[0].teamId) }}</span>
-          <span v-if="topThree[0].regionId">· {{ topThree[0].regionId }}</span>
+      <!-- 雷达图对比 -->
+      <el-card class="radar-card" v-if="top20.length >= 3">
+        <template #header>
+          <span class="card-title">Top3 五维对比</span>
+        </template>
+        <div class="chart-container">
+          <v-chart class="chart" :option="radarOption" autoresize />
         </div>
-        <div class="score-breakdown">
-          <div class="score-item">
-            <span class="label">影响力</span>
-            <span class="value">{{ (topThree[0].avgImpact || 0).toFixed(1) }}</span>
-          </div>
-          <div class="score-item">
-            <span class="label">出场</span>
-            <span class="value games">{{ topThree[0].gamesPlayed || 0 }}场</span>
-          </div>
-          <div class="score-item">
-            <span class="label">冠军加成</span>
-            <span class="value bonus">+{{ (topThree[0].championBonus || 0).toFixed(1) }}</span>
-          </div>
-        </div>
-        <div class="total-score">
-          <span class="label">年度得分</span>
-          <span class="value">{{ (topThree[0].yearlyTopScore || topThree[0].avgImpact || 0).toFixed(1) }}</span>
-        </div>
-        <div class="champion-badges">
-          <span v-if="topThree[0].internationalTitles" class="badge intl">
-            🏆×{{ topThree[0].internationalTitles }}
-          </span>
-          <span v-if="topThree[0].regionalTitles" class="badge regional">
-            🏅×{{ topThree[0].regionalTitles }}
-          </span>
-        </div>
-      </div>
-
-      <!-- 第三名 -->
-      <div class="top-card bronze" v-if="topThree[2]" @click="goToDetail(topThree[2])">
-        <div class="rank-medal">🥉</div>
-        <div class="player-name">{{ topThree[2].playerName }}</div>
-        <div class="player-meta">
-          <el-tag :type="getPositionTagType(topThree[2].position)" size="small">
-            {{ getPositionName(topThree[2].position) }}
-          </el-tag>
-          <span>{{ getTeamName(topThree[2].teamId) }}</span>
-        </div>
-        <div class="score-breakdown">
-          <div class="score-item">
-            <span class="label">影响力</span>
-            <span class="value">{{ (topThree[2].avgImpact || 0).toFixed(1) }}</span>
-          </div>
-          <div class="score-item">
-            <span class="label">出场</span>
-            <span class="value games">{{ topThree[2].gamesPlayed || 0 }}场</span>
-          </div>
-          <div class="score-item">
-            <span class="label">冠军加成</span>
-            <span class="value bonus">+{{ (topThree[2].championBonus || 0).toFixed(1) }}</span>
-          </div>
-        </div>
-        <div class="total-score">
-          <span class="label">年度得分</span>
-          <span class="value">{{ (topThree[2].yearlyTopScore || topThree[2].avgImpact || 0).toFixed(1) }}</span>
-        </div>
-        <div class="champion-badges">
-          <span v-if="topThree[2].internationalTitles" class="badge intl">
-            🏆×{{ topThree[2].internationalTitles }}
-          </span>
-          <span v-if="topThree[2].regionalTitles" class="badge regional">
-            🏅×{{ topThree[2].regionalTitles }}
-          </span>
-        </div>
-      </div>
+      </el-card>
     </div>
 
-    <!-- 4-20名列表 -->
-    <el-card class="ranking-list" v-if="restRankings.length > 0">
+    <!-- Top20 完整排行表 -->
+    <el-card class="ranking-list" v-if="top20.length > 0">
       <template #header>
-        <span class="card-title">第 4-20 名</span>
+        <span class="card-title">年度 Top 20 完整排行</span>
       </template>
-      <el-table :data="restRankings" stripe style="width: 100%" @row-click="goToDetail">
-        <el-table-column label="#" width="60" align="center">
-          <template #default="{ $index }">
-            <span class="rank-number">{{ $index + 4 }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column prop="playerName" label="选手" min-width="140">
+      <el-table :data="top20" stripe style="width: 100%" @row-click="goToDetail">
+        <el-table-column label="#" width="55" align="center">
           <template #default="{ row }">
-            <span class="player-link">{{ row.playerName }}</span>
+            <span class="rank-number" :class="{ 'top-rank': row.rank <= 3 }">{{ row.rank }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="position" label="位置" width="90" align="center">
+        <el-table-column prop="player_name" label="选手" min-width="120">
+          <template #default="{ row }">
+            <span class="player-link">{{ row.player_name }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="position" label="位置" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="getPositionTagType(row.position)" size="small">
               {{ getPositionName(row.position) }}
@@ -179,52 +145,146 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="teamId" label="战队" width="100">
-          <template #default="{ row }">
-            {{ getTeamName(row.teamId) }}
-          </template>
-        </el-table-column>
+        <el-table-column prop="team_name" label="战队" width="90" />
 
-        <el-table-column prop="avgImpact" label="影响力" width="90" align="center">
+        <el-table-column label="影响力" width="100" align="center">
           <template #default="{ row }">
-            {{ (row.avgImpact || 0).toFixed(1) }}
-          </template>
-        </el-table-column>
-
-        <el-table-column prop="gamesPlayed" label="出场" width="80" align="center">
-          <template #default="{ row }">
-            <span class="games-value">{{ row.gamesPlayed || 0 }}场</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="冠军加成" width="90" align="center">
-          <template #default="{ row }">
-            <span class="bonus-value">+{{ (row.championBonus || 0).toFixed(1) }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="荣誉" width="100" align="center">
-          <template #default="{ row }">
-            <div class="honor-cell">
-              <span v-if="row.internationalTitles">🏆×{{ row.internationalTitles }}</span>
-              <span v-if="row.regionalTitles">🏅×{{ row.regionalTitles }}</span>
-              <span v-if="!row.internationalTitles && !row.regionalTitles">-</span>
+            <div class="mini-bar-cell">
+              <div class="mini-bar"><div class="mini-fill impact" :style="{ width: row.dimensions.impact_norm + '%' }"></div></div>
+              <span>{{ row.avg_impact.toFixed(1) }}</span>
             </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="yearlyTopScore" label="得分" width="90" align="center">
+        <el-table-column label="发挥" width="90" align="center">
           <template #default="{ row }">
-            <span class="score-value">
-              {{ (row.yearlyTopScore || row.avgImpact || 0).toFixed(1) }}
-            </span>
+            <div class="mini-bar-cell">
+              <div class="mini-bar"><div class="mini-fill perf" :style="{ width: row.dimensions.performance_norm + '%' }"></div></div>
+              <span>{{ row.avg_performance.toFixed(1) }}</span>
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="稳定" width="80" align="center">
+          <template #default="{ row }">
+            <div class="mini-bar-cell">
+              <div class="mini-bar"><div class="mini-fill stab" :style="{ width: row.dimensions.stability_norm + '%' }"></div></div>
+              <span>{{ row.consistency_score.toFixed(0) }}</span>
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="出场" width="70" align="center">
+          <template #default="{ row }">
+            <span class="games-value">{{ row.games_played }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="荣誉" width="80" align="center">
+          <template #default="{ row }">
+            <span class="bonus-value" v-if="row.champion_bonus > 0">+{{ row.champion_bonus.toFixed(0) }}</span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="yearly_score" label="总分" width="80" align="center" sortable>
+          <template #default="{ row }">
+            <span class="score-value">{{ row.yearly_score.toFixed(1) }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="标签" min-width="140">
+          <template #default="{ row }">
+            <div class="tags-cell">
+              <el-tag
+                v-for="tag in row.commentary.tags.slice(0, 3)"
+                :key="tag"
+                size="small"
+                effect="plain"
+                round
+              >{{ tag }}</el-tag>
+            </div>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
+    <!-- 最佳阵容 + 特别奖项 -->
+    <div class="bottom-section" v-if="awardsData">
+      <!-- 最佳阵容 -->
+      <el-card class="allpro-card">
+        <template #header>
+          <span class="card-title">最佳阵容</span>
+        </template>
+        <div class="allpro-tiers">
+          <div class="tier-section" v-for="tier in allProTiers" :key="tier.label">
+            <div class="tier-header" :class="tier.class">{{ tier.label }}</div>
+            <div class="tier-players">
+              <div
+                class="allpro-player"
+                v-for="p in tier.players"
+                :key="p.player_id"
+                @click="goToPlayerDetail(p.player_id)"
+              >
+                <el-tag :type="getPositionTagType(p.position)" size="small">
+                  {{ getPositionName(p.position) }}
+                </el-tag>
+                <span class="ap-name">{{ p.player_name }}</span>
+                <span class="ap-team">{{ p.team_name }}</span>
+                <span class="ap-score">{{ p.yearly_score.toFixed(1) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-card>
+
+      <!-- 特别奖项 -->
+      <el-card class="special-card">
+        <template #header>
+          <span class="card-title">特别奖项</span>
+        </template>
+        <div class="special-awards">
+          <!-- 最稳定选手 -->
+          <div class="special-item" v-if="awardsData.most_consistent" @click="goToPlayerDetail(awardsData.most_consistent.player_id)">
+            <div class="special-icon stable"></div>
+            <div class="special-label">最稳定选手</div>
+            <div class="special-name">{{ awardsData.most_consistent.player_name }}</div>
+            <div class="special-meta">{{ awardsData.most_consistent.team_name }} · {{ getPositionName(awardsData.most_consistent.position) }}</div>
+            <div class="special-desc">{{ awardsData.most_consistent.commentary.description }}</div>
+            <div class="special-tags">
+              <el-tag v-for="tag in awardsData.most_consistent.commentary.tags" :key="tag" size="small" effect="plain" round>{{ tag }}</el-tag>
+            </div>
+          </div>
+
+          <!-- 最具统治力 -->
+          <div class="special-item" v-if="awardsData.most_dominant" @click="goToPlayerDetail(awardsData.most_dominant.player_id)">
+            <div class="special-icon dominant"></div>
+            <div class="special-label">最具统治力</div>
+            <div class="special-name">{{ awardsData.most_dominant.player_name }}</div>
+            <div class="special-meta">{{ awardsData.most_dominant.team_name }} · {{ getPositionName(awardsData.most_dominant.position) }}</div>
+            <div class="special-desc">{{ awardsData.most_dominant.commentary.description }}</div>
+            <div class="special-tags">
+              <el-tag v-for="tag in awardsData.most_dominant.commentary.tags" :key="tag" size="small" effect="plain" round>{{ tag }}</el-tag>
+            </div>
+          </div>
+
+          <!-- 最佳新秀 -->
+          <div class="special-item" v-if="awardsData.rookie_of_the_year" @click="goToPlayerDetail(awardsData.rookie_of_the_year.player_id)">
+            <div class="special-icon rookie"></div>
+            <div class="special-label">最佳新秀</div>
+            <div class="special-name">{{ awardsData.rookie_of_the_year.player_name }}</div>
+            <div class="special-meta">{{ awardsData.rookie_of_the_year.team_name }} · {{ getPositionName(awardsData.rookie_of_the_year.position) }} · {{ awardsData.rookie_of_the_year.age }}岁</div>
+            <div class="special-desc">{{ awardsData.rookie_of_the_year.commentary.description }}</div>
+            <div class="special-tags">
+              <el-tag v-for="tag in awardsData.rookie_of_the_year.commentary.tags" :key="tag" size="small" effect="plain" round>{{ tag }}</el-tag>
+            </div>
+          </div>
+        </div>
+      </el-card>
+    </div>
+
     <!-- 入选分布统计 -->
-    <div class="distribution-stats" v-if="rankings.length > 0">
+    <div class="distribution-stats" v-if="top20.length > 0">
       <el-card class="dist-card">
         <template #header>
           <span class="card-title">位置分布</span>
@@ -250,29 +310,29 @@
 
       <el-card class="dist-card">
         <template #header>
-          <span class="card-title">赛区分布</span>
+          <span class="card-title">战队分布</span>
         </template>
         <div class="region-dist">
           <div
-            v-for="region in regionDistribution"
-            :key="region.region"
+            v-for="item in teamDistribution"
+            :key="item.name"
             class="region-item"
           >
-            <span class="region-name">{{ region.region || '未知' }}</span>
+            <span class="region-name">{{ item.name }}</span>
             <div class="region-bar-container">
               <div
                 class="region-bar"
-                :style="{ width: `${region.percentage}%` }"
+                :style="{ width: `${item.percentage}%` }"
               ></div>
             </div>
-            <span class="region-count">{{ region.count }}人</span>
+            <span class="region-count">{{ item.count }}人</span>
           </div>
         </div>
       </el-card>
     </div>
 
     <!-- 无数据提示 -->
-    <el-empty v-if="rankings.length === 0" description="暂无评选数据，请先进行比赛模拟" />
+    <el-empty v-if="!loading && top20.length === 0" description="暂无评选数据，请先进行比赛模拟" />
   </div>
 </template>
 
@@ -281,133 +341,163 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useSeasonStore } from '@/stores/useSeasonStore'
-import { teamApi, statsApi } from '@/api/tauri'
+import { statsApi, awardsApi } from '@/api/tauri'
+import type { AnnualAwardsData, Top20Player } from '@/api/tauri'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
-import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
+import type { PlayerPosition } from '@/types/player'
 import { POSITION_NAMES } from '@/types/player'
 import { createLogger } from '@/utils/logger'
+
+// ECharts
+import { use } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import { RadarChart } from 'echarts/charts'
+import {
+  TooltipComponent,
+  LegendComponent,
+  RadarComponent
+} from 'echarts/components'
+import VChart from 'vue-echarts'
+
+use([CanvasRenderer, RadarChart, TooltipComponent, LegendComponent, RadarComponent])
 
 const logger = createLogger('AnnualTop')
 
 const router = useRouter()
-const playerStore = usePlayerStore()
 const seasonStore = useSeasonStore()
 
-// 本地战队映射表
-const teamsMap = ref<Map<number, string>>(new Map())
-
-// 状态
 const selectedSeason = ref(seasonStore.currentSeason)
-const rankings = ref<PlayerSeasonStats[]>([])
+const awardsData = ref<AnnualAwardsData | null>(null)
 const loading = ref(false)
 const recalculating = ref(false)
 
-// 异步获取排行数据
-const fetchRankings = async () => {
+// Top20 数据
+const top20 = computed(() => awardsData.value?.top20 ?? [])
+
+// 获取颁奖数据
+const fetchData = async () => {
   loading.value = true
   try {
-    // 先加载战队数据
-    if (teamsMap.value.size === 0) {
-      const teams = await teamApi.getAllTeams()
-      teams.forEach(t => {
-        teamsMap.value.set(t.id, t.short_name || t.name)
-      })
-    }
-    rankings.value = await playerStore.getSeasonImpactRanking(String(selectedSeason.value), 20)
+    awardsData.value = await awardsApi.getAnnualAwardsData(selectedSeason.value)
   } catch (error) {
-    logger.error('获取排行数据失败:', error)
-    rankings.value = []
+    logger.error('获取颁奖数据失败:', error)
+    awardsData.value = null
   } finally {
     loading.value = false
   }
 }
 
-// 前三名
-const topThree = computed(() => {
-  return rankings.value.slice(0, 3)
+// 五维条形数据
+const getDimBars = (player: Top20Player) => [
+  { label: '影响', value: player.dimensions.impact_norm, color: '#3b82f6' },
+  { label: '发挥', value: player.dimensions.performance_norm, color: '#10b981' },
+  { label: '稳定', value: player.dimensions.stability_norm, color: '#8b5cf6' },
+  { label: '出场', value: player.dimensions.appearance_norm, color: '#f59e0b' },
+  { label: '荣誉', value: player.dimensions.honor_norm, color: '#ef4444' },
+]
+
+// 雷达图配置
+const radarOption = computed(() => {
+  if (top20.value.length < 3) return {}
+
+  const colors = ['#fbbf24', '#94a3b8', '#cd7f32']
+  const names = ['影响力', '发挥', '稳定性', '出场', '荣誉']
+
+  return {
+    tooltip: {},
+    legend: {
+      data: top20.value.slice(0, 3).map(p => p.player_name),
+      bottom: 0,
+      textStyle: { color: '#6b7280', fontSize: 12 }
+    },
+    radar: {
+      indicator: names.map(n => ({ name: n, max: 100 })),
+      shape: 'polygon',
+      splitNumber: 4,
+      axisName: { color: '#6b7280', fontSize: 12 },
+      splitLine: { lineStyle: { color: '#e5e7eb' } },
+      splitArea: { areaStyle: { color: ['rgba(59,130,246,0.02)', 'rgba(59,130,246,0.05)'] } },
+      axisLine: { lineStyle: { color: '#e5e7eb' } }
+    },
+    series: [{
+      type: 'radar',
+      data: top20.value.slice(0, 3).map((p, i) => ({
+        name: p.player_name,
+        value: [
+          p.dimensions.impact_norm,
+          p.dimensions.performance_norm,
+          p.dimensions.stability_norm,
+          p.dimensions.appearance_norm,
+          p.dimensions.honor_norm,
+        ],
+        areaStyle: { color: colors[i] + '33' },
+        lineStyle: { color: colors[i], width: 2 },
+        itemStyle: { color: colors[i] }
+      }))
+    }]
+  }
 })
 
-// 4-20名
-const restRankings = computed(() => {
-  return rankings.value.slice(3, 20)
+// 三阵数据
+const allProTiers = computed(() => {
+  if (!awardsData.value) return []
+  return [
+    { label: '一阵', class: 'tier-gold', players: awardsData.value.all_pro_1st },
+    { label: '二阵', class: 'tier-silver', players: awardsData.value.all_pro_2nd },
+    { label: '三阵', class: 'tier-bronze', players: awardsData.value.all_pro_3rd },
+  ]
 })
 
-// 位置分布统计
+// 位置分布
 const positionDistribution = computed(() => {
   const positions: PlayerPosition[] = ['TOP', 'JUG', 'MID', 'ADC', 'SUP']
-  const total = rankings.value.length || 1
-
-  return positions.map(pos => {
-    const count = rankings.value.filter(r => r.position === pos).length
-    return {
-      position: pos,
-      count,
-      percentage: (count / total) * 100
-    }
-  })
+  const total = top20.value.length || 1
+  return positions.map(pos => ({
+    position: pos,
+    count: top20.value.filter(r => r.position === pos).length,
+    percentage: (top20.value.filter(r => r.position === pos).length / total) * 100
+  }))
 })
 
-// 赛区分布统计
-const regionDistribution = computed(() => {
-  const regionMap = new Map<string, number>()
-  const total = rankings.value.length || 1
-
-  rankings.value.forEach(r => {
-    const region = r.regionId || '未知'
-    regionMap.set(region, (regionMap.get(region) || 0) + 1)
+// 战队分布
+const teamDistribution = computed(() => {
+  const map = new Map<string, number>()
+  const total = top20.value.length || 1
+  top20.value.forEach(r => {
+    map.set(r.team_name, (map.get(r.team_name) || 0) + 1)
   })
-
-  return Array.from(regionMap.entries())
-    .map(([region, count]) => ({
-      region,
-      count,
-      percentage: (count / total) * 100
-    }))
+  return Array.from(map.entries())
+    .map(([name, count]) => ({ name, count, percentage: (count / total) * 100 }))
     .sort((a, b) => b.count - a.count)
 })
 
 // 方法
-const goToDetail = (row: PlayerSeasonStats) => {
-  router.push(`/data-center/player/${row.playerId}?season=S${selectedSeason.value}`)
+const goToDetail = (row: Top20Player) => {
+  router.push(`/data-center/player/${row.player_id}?season=S${selectedSeason.value}`)
 }
 
-const getPositionName = (position: PlayerPosition): string => {
-  return POSITION_NAMES[position] || position
+const goToPlayerDetail = (playerId: number) => {
+  router.push(`/data-center/player/${playerId}?season=S${selectedSeason.value}`)
+}
+
+const getPositionName = (position: string): string => {
+  return POSITION_NAMES[position as PlayerPosition] || position
 }
 
 const getPositionTagType = (position: string) => {
   const types: Record<string, string> = {
-    TOP: 'danger',
-    JUG: 'warning',
-    MID: 'primary',
-    ADC: 'success',
-    SUP: 'info'
+    TOP: 'danger', JUG: 'warning', MID: 'primary', ADC: 'success', SUP: 'info'
   }
   return types[position] || 'info'
 }
 
-const getTeamName = (teamId: string | number | null): string => {
-  if (!teamId) return '-'
-  const numId = Number(teamId)
-  return teamsMap.value.get(numId) || String(teamId)
-}
-
-// 初始化
-onMounted(() => {
-  playerStore.loadFromStorage()
-  fetchRankings()
-})
-
-// 重新计算年度得分
 const recalculateScores = async () => {
   recalculating.value = true
   try {
     const count = await statsApi.recalculateYearlyScores(selectedSeason.value)
     ElMessage.success(`已重新计算 ${count} 名选手的年度得分`)
-    // 刷新排名数据
-    await fetchRankings()
+    await fetchData()
   } catch (error) {
     logger.error('重新计算失败:', error)
     ElMessage.error('重新计算失败')
@@ -416,10 +506,8 @@ const recalculateScores = async () => {
   }
 }
 
-// 监听赛季变化
-watch(selectedSeason, () => {
-  fetchRankings()
-})
+onMounted(() => { fetchData() })
+watch(selectedSeason, () => { fetchData() })
 </script>
 
 <style scoped lang="scss">
@@ -454,235 +542,241 @@ watch(selectedSeason, () => {
           color: white;
           margin: 0 0 8px 0;
         }
-
         .banner-subtitle {
           font-size: 16px;
           color: rgba(255, 255, 255, 0.9);
           margin: 0 0 16px 0;
         }
-
-        .scoring-rule {
-          margin-bottom: 12px;
-        }
-
+        .scoring-rule { margin-bottom: 12px; }
         .scoring-detail {
           font-size: 14px;
           color: rgba(255, 255, 255, 0.7);
-
-          .divider {
-            margin: 0 12px;
-            opacity: 0.5;
-          }
+          .divider { margin: 0 12px; opacity: 0.5; }
         }
       }
     }
   }
 
-  .top-three {
-    display: flex;
-    justify-content: center;
-    align-items: flex-end;
-    gap: 24px;
+  // Top3 + 雷达图
+  .top-section {
     margin-bottom: 32px;
 
-    .top-card {
-      background: white;
-      border-radius: 16px;
-      padding: 24px;
-      text-align: center;
-      cursor: pointer;
-      transition: transform 0.3s, box-shadow 0.3s;
-      position: relative;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    .top-three {
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      gap: 24px;
+      margin-bottom: 24px;
 
-      &:hover {
-        transform: translateY(-8px);
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-      }
+      .top-card {
+        background: white;
+        border-radius: 16px;
+        padding: 24px;
+        text-align: center;
+        cursor: pointer;
+        transition: transform 0.3s, box-shadow 0.3s;
+        position: relative;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 
-      .rank-medal {
-        font-size: 48px;
-        margin-bottom: 12px;
-      }
+        &:hover {
+          transform: translateY(-8px);
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        }
 
-      .player-name {
-        font-size: 20px;
-        font-weight: 700;
-        color: #1f2937;
-        margin-bottom: 8px;
-      }
+        .rank-badge {
+          width: 40px; height: 40px; line-height: 40px;
+          border-radius: 50%;
+          margin: 0 auto 12px;
+          font-weight: 700; font-size: 18px; color: white;
+          background: #94a3b8;
 
-      .player-meta {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 8px;
-        font-size: 14px;
-        color: #6b7280;
-        margin-bottom: 16px;
-      }
-
-      .score-breakdown {
-        display: flex;
-        justify-content: center;
-        gap: 24px;
-        margin-bottom: 16px;
-
-        .score-item {
-          .label {
-            display: block;
-            font-size: 12px;
-            color: #9ca3af;
+          &.mvp {
+            width: auto; padding: 0 16px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            font-size: 14px;
           }
-          .value {
-            font-size: 18px;
-            font-weight: 600;
-            color: #1f2937;
+        }
 
-            &.bonus {
-              color: #f59e0b;
+        .player-name {
+          font-size: 20px; font-weight: 700; color: #1f2937; margin-bottom: 8px;
+        }
+        .player-meta {
+          display: flex; justify-content: center; align-items: center;
+          gap: 8px; font-size: 14px; color: #6b7280; margin-bottom: 16px;
+        }
+
+        .dim-bars {
+          text-align: left; margin-bottom: 16px;
+          .dim-row {
+            display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+            .dim-label { width: 32px; font-size: 11px; color: #9ca3af; }
+            .dim-bar-bg {
+              flex: 1; height: 6px; background: #f3f4f6; border-radius: 3px; overflow: hidden;
+              .dim-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
             }
+            .dim-val { width: 28px; font-size: 11px; color: #6b7280; text-align: right; }
           }
         }
-      }
 
-      .total-score {
-        padding: 12px;
-        background: #f3f4f6;
-        border-radius: 12px;
-        margin-bottom: 12px;
-
-        .label {
-          display: block;
-          font-size: 12px;
-          color: #6b7280;
+        .total-score {
+          padding: 12px; background: #f3f4f6; border-radius: 12px;
+          .label { display: block; font-size: 12px; color: #6b7280; }
+          .value { font-size: 28px; font-weight: 800; color: #7c3aed; }
         }
-        .value {
-          font-size: 28px;
-          font-weight: 800;
-          color: #7c3aed;
-        }
-      }
 
-      .champion-badges {
-        display: flex;
-        justify-content: center;
-        gap: 8px;
-
-        .badge {
-          padding: 4px 12px;
-          border-radius: 20px;
-          font-size: 14px;
-
-          &.intl {
-            background: #fef3c7;
-            color: #92400e;
+        &.gold {
+          width: 280px;
+          box-shadow: 0 8px 24px rgba(251, 191, 36, 0.3);
+          border: 2px solid #fbbf24;
+          .crown-icon {
+            position: absolute; top: -20px; left: 50%; transform: translateX(-50%);
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            clip-path: polygon(50% 0%, 65% 35%, 100% 35%, 75% 55%, 85% 90%, 50% 70%, 15% 90%, 25% 55%, 0% 35%, 35% 35%);
+            animation: float 2s ease-in-out infinite;
           }
-          &.regional {
-            background: #e0e7ff;
-            color: #3730a3;
-          }
+          .rank-badge { background: linear-gradient(135deg, #fbbf24, #f59e0b); }
+        }
+        &.silver {
+          width: 240px;
+          box-shadow: 0 4px 16px rgba(192, 192, 192, 0.3);
+          border: 2px solid #c0c0c0;
+          .rank-badge { background: #94a3b8; }
+        }
+        &.bronze {
+          width: 240px;
+          box-shadow: 0 4px 16px rgba(205, 127, 50, 0.3);
+          border: 2px solid #cd7f32;
+          .rank-badge { background: #cd7f32; }
         }
       }
+    }
 
-      &.gold {
-        width: 280px;
-        box-shadow: 0 8px 24px rgba(251, 191, 36, 0.3);
-        border: 2px solid #fbbf24;
-
-        .crown {
-          position: absolute;
-          top: -30px;
-          left: 50%;
-          transform: translateX(-50%);
-          font-size: 48px;
-          animation: float 2s ease-in-out infinite;
-        }
-
-        .mvp-label {
-          position: absolute;
-          top: 12px;
-          right: 12px;
-          background: linear-gradient(135deg, #fbbf24, #f59e0b);
-          color: white;
-          padding: 4px 12px;
-          border-radius: 20px;
-          font-size: 12px;
-          font-weight: 600;
-        }
-      }
-
-      &.silver {
-        width: 240px;
-        box-shadow: 0 4px 16px rgba(192, 192, 192, 0.3);
-        border: 2px solid #c0c0c0;
-      }
-
-      &.bronze {
-        width: 240px;
-        box-shadow: 0 4px 16px rgba(205, 127, 50, 0.3);
-        border: 2px solid #cd7f32;
-      }
+    .radar-card {
+      border-radius: 16px;
+      .card-title { font-size: 16px; font-weight: 600; color: #1f2937; }
+      .chart-container { height: 320px; }
+      .chart { width: 100%; height: 100%; }
     }
   }
 
   @keyframes float {
     0%, 100% { transform: translateX(-50%) translateY(0); }
-    50% { transform: translateX(-50%) translateY(-10px); }
+    50% { transform: translateX(-50%) translateY(-8px); }
   }
 
+  // Top20 表格
   .ranking-list {
     margin-bottom: 24px;
     border-radius: 16px;
 
-    .card-title {
-      font-size: 18px;
-      font-weight: 600;
-      color: #1f2937;
-    }
+    .card-title { font-size: 18px; font-weight: 600; color: #1f2937; }
 
     .rank-number {
-      font-weight: 600;
-      color: #6b7280;
+      font-weight: 600; color: #6b7280;
+      &.top-rank { color: #f59e0b; font-size: 16px; }
     }
-
     .player-link {
-      font-weight: 600;
-      color: #3b82f6;
-      cursor: pointer;
+      font-weight: 600; color: #3b82f6; cursor: pointer;
+      &:hover { text-decoration: underline; }
+    }
+    .games-value { color: #6b7280; }
+    .bonus-value { color: #f59e0b; font-weight: 500; }
+    .score-value { font-weight: 700; color: #7c3aed; font-size: 16px; }
 
-      &:hover {
-        text-decoration: underline;
+    .mini-bar-cell {
+      display: flex; align-items: center; gap: 4px;
+      span { font-size: 12px; color: #6b7280; min-width: 32px; text-align: right; }
+      .mini-bar {
+        flex: 1; height: 4px; background: #f3f4f6; border-radius: 2px; overflow: hidden; min-width: 30px;
+        .mini-fill {
+          height: 100%; border-radius: 2px;
+          &.impact { background: #3b82f6; }
+          &.perf { background: #10b981; }
+          &.stab { background: #8b5cf6; }
+        }
       }
     }
 
-    .bonus-value {
-      color: #f59e0b;
-      font-weight: 500;
-    }
-
-    .honor-cell {
-      display: flex;
-      gap: 4px;
-      justify-content: center;
-      font-size: 14px;
-    }
-
-    .score-value {
-      font-weight: 700;
-      color: #7c3aed;
-      font-size: 16px;
+    .tags-cell {
+      display: flex; gap: 4px; flex-wrap: wrap;
     }
 
     :deep(.el-table__row) {
       cursor: pointer;
+      &:hover { background-color: #f0f9ff !important; }
+    }
+  }
 
-      &:hover {
-        background-color: #f0f9ff !important;
+  // 最佳阵容 + 特别奖
+  .bottom-section {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 24px;
+    margin-bottom: 24px;
+
+    .card-title { font-size: 16px; font-weight: 600; color: #1f2937; }
+
+    .allpro-card {
+      border-radius: 16px;
+
+      .allpro-tiers {
+        display: flex; flex-direction: column; gap: 16px;
+
+        .tier-section {
+          .tier-header {
+            font-size: 14px; font-weight: 700; padding: 8px 16px;
+            border-radius: 8px; margin-bottom: 8px; color: white;
+            &.tier-gold { background: linear-gradient(135deg, #fbbf24, #f59e0b); }
+            &.tier-silver { background: linear-gradient(135deg, #94a3b8, #64748b); }
+            &.tier-bronze { background: linear-gradient(135deg, #cd7f32, #a0522d); }
+          }
+          .tier-players {
+            display: flex; flex-direction: column; gap: 4px;
+            .allpro-player {
+              display: flex; align-items: center; gap: 8px;
+              padding: 8px 12px; border-radius: 8px; cursor: pointer;
+              &:hover { background: #f9fafb; }
+              .ap-name { font-weight: 600; color: #1f2937; flex: 1; }
+              .ap-team { font-size: 13px; color: #6b7280; }
+              .ap-score { font-weight: 700; color: #7c3aed; font-size: 14px; }
+            }
+          }
+        }
+      }
+    }
+
+    .special-card {
+      border-radius: 16px;
+
+      .special-awards {
+        display: flex; flex-direction: column; gap: 16px;
+
+        .special-item {
+          padding: 16px; border-radius: 12px;
+          background: #f9fafb; cursor: pointer;
+          transition: background 0.2s;
+          &:hover { background: #f0f9ff; }
+
+          .special-icon {
+            width: 36px; height: 36px; border-radius: 50%;
+            margin-bottom: 8px;
+            &.stable { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
+            &.dominant { background: linear-gradient(135deg, #ef4444, #dc2626); }
+            &.rookie { background: linear-gradient(135deg, #10b981, #059669); }
+          }
+          .special-label { font-size: 12px; color: #9ca3af; font-weight: 600; margin-bottom: 4px; }
+          .special-name { font-size: 18px; font-weight: 700; color: #1f2937; margin-bottom: 4px; }
+          .special-meta { font-size: 13px; color: #6b7280; margin-bottom: 8px; }
+          .special-desc { font-size: 13px; color: #374151; line-height: 1.5; margin-bottom: 8px; }
+          .special-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+        }
       }
     }
   }
 
+  // 分布统计
   .distribution-stats {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -690,12 +784,7 @@ watch(selectedSeason, () => {
 
     .dist-card {
       border-radius: 16px;
-
-      .card-title {
-        font-size: 16px;
-        font-weight: 600;
-        color: #1f2937;
-      }
+      .card-title { font-size: 16px; font-weight: 600; color: #1f2937; }
     }
 
     .position-dist {
@@ -706,85 +795,37 @@ watch(selectedSeason, () => {
       padding-top: 20px;
 
       .dist-item {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 8px;
-
+        display: flex; flex-direction: column; align-items: center; gap: 8px;
         .dist-bar-container {
-          height: 100px;
-          width: 40px;
-          background: #f3f4f6;
-          border-radius: 8px;
-          display: flex;
-          align-items: flex-end;
-          overflow: hidden;
+          height: 100px; width: 40px; background: #f3f4f6;
+          border-radius: 8px; display: flex; align-items: flex-end; overflow: hidden;
         }
-
         .dist-bar {
-          width: 100%;
-          border-radius: 8px 8px 0 0;
-          transition: height 0.3s;
-
+          width: 100%; border-radius: 8px 8px 0 0; transition: height 0.3s;
           &.top { background: linear-gradient(180deg, #ef4444, #dc2626); }
           &.jug { background: linear-gradient(180deg, #f59e0b, #d97706); }
           &.mid { background: linear-gradient(180deg, #3b82f6, #2563eb); }
           &.adc { background: linear-gradient(180deg, #10b981, #059669); }
           &.sup { background: linear-gradient(180deg, #8b5cf6, #7c3aed); }
         }
-
-        .dist-label {
-          font-size: 14px;
-          font-weight: 600;
-          color: #374151;
-        }
-
-        .dist-count {
-          font-size: 12px;
-          color: #6b7280;
-        }
+        .dist-label { font-size: 14px; font-weight: 600; color: #374151; }
+        .dist-count { font-size: 12px; color: #6b7280; }
       }
     }
 
     .region-dist {
       .region-item {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 12px;
-
-        &:last-child {
-          margin-bottom: 0;
-        }
-
-        .region-name {
-          width: 60px;
-          font-size: 14px;
-          font-weight: 500;
-          color: #374151;
-        }
-
+        display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+        &:last-child { margin-bottom: 0; }
+        .region-name { width: 80px; font-size: 14px; font-weight: 500; color: #374151; }
         .region-bar-container {
-          flex: 1;
-          height: 24px;
-          background: #f3f4f6;
-          border-radius: 12px;
-          overflow: hidden;
+          flex: 1; height: 24px; background: #f3f4f6; border-radius: 12px; overflow: hidden;
         }
-
         .region-bar {
-          height: 100%;
-          background: linear-gradient(90deg, #667eea, #764ba2);
-          border-radius: 12px;
-          transition: width 0.3s;
+          height: 100%; background: linear-gradient(90deg, #667eea, #764ba2);
+          border-radius: 12px; transition: width 0.3s;
         }
-
-        .region-count {
-          width: 50px;
-          font-size: 14px;
-          color: #6b7280;
-          text-align: right;
-        }
+        .region-count { width: 50px; font-size: 14px; color: #6b7280; text-align: right; }
       }
     }
   }
@@ -792,19 +833,12 @@ watch(selectedSeason, () => {
 
 @media (max-width: 1024px) {
   .annual-top {
-    .top-three {
-      flex-direction: column;
-      align-items: center;
-
-      .top-card {
-        width: 100% !important;
-        max-width: 300px;
-      }
+    .top-section .top-three {
+      flex-direction: column; align-items: center;
+      .top-card { width: 100% !important; max-width: 300px; }
     }
-
-    .distribution-stats {
-      grid-template-columns: 1fr;
-    }
+    .bottom-section { grid-template-columns: 1fr; }
+    .distribution-stats { grid-template-columns: 1fr; }
   }
 }
 </style>

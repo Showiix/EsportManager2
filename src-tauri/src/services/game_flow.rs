@@ -1039,6 +1039,17 @@ impl GameFlowService {
             SeasonPhase::AnnualAwards => {
                 log::debug!("处理年度颁奖典礼");
 
+                // 身价加成收集器：player_id -> (最高倍率, 原因)
+                let mut player_max_bonus: std::collections::HashMap<u64, (f64, String)> = std::collections::HashMap::new();
+
+                // 辅助函数：记录身价加成（只保留最高）
+                let mut record_bonus = |pid: u64, bonus: f64, reason: String| {
+                    let entry = player_max_bonus.entry(pid).or_insert((1.0, String::new()));
+                    if bonus > entry.0 {
+                        *entry = (bonus, reason);
+                    }
+                };
+
                 // 获取年度Top20选手并颁发荣誉
                 let top20 = self.get_annual_top20(pool, save_id, season_id).await?;
                 log::debug!("获取到 {} 位Top20选手", top20.len());
@@ -1050,7 +1061,7 @@ impl GameFlowService {
                             save_id,
                             HonorType::AnnualMvp,
                             season_id,
-                            None, // 年度颁奖没有具体赛事
+                            None,
                             "年度颁奖典礼",
                             "ANNUAL",
                             player.team_id,
@@ -1071,7 +1082,7 @@ impl GameFlowService {
                         }
                     }
 
-                    // Top20荣誉 - 在tournament_name中记录具体排名
+                    // Top20荣誉
                     let rank = idx + 1;
                     let top20_honor = crate::models::Honor::new_player_honor(
                         save_id,
@@ -1097,37 +1108,32 @@ impl GameFlowService {
                         });
                     }
 
-                    // 更新选手身价（Top20选手身价提升）
+                    // 记录Top20身价加成
                     let value_bonus = match idx {
                         0 => 1.5,      // MVP +50%
                         1..=4 => 1.3,  // Top2-5 +30%
                         5..=9 => 1.2,  // Top6-10 +20%
                         _ => 1.1,      // Top11-20 +10%
                     };
-                    let reason = format!("年度Top{}", idx + 1);
-                    let _ = self.update_player_market_value(pool, save_id, season_id, player.player_id, value_bonus, &reason).await;
+                    record_bonus(player.player_id, value_bonus, format!("年度Top{}", idx + 1));
                 }
 
-                // 获取各位置最佳选手并颁发荣誉
-                let all_pro = self.get_annual_all_pro(pool, save_id, season_id).await?;
-                log::debug!("获取到 {} 位最佳阵容选手", all_pro.len());
+                // 获取三阵选手并颁发荣誉
+                let all_pro_3teams = self.get_annual_all_pro_3teams(pool, save_id, season_id).await?;
+                log::debug!("获取到 {} 位最佳阵容选手", all_pro_3teams.len());
 
-                for player in &all_pro {
-                    let honor_type = match player.position.to_uppercase().as_str() {
-                        "TOP" => HonorType::AnnualBestTop,
-                        "JUG" => HonorType::AnnualBestJungle,
-                        "MID" => HonorType::AnnualBestMid,
-                        "ADC" => HonorType::AnnualBestAdc,
-                        "SUP" => HonorType::AnnualBestSupport,
+                for (tier, player) in &all_pro_3teams {
+                    let honor_type = match tier {
+                        1 => HonorType::AnnualAllPro1st,
+                        2 => HonorType::AnnualAllPro2nd,
+                        3 => HonorType::AnnualAllPro3rd,
                         _ => continue,
                     };
 
-                    let honor_name = match player.position.to_uppercase().as_str() {
-                        "TOP" => "年度最佳上单",
-                        "JUG" => "年度最佳打野",
-                        "MID" => "年度最佳中单",
-                        "ADC" => "年度最佳ADC",
-                        "SUP" => "年度最佳辅助",
+                    let tier_name = match tier {
+                        1 => "最佳阵容一阵",
+                        2 => "最佳阵容二阵",
+                        3 => "最佳阵容三阵",
                         _ => continue,
                     };
 
@@ -1146,17 +1152,85 @@ impl GameFlowService {
                         None,
                     );
                     if let Err(e) = HonorRepository::create(pool, save_id, &position_honor).await {
-                        log::error!("Failed to create annual best position honor: {}", e);
+                        log::error!("Failed to create annual all-pro honor: {}", e);
                     } else {
                         honors_awarded.push(HonorAwarded {
-                            honor_type: honor_name.to_string(),
+                            honor_type: tier_name.to_string(),
                             recipient_name: player.player_name.clone(),
                             tournament_name: "年度颁奖典礼".to_string(),
                         });
                     }
 
-                    // 最佳阵容选手身价提升20%
-                    let _ = self.update_player_market_value(pool, save_id, season_id, player.player_id, 1.2, honor_name).await;
+                    // 记录阵容身价加成
+                    let value_bonus = match tier {
+                        1 => 1.25,  // 一阵 +25%
+                        2 => 1.15,  // 二阵 +15%
+                        3 => 1.10,  // 三阵 +10%
+                        _ => 1.0,
+                    };
+                    record_bonus(player.player_id, value_bonus, tier_name.to_string());
+                }
+
+                // 获取最稳定选手
+                if let Ok(Some(consistent)) = self.get_annual_most_consistent(pool, save_id, season_id).await {
+                    log::debug!("年度最稳定选手: {}", consistent.player_name);
+
+                    let honor = crate::models::Honor::new_player_honor(
+                        save_id,
+                        HonorType::AnnualMostConsistent,
+                        season_id,
+                        None,
+                        "年度颁奖典礼",
+                        "ANNUAL",
+                        consistent.team_id,
+                        &consistent.team_name,
+                        consistent.player_id,
+                        &consistent.player_name,
+                        &consistent.position,
+                        None,
+                    );
+                    if let Err(e) = HonorRepository::create(pool, save_id, &honor).await {
+                        log::error!("Failed to create annual most consistent honor: {}", e);
+                    } else {
+                        honors_awarded.push(HonorAwarded {
+                            honor_type: "年度最稳定选手".to_string(),
+                            recipient_name: consistent.player_name.clone(),
+                            tournament_name: "年度颁奖典礼".to_string(),
+                        });
+                    }
+
+                    record_bonus(consistent.player_id, 1.15, "年度最稳定选手".to_string());
+                }
+
+                // 获取最具统治力选手
+                if let Ok(Some(dominant)) = self.get_annual_most_dominant(pool, save_id, season_id).await {
+                    log::debug!("年度最具统治力选手: {}", dominant.player_name);
+
+                    let honor = crate::models::Honor::new_player_honor(
+                        save_id,
+                        HonorType::AnnualMostDominant,
+                        season_id,
+                        None,
+                        "年度颁奖典礼",
+                        "ANNUAL",
+                        dominant.team_id,
+                        &dominant.team_name,
+                        dominant.player_id,
+                        &dominant.player_name,
+                        &dominant.position,
+                        None,
+                    );
+                    if let Err(e) = HonorRepository::create(pool, save_id, &honor).await {
+                        log::error!("Failed to create annual most dominant honor: {}", e);
+                    } else {
+                        honors_awarded.push(HonorAwarded {
+                            honor_type: "年度最具统治力".to_string(),
+                            recipient_name: dominant.player_name.clone(),
+                            tournament_name: "年度颁奖典礼".to_string(),
+                        });
+                    }
+
+                    record_bonus(dominant.player_id, 1.20, "年度最具统治力".to_string());
                 }
 
                 // 获取年度最佳新秀
@@ -1187,8 +1261,12 @@ impl GameFlowService {
                         });
                     }
 
-                    // 最佳新秀身价提升30%
-                    let _ = self.update_player_market_value(pool, save_id, season_id, rookie.player_id, 1.3, "年度最佳新秀").await;
+                    record_bonus(rookie.player_id, 1.30, "年度最佳新秀".to_string());
+                }
+
+                // 统一应用身价加成（每个选手只取最高不叠加）
+                for (player_id, (bonus, reason)) in &player_max_bonus {
+                    let _ = self.update_player_market_value(pool, save_id, season_id, *player_id, *bonus, reason).await;
                 }
             }
 
@@ -3897,6 +3975,10 @@ struct AnnualPlayerInfo {
     position: String,
     #[allow(dead_code)]
     yearly_score: f64,
+    age: u8,
+    consistency_score: f64,
+    dominance_score: f64,
+    games_played: i32,
 }
 
 impl GameFlowService {
@@ -3915,9 +3997,14 @@ impl GameFlowService {
                 pss.team_id,
                 COALESCE(t.name, '未知') as team_name,
                 pss.position,
-                pss.yearly_top_score
+                pss.yearly_top_score,
+                COALESCE(p.age, 0) as age,
+                pss.consistency_score,
+                COALESCE(pss.dominance_score, 0.0) as dominance_score,
+                pss.games_played
             FROM player_season_stats pss
             LEFT JOIN teams t ON pss.team_id = t.id
+            LEFT JOIN players p ON pss.player_id = p.id
             WHERE pss.save_id = ? AND pss.season_id = ? AND pss.games_played >= 10
             ORDER BY pss.yearly_top_score DESC
             LIMIT 20
@@ -3936,21 +4023,25 @@ impl GameFlowService {
             team_name: row.get::<String, _>("team_name"),
             position: row.get::<String, _>("position"),
             yearly_score: row.get::<f64, _>("yearly_top_score"),
+            age: row.get::<i64, _>("age") as u8,
+            consistency_score: row.get::<f64, _>("consistency_score"),
+            dominance_score: row.get::<f64, _>("dominance_score"),
+            games_played: row.get::<i32, _>("games_played"),
         }).collect())
     }
 
-    /// 获取年度最佳阵容（各位置第一）
-    async fn get_annual_all_pro(
+    /// 获取年度最佳阵容三阵（每位置Top3）
+    async fn get_annual_all_pro_3teams(
         &self,
         pool: &Pool<Sqlite>,
         save_id: &str,
         season_id: u64,
-    ) -> Result<Vec<AnnualPlayerInfo>, String> {
+    ) -> Result<Vec<(u8, AnnualPlayerInfo)>, String> {
         let positions = vec!["TOP", "JUG", "MID", "ADC", "SUP"];
-        let mut all_pro = Vec::new();
+        let mut results = Vec::new();
 
         for position in positions {
-            let row = sqlx::query(
+            let rows = sqlx::query(
                 r#"
                 SELECT
                     pss.player_id,
@@ -3958,34 +4049,140 @@ impl GameFlowService {
                     pss.team_id,
                     COALESCE(t.name, '未知') as team_name,
                     pss.position,
-                    pss.yearly_top_score
+                    pss.yearly_top_score,
+                    COALESCE(p.age, 0) as age,
+                    pss.consistency_score,
+                    COALESCE(pss.dominance_score, 0.0) as dominance_score,
+                    pss.games_played
                 FROM player_season_stats pss
                 LEFT JOIN teams t ON pss.team_id = t.id
+                LEFT JOIN players p ON pss.player_id = p.id
                 WHERE pss.save_id = ? AND pss.season_id = ? AND pss.position = ? AND pss.games_played >= 10
                 ORDER BY pss.yearly_top_score DESC
-                LIMIT 1
+                LIMIT 3
                 "#
             )
             .bind(save_id)
             .bind(season_id as i64)
             .bind(position)
-            .fetch_optional(pool)
+            .fetch_all(pool)
             .await
             .map_err(|e| format!("Failed to get best {}: {}", position, e))?;
 
-            if let Some(row) = row {
-                all_pro.push(AnnualPlayerInfo {
+            for (tier_idx, row) in rows.iter().enumerate() {
+                let tier = (tier_idx + 1) as u8;
+                results.push((tier, AnnualPlayerInfo {
                     player_id: row.get::<i64, _>("player_id") as u64,
                     player_name: row.get::<String, _>("player_name"),
                     team_id: row.get::<Option<i64>, _>("team_id").unwrap_or(0) as u64,
                     team_name: row.get::<String, _>("team_name"),
                     position: row.get::<String, _>("position"),
                     yearly_score: row.get::<f64, _>("yearly_top_score"),
-                });
+                    age: row.get::<i64, _>("age") as u8,
+                    consistency_score: row.get::<f64, _>("consistency_score"),
+                    dominance_score: row.get::<f64, _>("dominance_score"),
+                    games_played: row.get::<i32, _>("games_played"),
+                }));
             }
         }
 
-        Ok(all_pro)
+        Ok(results)
+    }
+
+    /// 获取年度最稳定选手（consistency_score最高，>=30场）
+    async fn get_annual_most_consistent(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+    ) -> Result<Option<AnnualPlayerInfo>, String> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                pss.player_id,
+                pss.player_name,
+                pss.team_id,
+                COALESCE(t.name, '未知') as team_name,
+                pss.position,
+                pss.yearly_top_score,
+                COALESCE(p.age, 0) as age,
+                pss.consistency_score,
+                COALESCE(pss.dominance_score, 0.0) as dominance_score,
+                pss.games_played
+            FROM player_season_stats pss
+            LEFT JOIN teams t ON pss.team_id = t.id
+            LEFT JOIN players p ON pss.player_id = p.id
+            WHERE pss.save_id = ? AND pss.season_id = ? AND pss.games_played >= 30
+            ORDER BY pss.consistency_score DESC
+            LIMIT 1
+            "#
+        )
+        .bind(save_id)
+        .bind(season_id as i64)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("Failed to get most consistent: {}", e))?;
+
+        Ok(row.map(|r| AnnualPlayerInfo {
+            player_id: r.get::<i64, _>("player_id") as u64,
+            player_name: r.get::<String, _>("player_name"),
+            team_id: r.get::<Option<i64>, _>("team_id").unwrap_or(0) as u64,
+            team_name: r.get::<String, _>("team_name"),
+            position: r.get::<String, _>("position"),
+            yearly_score: r.get::<f64, _>("yearly_top_score"),
+            age: r.get::<i64, _>("age") as u8,
+            consistency_score: r.get::<f64, _>("consistency_score"),
+            dominance_score: r.get::<f64, _>("dominance_score"),
+            games_played: r.get::<i32, _>("games_played"),
+        }))
+    }
+
+    /// 获取年度最具统治力选手（dominance_score最高，>=20场）
+    async fn get_annual_most_dominant(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+    ) -> Result<Option<AnnualPlayerInfo>, String> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                pss.player_id,
+                pss.player_name,
+                pss.team_id,
+                COALESCE(t.name, '未知') as team_name,
+                pss.position,
+                pss.yearly_top_score,
+                COALESCE(p.age, 0) as age,
+                pss.consistency_score,
+                COALESCE(pss.dominance_score, 0.0) as dominance_score,
+                pss.games_played
+            FROM player_season_stats pss
+            LEFT JOIN teams t ON pss.team_id = t.id
+            LEFT JOIN players p ON pss.player_id = p.id
+            WHERE pss.save_id = ? AND pss.season_id = ? AND pss.games_played >= 20
+            ORDER BY COALESCE(pss.dominance_score, 0.0) DESC
+            LIMIT 1
+            "#
+        )
+        .bind(save_id)
+        .bind(season_id as i64)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("Failed to get most dominant: {}", e))?;
+
+        Ok(row.map(|r| AnnualPlayerInfo {
+            player_id: r.get::<i64, _>("player_id") as u64,
+            player_name: r.get::<String, _>("player_name"),
+            team_id: r.get::<Option<i64>, _>("team_id").unwrap_or(0) as u64,
+            team_name: r.get::<String, _>("team_name"),
+            position: r.get::<String, _>("position"),
+            yearly_score: r.get::<f64, _>("yearly_top_score"),
+            age: r.get::<i64, _>("age") as u8,
+            consistency_score: r.get::<f64, _>("consistency_score"),
+            dominance_score: r.get::<f64, _>("dominance_score"),
+            games_played: r.get::<i32, _>("games_played"),
+        }))
     }
 
     /// 获取年度最佳新秀（20岁及以下）
@@ -4003,7 +4200,11 @@ impl GameFlowService {
                 pss.team_id,
                 COALESCE(t.name, '未知') as team_name,
                 pss.position,
-                pss.yearly_top_score
+                pss.yearly_top_score,
+                p.age,
+                pss.consistency_score,
+                COALESCE(pss.dominance_score, 0.0) as dominance_score,
+                pss.games_played
             FROM player_season_stats pss
             JOIN players p ON pss.player_id = p.id
             LEFT JOIN teams t ON pss.team_id = t.id
@@ -4025,6 +4226,10 @@ impl GameFlowService {
             team_name: r.get::<String, _>("team_name"),
             position: r.get::<String, _>("position"),
             yearly_score: r.get::<f64, _>("yearly_top_score"),
+            age: r.get::<i64, _>("age") as u8,
+            consistency_score: r.get::<f64, _>("consistency_score"),
+            dominance_score: r.get::<f64, _>("dominance_score"),
+            games_played: r.get::<i32, _>("games_played"),
         }))
     }
 
@@ -4179,6 +4384,12 @@ impl GameFlowService {
                         0.08
                     }
                 }
+                "ANNUAL_ALL_PRO_1ST" => 0.15,
+                "ANNUAL_ALL_PRO_2ND" => 0.10,
+                "ANNUAL_ALL_PRO_3RD" => 0.06,
+                "ANNUAL_MOST_CONSISTENT" => 0.08,
+                "ANNUAL_MOST_DOMINANT" => 0.12,
+                // 兼容旧存档
                 "ANNUAL_BEST_TOP" | "ANNUAL_BEST_JUNGLE" | "ANNUAL_BEST_MID"
                 | "ANNUAL_BEST_ADC" | "ANNUAL_BEST_SUPPORT" => 0.15,
                 "ANNUAL_ROOKIE" => 0.12,

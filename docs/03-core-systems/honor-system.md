@@ -79,8 +79,116 @@ pub struct Honor {
 | MSI亚军 | +25% | 永久 |
 | 联赛冠军 | +30% | 3赛季 |
 | 联赛MVP | +20% | 2赛季 |
-| 最佳阵容一队 | +25% | 2赛季 |
-| 年度最佳新秀 | +20% | 3赛季 |
+
+### 年度颁奖身价加成（取最高，不叠加）
+
+同一选手获得多个年度奖项时，只取最高加成，不累加：
+
+| 奖项 | 身价加成 |
+|------|---------|
+| 年度MVP | +50% |
+| Top 2-5 | +30% |
+| Top 6-10 | +20% |
+| Top 11-20 | +10% |
+| 最佳阵容一阵 | +25% |
+| 最佳阵容二阵 | +15% |
+| 最佳阵容三阵 | +10% |
+| 最具统治力 | +20% |
+| 最稳定选手 | +15% |
+| 最佳新秀 | +30% |
+
+实现方式：使用 `HashMap<player_id, (max_bonus, reason)>` 跟踪每位选手的最高加成。
+
+## 年度颁奖典礼系统
+
+### 奖项体系（24 个个人奖项）
+
+| 档次 | 奖项 | 人数 |
+|------|------|------|
+| 至高荣誉 | 年度MVP（Top20 #1） | 1 |
+| 年度Top20 | 1-20 排名 | 20 |
+| 最佳阵容一阵 | 各位置 #1 | 5 |
+| 最佳阵容二阵 | 各位置 #2 | 5 |
+| 最佳阵容三阵 | 各位置 #3 | 5 |
+| 特别奖 | 最稳定选手（consistency_score 最高，≥30 场） | 1 |
+| 特别奖 | 最佳新秀（yearly_top_score，age ≤ 20，≥10 场） | 1 |
+| 特别奖 | 最具统治力选手（dominance_score 最高，≥20 场） | 1 |
+
+### 颁奖数据结构
+
+```typescript
+interface AnnualAwardsData {
+  season_id: number
+  top20: Top20Player[]        // 含五维分数 + 评语
+  all_pro_1st: AllProPlayer[] // 一阵（5人）
+  all_pro_2nd: AllProPlayer[] // 二阵（5人）
+  all_pro_3rd: AllProPlayer[] // 三阵（5人）
+  most_consistent: SpecialAwardPlayer | null
+  most_dominant: SpecialAwardPlayer | null
+  rookie_of_the_year: RookiePlayer | null
+  already_awarded: boolean
+}
+
+interface ScoreDimensions {
+  impact_norm: number       // 影响力归一化 0-100
+  performance_norm: number  // 发挥归一化 0-100
+  stability_norm: number    // 稳定性归一化 0-100
+  appearance_norm: number   // 出场归一化 0-100
+  honor_norm: number        // 荣誉归一化 0-100
+}
+
+interface PlayerCommentary {
+  description: string       // 评语描述
+  tags: string[]            // 标签（如"稳定核心"、"冠军基因"）
+}
+```
+
+### 评语生成系统
+
+基于选手数据自动生成评语和标签，15+ 条件分支：
+
+| 条件 | 评语 | 标签 |
+|------|------|------|
+| 高影响力 + 高稳定 | "全年表现如磐石般稳定" | 稳定核心 |
+| 高影响力 + 低稳定 | "巅峰时刻无人可挡，低谷时也让人揪心" | 大心脏 |
+| 冠军加成 ≥ 6 | "冠军荣耀加身" | 冠军基因 |
+| age ≤ 20 + Top10 | "年仅X岁便跻身年度TopN" | 年少成名 |
+| age ≥ 30 | "老将弥坚" | 老将风范 |
+| games ≥ 100 | - | 铁人 |
+| consistency > 85 | - | 稳如泰山 |
+| best_performance > 90 | - | 超级carry |
+
+### 前端页面
+
+#### 年度评选数据分析页（AnnualTop.vue）
+
+- **数据源**: `awardsApi.getAnnualAwardsData()`
+- **Top3 领奖台**: 五维条形图 + 年度得分
+- **雷达图对比**: ECharts RadarChart，Top3 选手五维叠加显示
+- **Top20 完整排行**: 每列带迷你进度条（影响力/发挥/稳定性）+ 评语标签
+- **最佳阵容三阵**: 金/银/铜配色，按位置展示
+- **特别奖项**: 最稳定/最具统治力/最佳新秀
+- **分布统计**: 位置分布柱状图 + 战队分布条形图
+
+#### 年度颁奖典礼页（AnnualAwards.vue）
+
+三种状态：
+1. 非颁奖阶段 + 无数据 → 空状态
+2. 有历史数据 → 静态查看模式（赛季选择器）
+3. 颁奖阶段 → 实时典礼模式
+
+典礼流程（4 阶段）：
+```
+[开始颁奖典礼] → 后端颁奖（completeAndAdvance）
+    ↓
+阶段1: Top20 逐个揭晓（#20→#1）
+    ↓
+阶段2: 最佳阵容（三阵→二阵→一阵）
+    ↓
+阶段3: 特别奖项（最稳定→最佳新秀→最具统治力）
+    ↓
+阶段4: MVP 终极揭晓 + 评语展示
+```
 
 ## 荣誉殿堂
 
@@ -133,12 +241,17 @@ dominance_score = 巅峰表现(35%) + 影响力(45%) + 发挥(20%)
 | `get_player_honors(player_id)` | 获取选手荣誉 |
 | `get_player_honor_rankings()` | 获取选手荣誉排行 |
 | `get_team_honor_rankings()` | 获取战队荣誉排行 |
+| `get_annual_awards_data(season_id)` | 获取年度颁奖数据（Top20 + 三阵 + 特别奖） |
 
 ## 文件位置
 
 | 文件 | 说明 |
 |------|------|
-| `src-tauri/src/models/honor.rs` | 荣誉数据模型 |
+| `src-tauri/src/models/honor.rs` | 荣誉数据模型（HonorType 枚举） |
 | `src-tauri/src/engines/honor.rs` | 荣誉引擎 |
 | `src-tauri/src/services/honor_service.rs` | 荣誉服务 |
 | `src-tauri/src/commands/honor_commands.rs` | 荣誉命令接口 |
+| `src-tauri/src/commands/awards_commands.rs` | 年度颁奖命令（数据结构 + 查询 + 评语生成） |
+| `src-tauri/src/services/game_flow.rs` | 游戏流程（颁奖逻辑 + 身价加成） |
+| `src/views/AnnualTop.vue` | 年度评选数据分析页 |
+| `src/views/AnnualAwards.vue` | 年度颁奖典礼页 |
