@@ -79,20 +79,46 @@ consistency_score = 100 - (performance_std_dev × 2)
 
 ## 数据中心功能
 
-1. **选手排行榜**
-   - 按影响力排序
-   - 按稳定性排序
-   - 按冠军分排序
+### 主页仪表盘（DataCenter.vue）
 
-2. **位置筛选**
-   - TOP / JUG / MID / ADC / SUP
+1. **概览统计卡片**（4 列）
+   - 参赛选手数、平均影响力、最高得分、平均场次
+   - 数据来源：从 rankings 数组聚合计算，无需新 API
 
-3. **赛季筛选**
-   - 查看不同赛季数据
+2. **位置对比分析图**（ECharts 分组柱状图）
+   - X 轴：上单 / 打野 / 中单 / 下路 / 辅助
+   - 系列：平均影响力、平均得分
+   - 布局：与 Top5 侧边栏左右并列（3:2）
 
-4. **选手详情**
-   - 个人表现趋势
-   - 荣誉记录
+3. **TOP 5 选手侧边栏**
+   - 取 filteredRankings 前 5，带排名徽章
+   - 点击跳转选手详情页
+
+4. **选手排行榜**（已有）
+   - 按影响力 / 得分 / 场次等排序
+   - 位置筛选：TOP / JUG / MID / ADC / SUP
+   - 赛季筛选、搜索、分页
+
+### 选手详情页（DataCenterPlayerDetail.vue）
+
+1. **选手信息卡片** — 姓名、位置、战队、排名
+2. **数据统计卡片**（4 列）— 参与局数、平均影响力、稳定性、得分
+3. **能力雷达图**（ECharts RadarChart）— 5 维度归一化到 0-100
+   - 影响力：`(avgImpact + 10) × 3.33`（原始 -10~+20 → 0~100）
+   - 稳定性：`consistencyScore`（已是 0-100）
+   - 出场：`gamesPlayed / 2`（上限 200 → 100）
+   - 冠军：`championBonus × 6.67`（上限 15 → 100）
+   - 发挥：`(avgPerformance - 50) × 2`（原始 50-100 → 0~100）
+   - 布局：与选手状态卡片左右并列（1:1）
+4. **选手状态卡片** — 满意度进度条、忠诚度进度条、离队警告
+5. **影响力走势图**（折线图）— 每局影响力趋势 + 平均线
+6. **身价走势图**（折线图 + 面积填充）
+   - 数据来源：`statsApi.getPlayerMarketValueChanges(playerId)`
+   - X 轴：赛季（S1, S2...），Y 轴：身价（万元）
+   - 无数据时显示空状态提示
+7. **影响力分布图**（柱状图）— 按区间分组统计
+8. **稳定性仪表盘**（Gauge）— 0-100 评分
+9. **表现统计**（4 格）— 正向/负向/亮眼表现、正向率
 
 ## 数据记录流程
 
@@ -116,6 +142,8 @@ consistency_score = 100 - (performance_std_dev × 2)
 
 | 文件 | 说明 |
 |------|------|
+| `src/views/DataCenter.vue` | 数据中心主页（仪表盘 + 排行榜） |
+| `src/views/DataCenterPlayerDetail.vue` | 选手详情页（雷达图 + 走势图） |
 | `src-tauri/src/models/player_stats.rs` | 统计数据模型 |
 | `src-tauri/src/db/repository.rs` | 数据仓库（含统计数据操作） |
 | `src-tauri/src/commands/stats_commands.rs` | 统计命令接口 |
