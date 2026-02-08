@@ -557,7 +557,7 @@ async fn get_player_honors(
             let season: u32 = row.get::<i64, _>("season_number") as u32;
             let description: String = row.get("description");
 
-            MarketValueEngine::parse_honor_category(&honor_type, &tournament_type)
+            MarketValueEngine::parse_honor_category(&honor_type, &tournament_type, &description)
                 .map(|category| PlayerHonorRecord::new(category, season, &description))
         })
         .collect()

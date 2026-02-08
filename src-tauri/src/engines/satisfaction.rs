@@ -5,16 +5,11 @@
 //! - 计算忠诚度变化
 //! - 判断离队意愿
 
+use crate::engines::market_value::MarketValueEngine;
 use crate::models::{
     DepartureReason, LoyaltyChange, LoyaltyChangeReason, Player,
     TeamSeasonPerformance,
 };
-
-/// 计算预期薪水（简化版本）
-fn calculate_expected_salary(market_value: u64) -> u64 {
-    // 简单的薪水计算：市场价值 / 10
-    market_value / 10
-}
 
 /// 满意度计算引擎
 pub struct SatisfactionEngine;
@@ -75,7 +70,7 @@ impl SatisfactionEngine {
         }
 
         // 3. 薪资满意度
-        let expected_salary = calculate_expected_salary(market_value);
+        let expected_salary = MarketValueEngine::estimate_salary(market_value, player.ability, player.age);
         let salary_ratio = if expected_salary > 0 {
             player.salary as f64 / expected_salary as f64
         } else {
@@ -157,7 +152,7 @@ impl SatisfactionEngine {
         // 4. 薪资不满（通过满意度间接判断）
         if satisfaction < 35 {
             let market_value = player.calculate_market_value();
-            let expected = calculate_expected_salary(market_value);
+            let expected = MarketValueEngine::estimate_salary(market_value, player.ability, player.age);
             if player.salary < (expected as f64 * 0.7) as u64 {
                 reasons.push(DepartureReason::SalaryDispute);
             }

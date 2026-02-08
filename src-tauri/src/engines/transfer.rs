@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use crate::models::transfer::*;
 use crate::models::player::Position;
 use crate::models::team::FinancialStatus;
+use crate::engines::market_value::MarketValueEngine;
 
 /// 缓存的选手信息（避免反复查询 SqliteRow）
 #[derive(Debug, Clone)]
@@ -662,7 +663,7 @@ impl TransferEngine {
 
             // 最多3轮谈判
             let mut renewed = false;
-            let expected_salary = self.calculate_expected_salary(ability as u8, age as u8);
+            let expected_salary = MarketValueEngine::estimate_salary(MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", "MID"), ability as u8, age as u8) as i64;
 
             for _negotiation_round in 0..self.config.negotiation_max_rounds {
                 let roll: f64 = rng.gen();
@@ -781,7 +782,7 @@ impl TransferEngine {
 
                 // 4. 根据评估结果决定是否挂牌
                 if player_eval.should_list {
-                    let listing_price = self.calculate_market_value_simple(player.ability as u8, player.age as u8);
+                    let listing_price = MarketValueEngine::calculate_base_market_value(player.ability as u8, player.age as u8, player.potential as u8, &player.tag, &player.position) as i64;
 
                     sqlx::query(
                         "INSERT INTO player_listings (player_id, window_id, listed_by_team_id, listing_price, min_accept_price, status) VALUES (?, ?, ?, ?, ?, 'ACTIVE')"
@@ -830,7 +831,7 @@ impl TransferEngine {
 
                     if roll < force_list_prob {
                         // 强制挂牌：选手坚持要走，战队被迫同意
-                        let listing_price = self.calculate_market_value_simple(player.ability as u8, player.age as u8);
+                        let listing_price = MarketValueEngine::calculate_base_market_value(player.ability as u8, player.age as u8, player.potential as u8, &player.tag, &player.position) as i64;
 
                         sqlx::query(
                             "INSERT INTO player_listings (player_id, window_id, listed_by_team_id, listing_price, min_accept_price, status) VALUES (?, ?, ?, ?, ?, 'ACTIVE')"
@@ -1185,7 +1186,7 @@ impl TransferEngine {
         stay_score += teammate_score;
 
         // 4. 薪资评分
-        let estimated_salary = self.estimate_market_salary(ability as u8, age as u8);
+        let estimated_salary = MarketValueEngine::estimate_salary(MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", position), ability as u8, age as u8) as i64;
         let salary_ratio = if estimated_salary > 0 { salary as f64 / estimated_salary as f64 } else { 1.0 };
         let salary_score = if salary_ratio < 0.7 {
             -20.0
@@ -1347,7 +1348,7 @@ impl TransferEngine {
         .bind(should_list as i32)
         .bind(&list_reason)
         .bind(&protect_reason)
-        .bind(self.calculate_market_value_simple(ability as u8, age as u8))
+        .bind(MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", position) as i64)
         .execute(pool)
         .await
         .map_err(|e| format!("保存挂牌评估失败: {}", e))?;
@@ -1422,31 +1423,6 @@ impl TransferEngine {
         (false, "".to_string(), "综合评估通过".to_string())
     }
 
-    /// 估算选手市场薪资（单位：元）
-    fn estimate_market_salary(&self, ability: u8, age: u8) -> i64 {
-        // 基础薪资（万元基数）
-        let base = match ability {
-            72..=100 => 150,
-            68..=71 => 100,
-            65..=67 => 75,
-            62..=64 => 50,
-            60..=61 => 35,
-            55..=59 => 25,
-            _ => 15,
-        };
-
-        // 年龄因素
-        let age_factor = match age {
-            17..=22 => 1.2,
-            23..=26 => 1.0,
-            27..=28 => 0.9,
-            29..=30 => 0.8,
-            _ => 0.6,
-        };
-
-        ((base as f64 * age_factor) * 10000.0) as i64  // 返回元
-    }
-
     // ============================================
     // 第4轮：自由球员争夺
     // ============================================
@@ -1492,7 +1468,7 @@ impl TransferEngine {
             let tag: String = free_agent.try_get("tag").unwrap_or_else(|_| "NORMAL".to_string());
             let stability: i64 = free_agent.try_get("stability").unwrap_or(60);
 
-            let expected_salary = self.calculate_expected_salary(ability as u8, age as u8);
+            let expected_salary = MarketValueEngine::estimate_salary(MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, potential as u8, &tag, &position), ability as u8, age as u8) as i64;
 
             // 收集所有球队的报价
             let mut offers: Vec<TransferOffer> = Vec::new();
@@ -1856,7 +1832,7 @@ impl TransferEngine {
                 }
 
                 let team_name = cache.get_team_name(team_id);
-                let base_salary = self.calculate_expected_salary(ability as u8, age as u8);
+                let base_salary = MarketValueEngine::estimate_salary(listing_price as u64, ability as u8, age as u8) as i64;
                 // 根据球队AI性格和随机波动调整报价薪资
                 let salary_multiplier = {
                     let base_mult = if weights.star_chasing > 0.7 { 1.15 }
@@ -2187,7 +2163,7 @@ impl TransferEngine {
                 }
 
                 // 挂牌出售
-                let listing_price = self.calculate_market_value_simple(ability as u8, age as u8);
+                let listing_price = MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", "MID") as i64;
                 let discount_price = (listing_price as f64 * 0.7) as i64; // 财务困难打折
 
                 sqlx::query(
@@ -2307,7 +2283,7 @@ impl TransferEngine {
                     let ability: i64 = player.get("ability");
                     let age: i64 = player.get("age");
 
-                    let salary = self.calculate_expected_salary(ability as u8, age as u8);
+                    let salary = MarketValueEngine::estimate_salary(MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", pos_str), ability as u8, age as u8) as i64;
                     // 紧急补人给短合同 1-2 年
                     let contract_years: i64 = if age <= 25 && rand::random::<f64>() < 0.4 { 2 } else { 1 };
 
@@ -2893,55 +2869,6 @@ impl TransferEngine {
     // ============================================
     // 计算方法
     // ============================================
-
-    /// 计算期望薪资（万元 -> 元）
-    fn calculate_expected_salary(&self, ability: u8, age: u8) -> i64 {
-        let base = ability as i64 * 8; // 万元/年
-
-        let ability_coeff = match ability {
-            68..=100 => 1.5,
-            65..=67 => 1.3,
-            62..=64 => 1.1,
-            58..=61 => 1.0,
-            _ => 0.8,
-        };
-
-        let age_coeff = match age {
-            18..=24 => 0.8,
-            25..=29 => 1.0,
-            30..=34 => 0.9,
-            _ => 0.7,
-        };
-
-        (base as f64 * ability_coeff * age_coeff * 10000.0) as i64
-    }
-
-    /// 计算简易身价（万元 -> 元）
-    fn calculate_market_value_simple(&self, ability: u8, age: u8) -> i64 {
-        let base_multiplier = match ability {
-            72..=100 => 25i64,
-            68..=71 => 18,
-            65..=67 => 10,
-            62..=64 => 6,
-            60..=61 => 4,
-            55..=59 => 2,
-            47..=54 => 1,
-            _ => 1,
-        };
-
-        let base_value = ability as i64 * base_multiplier;
-
-        let age_factor = match age {
-            17..=19 => 1.5,
-            20..=22 => 1.3,
-            23..=25 => 1.0,
-            26..=27 => 0.85,
-            28..=29 => 0.7,
-            _ => 0.5,
-        };
-
-        (base_value as f64 * age_factor * 10000.0) as i64
-    }
 
     /// 计算匹配度（0-100）
     fn calculate_match_score(

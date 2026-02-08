@@ -3,6 +3,7 @@ use crate::db::{
     StandingRepository, TeamRepository, TournamentRepository,
 };
 use crate::engines::{FinancialEngine, PointsCalculationEngine, MetaEngine, MatchSimulationEngine, MatchPlayerInfo, MatchSimContext, TraitType, ConditionEngine, PlayerFormFactors};
+use crate::engines::market_value::{MarketValueEngine, PlayerHonorRecord};
 use std::collections::HashMap;
 use crate::models::{
     HonorType, LeagueStanding, SeasonPhase, Tournament, TournamentStatus,
@@ -1039,17 +1040,6 @@ impl GameFlowService {
             SeasonPhase::AnnualAwards => {
                 log::debug!("处理年度颁奖典礼");
 
-                // 身价加成收集器：player_id -> (最高倍率, 原因)
-                let mut player_max_bonus: std::collections::HashMap<u64, (f64, String)> = std::collections::HashMap::new();
-
-                // 辅助函数：记录身价加成（只保留最高）
-                let mut record_bonus = |pid: u64, bonus: f64, reason: String| {
-                    let entry = player_max_bonus.entry(pid).or_insert((1.0, String::new()));
-                    if bonus > entry.0 {
-                        *entry = (bonus, reason);
-                    }
-                };
-
                 // 获取年度Top20选手并颁发荣誉
                 let top20 = self.get_annual_top20(pool, save_id, season_id).await?;
                 log::debug!("获取到 {} 位Top20选手", top20.len());
@@ -1107,15 +1097,6 @@ impl GameFlowService {
                             tournament_name: "年度颁奖典礼".to_string(),
                         });
                     }
-
-                    // 记录Top20身价加成
-                    let value_bonus = match idx {
-                        0 => 1.5,      // MVP +50%
-                        1..=4 => 1.3,  // Top2-5 +30%
-                        5..=9 => 1.2,  // Top6-10 +20%
-                        _ => 1.1,      // Top11-20 +10%
-                    };
-                    record_bonus(player.player_id, value_bonus, format!("年度Top{}", idx + 1));
                 }
 
                 // 获取三阵选手并颁发荣誉
@@ -1160,15 +1141,6 @@ impl GameFlowService {
                             tournament_name: "年度颁奖典礼".to_string(),
                         });
                     }
-
-                    // 记录阵容身价加成
-                    let value_bonus = match tier {
-                        1 => 1.25,  // 一阵 +25%
-                        2 => 1.15,  // 二阵 +15%
-                        3 => 1.10,  // 三阵 +10%
-                        _ => 1.0,
-                    };
-                    record_bonus(player.player_id, value_bonus, tier_name.to_string());
                 }
 
                 // 获取最稳定选手
@@ -1198,8 +1170,6 @@ impl GameFlowService {
                             tournament_name: "年度颁奖典礼".to_string(),
                         });
                     }
-
-                    record_bonus(consistent.player_id, 1.15, "年度最稳定选手".to_string());
                 }
 
                 // 获取最具统治力选手
@@ -1229,8 +1199,6 @@ impl GameFlowService {
                             tournament_name: "年度颁奖典礼".to_string(),
                         });
                     }
-
-                    record_bonus(dominant.player_id, 1.20, "年度最具统治力".to_string());
                 }
 
                 // 获取年度最佳新秀
@@ -1260,13 +1228,6 @@ impl GameFlowService {
                             tournament_name: "年度颁奖典礼".to_string(),
                         });
                     }
-
-                    record_bonus(rookie.player_id, 1.30, "年度最佳新秀".to_string());
-                }
-
-                // 统一应用身价加成（每个选手只取最高不叠加）
-                for (player_id, (bonus, reason)) in &player_max_bonus {
-                    let _ = self.update_player_market_value(pool, save_id, season_id, *player_id, *bonus, reason).await;
                 }
             }
 
@@ -4243,80 +4204,17 @@ impl GameFlowService {
         }))
     }
 
-    /// 更新选手身价并记录变化
-    async fn update_player_market_value(
-        &self,
-        pool: &Pool<Sqlite>,
-        save_id: &str,
-        season_id: u64,
-        player_id: u64,
-        multiplier: f64,
-        reason: &str,
-    ) -> Result<(), String> {
-        // 获取当前身价和选手名称
-        let row = sqlx::query(
-            "SELECT game_id, market_value FROM players WHERE id = ?"
-        )
-        .bind(player_id as i64)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| format!("Failed to get player: {}", e))?;
-
-        let (player_name, old_value): (String, i64) = match row {
-            Some(r) => (r.get("game_id"), r.get("market_value")),
-            None => return Ok(()), // 选手不存在，跳过
-        };
-
-        let new_value = (old_value as f64 * multiplier) as i64;
-        let change_amount = new_value - old_value;
-        let change_percent = (multiplier - 1.0) * 100.0;
-
-        // 更新身价
-        sqlx::query(
-            "UPDATE players SET market_value = ? WHERE id = ?"
-        )
-        .bind(new_value)
-        .bind(player_id as i64)
-        .execute(pool)
-        .await
-        .map_err(|e| format!("Failed to update player market value: {}", e))?;
-
-        // 记录变化
-        sqlx::query(
-            r#"
-            INSERT INTO market_value_changes (save_id, season_id, player_id, player_name, old_value, new_value, change_amount, change_percent, reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#
-        )
-        .bind(save_id)
-        .bind(season_id as i64)
-        .bind(player_id as i64)
-        .bind(&player_name)
-        .bind(old_value)
-        .bind(new_value)
-        .bind(change_amount)
-        .bind(change_percent)
-        .bind(reason)
-        .execute(pool)
-        .await
-        .map_err(|e| format!("Failed to record market value change: {}", e))?;
-
-        log::debug!("{} 身价 {} -> {} (+{:.0}%, {})",
-            player_name, old_value, new_value, change_percent, reason);
-        Ok(())
-    }
-
-    /// 计算选手的荣誉系数（基于累积的所有荣誉）
+    /// 计算选手的荣誉系数（查询 DB + 委托 MarketValueEngine）
     async fn calculate_honor_factor(
         &self,
         pool: &Pool<Sqlite>,
         save_id: &str,
         player_id: u64,
+        current_season: u32,
     ) -> Result<f64, String> {
-        // 查询选手所有荣誉
         let rows = sqlx::query(
             r#"
-            SELECT honor_type, tournament_type, tournament_name
+            SELECT honor_type, tournament_type, tournament_name, season_id
             FROM honors
             WHERE save_id = ? AND player_id = ?
             "#
@@ -4327,151 +4225,16 @@ impl GameFlowService {
         .await
         .map_err(|e| format!("Failed to get player honors: {}", e))?;
 
-        let mut honor_bonus = 0.0;
-
-        for row in rows {
+        let honors: Vec<PlayerHonorRecord> = rows.iter().filter_map(|row| {
             let honor_type: String = row.get("honor_type");
             let tournament_type: String = row.get::<Option<String>, _>("tournament_type").unwrap_or_default();
             let tournament_name: String = row.get::<Option<String>, _>("tournament_name").unwrap_or_default();
+            let season_obtained: u32 = row.get::<i64, _>("season_id") as u32;
+            MarketValueEngine::parse_honor_category(&honor_type, &tournament_type, &tournament_name)
+                .map(|cat| PlayerHonorRecord::new(cat, season_obtained, &tournament_name))
+        }).collect();
 
-            // 根据荣誉类型计算加成
-            let bonus = match honor_type.as_str() {
-                // 团队荣誉 - 冠军
-                "PLAYER_CHAMPION" | "TEAM_CHAMPION" => {
-                    // 世界赛/MSI/大师赛 冠军更值钱
-                    if tournament_type.contains("World") || tournament_type.contains("Msi")
-                       || tournament_name.contains("世界赛") || tournament_name.contains("MSI") {
-                        0.40  // 国际大赛冠军
-                    } else if tournament_name.contains("大师赛") || tournament_name.contains("Masters") {
-                        0.30  // 大师赛冠军
-                    } else if tournament_name.contains("洲际") {
-                        0.25  // 洲际赛冠军
-                    } else {
-                        0.20  // 赛区冠军
-                    }
-                }
-                // 团队荣誉 - 亚军
-                "PLAYER_RUNNER_UP" | "TEAM_RUNNER_UP" => {
-                    if tournament_type.contains("World") || tournament_name.contains("世界赛") {
-                        0.20  // 世界赛亚军
-                    } else {
-                        0.10  // 其他亚军
-                    }
-                }
-                // 团队荣誉 - 季军/殿军
-                "PLAYER_THIRD" | "TEAM_THIRD" => 0.06,
-                "PLAYER_FOURTH" | "TEAM_FOURTH" => 0.04,
-
-                // 个人荣誉 - MVP
-                "TOURNAMENT_MVP" | "FINALS_MVP" => {
-                    if tournament_name.contains("世界赛") || tournament_name.contains("World") {
-                        0.25  // 世界赛MVP
-                    } else {
-                        0.15  // 其他赛事MVP
-                    }
-                }
-                "REGULAR_SEASON_MVP" => 0.12,
-                "PLAYOFFS_FMVP" => 0.15,
-
-                // 年度荣誉
-                "ANNUAL_MVP" => 0.35,
-                "ANNUAL_TOP20" => {
-                    // 从 tournament_name 提取排名 (年度Top1, 年度Top5, etc.)
-                    let rank = tournament_name
-                        .chars()
-                        .filter(|c| c.is_ascii_digit())
-                        .collect::<String>()
-                        .parse::<u32>()
-                        .unwrap_or(20);
-                    if rank <= 3 { 0.18 }
-                    else if rank <= 5 { 0.15 }
-                    else if rank <= 10 { 0.10 }
-                    else { 0.05 }
-                }
-                "ANNUAL_ALL_PRO_1ST" => 0.15,
-                "ANNUAL_ALL_PRO_2ND" => 0.10,
-                "ANNUAL_ALL_PRO_3RD" => 0.06,
-                "ANNUAL_MOST_CONSISTENT" => 0.08,
-                "ANNUAL_MOST_DOMINANT" => 0.12,
-                // 兼容旧存档
-                "ANNUAL_BEST_TOP" | "ANNUAL_BEST_JUNGLE" | "ANNUAL_BEST_MID"
-                | "ANNUAL_BEST_ADC" | "ANNUAL_BEST_SUPPORT" => 0.15,
-                "ANNUAL_ROOKIE" => 0.12,
-
-                // 常规赛第一
-                "REGULAR_SEASON_FIRST" => 0.08,
-
-                _ => 0.0,
-            };
-
-            honor_bonus += bonus;
-        }
-
-        // 荣誉系数 = 1.0 + 累积加成，上限4.0
-        let honor_factor: f64 = (1.0_f64 + honor_bonus).min(4.0);
-        Ok(honor_factor)
-    }
-
-    /// 获取赛区身价系数
-    fn get_region_market_factor(region_code: &str) -> f64 {
-        match region_code.to_uppercase().as_str() {
-            "LPL" => 1.3,   // LPL 市场最大
-            "LCK" => 1.2,   // LCK 次之
-            "LEC" => 1.0,   // LEC 基准
-            "LCS" => 0.9,   // LCS 略低
-            _ => 0.8,
-        }
-    }
-
-    /// 计算选手基础身价（从属性计算，不含荣誉）
-    fn calculate_base_market_value(ability: u8, potential: u8, age: u8, tag: &str, position: &str) -> u64 {
-        // 能力值系数
-        let multiplier: u64 = match ability {
-            72..=100 => 25,
-            68..=71 => 18,
-            65..=67 => 10,
-            62..=64 => 6,
-            60..=61 => 4,
-            55..=59 => 2,
-            47..=54 => 1,
-            _ => 1,
-        };
-
-        let base = ability as u64 * multiplier;
-
-        // 年龄系数
-        let age_factor = match age {
-            17..=19 => 1.5,
-            20..=22 => 1.3,
-            23..=25 => 1.0,
-            26..=27 => 0.85,
-            28..=29 => 0.7,
-            _ => 0.5,
-        };
-
-        // 潜力系数
-        let diff = potential.saturating_sub(ability);
-        let potential_factor = if diff > 10 { 1.25 } else if diff >= 5 { 1.1 } else { 1.0 };
-
-        // 天赋系数
-        let tag_factor = match tag.to_uppercase().as_str() {
-            "GENIUS" => 1.2,
-            "NORMAL" => 1.0,
-            _ => 0.9,
-        };
-
-        // 位置系数
-        let position_factor = match position.to_uppercase().as_str() {
-            "MID" => 1.2,
-            "ADC" => 1.15,
-            "JUG" | "JUNGLE" => 1.1,
-            "TOP" => 1.0,
-            "SUP" | "SUPPORT" => 0.9,
-            _ => 1.0,
-        };
-
-        // 返回元
-        ((base as f64 * age_factor * potential_factor * tag_factor * position_factor) * 10000.0) as u64
+        Ok(MarketValueEngine::calculate_honor_factor(&honors, current_season))
     }
 
     /// 完整重算单个选手身价（基础 × 荣誉 × 赛区）
@@ -4510,27 +4273,49 @@ impl GameFlowService {
         let age: i64 = row.get("age");
         let tag: String = row.get("tag");
         let position: String = row.get("position");
-        let _base_value_db: i64 = row.get("market_value"); // 基础身价（保持不变）
-        let old_calculated: i64 = row.get("calculated_market_value"); // 之前计算的身价
+        let old_calculated: i64 = row.get("calculated_market_value");
         let region_code: String = row.get::<Option<String>, _>("region_code").unwrap_or_else(|| "LPL".to_string());
 
-        // 计算基础身价
-        let base_value = Self::calculate_base_market_value(
-            ability as u8, potential as u8, age as u8, &tag, &position
+        // 计算基础身价（委托引擎）
+        let base_value = MarketValueEngine::calculate_base_market_value(
+            ability as u8, age as u8, potential as u8, &tag, &position
         );
 
-        // 计算荣誉系数
-        let honor_factor = self.calculate_honor_factor(pool, save_id, player_id).await?;
+        // 计算荣誉系数（委托引擎）
+        let honor_factor = self.calculate_honor_factor(pool, save_id, player_id, season_id as u32).await?;
 
-        // 赛区系数
-        let region_factor = Self::get_region_market_factor(&region_code);
+        // 查询赛季表现
+        let perf_factor = {
+            let stats_row = sqlx::query(
+                r#"SELECT avg_impact, consistency_score, games_played
+                   FROM player_season_stats
+                   WHERE save_id = ? AND player_id = ? AND season_id = ?"#
+            )
+            .bind(save_id)
+            .bind(player_id as i64)
+            .bind(season_id as i64)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
 
-        // 最终身价（基础 × 荣誉 × 赛区）
-        let new_value = ((base_value as f64) * honor_factor * region_factor) as i64;
+            if let Some(sr) = stats_row {
+                let avg_impact: f64 = sr.try_get("avg_impact").unwrap_or(0.0);
+                let consistency: f64 = sr.try_get("consistency_score").unwrap_or(60.0);
+                let gp: i64 = sr.try_get("games_played").unwrap_or(0);
+                MarketValueEngine::performance_factor(avg_impact, consistency, gp as u32)
+            } else {
+                1.0
+            }
+        };
+
+        // 完整身价（委托引擎）× 表现系数
+        let new_value = (MarketValueEngine::calculate_full_market_value(base_value, honor_factor, &region_code) as f64 * perf_factor) as i64;
 
         if new_value != old_calculated {
-            // 更新计算后的身价（不覆盖基础身价）
-            sqlx::query("UPDATE players SET calculated_market_value = ? WHERE id = ?")
+            // 同时更新两个列：market_value = 基础值，calculated_market_value = 完整值
+            sqlx::query("UPDATE players SET market_value = ?, calculated_market_value = ? WHERE id = ?")
+                .bind(base_value as i64)
                 .bind(new_value)
                 .bind(player_id as i64)
                 .execute(pool)
@@ -4561,10 +4346,10 @@ impl GameFlowService {
             .bind("年度身价重算")
             .execute(pool)
             .await
-            .ok(); // 忽略记录失败
+            .ok();
 
-            log::debug!("{} 身价重算: {} -> {} (荣誉×{:.2}, 赛区×{:.2})",
-                player_name, old_calculated / 10000, new_value / 10000, honor_factor, region_factor);
+            log::debug!("{} 身价重算: {} -> {} (荣誉×{:.2}, 赛区×{})",
+                player_name, old_calculated / 10000, new_value / 10000, honor_factor, &region_code);
         }
 
         Ok(())

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::engines::market_value::MarketValueEngine;
 
 /// 选手标签
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -213,69 +214,35 @@ impl Player {
         }
     }
 
-    /// 获取基础身价系数（按能力值分档）
-    /// 返回值单位：元
-    fn base_value_multiplier(ability: u8) -> u64 {
-        match ability {
-            72..=100 => 25,  // 顶级选手
-            68..=71 => 18,   // 世界级
-            65..=67 => 10,   // 顶尖
-            62..=64 => 6,    // 优秀
-            60..=61 => 4,    // 合格首发
-            55..=59 => 2,    // 替补级
-            47..=54 => 1,    // 新人
-            _ => 1,          // 青训
-        }
-    }
-
-    /// 获取年龄身价系数
-    fn age_value_factor(age: u8) -> f64 {
-        match age {
-            17..=19 => 1.5,  // 超新星溢价
-            20..=22 => 1.3,  // 年轻潜力股
-            23..=25 => 1.0,  // 黄金年龄
-            26..=27 => 0.85, // 巅峰末期
-            28..=29 => 0.7,  // 开始下滑
-            _ => 0.5,        // 老将或太年轻
-        }
-    }
-
-    /// 获取潜力身价系数
-    fn potential_value_factor(ability: u8, potential: u8) -> f64 {
-        let diff = potential.saturating_sub(ability);
-        if diff > 10 {
-            1.25
-        } else if diff >= 5 {
-            1.1
-        } else {
-            1.0
-        }
-    }
-
-    /// 计算基础身价（不含荣誉加成）
+    /// 计算基础身价（不含荣誉加成）— 委托给 MarketValueEngine
     /// 返回值单位：元
     pub fn calculate_base_market_value(&self) -> u64 {
-        let base_value = self.ability as u64 * Self::base_value_multiplier(self.ability);
-        let age_factor = Self::age_value_factor(self.age);
-        let potential_factor = Self::potential_value_factor(self.ability, self.potential);
-        let tag_factor = self.tag.market_value_factor();
-        let position_factor = self.position.map(|p| p.market_value_factor()).unwrap_or(1.0);
-
-        (base_value as f64 * age_factor * potential_factor * tag_factor * position_factor * 10000.0) as u64
+        let tag_str = match self.tag {
+            PlayerTag::Genius => "GENIUS",
+            PlayerTag::Normal => "NORMAL",
+            PlayerTag::Ordinary => "ORDINARY",
+        };
+        let pos_str = match self.position {
+            Some(Position::Top) => "TOP",
+            Some(Position::Jug) => "JUG",
+            Some(Position::Mid) => "MID",
+            Some(Position::Adc) => "ADC",
+            Some(Position::Sup) => "SUP",
+            None => "MID",
+        };
+        MarketValueEngine::calculate_base_market_value(
+            self.ability, self.age, self.potential, tag_str, pos_str,
+        )
     }
 
-    /// 计算完整身价（含荣誉和赛区加成）
+    /// 计算完整身价（含荣誉和赛区加成）— 委托给 MarketValueEngine
     /// 参数：
     /// - region_code: 赛区代码 (LPL/LCK/LEC/LCS)
-    /// - honor_factor: 荣誉系数 (由外部计算传入，范围 1.0 ~ 3.0)
+    /// - honor_factor: 荣誉系数 (由外部计算传入，范围 1.0 ~ 4.0)
     /// 返回值单位：元
     pub fn calculate_full_market_value(&self, region_code: &str, honor_factor: f64) -> u64 {
         let base_value = self.calculate_base_market_value();
-        let region_factor = RegionCode::from_str(region_code).market_value_factor();
-        // 荣誉系数上限为 3.0
-        let clamped_honor_factor = honor_factor.min(3.0).max(1.0);
-
-        (base_value as f64 * region_factor * clamped_honor_factor) as u64
+        MarketValueEngine::calculate_full_market_value(base_value, honor_factor, region_code)
     }
 
     /// 计算身价（优先使用计算后的完整身价，否则使用基础身价）

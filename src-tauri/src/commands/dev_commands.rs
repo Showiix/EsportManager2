@@ -3,13 +3,14 @@
 //! 这些命令仅供开发使用，生产环境应禁用
 
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, Pool, Sqlite};
+use sqlx::Row;
 use tauri::State;
 use crate::commands::save_commands::AppState;
 use crate::db::{SaveRepository, TournamentRepository, MatchRepository};
 use crate::services::HonorService;
 use crate::engines::PointsCalculationEngine;
-use crate::models::{TournamentStatus, PlayerTag, Position};
+use crate::models::TournamentStatus;
+use crate::engines::market_value::MarketValueEngine;
 
 /// 开发命令结果
 #[derive(Debug, Serialize, Deserialize)]
@@ -1237,13 +1238,37 @@ pub async fn dev_recalculate_market_values(
         };
 
         // 计算基础身价
-        let base_value = calculate_market_value(ability as u8, potential as u8, age as u8, tag, position);
+        let base_value = MarketValueEngine::calculate_base_market_value_enum(ability as u8, age as u8, potential as u8, &tag, &position);
 
         // 计算荣誉系数
-        let honor_factor = calculate_honor_factor(&pool, &save_id, id as u64).await;
+        let honor_factor = {
+            let honor_rows = sqlx::query(
+                "SELECT honor_type, tournament_type, tournament_name, season_id FROM honors WHERE save_id = ? AND player_id = ?"
+            )
+            .bind(&save_id).bind(id)
+            .fetch_all(&pool).await.unwrap_or_default();
+
+            let honors: Vec<crate::engines::market_value::PlayerHonorRecord> = honor_rows.iter().filter_map(|row| {
+                let ht: String = row.get("honor_type");
+                let tt: String = row.try_get::<Option<String>, _>("tournament_type").ok().flatten().unwrap_or_default();
+                let tn: String = row.try_get::<Option<String>, _>("tournament_name").ok().flatten().unwrap_or_default();
+                let season: u32 = row.get::<i64, _>("season_id") as u32;
+                MarketValueEngine::parse_honor_category(&ht, &tt, &tn)
+                    .map(|cat| crate::engines::market_value::PlayerHonorRecord::new(cat, season, &tn))
+            }).collect();
+
+            // 获取当前赛季（可以从 save 表获取）
+            let current_season = sqlx::query("SELECT current_season_id FROM saves WHERE id = ?")
+                .bind(&save_id)
+                .fetch_optional(&pool).await.ok().flatten()
+                .map(|r| r.get::<i64, _>("current_season_id") as u32)
+                .unwrap_or(1);
+
+            MarketValueEngine::calculate_honor_factor(&honors, current_season)
+        };
 
         // 赛区系数
-        let region_factor = get_region_market_factor(&region_code);
+        let region_factor = MarketValueEngine::region_factor(&region_code);
 
         // 最终身价
         let new_value = ((base_value as f64) * honor_factor * region_factor) as i64;
@@ -1268,125 +1293,6 @@ pub async fn dev_recalculate_market_values(
         updated_count,
         format!("成功更新 {} 名选手的计算身价", updated_count)
     ))
-}
-
-/// 计算荣誉系数
-async fn calculate_honor_factor(pool: &Pool<Sqlite>, save_id: &str, player_id: u64) -> f64 {
-    let rows = sqlx::query(
-        r#"SELECT honor_type, tournament_type, tournament_name
-           FROM honors WHERE save_id = ? AND player_id = ?"#
-    )
-    .bind(save_id)
-    .bind(player_id as i64)
-    .fetch_all(pool)
-    .await;
-
-    let rows = match rows {
-        Ok(r) => r,
-        Err(_) => return 1.0,
-    };
-
-    let mut honor_bonus = 0.0;
-
-    for row in rows {
-        let honor_type: String = row.get("honor_type");
-        let tournament_type: String = row.try_get::<Option<String>, _>("tournament_type")
-            .ok().flatten().unwrap_or_default();
-        let tournament_name: String = row.try_get::<Option<String>, _>("tournament_name")
-            .ok().flatten().unwrap_or_default();
-
-        let bonus = match honor_type.as_str() {
-            "PLAYER_CHAMPION" | "TEAM_CHAMPION" => {
-                if tournament_type.contains("World") || tournament_name.contains("世界赛") {
-                    0.40
-                } else if tournament_name.contains("MSI") {
-                    0.35
-                } else if tournament_name.contains("大师赛") || tournament_name.contains("Masters") {
-                    0.30
-                } else if tournament_name.contains("洲际") {
-                    0.25
-                } else {
-                    0.20
-                }
-            }
-            "PLAYER_RUNNER_UP" | "TEAM_RUNNER_UP" => {
-                if tournament_type.contains("World") || tournament_name.contains("世界赛") {
-                    0.20
-                } else {
-                    0.10
-                }
-            }
-            "PLAYER_THIRD_PLACE" | "TEAM_THIRD_PLACE" => 0.06,
-            "PLAYER_FOURTH_PLACE" | "TEAM_FOURTH_PLACE" => 0.04,
-            "TOURNAMENT_MVP" | "FINALS_MVP" => {
-                if tournament_name.contains("世界赛") || tournament_name.contains("World") {
-                    0.25
-                } else {
-                    0.15
-                }
-            }
-            "ANNUAL_MVP" => 0.35,
-            "ANNUAL_BEST_PLAYER" => 0.20,
-            "SEASON_MVP" => 0.15,
-            _ => 0.0,
-        };
-
-        honor_bonus += bonus;
-    }
-
-    let honor_factor: f64 = (1.0_f64 + honor_bonus).min(4.0);
-    honor_factor
-}
-
-/// 获取赛区身价系数
-fn get_region_market_factor(region_code: &str) -> f64 {
-    match region_code.to_uppercase().as_str() {
-        "LPL" => 1.3,
-        "LCK" => 1.2,
-        "LEC" => 1.0,
-        "LCS" => 0.9,
-        _ => 0.8,
-    }
-}
-
-/// 计算选手身价（与 init_service 保持一致）
-fn calculate_market_value(ability: u8, potential: u8, age: u8, tag: PlayerTag, position: Position) -> u64 {
-    let multiplier = match ability {
-        72..=100 => 25,
-        68..=71 => 18,
-        65..=67 => 10,
-        62..=64 => 6,
-        60..=61 => 4,
-        55..=59 => 2,
-        47..=54 => 1,
-        _ => 1,
-    };
-
-    let base = ability as u64 * multiplier;
-
-    let age_factor = match age {
-        17..=19 => 1.5,
-        20..=22 => 1.3,
-        23..=25 => 1.0,
-        26..=27 => 0.85,
-        28..=29 => 0.7,
-        _ => 0.5,
-    };
-
-    let diff = potential.saturating_sub(ability);
-    let potential_factor = if diff > 10 {
-        1.25
-    } else if diff >= 5 {
-        1.1
-    } else {
-        1.0
-    };
-
-    let tag_factor = tag.market_value_factor();
-    let position_factor = position.market_value_factor();
-
-    // 返回元
-    ((base as f64) * age_factor * potential_factor * tag_factor * position_factor * 10000.0) as u64
 }
 
 /// 自动修复队伍首发阵容

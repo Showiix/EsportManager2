@@ -5,6 +5,7 @@ use crate::services::draft_pool_data::{get_draft_pool, get_region_nationality};
 use crate::services::free_agent_data::get_free_agents;
 use crate::services::league_service::LeagueService;
 use crate::engines::meta_engine::MetaEngine;
+use crate::engines::market_value::MarketValueEngine;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use sqlx::{Pool, Sqlite};
@@ -196,7 +197,7 @@ impl InitService {
             position: Some(config.position),
             team_id: Some(team_id),
             salary,
-            market_value: Self::calculate_market_value(config.ability, config.potential, config.age, tag, config.position),
+            market_value: MarketValueEngine::calculate_base_market_value_enum(config.ability, config.age, config.potential, &tag, &config.position),
             calculated_market_value: 0, // 初始化时为0，年度结算时计算
             contract_end_season: Some(current_season + rng.gen_range(1..4)),
             join_season: current_season,
@@ -263,7 +264,7 @@ impl InitService {
                     position: Some(*pos),
                     team_id: Some(team_id),
                     salary,
-                    market_value: Self::calculate_market_value(ability, potential, age, tag, *pos),
+                    market_value: MarketValueEngine::calculate_base_market_value_enum(ability, age, potential, &tag, pos),
                     calculated_market_value: 0, // 初始化时为0，年度结算时计算
                     contract_end_season: Some(current_season + rng.gen_range(1..4)),
                     join_season: current_season,
@@ -420,55 +421,6 @@ impl InitService {
 
         // 返回元
         ((base as f64) * tag_multiplier * 10000.0) as u64
-    }
-
-    /// 计算市场价值（单位：元）
-    /// 使用与 Player::calculate_base_market_value 相同的公式
-    /// 缩放后阈值
-    fn calculate_market_value(ability: u8, potential: u8, age: u8, tag: PlayerTag, position: Position) -> u64 {
-        // 基础身价系数（缩放后阈值）
-        let multiplier = match ability {
-            72..=100 => 25,  // 顶级选手
-            68..=71 => 18,   // 世界级
-            65..=67 => 10,   // 顶尖
-            62..=64 => 6,    // 优秀
-            60..=61 => 4,    // 合格首发
-            55..=59 => 2,    // 替补级
-            47..=54 => 1,    // 新人
-            _ => 1,          // 青训
-        };
-
-        // 基础身价 = 能力值 × 系数
-        let base = ability as u64 * multiplier;
-
-        // 年龄因素
-        let age_factor = match age {
-            17..=19 => 1.5,  // 超新星溢价
-            20..=22 => 1.3,  // 年轻潜力股
-            23..=25 => 1.0,  // 黄金年龄
-            26..=27 => 0.85, // 巅峰末期
-            28..=29 => 0.7,  // 开始下滑
-            _ => 0.5,        // 老将或太年轻
-        };
-
-        // 潜力加成
-        let diff = potential.saturating_sub(ability);
-        let potential_factor = if diff > 10 {
-            1.25
-        } else if diff >= 5 {
-            1.1
-        } else {
-            1.0
-        };
-
-        // 天赋系数
-        let tag_factor = tag.market_value_factor();
-
-        // 位置系数
-        let position_factor = position.market_value_factor();
-
-        // 返回元
-        ((base as f64) * age_factor * potential_factor * tag_factor * position_factor * 10000.0) as u64
     }
 
     /// 初始化所有数据
@@ -773,7 +725,7 @@ impl InitService {
                     position: Some(position),
                     team_id: None,
                     salary,
-                    market_value: Self::calculate_market_value(fa.ability, fa.potential, fa.age, tag, position),
+                    market_value: MarketValueEngine::calculate_base_market_value_enum(fa.ability, fa.age, fa.potential, &tag, &position),
                     calculated_market_value: 0,
                     contract_end_season: None,
                     join_season: current_season,
@@ -963,7 +915,7 @@ impl InitService {
                         position: Some(position),
                         team_id: Some(team_id),
                         salary,
-                        market_value: Self::calculate_market_value(player_config.ability, player_config.potential, player_config.age, tag, position),
+                        market_value: MarketValueEngine::calculate_base_market_value_enum(player_config.ability, player_config.age, player_config.potential, &tag, &position),
                         calculated_market_value: 0,
                         contract_end_season: Some(current_season + rng.gen_range(1..4)),
                         join_season: current_season,
@@ -1046,7 +998,7 @@ impl InitService {
                     position: Some(position),
                     team_id: None,
                     salary,
-                    market_value: Self::calculate_market_value(player_config.ability, player_config.potential, player_config.age, tag, position),
+                    market_value: MarketValueEngine::calculate_base_market_value_enum(player_config.ability, player_config.age, player_config.potential, &tag, &position),
                     calculated_market_value: 0,
                     contract_end_season: None,
                     join_season: current_season,
