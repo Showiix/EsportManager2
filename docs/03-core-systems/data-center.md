@@ -39,6 +39,9 @@ pub struct PlayerSeasonStatistics {
 
     // 年度Top得分
     pub yearly_top_score: f64,
+
+    // 统治力得分
+    pub dominance_score: f64,
 }
 ```
 
@@ -61,11 +64,29 @@ pub struct PlayerSeasonStatistics {
 年度平均影响力 = 累计影响力 / 参与局数
 ```
 
-### 年度Top得分
+### 年度Top得分（五维归一化加权）
 
 ```
-yearly_top_score = 平均影响力 × 0.7 + 冠军分 × 0.3
+yearly_top_score = 影响力(35%) + 发挥(20%) + 冠军(20%) + 稳定性(15%) + 出场(10%)
 ```
+
+各维度先归一化到 0-100，再加权求和：
+- 影响力: `(avg_impact + 10) × 3.33`（原始 -10~+20 → 0~100）
+- 发挥: `(avg_performance - 50) × 2`（原始 50~100 → 0~100）
+- 冠军: `champion_bonus × 6.67`（国际赛冠军+3, 赛区冠军+1）
+- 稳定性: `consistency_score`（已是 0-100）
+- 出场: `games_played × 0.83`（上限约 120 场 → 100）
+
+### 统治力评分
+
+```
+dominance_score = 巅峰表现(35%) + 影响力(45%) + 发挥(20%)
+```
+
+各维度归一化到 0-100：
+- 巅峰表现: `(best_performance - 60) × 2.5`
+- 影响力: `(avg_impact + 5) × 5`
+- 发挥: `(avg_performance - 50) × 2`
 
 ## 稳定性评分
 

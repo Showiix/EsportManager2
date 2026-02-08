@@ -21,6 +21,9 @@
 | 类型 | 说明 |
 |------|------|
 | PlayerChampion | 冠军队成员 |
+| PlayerRunnerUp | 亚军队成员 |
+| PlayerThird | 季军队成员 |
+| PlayerFourth | 殿军队成员 |
 | TournamentMvp | 赛事MVP |
 | FinalsMvp | 决赛MVP |
 | RegularSeasonMvp | 常规赛MVP |
@@ -30,13 +33,13 @@
 
 | 类型 | 说明 |
 |------|------|
-| AnnualMvp | 年度MVP |
+| AnnualMvp | 年度MVP（年度IM第一） |
 | AnnualTop20 | 年度Top20 |
-| AnnualBestTop | 年度最佳上单 |
-| AnnualBestJungle | 年度最佳打野 |
-| AnnualBestMid | 年度最佳中单 |
-| AnnualBestAdc | 年度最佳ADC |
-| AnnualBestSupport | 年度最佳辅助 |
+| AnnualAllPro1st | 年度最佳阵容一阵 |
+| AnnualAllPro2nd | 年度最佳阵容二阵 |
+| AnnualAllPro3rd | 年度最佳阵容三阵 |
+| AnnualMostConsistent | 年度最稳定选手 |
+| AnnualMostDominant | 年度最具统治力选手 |
 | AnnualRookie | 年度最佳新秀 |
 
 ## 荣誉数据结构
@@ -63,7 +66,7 @@ pub struct Honor {
 | 常规赛结束 | 常规赛第一、常规赛MVP |
 | 季后赛结束 | 冠亚季殿军、选手冠军、季后赛MVP |
 | 国际赛结束 | 冠亚季殿军、选手冠军、赛事MVP |
-| 年度颁奖典礼 | 年度MVP、年度Top20、最佳位置 |
+| 年度颁奖典礼 | 年度MVP、年度Top20、最佳阵容、最稳定、最具统治力、最佳新秀 |
 
 ## 荣誉对身价影响
 
@@ -97,16 +100,29 @@ MVP 基于选手表现数据评选：
 mvp_score = 平均影响力 × 0.4 + 胜率贡献 × 0.3 + 关键表现 × 0.3
 ```
 
-### 年度 Top20 评分
+### 年度 Top20 评分（五维归一化加权）
 
 ```
-yearly_top_score = 平均影响力 × 0.7 + 冠军分 × 0.3
+yearly_top_score = 影响力(35%) + 发挥(20%) + 冠军(20%) + 稳定性(15%) + 出场(10%)
 ```
 
-冠军分计算:
-- 世界赛冠军: +15
-- MSI冠军: +10
-- 联赛冠军: +8
+各维度归一化到 0-100：
+- 影响力: `(avg_impact + 10) × 3.33`
+- 发挥: `(avg_performance - 50) × 2`
+- 冠军: `champion_bonus × 6.67`（国际赛冠军+3, 赛区冠军+1）
+- 稳定性: `consistency_score`（已是 0-100）
+- 出场: `games_played × 0.83`
+
+### 统治力评分
+
+```
+dominance_score = 巅峰表现(35%) + 影响力(45%) + 发挥(20%)
+```
+
+各维度归一化到 0-100：
+- 巅峰表现: `(best_performance - 60) × 2.5`
+- 影响力: `(avg_impact + 5) × 5`
+- 发挥: `(avg_performance - 50) × 2`
 
 ## API 接口
 
