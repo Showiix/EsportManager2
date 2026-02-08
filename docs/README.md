@@ -53,6 +53,7 @@
 - [frontend-guide.md](./04-technical/frontend-guide.md) - 前端开发指南
 - [backend-guide.md](./04-technical/backend-guide.md) - 后端开发指南
 - [logging-system.md](./04-technical/logging-system.md) - 日志系统
+- [testing-guide.md](./04-technical/testing-guide.md) - 测试指南（Rust + Vitest + CI）
 
 ## 05-ai AI 系统
 
@@ -71,6 +72,10 @@ npx vue-tsc --noEmit
 
 # Rust 编译检查
 cargo check --manifest-path src-tauri/Cargo.toml
+
+# 运行测试
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust 后端
+npm test                                           # Vue 前端
 
 # 构建发布版本
 npm run tauri build

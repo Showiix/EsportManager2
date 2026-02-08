@@ -206,6 +206,12 @@ npx vue-tsc --noEmit
 # Rust 编译检查
 cargo check --manifest-path src-tauri/Cargo.toml
 
+# 运行测试
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust 后端 (170+ tests)
+npm test                                           # Vue 前端 (vitest, 46 tests)
+npm run test:watch                                 # 前端监视模式
+npm run test:coverage                              # 前端覆盖率
+
 # 构建发布版本
 npm run tauri build
 ```
