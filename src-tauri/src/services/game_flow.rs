@@ -100,7 +100,7 @@ impl GameFlowService {
         phase: SeasonPhase,
     ) -> Result<PhaseInitResult, String> {
         // 检查该阶段的赛事是否已经存在
-        if let Some(tournament_type) = phase_to_tournament_type(phase) {
+        if let Some(tournament_type) = phase.to_tournament_type() {
             let existing = self.get_phase_tournaments(pool, save_id, season_id, tournament_type).await?;
             log::debug!("阶段 {:?}, 已存在赛事数: {}", phase, existing.len());
             if !existing.is_empty() {
@@ -146,199 +146,16 @@ impl GameFlowService {
         match phase {
             // 春季常规赛 - 为4个赛区各创建一个常规赛赛事
             SeasonPhase::SpringRegular => {
-                // 先获取已存在的春季常规赛赛事
-                let existing_spring = TournamentRepository::get_by_season_and_type(
-                    pool, save_id, season_id, "SpringRegular"
-                ).await.map_err(|e| e.to_string())?;
-                log::debug!("已存在的春季常规赛数量: {}", existing_spring.len());
-
-                // 从数据库获取实际的赛区ID（不硬编码1..=4）
-                let region_ids: Vec<u64> = sqlx::query_as::<_, (i64,)>(
-                    "SELECT DISTINCT region_id FROM teams WHERE save_id = ? ORDER BY region_id"
-                )
-                .bind(save_id)
-                .fetch_all(pool)
-                .await
-                .map_err(|e| e.to_string())?
-                .iter()
-                .map(|r| r.0 as u64)
-                .collect();
-                log::debug!("实际赛区ID: {:?}", region_ids);
-
-                for region_id in region_ids {
-                    let region_name = get_region_name(region_id);
-                    log::debug!("处理赛区: {} (region_id={})", region_name, region_id);
-
-                    // 检查该赛区的春季常规赛是否已存在
-                    let existing = existing_spring.iter()
-                        .find(|t| t.region_id == Some(region_id));
-
-                    let id = if let Some(t) = existing {
-                        log::debug!("{} 春季赛已存在, id={}", region_name, t.id);
-                        t.id
-                    } else {
-                        // 创建新赛事
-                        log::debug!("{} 春季赛不存在，创建新赛事", region_name);
-                        let tournament = Tournament {
-                            id: 0,
-                            save_id: save_id.to_string(),
-                            season_id,
-                            tournament_type: TournamentType::SpringRegular,
-                            name: format!("S{} {} 春季赛", season_id, region_name),
-                            region_id: Some(region_id),
-                            status: TournamentStatus::Upcoming,
-                            current_stage: None,
-                            current_round: None,
-                        };
-
-                        TournamentRepository::create(pool, save_id, &tournament)
-                            .await
-                            .map_err(|e| e.to_string())?
-                    };
-
-                    // 检查是否已有比赛
-                    let match_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
-                        .bind(id as i64)
-                        .fetch_one(pool)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    log::debug!("{} 春季赛 id={} 已有比赛数: {}", region_name, id, match_count.0);
-
-                    if match_count.0 == 0 {
-                        // 获取赛区队伍并生成赛程
-                        let teams = TeamRepository::get_by_region(pool, save_id, region_id)
-                            .await
-                            .map_err(|e| e.to_string())?;
-
-                        if teams.len() >= 8 {
-                            let matches = self
-                                .league_service
-                                .generate_regular_schedule(id, &teams);
-                            log::debug!("{} 生成比赛数: {}", region_name, matches.len());
-                            MatchRepository::create_batch(pool, save_id, &matches)
-                                .await
-                                .map_err(|e| e.to_string())?;
-
-                            // 初始化积分榜
-                            let standings: Vec<LeagueStanding> = teams
-                                .iter()
-                                .map(|team| LeagueStanding {
-                                    id: 0,
-                                    tournament_id: id,
-                                    team_id: team.id,
-                                    rank: None,
-                                    matches_played: 0,
-                                    wins: 0,
-                                    losses: 0,
-                                    points: 0,
-                                    games_won: 0,
-                                    games_lost: 0,
-                                    game_diff: 0,
-                                })
-                                .collect();
-
-                            StandingRepository::upsert_batch(pool, save_id, &standings)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                        }
-                    }
-
-                    tournaments_created.push(TournamentCreated {
-                        id,
-                        name: format!("S{} {} 春季赛", season_id, region_name),
-                        tournament_type: format!("{:?}", TournamentType::SpringRegular),
-                        region: Some(region_name.to_string()),
-                    });
-                }
+                tournaments_created = self.init_regional_regular_season(
+                    pool, save_id, season_id, TournamentType::SpringRegular, "春季赛"
+                ).await?;
             }
 
             // 春季季后赛 - 为4个赛区各创建季后赛
             SeasonPhase::SpringPlayoffs => {
-                // 先获取已存在的季后赛赛事
-                let existing_playoffs = TournamentRepository::get_by_season_and_type(
-                    pool, save_id, season_id, "SpringPlayoffs"
-                ).await.map_err(|e| e.to_string())?;
-                log::debug!("已存在的季后赛数量: {}", existing_playoffs.len());
-
-                // 从常规赛获取实际的 region_id
-                let regular_tournaments = TournamentRepository::get_by_season_and_type(
-                    pool, save_id, season_id, "SpringRegular"
-                ).await.map_err(|e| e.to_string())?;
-                log::debug!("常规赛数量: {}", regular_tournaments.len());
-
-                for regular_tournament in &regular_tournaments {
-                    let region_id = match regular_tournament.region_id {
-                        Some(id) => id,
-                        None => continue,
-                    };
-                    let region_name = get_region_name(region_id);
-                    log::debug!("处理赛区: {} (region_id={})", region_name, region_id);
-
-                    // 检查该赛区的季后赛是否已存在
-                    let existing = existing_playoffs.iter()
-                        .find(|t| t.region_id == Some(region_id));
-
-                    let id = if let Some(t) = existing {
-                        log::debug!("{} 季后赛已存在, id={}", region_name, t.id);
-                        t.id
-                    } else {
-                        // 创建新赛事
-                        log::debug!("{} 季后赛不存在，创建新赛事", region_name);
-                        let tournament = Tournament {
-                            id: 0,
-                            save_id: save_id.to_string(),
-                            season_id,
-                            tournament_type: TournamentType::SpringPlayoffs,
-                            name: format!("S{} {} 春季季后赛", season_id, region_name),
-                            region_id: Some(region_id),
-                            status: TournamentStatus::Upcoming,
-                            current_stage: None,
-                            current_round: None,
-                        };
-                        TournamentRepository::create(pool, save_id, &tournament)
-                            .await
-                            .map_err(|e| e.to_string())?
-                    };
-
-                    // 检查是否已有比赛
-                    let match_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
-                        .bind(id as i64)
-                        .fetch_one(pool)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    log::debug!("{} 季后赛 id={} 已有比赛数: {}", region_name, id, match_count.0);
-
-                    if match_count.0 == 0 {
-                        // 获取常规赛积分榜
-                        let standings = StandingRepository::get_by_tournament(pool, regular_tournament.id)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        log::debug!("{} 常规赛积分榜队伍数: {}", region_name, standings.len());
-
-                        if standings.len() >= 8 {
-                            // 生成季后赛对阵
-                            let matches = self.league_service.generate_playoff_bracket(id, &standings);
-                            log::debug!("{} 生成比赛数: {}", region_name, matches.len());
-                            if !matches.is_empty() {
-                                MatchRepository::create_batch(pool, save_id, &matches)
-                                    .await
-                                    .map_err(|e| e.to_string())?;
-                                log::debug!("{} 比赛已创建", region_name);
-                            }
-                        } else {
-                            log::debug!("{} 积分榜队伍不足8支，跳过", region_name);
-                        }
-                    } else {
-                        log::debug!("{} 已有比赛，跳过生成", region_name);
-                    }
-
-                    tournaments_created.push(TournamentCreated {
-                        id,
-                        name: format!("S{} {} 春季季后赛", season_id, region_name),
-                        tournament_type: format!("{:?}", TournamentType::SpringPlayoffs),
-                        region: Some(region_name.to_string()),
-                    });
-                }
+                tournaments_created = self.init_regional_playoffs(
+                    pool, save_id, season_id, TournamentType::SpringPlayoffs, "SpringRegular", "春季季后赛"
+                ).await?;
             }
 
             // MSI - 创建全球性赛事并自动生成对阵
@@ -446,460 +263,30 @@ impl GameFlowService {
 
             // 马德里大师赛
             SeasonPhase::MadridMasters => {
-                // 先检查是否已存在
-                let existing = TournamentRepository::get_by_season_and_type(
-                    pool, save_id, season_id, "MadridMasters"
-                ).await.map_err(|e| e.to_string())?;
-
-                let id = if let Some(t) = existing.first() {
-                    log::debug!("使用已存在的赛事: id={}", t.id);
-                    t.id
-                } else {
-                    // 创建新赛事
-                    let tournament = Tournament {
-                        id: 0,
-                        save_id: save_id.to_string(),
-                        season_id,
-                        tournament_type: TournamentType::MadridMasters,
-                        name: format!("S{} 马德里大师赛", season_id),
-                        region_id: None,
-                        status: TournamentStatus::Upcoming,
-                        current_stage: None,
-                        current_round: None,
-                    };
-
-                    TournamentRepository::create(pool, save_id, &tournament)
-                        .await
-                        .map_err(|e| e.to_string())?
-                };
-
-                // 检查是否已有比赛
-                let match_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
-                    .bind(id as i64)
-                    .fetch_one(pool)
-                    .await
-                    .map_err(|e| e.to_string())?;
-
-                if match_count.0 == 0 {
-                    // 获取参赛队伍：各赛区春季常规赛前8名 (共32队)
-                    let mut teams = Vec::new();
-
-                    // 从各赛区春季常规赛获取前8名
-                    let regular_tournaments = TournamentRepository::get_by_season_and_type(
-                        pool, save_id, season_id, "SpringRegular"
-                    ).await.map_err(|e| e.to_string())?;
-
-                    log::debug!("找到 {} 个春季常规赛", regular_tournaments.len());
-
-                    for regular in regular_tournaments {
-                        // 获取常规赛积分榜（按排名排序）
-                        let standings = StandingRepository::get_by_tournament(pool, regular.id)
-                            .await
-                            .map_err(|e| e.to_string())?;
-
-                        log::debug!("赛区 {:?} 积分榜有 {} 支队伍", regular.region_id, standings.len());
-
-                        // 取前8名
-                        for standing in standings.iter().take(8) {
-                            if let Ok(team) = TeamRepository::get_by_id(pool, standing.team_id).await {
-                                if !teams.iter().any(|t: &crate::models::Team| t.id == team.id) {
-                                    teams.push(team);
-                                }
-                            }
-                        }
-                    }
-
-                    log::debug!("找到 {} 支参赛队伍", teams.len());
-
-                    // 如果队伍不足32支，用各赛区其他队伍填充
-                    if teams.len() < 32 {
-                        let fill_region_ids: Vec<u64> = sqlx::query_as::<_, (i64,)>(
-                            "SELECT DISTINCT region_id FROM teams WHERE save_id = ? ORDER BY region_id"
-                        )
-                        .bind(save_id)
-                        .fetch_all(pool)
-                        .await
-                        .map_err(|e| e.to_string())?
-                        .iter()
-                        .map(|r| r.0 as u64)
-                        .collect();
-                        for region_id in fill_region_ids {
-                            let region_teams = TeamRepository::get_by_region(pool, save_id, region_id)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                            for team in region_teams {
-                                if teams.len() >= 32 {
-                                    break;
-                                }
-                                if !teams.iter().any(|t| t.id == team.id) {
-                                    teams.push(team);
-                                }
-                            }
-                        }
-                    }
-
-                    if teams.len() >= 32 {
-                        let matches = self.tournament_service.generate_masters_bracket(id, &teams[..32]);
-                        log::debug!("生成 {} 场比赛", matches.len());
-                        if !matches.is_empty() {
-                            MatchRepository::create_batch(pool, save_id, &matches)
-                                .await
-                                .map_err(|e| e.to_string())?;
-
-                            // 初始化积分榜（小组赛阶段需要）
-                            let standings: Vec<LeagueStanding> = teams[..32]
-                                .iter()
-                                .map(|team| LeagueStanding {
-                                    id: 0,
-                                    tournament_id: id,
-                                    team_id: team.id,
-                                    rank: None,
-                                    matches_played: 0,
-                                    wins: 0,
-                                    losses: 0,
-                                    points: 0,
-                                    games_won: 0,
-                                    games_lost: 0,
-                                    game_diff: 0,
-                                })
-                                .collect();
-
-                            StandingRepository::upsert_batch(pool, save_id, &standings)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                            log::debug!("初始化 {} 支队伍的积分榜", standings.len());
-                        }
-                    } else {
-                        log::debug!("队伍不足32支 (只有{}支)，跳过比赛生成", teams.len());
-                    }
-                }
-
-                tournaments_created.push(TournamentCreated {
-                    id,
-                    name: format!("S{} 马德里大师赛", season_id),
-                    tournament_type: format!("{:?}", TournamentType::MadridMasters),
-                    region: None,
-                });
+                tournaments_created = self.init_32team_masters(
+                    pool, save_id, season_id, TournamentType::MadridMasters, "SpringRegular", "马德里大师赛"
+                ).await?;
             }
 
             // 夏季常规赛
             SeasonPhase::SummerRegular => {
-                // 先获取已存在的夏季常规赛赛事
-                let existing_summer = TournamentRepository::get_by_season_and_type(
-                    pool, save_id, season_id, "SummerRegular"
-                ).await.map_err(|e| e.to_string())?;
-                log::debug!("已存在的夏季常规赛数量: {}", existing_summer.len());
-
-                // 从春季常规赛获取实际的 region_id（与 SpringPlayoffs 相同的逻辑）
-                let spring_regular_tournaments = TournamentRepository::get_by_season_and_type(
-                    pool, save_id, season_id, "SpringRegular"
-                ).await.map_err(|e| e.to_string())?;
-                log::debug!("春季常规赛数量: {}", spring_regular_tournaments.len());
-
-                for spring_tournament in &spring_regular_tournaments {
-                    let region_id = match spring_tournament.region_id {
-                        Some(id) => id,
-                        None => continue,
-                    };
-                    let region_name = get_region_name(region_id);
-                    log::debug!("处理赛区: {} (region_id={})", region_name, region_id);
-
-                    // 检查该赛区的夏季常规赛是否已存在
-                    let existing = existing_summer.iter()
-                        .find(|t| t.region_id == Some(region_id));
-
-                    let id = if let Some(t) = existing {
-                        log::debug!("{} 夏季赛已存在, id={}", region_name, t.id);
-                        t.id
-                    } else {
-                        // 创建新赛事
-                        log::debug!("{} 夏季赛不存在，创建新赛事", region_name);
-                        let tournament = Tournament {
-                            id: 0,
-                            save_id: save_id.to_string(),
-                            season_id,
-                            tournament_type: TournamentType::SummerRegular,
-                            name: format!("S{} {} 夏季赛", season_id, region_name),
-                            region_id: Some(region_id),
-                            status: TournamentStatus::Upcoming,
-                            current_stage: None,
-                            current_round: None,
-                        };
-
-                        TournamentRepository::create(pool, save_id, &tournament)
-                            .await
-                            .map_err(|e| e.to_string())?
-                    };
-
-                    // 检查是否已有比赛
-                    let match_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
-                        .bind(id as i64)
-                        .fetch_one(pool)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    log::debug!("{} 夏季赛 id={} 已有比赛数: {}", region_name, id, match_count.0);
-
-                    if match_count.0 == 0 {
-                        // 生成赛程
-                        let teams = TeamRepository::get_by_region(pool, save_id, region_id)
-                            .await
-                            .map_err(|e| e.to_string())?;
-
-                        if teams.len() >= 8 {
-                            let matches = self
-                                .league_service
-                                .generate_regular_schedule(id, &teams);
-                            log::debug!("{} 生成比赛数: {}", region_name, matches.len());
-                            MatchRepository::create_batch(pool, save_id, &matches)
-                                .await
-                                .map_err(|e| e.to_string())?;
-
-                            let standings: Vec<LeagueStanding> = teams
-                                .iter()
-                                .map(|team| LeagueStanding {
-                                    id: 0,
-                                    tournament_id: id,
-                                    team_id: team.id,
-                                    rank: None,
-                                    matches_played: 0,
-                                    wins: 0,
-                                    losses: 0,
-                                    points: 0,
-                                    games_won: 0,
-                                    games_lost: 0,
-                                    game_diff: 0,
-                                })
-                                .collect();
-
-                            StandingRepository::upsert_batch(pool, save_id, &standings)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                            log::debug!("{} 初始化 {} 支队伍的积分榜", region_name, standings.len());
-                        }
-                    } else {
-                        log::debug!("{} 已有比赛，跳过生成", region_name);
-                    }
-
-                    tournaments_created.push(TournamentCreated {
-                        id,
-                        name: format!("S{} {} 夏季赛", season_id, region_name),
-                        tournament_type: format!("{:?}", TournamentType::SummerRegular),
-                        region: Some(region_name.to_string()),
-                    });
-                }
+                tournaments_created = self.init_regional_regular_season(
+                    pool, save_id, season_id, TournamentType::SummerRegular, "夏季赛"
+                ).await?;
             }
 
             // 夏季季后赛
             SeasonPhase::SummerPlayoffs => {
-                // 先获取已存在的季后赛赛事
-                let existing_playoffs = TournamentRepository::get_by_season_and_type(
-                    pool, save_id, season_id, "SummerPlayoffs"
-                ).await.map_err(|e| e.to_string())?;
-
-                // 从常规赛获取实际的 region_id
-                let regular_tournaments = TournamentRepository::get_by_season_and_type(
-                    pool, save_id, season_id, "SummerRegular"
-                ).await.map_err(|e| e.to_string())?;
-
-                for regular_tournament in &regular_tournaments {
-                    let region_id = match regular_tournament.region_id {
-                        Some(id) => id,
-                        None => continue,
-                    };
-                    let region_name = get_region_name(region_id);
-
-                    // 检查该赛区的季后赛是否已存在
-                    let existing = existing_playoffs.iter()
-                        .find(|t| t.region_id == Some(region_id));
-
-                    let id = if let Some(t) = existing {
-                        t.id
-                    } else {
-                        // 创建新赛事
-                        let tournament = Tournament {
-                            id: 0,
-                            save_id: save_id.to_string(),
-                            season_id,
-                            tournament_type: TournamentType::SummerPlayoffs,
-                            name: format!("S{} {} 夏季季后赛", season_id, region_name),
-                            region_id: Some(region_id),
-                            status: TournamentStatus::Upcoming,
-                            current_stage: None,
-                            current_round: None,
-                        };
-                        TournamentRepository::create(pool, save_id, &tournament)
-                            .await
-                            .map_err(|e| e.to_string())?
-                    };
-
-                    // 检查是否已有比赛
-                    let match_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
-                        .bind(id as i64)
-                        .fetch_one(pool)
-                        .await
-                        .map_err(|e| e.to_string())?;
-
-                    if match_count.0 == 0 {
-                        // 获取常规赛积分榜
-                        let standings = StandingRepository::get_by_tournament(pool, regular_tournament.id)
-                            .await
-                            .map_err(|e| e.to_string())?;
-
-                        if standings.len() >= 8 {
-                            // 生成季后赛对阵
-                            let matches = self.league_service.generate_playoff_bracket(id, &standings);
-                            if !matches.is_empty() {
-                                MatchRepository::create_batch(pool, save_id, &matches)
-                                    .await
-                                    .map_err(|e| e.to_string())?;
-                            }
-                        }
-                    }
-
-                    tournaments_created.push(TournamentCreated {
-                        id,
-                        name: format!("S{} {} 夏季季后赛", season_id, region_name),
-                        tournament_type: format!("{:?}", TournamentType::SummerPlayoffs),
-                        region: Some(region_name.to_string()),
-                    });
-                }
+                tournaments_created = self.init_regional_playoffs(
+                    pool, save_id, season_id, TournamentType::SummerPlayoffs, "SummerRegular", "夏季季后赛"
+                ).await?;
             }
 
             // Claude洲际赛 (类似马德里大师赛：32队分组+东西半区淘汰)
             SeasonPhase::ClaudeIntercontinental => {
-                // 先检查是否已存在
-                let existing = TournamentRepository::get_by_season_and_type(
-                    pool, save_id, season_id, "ClaudeIntercontinental"
-                ).await.map_err(|e| e.to_string())?;
-
-                let id = if let Some(existing_tournament) = existing.first() {
-                    log::debug!("赛事已存在, id={}", existing_tournament.id);
-                    existing_tournament.id
-                } else {
-                    let tournament = Tournament {
-                        id: 0,
-                        save_id: save_id.to_string(),
-                        season_id,
-                        tournament_type: TournamentType::ClaudeIntercontinental,
-                        name: format!("S{} Claude洲际赛", season_id),
-                        region_id: None,
-                        status: TournamentStatus::Upcoming,
-                        current_stage: None,
-                        current_round: None,
-                    };
-
-                    TournamentRepository::create(pool, save_id, &tournament)
-                        .await
-                        .map_err(|e| e.to_string())?
-                };
-
-                // 检查是否已有比赛
-                let match_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
-                    .bind(id as i64)
-                    .fetch_one(pool)
-                    .await
-                    .map_err(|e| e.to_string())?;
-
-                if match_count.0 == 0 {
-                    // 获取参赛队伍：各赛区夏季常规赛前8名 (共32队)
-                    let mut teams = Vec::new();
-
-                    // 从各赛区夏季常规赛获取前8名
-                    let regular_tournaments = TournamentRepository::get_by_season_and_type(
-                        pool, save_id, season_id, "SummerRegular"
-                    ).await.map_err(|e| e.to_string())?;
-
-                    log::debug!("找到 {} 个夏季常规赛", regular_tournaments.len());
-
-                    for regular in regular_tournaments {
-                        // 获取常规赛积分榜（按排名排序）
-                        let standings = StandingRepository::get_by_tournament(pool, regular.id)
-                            .await
-                            .map_err(|e| e.to_string())?;
-
-                        log::debug!("赛区 {:?} 积分榜有 {} 支队伍", regular.region_id, standings.len());
-
-                        // 取前8名
-                        for standing in standings.iter().take(8) {
-                            if let Ok(team) = TeamRepository::get_by_id(pool, standing.team_id).await {
-                                if !teams.iter().any(|t: &crate::models::Team| t.id == team.id) {
-                                    teams.push(team);
-                                }
-                            }
-                        }
-                    }
-
-                    log::debug!("找到 {} 支参赛队伍", teams.len());
-
-                    // 如果队伍不足32支，用各赛区其他队伍填充
-                    if teams.len() < 32 {
-                        let fill_region_ids: Vec<u64> = sqlx::query_as::<_, (i64,)>(
-                            "SELECT DISTINCT region_id FROM teams WHERE save_id = ? ORDER BY region_id"
-                        )
-                        .bind(save_id)
-                        .fetch_all(pool)
-                        .await
-                        .map_err(|e| e.to_string())?
-                        .iter()
-                        .map(|r| r.0 as u64)
-                        .collect();
-                        for region_id in fill_region_ids {
-                            let region_teams = TeamRepository::get_by_region(pool, save_id, region_id)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                            for team in region_teams {
-                                if teams.len() >= 32 {
-                                    break;
-                                }
-                                if !teams.iter().any(|t| t.id == team.id) {
-                                    teams.push(team);
-                                }
-                            }
-                        }
-                    }
-
-                    if teams.len() >= 32 {
-                        let matches = self.tournament_service.generate_masters_bracket(id, &teams[..32]);
-                        log::debug!("生成 {} 场比赛", matches.len());
-                        if !matches.is_empty() {
-                            MatchRepository::create_batch(pool, save_id, &matches)
-                                .await
-                                .map_err(|e| e.to_string())?;
-
-                            // 初始化积分榜（小组赛阶段需要）
-                            let standings: Vec<LeagueStanding> = teams[..32]
-                                .iter()
-                                .map(|team| LeagueStanding {
-                                    id: 0,
-                                    tournament_id: id,
-                                    team_id: team.id,
-                                    rank: None,
-                                    matches_played: 0,
-                                    wins: 0,
-                                    losses: 0,
-                                    points: 0,
-                                    games_won: 0,
-                                    games_lost: 0,
-                                    game_diff: 0,
-                                })
-                                .collect();
-
-                            StandingRepository::upsert_batch(pool, save_id, &standings)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                            log::debug!("初始化 {} 支队伍的积分榜", standings.len());
-                        }
-                    } else {
-                        log::debug!("队伍不足32支 (只有{}支)，跳过比赛生成", teams.len());
-                    }
-                }
-
-                tournaments_created.push(TournamentCreated {
-                    id,
-                    name: format!("S{} Claude洲际赛", season_id),
-                    tournament_type: format!("{:?}", TournamentType::ClaudeIntercontinental),
-                    region: None,
-                });
+                tournaments_created = self.init_32team_masters(
+                    pool, save_id, season_id, TournamentType::ClaudeIntercontinental, "SummerRegular", "Claude洲际赛"
+                ).await?;
             }
 
             // 世界赛
@@ -1482,7 +869,7 @@ impl GameFlowService {
             }
             _ => {
                 // 检查该阶段所有赛事是否完成
-                let tournament_type = phase_to_tournament_type(phase);
+                let tournament_type = phase.to_tournament_type();
                 if let Some(_t_type) = tournament_type {
                     // 查询该类型的所有赛事
                     // 检查是否有待进行的比赛
@@ -1504,13 +891,33 @@ impl GameFlowService {
         phase: SeasonPhase,
     ) -> Result<PhaseCompleteResult, String> {
         log::debug!("开始处理阶段: {:?}, season_id={}", phase, season_id);
+
+        // 幂等性保护：检查该阶段是否已经完成过
+        if let Some(t_type) = phase.to_tournament_type() {
+            let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
+            if !tournaments.is_empty() {
+                let all_completed = tournaments.iter().all(|t| t.status == TournamentStatus::Completed);
+                if all_completed {
+                    log::warn!("阶段 {:?} 已经完成过，跳过重复执行", phase);
+                    let next_phase = phase.next();
+                    return Ok(PhaseCompleteResult {
+                        phase: format!("{:?}", phase),
+                        honors_awarded: vec![],
+                        can_advance: next_phase.is_some(),
+                        next_phase: next_phase.map(|p| format!("{:?}", p)),
+                        message: format!("阶段 {:?} 已完成，无需重复处理", phase),
+                    });
+                }
+            }
+        }
+
         let mut honors_awarded = Vec::new();
 
         // 根据阶段颁发荣誉
         match phase {
             // 常规赛结束 - 颁发常规赛第一名和常规赛MVP
             SeasonPhase::SpringRegular | SeasonPhase::SummerRegular => {
-                let tournament_type = phase_to_tournament_type(phase);
+                let tournament_type = phase.to_tournament_type();
                 if let Some(t_type) = tournament_type {
                     // 获取该阶段的所有赛事
                     let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
@@ -1549,7 +956,7 @@ impl GameFlowService {
             | SeasonPhase::ShanghaiMasters
             | SeasonPhase::IcpIntercontinental
             | SeasonPhase::SuperIntercontinental => {
-                let tournament_type = phase_to_tournament_type(phase);
+                let tournament_type = phase.to_tournament_type();
                 log::debug!("处理季后赛/国际赛事: {:?}, tournament_type={:?}", phase, tournament_type);
                 if let Some(t_type) = tournament_type {
                     let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
@@ -1811,7 +1218,7 @@ impl GameFlowService {
             | SeasonPhase::ShanghaiMasters
             | SeasonPhase::IcpIntercontinental => {
                 log::debug!("颁发年度积分: {:?}", phase);
-                let tournament_type = phase_to_tournament_type(phase);
+                let tournament_type = phase.to_tournament_type();
                 if let Some(t_type) = tournament_type {
                     let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
                     for tournament in &tournaments {
@@ -1838,7 +1245,7 @@ impl GameFlowService {
             | SeasonPhase::IcpIntercontinental
             | SeasonPhase::SuperIntercontinental => {
                 log::debug!("发放赛事奖金: {:?}", phase);
-                let tournament_type = phase_to_tournament_type(phase);
+                let tournament_type = phase.to_tournament_type();
                 if let Some(t_type) = tournament_type {
                     let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
                     for tournament in &tournaments {
@@ -1864,7 +1271,7 @@ impl GameFlowService {
             | SeasonPhase::ShanghaiMasters
             | SeasonPhase::IcpIntercontinental
             | SeasonPhase::SuperIntercontinental => {
-                let tournament_type = phase_to_tournament_type(phase);
+                let tournament_type = phase.to_tournament_type();
                 if let Some(t_type) = tournament_type {
                     let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
                     let is_international = matches!(t_type,
@@ -1887,7 +1294,7 @@ impl GameFlowService {
         }
 
         // 更新赛事状态为已完成
-        let tournament_type = phase_to_tournament_type(phase);
+        let tournament_type = phase.to_tournament_type();
         if let Some(t_type) = tournament_type {
             let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
             for tournament in &tournaments {
@@ -1907,7 +1314,7 @@ impl GameFlowService {
             SeasonPhase::SeasonEnd => "赛季结束，准备开始新赛季".to_string(),
             _ => {
                 if let Some(next) = next_phase {
-                    format!("阶段完成，下一阶段: {}", get_phase_display_name(&next))
+                    format!("阶段完成，下一阶段: {}", next.display_name())
                 } else {
                     "阶段完成".to_string()
                 }
@@ -1957,6 +1364,359 @@ impl GameFlowService {
                 current_round: None,
             }
         }).collect())
+    }
+
+    /// 获取所有赛区 ID
+    async fn get_all_region_ids(&self, pool: &Pool<Sqlite>, save_id: &str) -> Result<Vec<u64>, String> {
+        let rows = sqlx::query_as::<_, (i64,)>(
+            "SELECT DISTINCT region_id FROM teams WHERE save_id = ? ORDER BY region_id"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        Ok(rows.iter().map(|r| r.0 as u64).collect())
+    }
+
+    /// 统计赛事的比赛数
+    async fn count_tournament_matches(&self, pool: &Pool<Sqlite>, tournament_id: u64) -> Result<i64, String> {
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM matches WHERE tournament_id = ?")
+            .bind(tournament_id as i64)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(count.0)
+    }
+
+    /// 初始化赛区常规赛（春季 / 夏季）
+    async fn init_regional_regular_season(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+        tournament_type: TournamentType,
+        season_label: &str,
+    ) -> Result<Vec<TournamentCreated>, String> {
+        let type_str = format!("{:?}", tournament_type);
+        let mut tournaments_created = Vec::new();
+
+        // 获取已存在的该类型赛事
+        let existing_tournaments = TournamentRepository::get_by_season_and_type(
+            pool, save_id, season_id, &type_str
+        ).await.map_err(|e| e.to_string())?;
+        log::debug!("已存在的{}数量: {}", season_label, existing_tournaments.len());
+
+        // 获取所有赛区ID
+        let region_ids = self.get_all_region_ids(pool, save_id).await?;
+        log::debug!("实际赛区ID: {:?}", region_ids);
+
+        for region_id in region_ids {
+            let region_name = get_region_name(region_id);
+            log::debug!("处理赛区: {} (region_id={})", region_name, region_id);
+
+            // 检查该赛区的赛事是否已存在
+            let existing = existing_tournaments.iter()
+                .find(|t| t.region_id == Some(region_id));
+
+            let id = if let Some(t) = existing {
+                log::debug!("{} {}已存在, id={}", region_name, season_label, t.id);
+                t.id
+            } else {
+                log::debug!("{} {}不存在，创建新赛事", region_name, season_label);
+                let tournament = Tournament {
+                    id: 0,
+                    save_id: save_id.to_string(),
+                    season_id,
+                    tournament_type,
+                    name: format!("S{} {} {}", season_id, region_name, season_label),
+                    region_id: Some(region_id),
+                    status: TournamentStatus::Upcoming,
+                    current_stage: None,
+                    current_round: None,
+                };
+
+                TournamentRepository::create(pool, save_id, &tournament)
+                    .await
+                    .map_err(|e| e.to_string())?
+            };
+
+            // 检查是否已有比赛
+            let match_count = self.count_tournament_matches(pool, id).await?;
+            log::debug!("{} {} id={} 已有比赛数: {}", region_name, season_label, id, match_count);
+
+            if match_count == 0 {
+                let teams = TeamRepository::get_by_region(pool, save_id, region_id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                if teams.len() >= 8 {
+                    let matches = self.league_service.generate_regular_schedule(id, &teams);
+                    log::debug!("{} 生成比赛数: {}", region_name, matches.len());
+                    MatchRepository::create_batch(pool, save_id, &matches)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    let standings: Vec<LeagueStanding> = teams
+                        .iter()
+                        .map(|team| LeagueStanding {
+                            id: 0,
+                            tournament_id: id,
+                            team_id: team.id,
+                            rank: None,
+                            matches_played: 0,
+                            wins: 0,
+                            losses: 0,
+                            points: 0,
+                            games_won: 0,
+                            games_lost: 0,
+                            game_diff: 0,
+                        })
+                        .collect();
+
+                    StandingRepository::upsert_batch(pool, save_id, &standings)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+
+            tournaments_created.push(TournamentCreated {
+                id,
+                name: format!("S{} {} {}", season_id, region_name, season_label),
+                tournament_type: type_str.clone(),
+                region: Some(region_name.to_string()),
+            });
+        }
+
+        Ok(tournaments_created)
+    }
+
+    /// 初始化赛区季后赛（春季 / 夏季）
+    async fn init_regional_playoffs(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+        playoff_type: TournamentType,
+        regular_type_str: &str,
+        season_label: &str,
+    ) -> Result<Vec<TournamentCreated>, String> {
+        let type_str = format!("{:?}", playoff_type);
+        let mut tournaments_created = Vec::new();
+
+        // 获取已存在的季后赛赛事
+        let existing_playoffs = TournamentRepository::get_by_season_and_type(
+            pool, save_id, season_id, &type_str
+        ).await.map_err(|e| e.to_string())?;
+        log::debug!("已存在的{}数量: {}", season_label, existing_playoffs.len());
+
+        // 从常规赛获取实际的 region_id
+        let regular_tournaments = TournamentRepository::get_by_season_and_type(
+            pool, save_id, season_id, regular_type_str
+        ).await.map_err(|e| e.to_string())?;
+        log::debug!("常规赛数量: {}", regular_tournaments.len());
+
+        for regular_tournament in &regular_tournaments {
+            let region_id = match regular_tournament.region_id {
+                Some(id) => id,
+                None => continue,
+            };
+            let region_name = get_region_name(region_id);
+            log::debug!("处理赛区: {} (region_id={})", region_name, region_id);
+
+            // 检查该赛区的季后赛是否已存在
+            let existing = existing_playoffs.iter()
+                .find(|t| t.region_id == Some(region_id));
+
+            let id = if let Some(t) = existing {
+                log::debug!("{} {}已存在, id={}", region_name, season_label, t.id);
+                t.id
+            } else {
+                log::debug!("{} {}不存在，创建新赛事", region_name, season_label);
+                let tournament = Tournament {
+                    id: 0,
+                    save_id: save_id.to_string(),
+                    season_id,
+                    tournament_type: playoff_type,
+                    name: format!("S{} {} {}", season_id, region_name, season_label),
+                    region_id: Some(region_id),
+                    status: TournamentStatus::Upcoming,
+                    current_stage: None,
+                    current_round: None,
+                };
+                TournamentRepository::create(pool, save_id, &tournament)
+                    .await
+                    .map_err(|e| e.to_string())?
+            };
+
+            // 检查是否已有比赛
+            let match_count = self.count_tournament_matches(pool, id).await?;
+            log::debug!("{} {} id={} 已有比赛数: {}", region_name, season_label, id, match_count);
+
+            if match_count == 0 {
+                let standings = StandingRepository::get_by_tournament(pool, regular_tournament.id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                log::debug!("{} 常规赛积分榜队伍数: {}", region_name, standings.len());
+
+                if standings.len() >= 8 {
+                    let matches = self.league_service.generate_playoff_bracket(id, &standings);
+                    log::debug!("{} 生成比赛数: {}", region_name, matches.len());
+                    if !matches.is_empty() {
+                        MatchRepository::create_batch(pool, save_id, &matches)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        log::debug!("{} 比赛已创建", region_name);
+                    }
+                } else {
+                    log::debug!("{} 积分榜队伍不足8支，跳过", region_name);
+                }
+            } else {
+                log::debug!("{} 已有比赛，跳过生成", region_name);
+            }
+
+            tournaments_created.push(TournamentCreated {
+                id,
+                name: format!("S{} {} {}", season_id, region_name, season_label),
+                tournament_type: type_str.clone(),
+                region: Some(region_name.to_string()),
+            });
+        }
+
+        Ok(tournaments_created)
+    }
+
+    /// 初始化 32 队大师赛（马德里大师赛 / Claude洲际赛）
+    async fn init_32team_masters(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+        tournament_type: TournamentType,
+        source_regular: &str,
+        tournament_name: &str,
+    ) -> Result<Vec<TournamentCreated>, String> {
+        let type_str = format!("{:?}", tournament_type);
+        let mut tournaments_created = Vec::new();
+
+        // 先检查是否已存在
+        let existing = TournamentRepository::get_by_season_and_type(
+            pool, save_id, season_id, &type_str
+        ).await.map_err(|e| e.to_string())?;
+
+        let id = if let Some(t) = existing.first() {
+            log::debug!("赛事已存在, id={}", t.id);
+            t.id
+        } else {
+            let tournament = Tournament {
+                id: 0,
+                save_id: save_id.to_string(),
+                season_id,
+                tournament_type,
+                name: format!("S{} {}", season_id, tournament_name),
+                region_id: None,
+                status: TournamentStatus::Upcoming,
+                current_stage: None,
+                current_round: None,
+            };
+
+            TournamentRepository::create(pool, save_id, &tournament)
+                .await
+                .map_err(|e| e.to_string())?
+        };
+
+        // 检查是否已有比赛
+        let match_count = self.count_tournament_matches(pool, id).await?;
+
+        if match_count == 0 {
+            // 获取参赛队伍：各赛区常规赛前8名 (共32队)
+            let mut teams = Vec::new();
+
+            let regular_tournaments = TournamentRepository::get_by_season_and_type(
+                pool, save_id, season_id, source_regular
+            ).await.map_err(|e| e.to_string())?;
+
+            log::debug!("找到 {} 个常规赛", regular_tournaments.len());
+
+            for regular in regular_tournaments {
+                let standings = StandingRepository::get_by_tournament(pool, regular.id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                log::debug!("赛区 {:?} 积分榜有 {} 支队伍", regular.region_id, standings.len());
+
+                for standing in standings.iter().take(8) {
+                    if let Ok(team) = TeamRepository::get_by_id(pool, standing.team_id).await {
+                        if !teams.iter().any(|t: &crate::models::Team| t.id == team.id) {
+                            teams.push(team);
+                        }
+                    }
+                }
+            }
+
+            log::debug!("找到 {} 支参赛队伍", teams.len());
+
+            // 如果队伍不足32支，用各赛区其他队伍填充
+            if teams.len() < 32 {
+                let fill_region_ids = self.get_all_region_ids(pool, save_id).await?;
+                for region_id in fill_region_ids {
+                    let region_teams = TeamRepository::get_by_region(pool, save_id, region_id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    for team in region_teams {
+                        if teams.len() >= 32 {
+                            break;
+                        }
+                        if !teams.iter().any(|t| t.id == team.id) {
+                            teams.push(team);
+                        }
+                    }
+                }
+            }
+
+            if teams.len() >= 32 {
+                let matches = self.tournament_service.generate_masters_bracket(id, &teams[..32]);
+                log::debug!("生成 {} 场比赛", matches.len());
+                if !matches.is_empty() {
+                    MatchRepository::create_batch(pool, save_id, &matches)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    // 初始化积分榜（小组赛阶段需要）
+                    let standings: Vec<LeagueStanding> = teams[..32]
+                        .iter()
+                        .map(|team| LeagueStanding {
+                            id: 0,
+                            tournament_id: id,
+                            team_id: team.id,
+                            rank: None,
+                            matches_played: 0,
+                            wins: 0,
+                            losses: 0,
+                            points: 0,
+                            games_won: 0,
+                            games_lost: 0,
+                            game_diff: 0,
+                        })
+                        .collect();
+
+                    StandingRepository::upsert_batch(pool, save_id, &standings)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    log::debug!("初始化 {} 支队伍的积分榜", standings.len());
+                }
+            } else {
+                log::debug!("队伍不足32支 (只有{}支)，跳过比赛生成", teams.len());
+            }
+        }
+
+        tournaments_created.push(TournamentCreated {
+            id,
+            name: format!("S{} {}", season_id, tournament_name),
+            tournament_type: type_str,
+            region: None,
+        });
+
+        Ok(tournaments_created)
     }
 
     /// 获取季后赛前3名队伍（冠亚季军）
@@ -3265,7 +3025,7 @@ impl GameFlowService {
         let phase_progress = self.get_phase_progress(pool, save_id, current_season as u64, current_phase).await?;
 
         // 判断阶段状态
-        let phase_status = if phase_progress.total_matches == 0 && !is_non_tournament_phase(current_phase) {
+        let phase_status = if phase_progress.total_matches == 0 && !current_phase.is_non_tournament() {
             PhaseStatus::NotInitialized
         } else if current_phase == SeasonPhase::Draft && phase_progress.total_matches == 0 && phase_progress.completed_matches == 0 {
             // 选秀阶段：未开始选秀 → InProgress（等待用户在选秀页面操作）
@@ -3292,7 +3052,7 @@ impl GameFlowService {
             save_id: save_id.to_string(),
             current_season,
             current_phase,
-            phase_display_name: get_phase_display_name(&current_phase).to_string(),
+            phase_display_name: current_phase.display_name().to_string(),
             phase_status,
             phase_progress,
             season_progress,
@@ -3310,7 +3070,7 @@ impl GameFlowService {
         season_id: u64,
         phase: SeasonPhase,
     ) -> Result<PhaseProgress, String> {
-        let tournament_type = phase_to_tournament_type(phase);
+        let tournament_type = phase.to_tournament_type();
 
         if let Some(t_type) = tournament_type {
             let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
@@ -3511,7 +3271,7 @@ impl GameFlowService {
 
             PhaseInfo {
                 phase: format!("{:?}", phase),
-                display_name: get_phase_display_name(&phase).to_string(),
+                display_name: phase.display_name().to_string(),
                 status: status.to_string(),
                 index: i as u32,
             }
@@ -3580,10 +3340,10 @@ impl GameFlowService {
             actions.push(TimeAction::FastForwardPhase);
 
             // 根据当前阶段添加快进目标
-            if is_before_phase(phase, SeasonPhase::SummerRegular) {
+            if phase.is_before(SeasonPhase::SummerRegular) {
                 actions.push(TimeAction::FastForwardToSummer);
             }
-            if is_before_phase(phase, SeasonPhase::WorldChampionship) {
+            if phase.is_before(SeasonPhase::WorldChampionship) {
                 actions.push(TimeAction::FastForwardToWorlds);
             }
             actions.push(TimeAction::FastForwardToSeasonEnd);
@@ -3759,7 +3519,7 @@ impl GameFlowService {
         save_id: &str,
         phase: SeasonPhase,
     ) -> Result<u32, String> {
-        let tournament_type = phase_to_tournament_type(phase);
+        let tournament_type = phase.to_tournament_type();
 
         if tournament_type.is_none() {
             return Ok(0);
@@ -4633,45 +4393,6 @@ fn get_region_name(region_id: u64) -> &'static str {
     }
 }
 
-/// 获取阶段显示名称
-fn get_phase_display_name(phase: &SeasonPhase) -> &'static str {
-    match phase {
-        SeasonPhase::SpringRegular => "春季常规赛",
-        SeasonPhase::SpringPlayoffs => "春季季后赛",
-        SeasonPhase::Msi => "MSI季中赛",
-        SeasonPhase::MadridMasters => "马德里大师赛",
-        SeasonPhase::SummerRegular => "夏季常规赛",
-        SeasonPhase::SummerPlayoffs => "夏季季后赛",
-        SeasonPhase::ClaudeIntercontinental => "Claude洲际赛",
-        SeasonPhase::WorldChampionship => "世界赛",
-        SeasonPhase::ShanghaiMasters => "上海大师赛",
-        SeasonPhase::IcpIntercontinental => "ICP洲际对抗赛",
-        SeasonPhase::SuperIntercontinental => "Super洲际邀请赛",
-        SeasonPhase::AnnualAwards => "年度颁奖典礼",
-        SeasonPhase::TransferWindow => "转会期",
-        SeasonPhase::Draft => "选秀大会",
-        SeasonPhase::SeasonEnd => "赛季总结",
-    }
-}
-
-/// 阶段到赛事类型映射
-fn phase_to_tournament_type(phase: SeasonPhase) -> Option<TournamentType> {
-    match phase {
-        SeasonPhase::SpringRegular => Some(TournamentType::SpringRegular),
-        SeasonPhase::SpringPlayoffs => Some(TournamentType::SpringPlayoffs),
-        SeasonPhase::Msi => Some(TournamentType::Msi),
-        SeasonPhase::MadridMasters => Some(TournamentType::MadridMasters),
-        SeasonPhase::SummerRegular => Some(TournamentType::SummerRegular),
-        SeasonPhase::SummerPlayoffs => Some(TournamentType::SummerPlayoffs),
-        SeasonPhase::ClaudeIntercontinental => Some(TournamentType::ClaudeIntercontinental),
-        SeasonPhase::WorldChampionship => Some(TournamentType::WorldChampionship),
-        SeasonPhase::ShanghaiMasters => Some(TournamentType::ShanghaiMasters),
-        SeasonPhase::IcpIntercontinental => Some(TournamentType::IcpIntercontinental),
-        SeasonPhase::SuperIntercontinental => Some(TournamentType::SuperIntercontinental),
-        _ => None,
-    }
-}
-
 /// 解析赛事状态（本地版本避免循环依赖）
 fn parse_tournament_status_local(s: &str) -> TournamentStatus {
     match s {
@@ -4679,43 +4400,6 @@ fn parse_tournament_status_local(s: &str) -> TournamentStatus {
         "InProgress" => TournamentStatus::InProgress,
         "Completed" => TournamentStatus::Completed,
         _ => TournamentStatus::Upcoming,
-    }
-}
-
-/// 判断是否为非赛事阶段（年度颁奖、转会期、选秀、赛季结束）
-fn is_non_tournament_phase(phase: SeasonPhase) -> bool {
-    matches!(
-        phase,
-        SeasonPhase::AnnualAwards | SeasonPhase::TransferWindow | SeasonPhase::Draft | SeasonPhase::SeasonEnd
-    )
-}
-
-/// 判断当前阶段是否在目标阶段之前
-fn is_before_phase(current: SeasonPhase, target: SeasonPhase) -> bool {
-    let phase_order = [
-        SeasonPhase::SpringRegular,
-        SeasonPhase::SpringPlayoffs,
-        SeasonPhase::Msi,
-        SeasonPhase::MadridMasters,
-        SeasonPhase::SummerRegular,
-        SeasonPhase::SummerPlayoffs,
-        SeasonPhase::ClaudeIntercontinental,
-        SeasonPhase::WorldChampionship,
-        SeasonPhase::ShanghaiMasters,
-        SeasonPhase::IcpIntercontinental,
-        SeasonPhase::SuperIntercontinental,
-        SeasonPhase::AnnualAwards,
-        SeasonPhase::TransferWindow,
-        SeasonPhase::Draft,
-        SeasonPhase::SeasonEnd,
-    ];
-
-    let current_idx = phase_order.iter().position(|&p| p == current);
-    let target_idx = phase_order.iter().position(|&p| p == target);
-
-    match (current_idx, target_idx) {
-        (Some(c), Some(t)) => c < t,
-        _ => false,
     }
 }
 
@@ -4752,26 +4436,26 @@ mod tests {
     #[test]
     fn test_phase_to_tournament_type() {
         assert_eq!(
-            phase_to_tournament_type(SeasonPhase::SpringRegular),
+            SeasonPhase::SpringRegular.to_tournament_type(),
             Some(TournamentType::SpringRegular)
         );
         assert_eq!(
-            phase_to_tournament_type(SeasonPhase::Msi),
+            SeasonPhase::Msi.to_tournament_type(),
             Some(TournamentType::Msi)
         );
-        assert_eq!(phase_to_tournament_type(SeasonPhase::TransferWindow), None);
-        assert_eq!(phase_to_tournament_type(SeasonPhase::Draft), None);
+        assert_eq!(SeasonPhase::TransferWindow.to_tournament_type(), None);
+        assert_eq!(SeasonPhase::Draft.to_tournament_type(), None);
     }
 
     #[test]
     fn test_get_phase_display_name() {
         assert_eq!(
-            get_phase_display_name(&SeasonPhase::SpringRegular),
+            SeasonPhase::SpringRegular.display_name(),
             "春季常规赛"
         );
-        assert_eq!(get_phase_display_name(&SeasonPhase::Msi), "MSI季中赛");
+        assert_eq!(SeasonPhase::Msi.display_name(), "MSI季中赛");
         assert_eq!(
-            get_phase_display_name(&SeasonPhase::WorldChampionship),
+            SeasonPhase::WorldChampionship.display_name(),
             "世界赛"
         );
     }

@@ -216,18 +216,14 @@ pub async fn time_simulate_all(
     }
 
     // 检查是否是季后赛阶段
-    let is_playoff_phase = matches!(
-        save.current_phase,
-        SeasonPhase::SpringPlayoffs | SeasonPhase::SummerPlayoffs
-    );
+    let is_playoff_phase = save.current_phase.is_playoff();
 
     if is_playoff_phase {
         // 季后赛：逐场模拟以确保正确生成后续对阵
         let mut simulated_count = 0u32;
-        let tournament_type = match save.current_phase {
-            SeasonPhase::SpringPlayoffs => "SpringPlayoffs",
-            SeasonPhase::SummerPlayoffs => "SummerPlayoffs",
-            _ => return Ok(CommandResult::err("Invalid playoff phase")),
+        let tournament_type = match save.current_phase.tournament_type_str() {
+            Some(t) => t,
+            None => return Ok(CommandResult::err("当前阶段没有比赛可模拟")),
         };
 
         // 获取所有季后赛赛事
@@ -314,17 +310,9 @@ pub async fn time_simulate_all(
     } else {
         // 非季后赛：直接批量更新
         // 需要为每场比赛生成合理的比分
-        let tournament_type = match save.current_phase {
-            SeasonPhase::SpringRegular => "SpringRegular",
-            SeasonPhase::SummerRegular => "SummerRegular",
-            SeasonPhase::Msi => "Msi",
-            SeasonPhase::MadridMasters => "MadridMasters",
-            SeasonPhase::ClaudeIntercontinental => "ClaudeIntercontinental",
-            SeasonPhase::WorldChampionship => "WorldChampionship",
-            SeasonPhase::ShanghaiMasters => "ShanghaiMasters",
-            SeasonPhase::IcpIntercontinental => "IcpIntercontinental",
-            SeasonPhase::SuperIntercontinental => "SuperIntercontinental",
-            _ => return Ok(CommandResult::err("当前阶段没有比赛可模拟")),
+        let tournament_type = match save.current_phase.tournament_type_str() {
+            Some(t) => t,
+            None => return Ok(CommandResult::err("当前阶段没有比赛可模拟")),
         };
 
         let tournaments = TournamentRepository::get_by_season_and_type(
@@ -450,19 +438,9 @@ pub async fn time_simulate_next(
     };
 
     // 获取当前阶段对应的赛事类型
-    let tournament_type = match save.current_phase {
-        SeasonPhase::SpringRegular => "SpringRegular",
-        SeasonPhase::SpringPlayoffs => "SpringPlayoffs",
-        SeasonPhase::Msi => "Msi",
-        SeasonPhase::MadridMasters => "MadridMasters",
-        SeasonPhase::SummerRegular => "SummerRegular",
-        SeasonPhase::SummerPlayoffs => "SummerPlayoffs",
-        SeasonPhase::ClaudeIntercontinental => "ClaudeIntercontinental",
-        SeasonPhase::WorldChampionship => "WorldChampionship",
-        SeasonPhase::ShanghaiMasters => "ShanghaiMasters",
-        SeasonPhase::IcpIntercontinental => "IcpIntercontinental",
-        SeasonPhase::SuperIntercontinental => "SuperIntercontinental",
-        _ => return Ok(CommandResult::err("当前阶段没有比赛可模拟")),
+    let tournament_type = match save.current_phase.tournament_type_str() {
+        Some(t) => t,
+        None => return Ok(CommandResult::err("当前阶段没有比赛可模拟")),
     };
 
     // 查找当前阶段的所有赛事
