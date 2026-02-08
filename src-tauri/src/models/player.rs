@@ -325,3 +325,155 @@ impl Player {
         self.loyalty = new_value;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== PlayerTag ====================
+
+    #[test]
+    fn test_player_tag_growth_per_season() {
+        assert_eq!(PlayerTag::Ordinary.growth_per_season(), 1);
+        assert_eq!(PlayerTag::Normal.growth_per_season(), 2);
+        assert_eq!(PlayerTag::Genius.growth_per_season(), 3);
+    }
+
+    #[test]
+    fn test_player_tag_market_value_factor() {
+        assert!(PlayerTag::Genius.market_value_factor() > PlayerTag::Normal.market_value_factor());
+        assert!(PlayerTag::Normal.market_value_factor() > PlayerTag::Ordinary.market_value_factor());
+    }
+
+    #[test]
+    fn test_player_tag_decay_factor() {
+        // Genius decays slower
+        assert!(PlayerTag::Genius.decay_factor() < PlayerTag::Normal.decay_factor());
+        assert!(PlayerTag::Normal.decay_factor() < PlayerTag::Ordinary.decay_factor());
+    }
+
+    // ==================== Position ====================
+
+    #[test]
+    fn test_position_market_value_factor() {
+        assert!(Position::Mid.market_value_factor() > Position::Top.market_value_factor());
+        assert!(Position::Top.market_value_factor() > Position::Sup.market_value_factor());
+    }
+
+    // ==================== RegionCode ====================
+
+    #[test]
+    fn test_region_code_from_str() {
+        assert_eq!(RegionCode::from_str("LPL"), RegionCode::LPL);
+        assert_eq!(RegionCode::from_str("lck"), RegionCode::LCK);
+        assert_eq!(RegionCode::from_str("lec"), RegionCode::LEC);
+        assert_eq!(RegionCode::from_str("LCS"), RegionCode::LCS);
+        assert_eq!(RegionCode::from_str("unknown"), RegionCode::Other);
+    }
+
+    #[test]
+    fn test_region_code_market_value_factor() {
+        assert!(RegionCode::LPL.market_value_factor() > RegionCode::LCK.market_value_factor());
+        assert!(RegionCode::LCK.market_value_factor() > RegionCode::LEC.market_value_factor());
+    }
+
+    // ==================== LoyaltyType ====================
+
+    #[test]
+    fn test_loyalty_type_from_value() {
+        assert_eq!(LoyaltyType::from_value(95), LoyaltyType::Devoted);
+        assert_eq!(LoyaltyType::from_value(65), LoyaltyType::Loyal);
+        assert_eq!(LoyaltyType::from_value(50), LoyaltyType::Neutral);
+        assert_eq!(LoyaltyType::from_value(30), LoyaltyType::Opportunist);
+        assert_eq!(LoyaltyType::from_value(10), LoyaltyType::Mercenary);
+    }
+
+    // ==================== Player methods ====================
+
+    #[test]
+    fn test_calculate_stability_by_age() {
+        // Young: 16-24 → 60-76
+        assert_eq!(Player::calculate_stability(16), 60);
+        assert_eq!(Player::calculate_stability(24), 76);
+        // Peak: 25-29 → 75-85
+        assert_eq!(Player::calculate_stability(25), 75);
+        assert_eq!(Player::calculate_stability(29), 83);
+        // Veteran: 30-36 → 85-91
+        assert_eq!(Player::calculate_stability(30), 85);
+        assert_eq!(Player::calculate_stability(36), 91);
+        // Edge case
+        assert_eq!(Player::calculate_stability(15), 70);
+    }
+
+    #[test]
+    fn test_max_form_bonus_by_age() {
+        assert_eq!(Player::max_form_bonus(20), 8);
+        assert_eq!(Player::max_form_bonus(27), 3);
+        assert_eq!(Player::max_form_bonus(32), 2);
+    }
+
+    #[test]
+    fn test_departure_threshold() {
+        assert_eq!(Player::departure_threshold_static(95), 20);
+        assert_eq!(Player::departure_threshold_static(75), 35);
+        assert_eq!(Player::departure_threshold_static(55), 50);
+        assert_eq!(Player::departure_threshold_static(35), 60);
+        assert_eq!(Player::departure_threshold_static(15), 70);
+    }
+
+    #[test]
+    fn test_update_loyalty_clamp() {
+        let mut player = Player {
+            id: 1, game_id: "test".into(), real_name: None, nationality: None,
+            age: 22, ability: 75, potential: 85, stability: 70,
+            tag: PlayerTag::Normal, status: PlayerStatus::Active,
+            position: Some(Position::Mid), team_id: Some(1),
+            salary: 5_000_000, market_value: 0, calculated_market_value: 0,
+            contract_end_season: Some(3), join_season: 1, retire_season: None,
+            is_starter: true, loyalty: 90, satisfaction: 50,
+        };
+
+        player.update_loyalty(20);
+        assert_eq!(player.loyalty, 100); // clamped at 100
+
+        player.update_loyalty(-150);
+        assert_eq!(player.loyalty, 0); // clamped at 0
+    }
+
+    #[test]
+    fn test_reject_poaching_chance() {
+        let make = |loyalty: u8| -> Player {
+            Player {
+                id: 1, game_id: "test".into(), real_name: None, nationality: None,
+                age: 22, ability: 75, potential: 85, stability: 70,
+                tag: PlayerTag::Normal, status: PlayerStatus::Active,
+                position: Some(Position::Mid), team_id: Some(1),
+                salary: 5_000_000, market_value: 0, calculated_market_value: 0,
+                contract_end_season: Some(3), join_season: 1, retire_season: None,
+                is_starter: true, loyalty, satisfaction: 50,
+            }
+        };
+        assert!((make(95).reject_poaching_chance() - 0.7).abs() < f64::EPSILON);
+        assert!((make(75).reject_poaching_chance() - 0.4).abs() < f64::EPSILON);
+        assert!((make(55).reject_poaching_chance() - 0.1).abs() < f64::EPSILON);
+        assert!((make(30).reject_poaching_chance() - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_loyalty_price_factor() {
+        let make = |loyalty: u8| -> Player {
+            Player {
+                id: 1, game_id: "test".into(), real_name: None, nationality: None,
+                age: 22, ability: 75, potential: 85, stability: 70,
+                tag: PlayerTag::Normal, status: PlayerStatus::Active,
+                position: Some(Position::Mid), team_id: Some(1),
+                salary: 5_000_000, market_value: 0, calculated_market_value: 0,
+                contract_end_season: Some(3), join_season: 1, retire_season: None,
+                is_starter: true, loyalty, satisfaction: 50,
+            }
+        };
+        assert!((make(90).loyalty_price_factor() - 1.3).abs() < f64::EPSILON);
+        assert!((make(65).loyalty_price_factor() - 1.15).abs() < f64::EPSILON);
+        assert!((make(40).loyalty_price_factor() - 1.0).abs() < f64::EPSILON);
+    }
+}

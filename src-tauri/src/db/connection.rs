@@ -1741,7 +1741,7 @@ pub enum DatabaseError {
 }
 
 /// 数据库模式定义
-const SCHEMA_SQL: &str = r#"
+pub(crate) const SCHEMA_SQL: &str = r#"
 -- 存档表
 CREATE TABLE IF NOT EXISTS saves (
     id TEXT PRIMARY KEY,

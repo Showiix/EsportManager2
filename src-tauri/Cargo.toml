@@ -66,6 +66,9 @@ once_cell = "1.19"
 # 异步并发
 futures = "0.3"
 
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

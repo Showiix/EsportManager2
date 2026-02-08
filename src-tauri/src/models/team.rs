@@ -75,3 +75,71 @@ impl FinancialStatus {
         matches!(self, FinancialStatus::Deficit | FinancialStatus::Bankrupt)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== Team ====================
+
+    #[test]
+    fn test_calculate_win_rate() {
+        let team = Team {
+            id: 1, region_id: 1, name: "T".into(), short_name: None,
+            power_rating: 70.0, total_matches: 20, wins: 15,
+            win_rate: 0.0, annual_points: 0, cross_year_points: 0,
+            balance: 0, brand_value: 50.0,
+        };
+        let rate = team.calculate_win_rate();
+        assert!((rate - 75.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_calculate_win_rate_zero_matches() {
+        let team = Team {
+            id: 1, region_id: 1, name: "T".into(), short_name: None,
+            power_rating: 70.0, total_matches: 0, wins: 0,
+            win_rate: 0.0, annual_points: 0, cross_year_points: 0,
+            balance: 0, brand_value: 50.0,
+        };
+        assert_eq!(team.calculate_win_rate(), 0.0);
+    }
+
+    // ==================== FinancialStatus ====================
+
+    #[test]
+    fn test_financial_status_from_balance() {
+        assert_eq!(FinancialStatus::from_balance(20_000_000), FinancialStatus::Wealthy);
+        assert_eq!(FinancialStatus::from_balance(8_000_000), FinancialStatus::Healthy);
+        assert_eq!(FinancialStatus::from_balance(3_000_000), FinancialStatus::Tight);
+        assert_eq!(FinancialStatus::from_balance(500_000), FinancialStatus::Deficit);
+        assert_eq!(FinancialStatus::from_balance(-1_000_000), FinancialStatus::Bankrupt);
+    }
+
+    #[test]
+    fn test_financial_status_can_buy() {
+        assert!(FinancialStatus::Wealthy.can_buy());
+        assert!(FinancialStatus::Healthy.can_buy());
+        assert!(FinancialStatus::Tight.can_buy());
+        assert!(!FinancialStatus::Deficit.can_buy());
+        assert!(!FinancialStatus::Bankrupt.can_buy());
+    }
+
+    #[test]
+    fn test_financial_status_must_sell() {
+        assert!(!FinancialStatus::Wealthy.must_sell());
+        assert!(!FinancialStatus::Tight.must_sell());
+        assert!(FinancialStatus::Deficit.must_sell());
+        assert!(FinancialStatus::Bankrupt.must_sell());
+    }
+
+    #[test]
+    fn test_financial_status_boundary_values() {
+        // Exact boundary: 10_000_000 → Healthy (not Wealthy, since > not >=)
+        assert_eq!(FinancialStatus::from_balance(10_000_000), FinancialStatus::Healthy);
+        assert_eq!(FinancialStatus::from_balance(10_000_001), FinancialStatus::Wealthy);
+        // Exact boundary: 0 → Deficit
+        assert_eq!(FinancialStatus::from_balance(0), FinancialStatus::Deficit);
+        assert_eq!(FinancialStatus::from_balance(-1), FinancialStatus::Bankrupt);
+    }
+}
