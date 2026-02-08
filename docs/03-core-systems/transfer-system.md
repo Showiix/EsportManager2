@@ -95,33 +95,67 @@ R8 完成 → 点击"确认关闭转会窗口" → 验证检查
 
 ### 匹配度 (match_score)
 
-球队 AI 对选手的匹配评分（0-100），决定 R4 中 offer 的优先级。
+球队 AI 对选手的匹配评分（0-100），决定 R4/R5 中 offer 的优先级。
 
-分项评分后通过**归一化加权**计算：
+**9 个评估维度**，通过归一化加权计算：
+
+| 维度 | 评分范围 | 说明 |
+|------|---------|------|
+| 能力匹配 | 10-100 | 按 ability 分段：90+=100, 80+=90, 75+=80... |
+| 年龄匹配 | 40-100 | 受 AI 性格影响：youth_preference 偏好年轻，short_term_focus 偏好巅峰 |
+| 财务匹配 | 0-100 | 基于 balance 的对数映射 |
+| 位置需求度 | 5-100 | 0人=100, 1人=40, 2人=15, 3+=5 |
+| 提升度 | 25-100 | 选手 vs 球队该位置最强选手的能力差 |
+| 排名因子 | ×0.9~×1.1 | 弱队更渴望强援 |
+| 潜力因素 | 40-100 | 23岁以下更看重；权重受 youth_preference 影响（0.05~0.15） |
+| 稳定性因素 | 40-100 | 权重受 risk_tolerance 影响（0.05~0.10） |
+| 成长标签 | ×0.95~×1.08 | Genius×1.08, Normal×1.0, Ordinary×0.95 |
+
+**AI 性格权重分配**：
 
 ```
-w_ability = 0.3 + 0.2 × short_term_focus       // 0.3 ~ 0.5
-w_age     = 0.2 + 0.2 × max(youth_pref, short_term_focus)  // 0.2 ~ 0.4
-w_finance = 0.15 + 0.15 × bargain_hunting       // 0.15 ~ 0.3
+w_ability   = 0.25 + 0.15 × short_term_focus        // 0.25 ~ 0.40
+w_age       = 0.15 + 0.15 × max(youth_pref, stf)    // 0.15 ~ 0.30
+w_finance   = 0.10 + 0.10 × bargain_hunting          // 0.10 ~ 0.20
+w_need      = 0.20                                    // 固定
+w_upgrade   = 0.15 + 0.10 × short_term_focus         // 0.15 ~ 0.25
+w_potential = 0.05 + 0.10 × youth_preference          // 0.05 ~ 0.15
+w_stability = 0.05 + 0.05 × (1 - risk_tolerance)     // 0.05 ~ 0.10
 
-match_score = (ability_score × w_ability + age_score × w_age + finance_score × w_finance)
-              / (w_ability + w_age + w_finance)
+match_score = (∑ score_i × w_i) / ∑ w_i × rank_factor × tag_multiplier
 ```
-
-不同 AI 性格的权重偏向不同，但总分始终在 0-100 范围。
 
 ### 意愿度 (willingness)
 
 选手是否接受报价的判定值（0-100），**>= 40** 才接受签约。
 
-```
-salary_score = 基于 offered_salary / current_salary 的分段评分（20-100）
-loyalty_impact = (100 - loyalty) × 0.5
-base = salary_score × 0.4 + loyalty_impact × 0.3 + 15 + random(-5, 5)
+**8 因素 + 年龄优先级权重系统**：
 
-跨赛区惩罚:
-  本赛区: willingness = base × 1.0
-  跨赛区: willingness = base × (100 - region_loyalty) / 100
+| 因素 | 评分范围 | 说明 |
+|------|---------|------|
+| 薪资满意度 | 20-100 | 基于 offered/current 比值分段 |
+| 球队竞争力 | 20-100 | 目标队排名：1-3名=100, 4-6名=80, 7-10名=60, 11-14名=40 |
+| 首发机会 | 30-100 | 自己能力 vs 目标队该位置最强：明显强=100, 持平=85, 弱=30 |
+| 球队声望 | 20-100 | 基于 team_reputation 线性映射 |
+| 队友质量 | 30-100 | 目标队平均能力：≥70=100, ≥65=80, ≥60=65, <60=40 |
+| 忠诚影响 | 0-50 | (100 - loyalty) × 0.5，固定权重 0.15 |
+| 发展空间 | 30-100 | 仅对 ≤23 岁有效：有高能力同位置老将+队伍均值高=100 |
+| 随机波动 | -8 ~ +8 | 增加不确定性 |
+
+**年龄优先级权重**（关键机制）：
+
+| 年龄段 | 薪资 | 竞争力 | 首发 | 声望 | 队友 | 发展 |
+|--------|------|--------|------|------|------|------|
+| 17-21（新秀） | 0.10 | 0.10 | 0.25 | 0.10 | 0.10 | 0.20 |
+| 22-25（成长） | 0.15 | 0.20 | 0.20 | 0.10 | 0.10 | 0.10 |
+| 26-28（巅峰） | 0.20 | 0.30 | 0.10 | 0.15 | 0.10 | 0.00 |
+| 29-31（老将） | 0.35 | 0.15 | 0.10 | 0.15 | 0.10 | 0.00 |
+| 32+（退役前） | 0.40 | 0.10 | 0.10 | 0.15 | 0.10 | 0.00 |
+
+```
+weighted_score = ∑ factor_i × w_i + loyalty × 0.15 + random_noise
+cross_region_factor = 同赛区 ? 1.0 : (100 - region_loyalty) / 100
+willingness = clamp(weighted_score × cross_region_factor, 0, 100)
 ```
 
 ## 合同年限规则
@@ -179,21 +213,28 @@ pub enum AITeamPersonality {
 
 ## 球队声望系统
 
+球队声望在转会缓存中批量计算，并在**选手意愿度评估**中作为关键因素使用。
+
 ```rust
 pub struct TeamReputation {
-    pub team_id: u64,
-    pub historical_score: u32,      // 历史声望 (0-100)
-    pub recent_score: u32,          // 近期声望 (0-100)
-    pub international_score: u32,   // 国际声望 (0-100)
-    pub overall_score: u32,         // 综合声望 (0-100)
+    pub team_id: i64,
+    pub overall: i64,         // 综合声望 (0-100)
+    pub historical: i64,      // 历史声望 (0-100)
+    pub recent: i64,          // 近期声望 (0-100)
+    pub international: i64,   // 国际声望 (0-100)
 }
 ```
 
 **声望计算规则**:
-- 历史声望: 累计荣誉（冠军+20, 亚军+10, 季军+5）
-- 近期声望: 最近3个赛季成绩
-- 国际声望: 国际赛荣誉（每项+15）
-- 综合声望: 历史×30% + 近期×40% + 国际×30%
+- 历史声望: 累计荣誉（冠军+20, 亚军+10, 季军+5, 殿军+3），上限100
+- 近期声望: 最近3个赛季积分，按 `pts / 200 × 100` 映射
+- 综合声望（转会缓存简化版）: 历史×40% + 近期×60%
+- 综合声望（完整版）: 历史×30% + 近期×40% + 国际×30%
+
+**转会中的使用**:
+- `TransferCache.team_reputations`: 在 `build()` 中批量计算，避免运行时查询
+- `calculate_willingness`: 声望影响选手转会意愿（20-100 线性映射）
+- 默认声望值: 30（查询不到时的兜底值）
 
 ## 自由球员市场
 
@@ -202,11 +243,29 @@ pub struct TeamReputation {
 - 无需转会费，只需支付薪资
 - 多支球队可同时报价
 - **报价筛选**：该位置已有2人不报价；已有1人仅能力升级或青训新人（age<=23 & potential>=70）才报价；match_score < 50 不报价
-- 选手选择因素:
-  - 薪资高低 (40%)
-  - 球队竞争力 (30%)
-  - 上场机会 (20%)
-  - 随机因素 (10%)
+- 选手通过 8 因素意愿度系统评估每个报价（详见「意愿度」章节）
+
+### 市场竞争效应（R4）
+
+当同一选手收到 ≥3 个报价时，触发市场溢价：
+
+```
+market_premium = 1.0 + (offer_count - 2) × 0.05
+adjusted_expected_salary = expected_salary × market_premium
+```
+
+选手的薪资期望基准上调，意味着报价薪资需更高才能满足选手。
+
+### 竞价升温（R5）
+
+合同选手转会中，当 ≥2 支球队竞标时：
+
+```
+bid_premium = 1.0 + (bid_count - 1) × 0.08
+transfer_fee = original_bid × bid_premium
+```
+
+竞争推高转会费，模拟真实市场中的抢人大战。
 
 ## API 接口
 
