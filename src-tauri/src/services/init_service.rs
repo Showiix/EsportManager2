@@ -2,7 +2,9 @@ use crate::db::{PlayerRepository, TeamRepository, TournamentRepository, MatchRep
 use crate::models::{Player, PlayerStatus, PlayerTag, Position, Team, Tournament, TournamentType, TournamentStatus, LeagueStanding};
 use crate::services::player_data::{get_team_players, PlayerConfig};
 use crate::services::draft_pool_data::{get_draft_pool, get_region_nationality};
+use crate::services::free_agent_data::get_free_agents;
 use crate::services::league_service::LeagueService;
+use crate::engines::meta_engine::MetaEngine;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use sqlx::{Pool, Sqlite};
@@ -593,11 +595,17 @@ impl InitService {
             }
         }
 
+        // 创建自由选手（四大赛区各28/28/27/27人，共110人）
+        Self::create_initial_free_agents(pool, save_id, current_season, &regions, &region_ids).await?;
+
         // 创建初始赛事（春季常规赛）
         Self::create_initial_tournaments(pool, save_id, current_season, &region_ids).await?;
 
         // 创建初始选秀池（四大赛区各50人）
         Self::create_initial_draft_pool(pool, save_id, current_season, &region_ids).await?;
+
+        // 初始化 S1 Meta 版本
+        MetaEngine::roll_new_meta(pool, save_id, 1).await?;
 
         Ok(())
     }
@@ -715,6 +723,96 @@ impl InitService {
                 .execute(pool)
                 .await
                 .map_err(|e| format!("Failed to insert draft pool player {}: {}", player_config.game_id, e))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 创建初始自由选手（从 free_agent_data 读取硬编码数据）
+    async fn create_initial_free_agents(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        current_season: u32,
+        regions: &[RegionConfig],
+        region_ids: &[u64],
+    ) -> Result<(), String> {
+        let mut rng = StdRng::from_entropy();
+
+        for (idx, region) in regions.iter().enumerate() {
+            let actual_region_id = region_ids[idx];
+            let nationality = get_region_nationality(region.id);
+            let free_agents = get_free_agents(region.id);
+
+            for fa in &free_agents {
+                let position = match fa.position {
+                    "Top" => Position::Top,
+                    "Jug" => Position::Jug,
+                    "Mid" => Position::Mid,
+                    "Adc" => Position::Adc,
+                    "Sup" => Position::Sup,
+                    _ => Position::Mid,
+                };
+
+                let tag = Self::determine_player_tag(fa.ability, fa.potential, fa.age);
+                let salary = Self::calculate_initial_salary(fa.ability, fa.potential, tag);
+                let loyalty = Self::calculate_initial_loyalty(fa.ability, fa.potential, fa.age, tag);
+                let satisfaction = Self::calculate_initial_satisfaction(fa.ability, fa.potential, fa.age, false, tag);
+
+                let player = Player {
+                    id: 0,
+                    game_id: fa.game_id.to_string(),
+                    real_name: Some(fa.real_name.to_string()),
+                    nationality: Some(nationality.to_string()),
+                    age: fa.age,
+                    ability: fa.ability,
+                    potential: fa.potential,
+                    stability: Player::calculate_stability(fa.age),
+                    tag,
+                    status: PlayerStatus::Active,
+                    position: Some(position),
+                    team_id: None,
+                    salary,
+                    market_value: Self::calculate_market_value(fa.ability, fa.potential, fa.age, tag, position),
+                    calculated_market_value: 0,
+                    contract_end_season: None,
+                    join_season: current_season,
+                    retire_season: None,
+                    is_starter: false,
+                    loyalty,
+                    satisfaction,
+                };
+
+                let player_id = PlayerRepository::create(pool, save_id, &player)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                // 设置 home_region_id
+                sqlx::query(
+                    "UPDATE players SET home_region_id = ? WHERE id = ?"
+                )
+                .bind(actual_region_id as i64)
+                .bind(player_id as i64)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("Failed to set home_region_id for free agent {}: {}", player_id, e))?;
+
+                // 初始化状态因子
+                let form_cycle = rng.gen_range(0.0..100.0);
+                sqlx::query(
+                    r#"
+                    INSERT INTO player_form_factors (
+                        save_id, player_id, form_cycle, momentum,
+                        last_performance, last_match_won, games_since_rest
+                    ) VALUES (?, ?, ?, 0, 0.0, 1, 0)
+                    "#
+                )
+                .bind(save_id)
+                .bind(player_id as i64)
+                .bind(form_cycle)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("Failed to init form factors for free agent {}: {}", player_id, e))?;
             }
         }
 
@@ -986,6 +1084,9 @@ impl InitService {
 
         // 从自定义配置创建选秀池
         Self::create_draft_pool_from_config(pool, save_id, current_season, &region_ids, config).await?;
+
+        // 初始化 S1 Meta 版本
+        MetaEngine::roll_new_meta(pool, save_id, 1).await?;
 
         Ok(())
     }

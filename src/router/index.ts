@@ -229,6 +229,12 @@ const router = createRouter({
       meta: { title: '数据中心' }
     },
     {
+      path: '/meta-version',
+      name: 'MetaVersion',
+      component: () => import('@/views/MetaVersion.vue'),
+      meta: { title: '版本历史' }
+    },
+    {
       path: '/data-center/player/:playerId',
       name: 'DataCenterPlayerDetail',
       component: () => import('@/views/DataCenterPlayerDetail.vue'),

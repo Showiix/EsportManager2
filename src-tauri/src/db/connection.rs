@@ -2253,6 +2253,22 @@ CREATE TABLE IF NOT EXISTS player_transfer_strategies (
     FOREIGN KEY (player_id) REFERENCES players(id)
 );
 
+-- Meta 版本表
+CREATE TABLE IF NOT EXISTS meta_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_id TEXT NOT NULL,
+    season_id INTEGER NOT NULL,
+    meta_type TEXT NOT NULL,
+    meta_name TEXT NOT NULL,
+    weight_top REAL NOT NULL DEFAULT 1.0,
+    weight_jug REAL NOT NULL DEFAULT 1.0,
+    weight_mid REAL NOT NULL DEFAULT 1.0,
+    weight_adc REAL NOT NULL DEFAULT 1.0,
+    weight_sup REAL NOT NULL DEFAULT 1.0,
+    UNIQUE(save_id, season_id),
+    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE
+);
+
 -- 创建索引
 CREATE INDEX IF NOT EXISTS idx_match_games_match ON match_games(match_id);
 CREATE INDEX IF NOT EXISTS idx_match_games_save ON match_games(save_id);
@@ -2292,6 +2308,7 @@ CREATE INDEX IF NOT EXISTS idx_transfer_events_save ON transfer_events(save_id, 
 CREATE INDEX IF NOT EXISTS idx_transfer_events_round ON transfer_events(round);
 CREATE INDEX IF NOT EXISTS idx_player_transfer_strategies_save ON player_transfer_strategies(save_id, season_id);
 CREATE INDEX IF NOT EXISTS idx_player_transfer_strategies_player ON player_transfer_strategies(player_id);
+CREATE INDEX IF NOT EXISTS idx_meta_versions_save ON meta_versions(save_id, season_id);
 
 -- 性能优化：补充缺失索引
 CREATE INDEX IF NOT EXISTS idx_honors_save_id ON honors(save_id);

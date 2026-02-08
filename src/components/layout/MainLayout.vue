@@ -128,6 +128,11 @@
             <span>数据中心</span>
           </el-menu-item>
 
+          <el-menu-item index="/meta-version" :disabled="isMenuDisabled('/meta-version')">
+            <el-icon><Refresh /></el-icon>
+            <span>版本历史</span>
+          </el-menu-item>
+
           <el-menu-item index="/annual-top" :disabled="isMenuDisabled('/annual-top')">
             <el-icon><Star /></el-icon>
             <span>IM年度评选</span>
@@ -205,6 +210,7 @@ import {
   Document,
   Histogram,
   TrendCharts,
+  Refresh,
 } from '@element-plus/icons-vue'
 import { useGameStore } from '@/stores/useGameStore'
 
@@ -249,6 +255,7 @@ const breadcrumbs = computed(() => {
     rankings: '积分排名',
     finance: '财政中心',
     'data-center': '数据中心',
+    'meta-version': '版本历史',
     'annual-top': 'IM年度评选',
     'annual-awards': '年度颁奖典礼',
     honors: '荣誉殿堂',

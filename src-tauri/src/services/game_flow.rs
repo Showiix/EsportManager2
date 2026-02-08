@@ -3220,6 +3220,10 @@ impl GameFlowService {
         .await
         .map_err(|e| format!("重置 form factors 失败: {}", e))?;
 
+        // 2.6 为新赛季生成 Meta 版本
+        MetaEngine::roll_new_meta(pool, save_id, save.current_season as i64).await
+            .map_err(|e| format!("生成 Meta 版本失败: {}", e))?;
+
         // 3. 自动确认首发
         let starters_confirmed = self.auto_confirm_starters(pool, save_id).await?;
 
