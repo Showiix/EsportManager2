@@ -14,6 +14,7 @@ pub mod traits;
 pub mod satisfaction;
 pub mod transfer;
 pub mod meta_engine;
+pub mod rookie_generator;
 
 pub use match_simulation::*;
 pub use player_performance::*;
@@ -31,3 +32,4 @@ pub use traits::*;
 pub use satisfaction::*;
 pub use transfer::*;
 pub use meta_engine::*;
+pub use rookie_generator::*;

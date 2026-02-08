@@ -1,7 +1,8 @@
 use crate::commands::save_commands::{AppState, CommandResult};
-use crate::engines::DraftEngine;
+use crate::engines::{DraftEngine, RookieGenerator};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use std::collections::HashSet;
 use tauri::State;
 
 /// 选秀球员信息
@@ -1189,4 +1190,112 @@ pub async fn delete_draft_pool_players(
     };
 
     Ok(CommandResult::ok(rows_affected))
+}
+
+/// 批量生成拟真新秀并插入选秀池
+#[tauri::command]
+pub async fn generate_rookies(
+    state: State<'_, AppState>,
+    region_id: u64,
+    count: Option<u32>,
+    seed: Option<u64>,
+) -> Result<CommandResult<Vec<DraftPoolPlayer>>, String> {
+    let count = count.unwrap_or(14) as usize;
+
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取当前赛季
+    let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+        .bind(&save_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let current_season: i64 = save_row.get("current_season");
+
+    // 查询已有的 game_id（draft_pool + players），保证唯一性
+    let existing_rows = sqlx::query(
+        r#"
+        SELECT game_id FROM draft_pool WHERE save_id = ?
+        UNION
+        SELECT game_id FROM players WHERE save_id = ?
+        "#,
+    )
+    .bind(&save_id)
+    .bind(&save_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let existing_ids: HashSet<String> = existing_rows
+        .iter()
+        .map(|row| row.get::<String, _>("game_id"))
+        .collect();
+
+    // 创建生成器
+    let mut generator = match seed {
+        Some(s) => RookieGenerator::new(s),
+        None => RookieGenerator::from_entropy(),
+    };
+
+    // 生成新秀
+    let rookies = generator.generate_rookies(region_id, count, &existing_ids);
+
+    // 插入 draft_pool 并收集结果
+    let mut results = Vec::with_capacity(rookies.len());
+    for rookie in &rookies {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO draft_pool (
+                save_id, region_id, game_id, real_name, nationality,
+                age, ability, potential, position, tag, status, created_season
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?)
+            RETURNING id
+            "#,
+        )
+        .bind(&save_id)
+        .bind(region_id as i64)
+        .bind(&rookie.game_id)
+        .bind(&rookie.real_name)
+        .bind(&rookie.nationality)
+        .bind(rookie.age as i64)
+        .bind(rookie.ability as i64)
+        .bind(rookie.potential as i64)
+        .bind(&rookie.position)
+        .bind(&rookie.tag)
+        .bind(current_season)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let new_id: i64 = result.get("id");
+        results.push(DraftPoolPlayer {
+            id: new_id as u64,
+            game_id: rookie.game_id.clone(),
+            real_name: Some(rookie.real_name.clone()),
+            nationality: Some(rookie.nationality.clone()),
+            age: rookie.age,
+            ability: rookie.ability,
+            potential: rookie.potential,
+            position: rookie.position.clone(),
+            tag: rookie.tag.clone(),
+            status: "available".to_string(),
+        });
+    }
+
+    Ok(CommandResult::ok(results))
 }

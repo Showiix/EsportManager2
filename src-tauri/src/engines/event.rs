@@ -237,67 +237,44 @@ impl EventEngine {
 
     // ==================== 新秀生成 ====================
 
-    /// 生成新秀选手
+    /// 生成新秀选手（使用 RookieGenerator 生成拟真信息）
     pub fn generate_rookie(
         &self,
         team: &Team,
         position: Position,
         _season_id: u32,
     ) -> RookieGenerationDetail {
-        let mut rng = rand::thread_rng();
+        let mut generator = super::RookieGenerator::from_entropy();
+        let existing_ids = std::collections::HashSet::new();
+        let rookies = generator.generate_rookies(1, 1, &existing_ids);
 
-        // 生成年龄 (17-19岁)
-        let _age = rng.gen_range(self.config.rookie_min_age..=self.config.rookie_max_age);
-
-        // 生成能力值 (44-58，缩放后)
-        let ability = rng.gen_range(44..=58);
-
-        // 生成潜力值 (能力值+5 到 能力值+20)
-        let potential_bonus = rng.gen_range(5..=20);
-        let potential = (ability + potential_bonus).min(75);
-
-        // 生成标签 (天才5%, 普通75%, 平庸20%)
-        let tag_roll: f64 = rng.gen();
-        let tag = if tag_roll < 0.05 {
-            PlayerTag::Genius
-        } else if tag_roll < 0.80 {
-            PlayerTag::Normal
+        if let Some(r) = rookies.into_iter().next() {
+            RookieGenerationDetail {
+                player_id: 0,
+                player_name: r.game_id,
+                team_id: team.id,
+                team_name: team.name.clone(),
+                ability: r.ability,
+                potential: r.potential,
+                position: format!("{:?}", position),
+                tag: r.tag,
+            }
         } else {
-            PlayerTag::Ordinary
-        };
-
-        // 生成游戏ID
-        let game_id = self.generate_rookie_name(&mut rng);
-
-        RookieGenerationDetail {
-            player_id: 0, // 由数据库分配
-            player_name: game_id,
-            team_id: team.id,
-            team_name: team.name.clone(),
-            ability,
-            potential,
-            position: format!("{:?}", position),
-            tag: format!("{:?}", tag),
+            // 不应到达此处，作为回退
+            let mut rng = rand::thread_rng();
+            let ability = rng.gen_range(61..=64);
+            let potential = ability + rng.gen_range(2..=4);
+            RookieGenerationDetail {
+                player_id: 0,
+                player_name: format!("Rookie{}", rng.gen_range(1..9999)),
+                team_id: team.id,
+                team_name: team.name.clone(),
+                ability,
+                potential,
+                position: format!("{:?}", position),
+                tag: "Normal".to_string(),
+            }
         }
-    }
-
-    /// 生成随机新秀名字
-    fn generate_rookie_name(&self, rng: &mut impl Rng) -> String {
-        let prefixes = [
-            "Shadow", "Storm", "Light", "Dark", "Fire", "Ice", "Thunder", "Wind",
-            "Dragon", "Phoenix", "Wolf", "Tiger", "Eagle", "Lion", "Bear", "Fox",
-            "Cyber", "Neo", "Nova", "Star", "Moon", "Sun", "Sky", "Cloud",
-        ];
-        let suffixes = [
-            "King", "Master", "Lord", "Knight", "Blade", "Fist", "Eye", "Heart",
-            "Soul", "Spirit", "Mind", "Force", "Power", "Strike", "Rush", "Flash",
-            "X", "Z", "1", "7", "99", "gg", "Pro", "Jr",
-        ];
-
-        let prefix = prefixes[rng.gen_range(0..prefixes.len())];
-        let suffix = suffixes[rng.gen_range(0..suffixes.len())];
-
-        format!("{}{}", prefix, suffix)
     }
 
     // ==================== 合同到期处理 ====================
@@ -987,8 +964,9 @@ mod tests {
 
         for _ in 0..50 {
             let rookie = engine.generate_rookie(&team, Position::Top, 1);
-            // 能力值应在55-75范围内
-            assert!(rookie.ability >= 44 && rookie.ability <= 58);
+            // 新生成器: Genius 64-67, Normal 61-64, Ordinary 59-61
+            assert!(rookie.ability >= 59 && rookie.ability <= 67,
+                "ability {} out of range 59-67", rookie.ability);
             // 潜力应高于能力
             assert!(rookie.potential > rookie.ability);
             assert!(rookie.potential <= 100);
