@@ -1520,6 +1520,14 @@ impl GameFlowService {
                     StandingRepository::upsert_batch(pool, save_id, &standings)
                         .await
                         .map_err(|e| e.to_string())?;
+
+                    // 生成比赛后将赛事状态更新为 InProgress
+                    sqlx::query("UPDATE tournaments SET status = 'InProgress' WHERE id = ?")
+                        .bind(id as i64)
+                        .execute(pool)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    log::debug!("{} {} id={} 状态更新为 InProgress", region_name, season_label, id);
                 }
             }
 

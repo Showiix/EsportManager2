@@ -185,7 +185,11 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="description" label="说明" />
+          <el-table-column prop="description" label="说明">
+            <template #default="{ row }">
+              {{ formatDescription(row.description) }}
+            </template>
+          </el-table-column>
         </el-table>
       </div>
     </template>
@@ -323,6 +327,48 @@ function formatPosition(position: string): string {
     'FIGHTER_OUT': '斗士出局',
   }
   return positionMap[position] || position
+}
+
+// 翻译交易说明（"ShanghaiMasters - CHAMPION" → "上海大师赛 - 冠军"）
+function formatDescription(description: string): string {
+  if (!description) return ''
+  const tournamentMap: Record<string, string> = {
+    'WorldChampionship': '世界赛',
+    'Msi': 'MSI季中赛',
+    'MadridMasters': '马德里大师赛',
+    'ClaudeIntercontinental': 'Claude洲际赛',
+    'ShanghaiMasters': '上海大师赛',
+    'IcpIntercontinental': 'ICP洲际对抗赛',
+    'SuperIntercontinental': 'Super洲际邀请赛',
+    'SpringPlayoffs': '春季季后赛',
+    'SummerPlayoffs': '夏季季后赛',
+    'SpringRegular': '春季常规赛',
+    'SummerRegular': '夏季常规赛',
+  }
+  const positionMap: Record<string, string> = {
+    'CHAMPION': '冠军',
+    'RUNNER_UP': '亚军',
+    'THIRD': '季军',
+    'FOURTH': '殿军',
+    'QUARTER_FINAL': '八强',
+    'GROUP_STAGE': '小组赛',
+    '5TH_8TH': '5-8名',
+    'SEMI_LOSER': '四强',
+    'R1_LOSER': '首轮',
+    'LOSERS_R2': '败者组',
+    'LOSERS_R1': '败者组',
+    'PREP_LOSER': '预选赛',
+    'PROMOTION_LOSER': '晋级赛',
+    'FIGHTER_OUT': '斗士出局',
+  }
+  let result = description
+  for (const [en, cn] of Object.entries(tournamentMap)) {
+    result = result.replace(en, cn)
+  }
+  for (const [en, cn] of Object.entries(positionMap)) {
+    result = result.replace(en, cn)
+  }
+  return result
 }
 </script>
 

@@ -317,8 +317,7 @@ const loadTournament = async (regionId: number) => {
         id: springRegular.id.toString(),
         name: springRegular.name,
         type: 'league',
-        status: (springRegular.status === 'InProgress' || springRegular.status === 'Scheduled') ? 'active' :
-                springRegular.status === 'Completed' ? 'completed' : 'upcoming',
+        status: springRegular.status === 'Completed' ? 'completed' : 'active',
         description: '春季常规赛与季后赛',
       }
     }
