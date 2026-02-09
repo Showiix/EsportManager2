@@ -356,6 +356,18 @@ export const useTimeStore = defineStore('time', () => {
   const fastForwardToSeasonEnd = () => fastForwardTo('SEASON_END')
 
   /**
+   * 清除所有状态（切换存档时调用）
+   */
+  const clearAll = () => {
+    timeState.value = null
+    isLoading.value = false
+    error.value = null
+    lastSimulatedMatch.value = null
+    lastMessage.value = null
+    recentHonors.value = []
+  }
+
+  /**
    * 清除错误
    */
   const clearError = () => {
@@ -415,6 +427,7 @@ export const useTimeStore = defineStore('time', () => {
     fastForwardToSummer,
     fastForwardToWorlds,
     fastForwardToSeasonEnd,
+    clearAll,
     clearError,
     clearMessage,
   }

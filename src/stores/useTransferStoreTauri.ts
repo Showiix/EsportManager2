@@ -563,6 +563,23 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
   }
 
   /**
+   * 清除所有状态（切换存档时调用）
+   */
+  const clearAll = () => {
+    listings.value = []
+    freeAgents.value = []
+    transferHistory.value = []
+    transferWindow.value = null
+    currentRoundEvents.value = []
+    allTransferEvents.value = []
+    expiringContracts.value = []
+    retiringCandidates.value = []
+    isLoading.value = false
+    error.value = null
+    clearFilters()
+  }
+
+  /**
    * 清除筛选条件
    */
   const clearFilters = () => {
@@ -630,6 +647,7 @@ export const useTransferStoreTauri = defineStore('transferTauri', () => {
     signFreeAgent,
     loadTransferHistory,
     updateFilters,
+    clearAll,
     clearFilters,
     clearError,
   }

@@ -9,6 +9,28 @@ import type { GameInitConfig } from '@/types/initConfig'
 import { usePlayerStore } from './usePlayerStore'
 import { useMatchDetailStore } from './useMatchDetailStore'
 import { useTransferWindowStore } from './useTransferWindowStore'
+import { useTimeStore } from './useTimeStore'
+import { useTeamStoreTauri } from './useTeamStoreTauri'
+import { useTournamentStoreTauri } from './useTournamentStoreTauri'
+import { useTransferStoreTauri } from './useTransferStoreTauri'
+import { usePlayoffStore } from './usePlayoffStore'
+import { useSuperStore } from './useSuperStore'
+import { useClauchStore } from './useClauchStore'
+import { useMSIStore } from './useMSIStore'
+import { useWorldsStore } from './useWorldsStore'
+import { usePointsStore } from './usePointsStore'
+import { useFinanceStore } from './useFinanceStore'
+import { useScheduleStore } from './useScheduleStore'
+import { useRankingStore } from './useRankingStore'
+import { useTeamStore } from './useTeamStore'
+import { useRegionStore } from './useRegionStore'
+import { useHonorHallStore } from './useHonorHallStore'
+import { useAutoTournamentStore } from './useAutoTournamentStore'
+import { useEventStore } from './useEventStore'
+import { useAIStrategyStore } from './useAIStrategyStore'
+import { useDraftStoreTauri } from './useDraftStoreTauri'
+import { useDraftAuctionStore } from './useDraftAuctionStore'
+import { useSeasonStore } from './useSeasonStore'
 import { createLogger } from '@/utils/logger'
 import { handleError } from '@/utils/errors'
 
@@ -213,14 +235,60 @@ export const useGameStore = defineStore('game', () => {
 
     try {
       logger.info('加载存档', { saveId })
-      // 清除旧存档的缓存数据
+      // 清除所有 store 的缓存数据
       const playerStore = usePlayerStore()
       const matchDetailStore = useMatchDetailStore()
       const transferWindowStore = useTransferWindowStore()
+      const timeStore = useTimeStore()
+      const teamStoreTauri = useTeamStoreTauri()
+      const tournamentStoreTauri = useTournamentStoreTauri()
+      const transferStoreTauri = useTransferStoreTauri()
+      const playoffStore = usePlayoffStore()
+      const superStore = useSuperStore()
+      const clauchStore = useClauchStore()
+      const msiStore = useMSIStore()
+      const worldsStore = useWorldsStore()
+      const pointsStore = usePointsStore()
+      const financeStore = useFinanceStore()
+      const scheduleStore = useScheduleStore()
+      const rankingStore = useRankingStore()
+      const teamStore = useTeamStore()
+      const regionStore = useRegionStore()
+      const honorHallStore = useHonorHallStore()
+      const autoTournamentStore = useAutoTournamentStore()
+      const eventStore = useEventStore()
+      const aiStrategyStore = useAIStrategyStore()
+      const draftStore = useDraftStoreTauri()
+      const draftAuctionStore = useDraftAuctionStore()
+      const seasonStore = useSeasonStore()
+
       playerStore.clearAll()
-      matchDetailStore.clearCache()
+      matchDetailStore.clearAll()
       transferWindowStore.clearState()
-      logger.debug('已清除旧存档缓存')
+      timeStore.clearAll()
+      teamStoreTauri.clearAll()
+      tournamentStoreTauri.clearAll()
+      transferStoreTauri.clearAll()
+      playoffStore.clearAll()
+      superStore.clearAll()
+      clauchStore.clearAll()
+      msiStore.clearAll()
+      worldsStore.clearAll()
+      pointsStore.clearCache()
+      financeStore.clearCache()
+      scheduleStore.clearAll()
+      rankingStore.clearAll()
+      teamStore.clearAll()
+      regionStore.clearAll()
+      honorHallStore.clearAll()
+      autoTournamentStore.clearAll()
+      eventStore.reset()
+      aiStrategyStore.reset()
+      draftStore.resetDraft()
+      draftAuctionStore.clearState()
+      seasonStore.resetToCurrentSeason()
+
+      logger.debug('已清除所有 store 缓存')
 
       currentSave.value = await logger.timed('加载存档', () => saveApi.loadSave(saveId))
       logger.info('存档加载成功', { name: currentSave.value.name })

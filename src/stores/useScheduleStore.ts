@@ -724,6 +724,15 @@ export const useScheduleStore = defineStore('schedule', () => {
     isSimulating.value = false
   }
 
+  /**
+   * 清除所有状态（切换存档时调用）
+   */
+  function clearAll(): void {
+    resetSchedule()
+    teamRegionCache.value = new Map()
+    loading.value = false
+  }
+
   // 辅助函数
   function getCompetitionType(competition: Competition): string | null {
     return competition.type || null
@@ -914,6 +923,7 @@ export const useScheduleStore = defineStore('schedule', () => {
     simulateSingleMatch,
     updateScoreboard,
     resetSchedule,
+    clearAll,
     updateAnnualRankingsOnCompetitionEnd,
     refreshAllRankings,
     completeRegularSeason

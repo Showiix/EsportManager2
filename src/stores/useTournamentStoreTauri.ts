@@ -490,6 +490,22 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
   }
 
   /**
+   * 清除所有状态（切换存档时调用）
+   */
+  const clearAll = () => {
+    currentTournament.value = null
+    tournaments.value = []
+    matches.value = []
+    standings.value = []
+    bracket.value = null
+    swissStatus.value = null
+    lastMatchResult.value = null
+    matchPrediction.value = null
+    isLoading.value = false
+    error.value = null
+  }
+
+  /**
    * 清除选中状态
    */
   const clearSelection = () => {
@@ -548,6 +564,7 @@ export const useTournamentStoreTauri = defineStore('tournamentTauri', () => {
     loadSwissStatus,
     generateNextSwissRound,
     advanceBracket,
+    clearAll,
     clearSelection,
     clearError,
   }

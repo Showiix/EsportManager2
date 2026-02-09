@@ -340,6 +340,21 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
   }
 
   /**
+   * 清除所有状态（切换存档时调用）
+   */
+  const clearAll = () => {
+    regions.value = []
+    selectedRegion.value = null
+    teams.value = []
+    selectedTeam.value = null
+    roster.value = null
+    selectedPlayer.value = null
+    isLoading.value = false
+    error.value = null
+    searchQuery.value = ''
+  }
+
+  /**
    * 清除选中状态
    */
   const clearSelection = () => {
@@ -390,6 +405,7 @@ export const useTeamStoreTauri = defineStore('teamTauri', () => {
     setStarter,
     searchTeams,
     searchPlayers,
+    clearAll,
     clearSelection,
     clearError,
   }

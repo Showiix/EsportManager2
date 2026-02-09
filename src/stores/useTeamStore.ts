@@ -367,6 +367,16 @@ export const useTeamStore = defineStore('team', () => {
     selectedTeam.value = null
   }
 
+  /**
+   * 清除所有状态（切换存档时调用）
+   */
+  const clearAll = () => {
+    teams.value = []
+    loading.value = false
+    selectedTeam.value = null
+    clearFilters()
+  }
+
   return {
     // 状态
     teams,
@@ -389,6 +399,7 @@ export const useTeamStore = defineStore('team', () => {
     updateFilters,
     clearFilters,
     getTeamsByRegion,
+    clearAll,
     clearSelectedTeam,
   }
 })

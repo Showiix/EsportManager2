@@ -170,6 +170,15 @@ export const useRegionStore = defineStore('region', () => {
     selectedRegion.value = null
   }
 
+  /**
+   * 清除所有状态（切换存档时调用）
+   */
+  const clearAll = () => {
+    regions.value = []
+    loading.value = false
+    selectedRegion.value = null
+  }
+
   // 更新赛区中的战队（当战队发生变化时）
   const updateRegionTeams = (regionId: string, teams: Team[]) => {
     const region = regions.value.find(r => r.id === regionId)
@@ -194,6 +203,7 @@ export const useRegionStore = defineStore('region', () => {
     updateRegion,
     getRegionById,
     getRegionTeams,
+    clearAll,
     clearSelectedRegion,
     updateRegionTeams,
   }

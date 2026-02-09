@@ -736,6 +736,16 @@ export const useRankingStore = defineStore('ranking', () => {
     }
   }
 
+  /**
+   * 清除所有状态（切换存档时调用）
+   */
+  const clearAll = () => {
+    regionalStandings.value = new Map()
+    seasonRankings.value = new Map()
+    loading.value = false
+    error.value = null
+  }
+
   return {
     // 状态
     regionalStandings,
@@ -749,6 +759,7 @@ export const useRankingStore = defineStore('ranking', () => {
     getRegionalStandingsByRegion,
 
     // 方法
+    clearAll,
     fetchRegionalStandings,
     fetchSeasonRankings,
     updateRegionalStandings,

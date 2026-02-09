@@ -373,6 +373,15 @@ export const useAutoTournamentStore = defineStore('autoTournament', () => {
     processingLog.value = []
   }
 
+  /**
+   * 清除所有状态（切换存档时调用）
+   */
+  const clearAll = () => {
+    rules.value = []
+    isProcessing.value = false
+    processingLog.value = []
+  }
+
   return {
     // 状态
     rules,
@@ -386,6 +395,7 @@ export const useAutoTournamentStore = defineStore('autoTournament', () => {
     updateRule,
     addCustomRule,
     removeRule,
+    clearAll,
     clearLog
   }
 })

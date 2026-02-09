@@ -127,6 +127,17 @@ export const useHonorHallStore = defineStore('honorHall', () => {
   }
 
   /**
+   * 清除所有状态（切换存档时调用）
+   */
+  const clearAll = () => {
+    selectedSeasonId.value = ''
+    currentHonorData.value = null
+    loading.value = false
+    availableSeasons.value = []
+    error.value = null
+  }
+
+  /**
    * 清除错误信息
    */
   const clearError = () => {
@@ -150,6 +161,7 @@ export const useHonorHallStore = defineStore('honorHall', () => {
     hasData,
 
     // 方法
+    clearAll,
     fetchAvailableSeasons,
     fetchSeasonHonorData,
     switchSeason,

@@ -662,6 +662,23 @@ export const useWorldsStore = defineStore('worlds', () => {
   }
 
   /**
+   * 清除所有状态（切换存档时调用）
+   */
+  function clearAll() {
+    loading.value = false
+    error.value = null
+    worldsBrackets.value = new Map()
+    currentWorlds.value = { season: 'S1', status: 'NOT_STARTED' }
+    playInTeams.value = []
+    swissStandings.value = []
+    currentSwissRound.value = 0
+    currentSwissMatches.value = []
+    allSwissMatches.value = []
+    knockoutMatches.value = []
+    finalRankings.value = []
+  }
+
+  /**
    * 重置错误
    */
   function resetError() {
@@ -694,6 +711,7 @@ export const useWorldsStore = defineStore('worlds', () => {
     simulateKnockoutMatch,
     generateKnockoutBracket,
     setKnockoutMatchWinner,
+    clearAll,
     resetError
   }
 })
