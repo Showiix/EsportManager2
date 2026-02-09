@@ -4505,12 +4505,11 @@ impl GameFlowService {
 
 /// 获取赛区名称
 fn get_region_name(region_id: u64) -> &'static str {
-    // region_id 可能是 1-4, 5-8, 或 9-12（取决于数据库初始化）
-    match region_id % 4 {
-        1 => "LPL",  // 1, 5, 9, 13...
-        2 => "LCK",  // 2, 6, 10, 14...
-        3 => "LEC",  // 3, 7, 11, 15...
-        0 => "LCS",  // 4, 8, 12, 16...
+    match region_id {
+        1 => "LPL",
+        2 => "LCK",
+        3 => "LEC",
+        4 => "LCS",
         _ => "Unknown",
     }
 }

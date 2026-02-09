@@ -518,6 +518,6 @@ mod tests {
         let team = create_test_team(1, 10_000_000, 75.0, 0.5);
         let budget = engine.suggest_transfer_budget(&team);
 
-        assert_eq!(budget, 3_000_000); // 10_000_000 * 0.3
+        assert_eq!(budget, 7_000_000); // 10_000_000 * 0.70
     }
 }
