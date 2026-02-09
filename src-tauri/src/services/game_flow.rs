@@ -895,7 +895,7 @@ impl GameFlowService {
 
         // 检查该阶段是否已经完成过（详情页可能已提前处理荣誉和积分）
         // 即使已完成，仍然继续执行：读取已有荣誉、补发奖金和统计等
-        let phase_already_completed = if let Some(t_type) = phase.to_tournament_type() {
+        let _phase_already_completed = if let Some(t_type) = phase.to_tournament_type() {
             let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
             if !tournaments.is_empty() {
                 let all_completed = tournaments.iter().all(|t| t.status == TournamentStatus::Completed);
