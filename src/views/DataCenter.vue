@@ -363,7 +363,7 @@ import {
 import VChart from 'vue-echarts'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useSeasonStore } from '@/stores/useSeasonStore'
-import { teamApi, devApi } from '@/api/tauri'
+import { teamApi, devApi, queryApi } from '@/api/tauri'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
 import { ElMessage } from 'element-plus'
 import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
@@ -437,10 +437,22 @@ const fetchRankings = async () => {
       logger.debug('[DataCenter] 第一条数据:', JSON.stringify(result[0]))
     }
     rankings.value = result
+    // 预计算带赛区信息的数据，供散点图独立筛选使用
+    enrichedRankings.value = result.map(p => {
+      // 优先用 regionId（须为有效数字），否则从 teamsRegionMap 回退
+      const parsed = p.regionId ? Number(p.regionId) : NaN
+      const rid = (!isNaN(parsed) && parsed > 0) ? parsed : (teamsRegionMap.value[String(p.teamId)] || 0)
+      return {
+        ...p,
+        _regionId: rid,
+        _regionName: regionNameMap.value[rid] || '-'
+      }
+    })
     logger.debug('[DataCenter] rankings.value 已更新，当前长度:', rankings.value.length)
   } catch (error) {
     logger.error('获取排行数据失败:', error)
     rankings.value = []
+    enrichedRankings.value = []
   } finally {
     loading.value = false
   }
@@ -545,78 +557,129 @@ const positionColorMap: Record<string, string> = {
   SUP: '#909399'
 }
 
-const regionColorMap: Record<number, string> = {
-  1: '#e6393f',  // LPL
-  2: '#1a56db',  // LCK
-  3: '#059669',  // LEC
-  4: '#8b5cf6'   // LCS
-}
+// 赛区颜色轮转（按加载顺序分配）
+const REGION_COLORS = ['#e6393f', '#1a56db', '#059669', '#8b5cf6']
 
-const regionNameMap: Record<number, string> = {
-  1: 'LPL',
-  2: 'LCK',
-  3: 'LEC',
-  4: 'LCS'
-}
+// 动态赛区映射（从后端加载）
+const regionNameMap = ref<Record<number, string>>({})
+const regionColorMap = ref<Record<number, string>>({})
+const regionFiltersData = ref<{ label: string; value: number }[]>([{ label: '全部', value: 0 }])
 
-// 获取选手赛区ID
-const getPlayerRegionId = (teamId: string | number | null): number => {
-  if (!teamId) return 0
-  return teamsRegionMap.value[String(teamId)] || 0
+
+// 散点图独立筛选状态
+const scatterPosition = ref('')
+const scatterRegion = ref(0) // 0=全部, 1=LPL, 2=LCK, 3=LEC, 4=LCS
+const scatterXAxis = ref('consistencyScore')
+const scatterYAxis = ref('avgImpact')
+
+// 赛区筛选选项（动态）
+const regionFilters = computed(() => regionFiltersData.value)
+
+// 可选维度
+const axisDimensions = [
+  { value: 'consistencyScore', label: '稳定性' },
+  { value: 'avgImpact', label: '影响力' },
+  { value: 'avgPerformance', label: '平均发挥' },
+  { value: 'gamesPlayed', label: '场次' },
+  { value: 'yearlyTopScore', label: '年度得分' },
+  { value: 'championBonus', label: '冠军加成' }
+]
+
+// 维度标签
+const xAxisLabel = computed(() => axisDimensions.find(d => d.value === scatterXAxis.value)?.label || '')
+const yAxisLabel = computed(() => axisDimensions.find(d => d.value === scatterYAxis.value)?.label || '')
+
+// 带赛区信息的排行数据（在加载时预计算，彻底解决响应式问题）
+interface EnrichedPlayer extends PlayerSeasonStats {
+  _regionId: number
+  _regionName: string
+}
+const enrichedRankings = ref<EnrichedPlayer[]>([])
+
+// 散点图独立过滤
+const scatterFilteredPlayers = computed(() => {
+  let result = enrichedRankings.value
+
+  if (scatterPosition.value) {
+    result = result.filter(r => r.position === scatterPosition.value)
+  }
+
+  if (scatterRegion.value > 0) {
+    result = result.filter(r => r._regionId === scatterRegion.value)
+  }
+
+  return result
+})
+
+// 获取维度值
+const getDimensionValue = (p: PlayerSeasonStats, dim: string): number => {
+  switch (dim) {
+    case 'consistencyScore': return p.consistencyScore || 0
+    case 'avgImpact': return p.avgImpact || 0
+    case 'avgPerformance': return p.avgPerformance || 0
+    case 'gamesPlayed': return p.gamesPlayed || 0
+    case 'yearlyTopScore': return p.yearlyTopScore || p.avgImpact || 0
+    case 'championBonus': return p.championBonus || 0
+    case 'bestPerformance': return p.bestPerformance || 0
+    default: return 0
+  }
 }
 
 // 散点图四象限配置
 const scatterOption = computed(() => {
-  const players = filteredRankings.value
+  const players = scatterFilteredPlayers.value
   if (players.length === 0) return {}
 
-  // 数据：[稳定性, 影响力, 选手名, 战队名, 位置, playerId, regionId]
+  const xDim = scatterXAxis.value
+  const yDim = scatterYAxis.value
+
+  // 数据：[x值, y值, 选手名, 战队名, 位置, playerId, regionId]
   const data = players.map(p => [
-    p.consistencyScore || 0,      // x: 稳定性 0-100
-    p.avgImpact || 0,             // y: 影响力
+    getDimensionValue(p, xDim),
+    getDimensionValue(p, yDim),
     p.playerName,
     getTeamName(p.teamId),
     p.position,
     p.playerId,
-    getPlayerRegionId(p.teamId)
+    (p as EnrichedPlayer)._regionId
   ])
 
   // 计算均值线
-  const avgStability = data.reduce((s, d) => s + (d[0] as number), 0) / data.length
-  const avgImpact = data.reduce((s, d) => s + (d[1] as number), 0) / data.length
+  const avgX = data.reduce((s, d) => s + (d[0] as number), 0) / data.length
+  const avgY = data.reduce((s, d) => s + (d[1] as number), 0) / data.length
 
   // 计算数据范围，动态设置坐标轴让数据居中
-  const stabilities = data.map(d => d[0] as number)
-  const impacts = data.map(d => d[1] as number)
-  const minStability = Math.min(...stabilities)
-  const maxStability = Math.max(...stabilities)
-  const minImpact = Math.min(...impacts)
-  const maxImpact = Math.max(...impacts)
+  const xValues = data.map(d => d[0] as number)
+  const yValues = data.map(d => d[1] as number)
+  const minX = Math.min(...xValues)
+  const maxX = Math.max(...xValues)
+  const minY = Math.min(...yValues)
+  const maxY = Math.max(...yValues)
 
-  // 稳定性轴：数据范围两侧加 15% padding，限制在 [0, 100]
-  const xRange = maxStability - minStability || 20
+  const xRange = maxX - minX || 20
   const xPad = xRange * 0.15
-  const xMin = Math.max(0, Math.floor((minStability - xPad) / 5) * 5)
-  const xMax = Math.min(100, Math.ceil((maxStability + xPad) / 5) * 5)
-
-  // 影响力轴：数据范围两侧加 20% padding
-  const yRange = maxImpact - minImpact || 5
+  const yRange = maxY - minY || 5
   const yPad = yRange * 0.2
-  const yMin = Math.floor((minImpact - yPad) * 2) / 2
-  const yMax = Math.ceil((maxImpact + yPad) * 2) / 2
+
+  // 如果维度是百分比类的（稳定性），限制在 [0, 100]
+  const isXPercent = xDim === 'consistencyScore'
+  const xMin = isXPercent ? Math.max(0, Math.floor((minX - xPad) / 5) * 5) : +(minX - xPad).toFixed(1)
+  const xMax = isXPercent ? Math.min(100, Math.ceil((maxX + xPad) / 5) * 5) : +(maxX + xPad).toFixed(1)
+  const yMin = +(minY - yPad).toFixed(1)
+  const yMax = +(maxY + yPad).toFixed(1)
 
   return {
     tooltip: {
       trigger: 'item' as const,
       formatter: (params: any) => {
-        const [stability, impact, name, team, pos] = params.data
+        const [xVal, yVal, name, team, pos] = params.data
         const regionId = params.data[6] as number
-        const regionName = regionNameMap[regionId] || '-'
+        const regionName = regionNameMap.value[regionId] || '-'
         return `<b>${name}</b> (${POSITION_NAMES[pos as PlayerPosition] || pos})<br/>` +
           `战队: ${team}<br/>` +
           `赛区: ${regionName}<br/>` +
-          `稳定性: ${(stability as number).toFixed(0)}<br/>` +
-          `影响力: ${(impact as number) >= 0 ? '+' : ''}${(impact as number).toFixed(2)}`
+          `${xAxisLabel.value}: ${(xVal as number).toFixed(1)}<br/>` +
+          `${yAxisLabel.value}: ${(yVal as number).toFixed(1)}`
       }
     },
     grid: {
@@ -627,7 +690,7 @@ const scatterOption = computed(() => {
       containLabel: true
     },
     xAxis: {
-      name: '稳定性 →',
+      name: `${xAxisLabel.value} →`,
       nameLocation: 'end' as const,
       nameTextStyle: { color: '#6b7280', fontSize: 12 },
       min: xMin,
@@ -636,7 +699,7 @@ const scatterOption = computed(() => {
       splitLine: { lineStyle: { color: '#f3f4f6' } }
     },
     yAxis: {
-      name: '↑ 影响力',
+      name: `↑ ${yAxisLabel.value}`,
       nameLocation: 'end' as const,
       nameTextStyle: { color: '#6b7280', fontSize: 12 },
       min: yMin,
@@ -647,12 +710,12 @@ const scatterOption = computed(() => {
     series: [{
       type: 'scatter',
       data,
-      symbolSize: (val: any[]) => Math.max(10, Math.abs(val[1] as number) * 1.5 + 10),
+      symbolSize: 12,
       itemStyle: {
         color: (params: any) => {
           if (scatterColorMode.value === 'region') {
             const regionId = params.data[6] as number
-            return regionColorMap[regionId] || '#909399'
+            return regionColorMap.value[regionId] || '#909399'
           }
           return positionColorMap[params.data[4] as string] || '#909399'
         },
@@ -677,54 +740,22 @@ const scatterOption = computed(() => {
         },
         data: [
           {
-            xAxis: avgStability,
-            label: { formatter: `平均稳定性: ${avgStability.toFixed(0)}`, position: 'insideEndTop' as const }
+            xAxis: avgX,
+            label: { formatter: `均值: ${avgX.toFixed(1)}`, position: 'insideEndTop' as const }
           },
           {
-            yAxis: avgImpact,
-            label: { formatter: `平均影响力: ${avgImpact.toFixed(1)}`, position: 'insideEndTop' as const }
+            yAxis: avgY,
+            label: { formatter: `均值: ${avgY.toFixed(1)}`, position: 'insideEndTop' as const }
           }
         ]
       },
       markArea: {
         silent: true,
         data: [
-          // 右上：核心基石
-          [{
-            xAxis: avgStability,
-            yAxis: avgImpact,
-            itemStyle: { color: 'rgba(16, 185, 129, 0.04)' }
-          }, {
-            xAxis: 100,
-            yAxis: 'max'
-          }],
-          // 左上：波动明星
-          [{
-            xAxis: 0,
-            yAxis: avgImpact,
-            itemStyle: { color: 'rgba(245, 158, 11, 0.04)' }
-          }, {
-            xAxis: avgStability,
-            yAxis: 'max'
-          }],
-          // 右下：稳定绿叶
-          [{
-            xAxis: avgStability,
-            yAxis: 'min',
-            itemStyle: { color: 'rgba(59, 130, 246, 0.04)' }
-          }, {
-            xAxis: 100,
-            yAxis: avgImpact
-          }],
-          // 左下：待培养
-          [{
-            xAxis: 0,
-            yAxis: 'min',
-            itemStyle: { color: 'rgba(156, 163, 175, 0.04)' }
-          }, {
-            xAxis: avgStability,
-            yAxis: avgImpact
-          }]
+          [{ xAxis: avgX, yAxis: avgY, itemStyle: { color: 'rgba(16, 185, 129, 0.04)' } }, { xAxis: xMax, yAxis: yMax }],
+          [{ xAxis: xMin, yAxis: avgY, itemStyle: { color: 'rgba(245, 158, 11, 0.04)' } }, { xAxis: avgX, yAxis: yMax }],
+          [{ xAxis: avgX, yAxis: yMin, itemStyle: { color: 'rgba(59, 130, 246, 0.04)' } }, { xAxis: xMax, yAxis: avgY }],
+          [{ xAxis: xMin, yAxis: yMin, itemStyle: { color: 'rgba(156, 163, 175, 0.04)' } }, { xAxis: avgX, yAxis: avgY }]
         ]
       }
     }]
@@ -742,12 +773,10 @@ const scatterLegendItems = computed(() => {
       { label: 'SUP', color: positionColorMap.SUP }
     ]
   }
-  return [
-    { label: 'LPL', color: regionColorMap[1] },
-    { label: 'LCK', color: regionColorMap[2] },
-    { label: 'LEC', color: regionColorMap[3] },
-    { label: 'LCS', color: regionColorMap[4] }
-  ]
+  return Object.entries(regionNameMap.value).map(([id, name]) => ({
+    label: name,
+    color: regionColorMap.value[Number(id)] || '#909399'
+  }))
 })
 
 // 散点图点击事件
@@ -842,7 +871,7 @@ const handleSizeChange = (size: number) => {
 
 // 方法
 const refreshData = async () => {
-  // 加载战队数据（用于显示战队名称）
+  // 加载战队数据 + 赛区数据
   try {
     if (teamsMap.value.size === 0 || Object.keys(teamsRegionMap.value).length === 0) {
       const teams = await teamApi.getAllTeams()
@@ -854,7 +883,27 @@ const refreshData = async () => {
       })
       teamsMap.value = newTeamsMap
       teamsRegionMap.value = newRegionMap
-      logger.debug('[DataCenter] 加载战队数据:', teamsMap.value.size, '支队伍, 赛区映射:', JSON.stringify(newRegionMap))
+
+      // 动态加载赛区名称映射
+      try {
+        const regions = await queryApi.getAllRegions()
+        const nameMap: Record<number, string> = {}
+        const colorMap: Record<number, string> = {}
+        const filters: { label: string; value: number }[] = [{ label: '全部', value: 0 }]
+        regions.forEach((r, i) => {
+          nameMap[r.id] = r.code || r.name
+          colorMap[r.id] = REGION_COLORS[i % REGION_COLORS.length]
+          filters.push({ label: r.code || r.name, value: r.id })
+        })
+        regionNameMap.value = nameMap
+        regionColorMap.value = colorMap
+        regionFiltersData.value = filters
+        logger.debug('[DataCenter] 赛区映射:', JSON.stringify(nameMap))
+      } catch (re) {
+        logger.warn('加载赛区数据失败:', re)
+      }
+
+      logger.debug('[DataCenter] 加载战队数据:', teamsMap.value.size, '支队伍')
     }
   } catch (e) {
     logger.warn('加载战队数据失败:', e)
@@ -1375,6 +1424,27 @@ watch([selectedPosition, searchQuery], () => {
         font-size: 16px;
         font-weight: 600;
         color: #1f2937;
+      }
+    }
+
+    .scatter-filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 16px;
+      padding: 0 4px 16px;
+
+      .scatter-filter-group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .filter-label {
+        font-size: 13px;
+        color: #6b7280;
+        font-weight: 500;
+        white-space: nowrap;
       }
     }
 

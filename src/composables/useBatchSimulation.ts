@@ -121,7 +121,7 @@ export function buildMatchDetail(opts: {
 export function recordMatchPerformances(
   matchDetail: MatchDetail,
   seasonId: string,
-  competitionType: string,
+  _competitionType: string,
   playerStore: ReturnType<typeof usePlayerStore>
 ) {
   matchDetail.games.forEach(game => {
@@ -134,8 +134,7 @@ export function recordMatchPerformances(
           perf.position,
           perf.impactScore,
           perf.actualAbility,
-          seasonId,
-          competitionType
+          seasonId
         )
       })
     }

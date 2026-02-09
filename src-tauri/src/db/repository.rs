@@ -1913,12 +1913,14 @@ impl PlayerStatsRepository {
         season_id: i64,
         limit: i32,
     ) -> Result<Vec<PlayerSeasonStatistics>, DatabaseError> {
-        // 先获取基本排行榜数据
+        // 先获取基本排行榜数据，JOIN teams 表以获取 region_id
         let rows = sqlx::query(
             r#"
             SELECT pss.*,
-                   COALESCE(gpp_count.real_games_played, 0) as real_games_played
+                   COALESCE(gpp_count.real_games_played, 0) as real_games_played,
+                   tm.region_id as team_region_id
             FROM player_season_stats pss
+            LEFT JOIN teams tm ON pss.team_id = tm.id AND tm.save_id = pss.save_id
             LEFT JOIN (
                 SELECT gpp.save_id, gpp.player_id, COUNT(DISTINCT gpp.game_id) as real_games_played
                 FROM game_player_performances gpp
@@ -1943,13 +1945,25 @@ impl PlayerStatsRepository {
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
-        // 转换并使用真实的 games_played 值
+        // 转换并使用真实的 games_played 值，补充缺失的 region_id
         Ok(rows.iter().map(|row| {
             let mut stats = row_to_player_stats(row);
             // 使用从 game_player_performances 计算的真实场次数
             let real_games: i64 = row.try_get("real_games_played").unwrap_or(0);
             if real_games > 0 {
                 stats.games_played = real_games as i32;
+            }
+            // 如果 region_id 为空或无效（如 "LEAGUE"），从 teams 表补充
+            let needs_region = match &stats.region_id {
+                None => true,
+                Some(rid) => rid.parse::<i64>().is_err(),
+            };
+            if needs_region {
+                let team_region: i64 = row.try_get("team_region_id").unwrap_or(0);
+                if team_region > 0 {
+                    stats.region_id = Some(team_region.to_string());
+                    log::debug!("补充 region_id: player={}, team_id={:?}, region={}", stats.player_name, stats.team_id, team_region);
+                }
             }
             stats
         }).collect())
@@ -1967,8 +1981,10 @@ impl PlayerStatsRepository {
         let rows = sqlx::query(
             r#"
             SELECT pss.*,
-                   COALESCE(gpp_count.real_games_played, 0) as real_games_played
+                   COALESCE(gpp_count.real_games_played, 0) as real_games_played,
+                   tm.region_id as team_region_id
             FROM player_season_stats pss
+            LEFT JOIN teams tm ON pss.team_id = tm.id AND tm.save_id = pss.save_id
             LEFT JOIN (
                 SELECT gpp.save_id, gpp.player_id, COUNT(DISTINCT gpp.game_id) as real_games_played
                 FROM game_player_performances gpp
@@ -1994,12 +2010,22 @@ impl PlayerStatsRepository {
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
-        // 转换并使用真实的 games_played 值
+        // 转换并使用真实的 games_played 值，补充缺失的 region_id
         Ok(rows.iter().map(|row| {
             let mut stats = row_to_player_stats(row);
             let real_games: i64 = row.try_get("real_games_played").unwrap_or(0);
             if real_games > 0 {
                 stats.games_played = real_games as i32;
+            }
+            let needs_region = match &stats.region_id {
+                None => true,
+                Some(rid) => rid.parse::<i64>().is_err(),
+            };
+            if needs_region {
+                let team_region: i64 = row.try_get("team_region_id").unwrap_or(0);
+                if team_region > 0 {
+                    stats.region_id = Some(team_region.to_string());
+                }
             }
             stats
         }).collect())
