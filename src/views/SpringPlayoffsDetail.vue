@@ -1334,6 +1334,32 @@ const simulateSingleMatch = async (match: any, matchIdPrefix: string) => {
   }
 }
 
+// 从最新响应式数据中按阶段获取待模拟比赛
+const getPhaseMatches = (phase: string): { match: any, id: string }[] => {
+  switch (phase) {
+    case 'first':
+      return [
+        { match: winnersRounds.value[0]?.matches[0], id: 'w1-1' },
+        { match: winnersRounds.value[0]?.matches[1], id: 'w1-2' },
+        { match: losersRounds.value[0]?.matches[0], id: 'l1-1' },
+        { match: losersRounds.value[0]?.matches[1], id: 'l1-2' },
+      ]
+    case 'second':
+      return [
+        { match: winnersRounds.value[1]?.matches[0], id: 'wf' },
+        ...(losersRounds.value[1]?.matches || []).map((m: any, i: number) => ({ match: m, id: `l2-${i+1}` })),
+      ]
+    case 'third':
+      return [{ match: losersRounds.value[2]?.matches[0], id: 'l3' }]
+    case 'fourth':
+      return [{ match: losersRounds.value[3]?.matches[0], id: 'lf' }]
+    case 'final':
+      return [{ match: finalMatch.value, id: 'final' }]
+    default:
+      return []
+  }
+}
+
 // 一键模拟全部
 const simulatePlayoffs = async () => {
   if (!regularSeasonCompleted.value) {
@@ -1350,29 +1376,21 @@ const simulatePlayoffs = async () => {
   playoffsSimulating.value = true
   playoffsProgress.value = 0
 
-  // 收集所有需要模拟的比赛
-  const allPlayoffMatches = [
-    { match: winnersRounds.value[0].matches[0], id: 'w1-1', phase: 'first' },
-    { match: winnersRounds.value[0].matches[1], id: 'w1-2', phase: 'first' },
-    { match: losersRounds.value[0].matches[0], id: 'l1-1', phase: 'first' },
-    { match: losersRounds.value[0].matches[1], id: 'l1-2', phase: 'first' },
-    { match: winnersRounds.value[1].matches[0], id: 'wf', phase: 'second' },
-    ...losersRounds.value[1].matches.map((m: any, i: number) => ({ match: m, id: `l2-${i+1}`, phase: 'second' })),
-    { match: losersRounds.value[2].matches[0], id: 'l3', phase: 'third' },
-    { match: losersRounds.value[3].matches[0], id: 'lf', phase: 'fourth' },
-    { match: finalMatch.value, id: 'final', phase: 'final' },
-  ]
-
-  const totalMatches = allPlayoffMatches.filter(m => m.match.status !== 'completed').length
+  const phases = ['first', 'second', 'third', 'fourth', 'final']
+  // 估算总比赛数用于进度条
+  const totalMatches = getPhaseMatches('first').length + getPhaseMatches('second').length + 1 + 1 + 1
   let completed = 0
 
-  // 按顺序模拟所有比赛
-  for (const { match, id } of allPlayoffMatches) {
-    if (match.status !== 'completed' && canSimulate(match)) {
-      await simulateSingleMatch(match, id)
-      completed++
-      playoffsProgress.value = Math.floor((completed / totalMatches) * 100)
-      await new Promise(resolve => setTimeout(resolve, 200))
+  // 按阶段逐步模拟，每阶段从最新响应式数据读取比赛
+  for (const phase of phases) {
+    const matches = getPhaseMatches(phase)
+    for (const { match, id } of matches) {
+      if (match && match.status !== 'completed' && canSimulate(match)) {
+        await simulateSingleMatch(match, id)
+        completed++
+        playoffsProgress.value = Math.floor((completed / totalMatches) * 100)
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
     }
   }
 

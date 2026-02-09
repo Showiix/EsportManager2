@@ -1301,19 +1301,32 @@ const batchSimulate = async () => {
     batchSimulating.value = true
     simulationProgress.value = 0
 
-    const allMatches = mockBracket.rounds.flatMap(r => r.matches)
+    // 计算总比赛数用于进度
+    const totalMatches = mockBracket.rounds.flatMap(r => r.matches).filter(m => m.status !== 'completed').length
     let completed = 0
-    const total = allMatches.length
 
-    for (const match of allMatches) {
-      if (match.status !== 'completed' && match.teamAId && match.teamBId) {
-        await new Promise(resolve => setTimeout(resolve, 300))
-        simulateMatch(match)
+    // While 循环：每轮从最新响应式数据获取可模拟比赛，直到没有为止
+    const MAX_ITERATIONS = 50
+    let iterations = 0
+
+    while (iterations < MAX_ITERATIONS) {
+      iterations++
+      // 从最新的 mockBracket 中获取可模拟的比赛（有队伍且未完成）
+      const available = mockBracket.rounds.flatMap(r => r.matches).filter(
+        m => m.status !== 'completed' && m.teamAId && m.teamBId
+      )
+
+      if (available.length === 0) break
+
+      for (const match of available) {
+        await simulateMatch(match)
         completed++
-        simulationProgress.value = Math.round((completed / total) * 100)
+        simulationProgress.value = Math.round((completed / totalMatches) * 100)
+        await new Promise(resolve => setTimeout(resolve, 200))
       }
     }
 
+    await checkShanghaiCompletion()
     ElMessage.success('批量模拟完成!')
   } catch (error: any) {
     if (error !== 'cancel') {

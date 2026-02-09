@@ -1107,76 +1107,98 @@ const updateBracketProgression = () => {
  * 批量模拟MSI - 使用 useBatchSimulation composable 的工具函数
  */
 const batchSimulateMSI = async () => {
-  // 收集所有有后端ID且未完成且双方队伍已确定的比赛
-  const allMatches = mockMSIBracket.rounds.flatMap(r => r.matches)
-  const uncompleted = allMatches.filter((m: any) =>
-    m.status !== 'completed' && m.backendMatchId && m.teamAId && m.teamBId
-  )
-
-  if (uncompleted.length > 0) {
-    // 有后端比赛数据时，使用 batchSimulate composable
-    await batchSimulate({
-      confirmMessage: '将自动模拟所有未完成的比赛,直到决出冠军。是否继续?',
-      confirmTitle: '批量模拟确认',
-      confirmType: 'warning',
-      successMessage: '批量模拟完成!',
-      errorPrefix: 'MSI模拟失败',
-      tournamentType: 'msi',
-      seasonId: String(mockMSIBracket.seasonYear),
-      competitionType: 'INTL',
-      delayMs: 100,
-      matches: uncompleted.map((m: any) => ({
-        matchId: m.backendMatchId,
-        teamAId: String(m.teamAId || ''),
-        teamAName: getTeamName(m.teamAId) || '',
-        teamBId: String(m.teamBId || ''),
-        teamBName: getTeamName(m.teamBId) || '',
-        bestOf: m.bestOf || 5,
-        frontendMatchId: m.id,
-        backendMatchId: m.backendMatchId ? Number(m.backendMatchId) : undefined
-      })),
-      onMatchSimulated: async (matchId: number, result: any) => {
-        // 推进对阵
-        if (currentTournamentId.value) {
-          try {
-            await internationalApi.advanceBracket(currentTournamentId.value, matchId, result.winner_id)
-          } catch (e) {
-            logger.error(`[MSI] advanceBracket failed for match ${matchId}:`, e)
-          }
-        }
-        // 重新加载对阵数据以更新后续比赛的队伍
-        await loadBracketData()
-      },
-      onComplete: async () => {
-        await loadBracketData()
-        checkMSICompletion()
+  try {
+    await ElMessageBox.confirm(
+      '将自动模拟所有未完成的比赛,直到决出冠军。是否继续?',
+      '批量模拟确认',
+      {
+        confirmButtonText: '开始模拟',
+        cancelButtonText: '取消',
+        type: 'warning'
       }
-    })
-  } else {
-    // 后备方案：使用本地 PowerEngine 模拟（无后端数据时）
-    try {
-      await ElMessageBox.confirm(
-        '将自动模拟所有未完成的比赛,直到决出冠军。是否继续?',
-        '批量模拟确认',
-        {
-          confirmButtonText: '开始模拟',
-          cancelButtonText: '取消',
-          type: 'warning'
-        }
+    )
+
+    batchSimulating.value = true
+    simulationProgress.value = 0
+
+    const matchDetailStore = useMatchDetailStore()
+    const playerStore = usePlayerStore()
+
+    // 计算总比赛数用于进度
+    const totalMatches = mockMSIBracket.rounds.flatMap(r => r.matches).filter((m: any) => m.status !== 'completed').length
+    let completed = 0
+
+    // While 循环：每轮从最新响应式数据获取可模拟比赛，直到没有为止
+    const MAX_ITERATIONS = 50 // 防止无限循环
+    let iterations = 0
+
+    while (iterations < MAX_ITERATIONS) {
+      iterations++
+      // 从最新的 mockMSIBracket 中获取可模拟的比赛
+      const available = mockMSIBracket.rounds.flatMap(r => r.matches).filter((m: any) =>
+        m.status !== 'completed' && m.backendMatchId && m.teamAId && m.teamBId
       )
 
-      const localMatches = allMatches.filter((m: any) => m.status !== 'completed' && m.teamAId && m.teamBId)
-      for (const match of localMatches) {
-        await new Promise(resolve => setTimeout(resolve, 300))
-        await simulateMSIMatch(match)
-      }
+      if (available.length === 0) break
 
-      ElMessage.success('批量模拟完成!')
-    } catch (error: any) {
-      if (error !== 'cancel') {
-        ElMessage.error('模拟失败')
+      for (const match of available) {
+        try {
+          const result = await matchApi.simulateMatchDetailed(match.backendMatchId)
+
+          // 保存比赛详情
+          const teamAName = getTeamName(match.teamAId) || ''
+          const teamBName = getTeamName(match.teamBId) || ''
+          const matchDetail = buildMatchDetail({
+            matchId: match.id,
+            tournamentType: 'msi',
+            seasonId: String(mockMSIBracket.seasonYear),
+            teamAId: String(match.teamAId),
+            teamAName,
+            teamBId: String(match.teamBId),
+            teamBName,
+            bestOf: match.bestOf || 5,
+            result
+          })
+          await matchDetailStore.saveMatchDetail(match.id, matchDetail)
+
+          if (match.backendMatchId) {
+            const dbDetail = { ...matchDetail, matchId: String(match.backendMatchId) }
+            await matchDetailStore.saveMatchDetail(match.backendMatchId, dbDetail)
+          }
+
+          recordMatchPerformances(matchDetail, String(mockMSIBracket.seasonYear), 'INTL', playerStore)
+
+          // 推进对阵
+          if (currentTournamentId.value) {
+            await internationalApi.advanceBracket(currentTournamentId.value, match.backendMatchId, result.winner_id)
+          }
+
+          // 重新加载数据，使下一轮比赛的队伍信息被填充
+          await loadBracketData()
+
+          completed++
+          simulationProgress.value = Math.floor((completed / totalMatches) * 100)
+        } catch (e) {
+          logger.error(`[MSI] 模拟比赛 ${match.backendMatchId} 失败:`, e)
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100))
       }
     }
+
+    playerStore.saveToStorage()
+    await loadBracketData()
+    await checkMSICompletion()
+
+    ElMessage.success('MSI批量模拟完成!')
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      logger.error('MSI批量模拟失败:', error)
+      ElMessage.error(error.message || 'MSI模拟失败')
+    }
+  } finally {
+    batchSimulating.value = false
+    simulationProgress.value = 0
   }
 }
 
