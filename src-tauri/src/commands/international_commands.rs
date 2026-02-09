@@ -937,6 +937,11 @@ fn determine_next_matches(stage: &str, match_order: u32) -> Vec<(String, u32, bo
         // 世界赛淘汰赛 - 胜者只进决赛，败者进季军赛（由 determine_loser_next_match 处理）
         "SEMI_FINAL" => vec![("GRAND_FINAL".to_string(), 1, match_order == 1)],
 
+        // Super赛事第二阶段 - 定位赛胜者进入冠军预备战胜者组
+        "CHALLENGER_POSITIONING" => vec![("PREP_WINNERS".to_string(), 1, match_order == 1)], // 定位赛1胜者=home, 定位赛2胜者=away
+        // Super赛事第二阶段 - 晋级赛胜者进入冠军预备战败者组
+        "CHALLENGER_PROMOTION" => vec![("PREP_LOSERS".to_string(), 1, match_order == 1)], // 晋级赛1胜者=home, 晋级赛2胜者=away
+
         // Super赛事第三阶段 - 败者组胜者进入败者组决赛
         "PREP_LOSERS" => vec![("PREP_LOSERS_FINAL".to_string(), 1, false)], // 败者组胜者进入败者组决赛 away
 

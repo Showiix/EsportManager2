@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 
 /// 赛季阶段
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SeasonPhase {
     /// 春季赛常规赛
     SpringRegular,

@@ -3096,11 +3096,16 @@ impl GameFlowService {
 
         // 判断阶段状态
         let phase_status = if phase_progress.total_matches == 0 && !current_phase.is_non_tournament() {
+            // 赛事阶段未初始化
+            PhaseStatus::NotInitialized
+        } else if current_phase == SeasonPhase::TransferWindow && phase_progress.total_matches == 0 {
+            // 转会窗口未创建
             PhaseStatus::NotInitialized
         } else if current_phase == SeasonPhase::Draft && phase_progress.total_matches == 0 && phase_progress.completed_matches == 0 {
             // 选秀阶段：未开始选秀 → InProgress（等待用户在选秀页面操作）
             PhaseStatus::InProgress
-        } else if phase_progress.completed_matches >= phase_progress.total_matches {
+        } else if phase_progress.completed_matches >= phase_progress.total_matches && phase_progress.total_matches > 0 {
+            // 所有任务完成（必须有实际任务才算完成）
             PhaseStatus::Completed
         } else {
             PhaseStatus::InProgress
@@ -3294,8 +3299,35 @@ impl GameFlowService {
                         })
                     }
                 }
+                SeasonPhase::AnnualAwards => {
+                    // 检查是否已颁发年度荣誉
+                    let awarded: (i64,) = sqlx::query_as(
+                        "SELECT COUNT(*) FROM honors WHERE save_id = ? AND season_id = ? AND honor_type LIKE 'ANNUAL%'"
+                    )
+                    .bind(save_id)
+                    .bind(season_id as i64)
+                    .fetch_one(pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                    if awarded.0 > 0 {
+                        Ok(PhaseProgress {
+                            tournaments: Vec::new(),
+                            total_matches: 1,
+                            completed_matches: 1,
+                            percentage: 100.0,
+                        })
+                    } else {
+                        Ok(PhaseProgress {
+                            tournaments: Vec::new(),
+                            total_matches: 1,
+                            completed_matches: 0,
+                            percentage: 0.0,
+                        })
+                    }
+                }
                 _ => {
-                    // AnnualAwards / SeasonEnd → 立即可推进
+                    // SeasonEnd → 立即可推进
                     Ok(PhaseProgress {
                         tournaments: Vec::new(),
                         total_matches: 1,
@@ -3387,6 +3419,12 @@ impl GameFlowService {
             }
             SeasonPhase::SeasonEnd => {
                 actions.push(TimeAction::StartNewSeason);
+            }
+            SeasonPhase::AnnualAwards => {
+                // 颁奖典礼：只有完成颁奖后才能推进
+                if *status == PhaseStatus::Completed {
+                    actions.push(TimeAction::CompleteAndAdvance);
+                }
             }
             _ => {
                 // 赛事阶段
