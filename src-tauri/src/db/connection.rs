@@ -2348,7 +2348,6 @@ CREATE INDEX IF NOT EXISTS idx_meta_versions_save ON meta_versions(save_id, seas
 
 -- 性能优化：补充缺失索引
 CREATE INDEX IF NOT EXISTS idx_honors_save_id ON honors(save_id);
-CREATE INDEX IF NOT EXISTS idx_player_listings_window_status ON player_listings(window_id, status);
 CREATE INDEX IF NOT EXISTS idx_financial_transactions_team_season ON financial_transactions(team_id, season_id);
 CREATE INDEX IF NOT EXISTS idx_financial_transactions_save_season ON financial_transactions(save_id, season_id);
 "#;
