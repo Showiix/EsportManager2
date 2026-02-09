@@ -2,32 +2,22 @@
   <div class="summer-playoffs-management">
     <!-- 页面头部 -->
     <div class="page-header">
-      <div class="header-content">
-        <div class="header-left">
-          <el-button text @click="goBack">
-            <el-icon><ArrowLeft /></el-icon>
-            返回赛事列表
-          </el-button>
-          <h1 class="page-title">
-            <el-icon><Trophy /></el-icon>
-            {{ getRegionName(selectedRegion) }} 夏季季后赛
-          </h1>
-          <p class="page-description">
-            常规赛前8名队伍参加，双败淘汰制，胜者组1-4名，败者组5-8名
-          </p>
-        </div>
+      <div>
+        <h1>{{ getRegionName(selectedRegion) }} 夏季季后赛</h1>
+        <p>常规赛前8名队伍 · 双败淘汰制</p>
       </div>
       <div class="header-actions">
         <el-button
           v-if="regularSeasonCompleted && !playoffsCompleted"
           type="primary"
-          size="large"
+          size="small"
           @click="simulatePlayoffs"
           :loading="playoffsSimulating"
         >
           <el-icon><DArrowRight /></el-icon>
           {{ playoffsSimulating ? `模拟中 (${playoffsProgress}%)` : '一键模拟季后赛' }}
         </el-button>
+        <button class="back-btn" @click="goBack">← 返回赛事列表</button>
       </div>
     </div>
 
@@ -35,68 +25,72 @@
     <el-progress
       v-if="playoffsSimulating"
       :percentage="playoffsProgress"
-      :stroke-width="8"
+      :stroke-width="6"
       :show-text="false"
-      status="warning"
       style="margin-bottom: 12px;"
     />
 
-    <!-- 状态卡片 -->
-    <div class="playoffs-status-card">
-      <div class="status-header">
-        <div class="status-info">
-          <h2>S{{ viewingSeason }} 夏季季后赛</h2>
-          <el-tag :type="playoffsCompleted ? 'success' : regularSeasonCompleted ? 'warning' : 'info'" size="large">
-            {{ playoffsCompleted ? '已完成' : regularSeasonCompleted ? '进行中' : '等待常规赛结束' }}
-          </el-tag>
-        </div>
-        <!-- 赛区选择器 -->
-        <div class="region-selector">
-          <el-radio-group v-model="selectedRegion" @change="handleRegionChange" size="large">
+    <!-- 赛区选择器 -->
+    <div class="filter-section">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label>赛区</label>
+          <el-radio-group v-model="selectedRegion" @change="handleRegionChange" size="small">
             <el-radio-button v-for="region in regions" :key="region.id" :value="region.id">
               {{ region.name }}
             </el-radio-button>
           </el-radio-group>
         </div>
+        <el-tag :type="playoffsCompleted ? 'success' : regularSeasonCompleted ? 'warning' : 'info'" size="small">
+          {{ playoffsCompleted ? '已完成' : regularSeasonCompleted ? '进行中' : '等待常规赛' }}
+        </el-tag>
       </div>
+    </div>
 
-      <!-- 常规赛未完成提示 -->
-      <el-alert
-        v-if="!regularSeasonCompleted"
-        title="常规赛尚未完成"
-        description="请先完成夏季赛常规赛，季后赛排名将根据常规赛积分自动确定。"
-        type="warning"
-        :closable="false"
-        show-icon
-        class="regular-season-alert"
-      />
+    <!-- 常规赛未完成提示 -->
+    <el-alert
+      v-if="!regularSeasonCompleted"
+      title="常规赛尚未完成"
+      description="请先完成夏季赛常规赛，季后赛排名将根据常规赛积分自动确定。"
+      type="warning"
+      :closable="false"
+      show-icon
+      style="margin-bottom: 16px;"
+    />
 
-      <!-- 参赛队伍统计 -->
-      <div class="teams-stats">
-        <el-statistic title="参赛队伍" :value="8" />
-        <el-statistic title="胜者组" :value="4" suffix="队" />
-        <el-statistic title="败者组" :value="4" suffix="队" />
-        <el-statistic title="赛制" value="BO5" />
+    <!-- 统计栏 -->
+    <div class="stats-bar">
+      <div class="stat-item">
+        <span class="stat-value">8</span>
+        <span class="stat-label">参赛队伍</span>
       </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">4</span>
+        <span class="stat-label">胜者组</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">4</span>
+        <span class="stat-label">败者组</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">BO5</span>
+        <span class="stat-label">赛制</span>
+      </div>
+    </div>
 
-      <!-- 完整对阵图 -->
-      <el-card class="bracket-card">
-        <template #header>
-          <div class="card-header">
-            <span class="stage-title">
-              <el-icon><Trophy /></el-icon>
-              双败淘汰赛对阵图
-            </span>
-          </div>
-        </template>
+    <!-- 完整对阵图 -->
+    <div class="table-section">
+      <div class="section-header">
+        <span class="section-title">双败淘汰赛对阵图</span>
+      </div>
 
         <div class="full-bracket">
           <!-- 胜者组 -->
           <div class="bracket-section winners-section">
-            <div class="section-header winners">
-              <el-icon><Top /></el-icon>
-              胜者组 (Winner's Bracket)
-            </div>
+            <div class="section-label winners">胜者组</div>
 
             <div class="bracket-container">
               <!-- 胜者组第一轮 -->
@@ -134,9 +128,9 @@
                         </el-button>
                         <el-button
                           v-if="match.status === 'completed'"
-                          type="info"
+                          type="primary"
                           size="small"
-                          plain
+                          text
                           @click="viewMatchDetail(match)"
                         >
                           详情
@@ -147,16 +141,8 @@
                 </div>
               </div>
 
-              <!-- SVG连接线: 第一轮 -> 胜者组决赛 -->
-              <div class="bracket-connector">
-                <svg class="connector-svg">
-                  <line x1="0%" y1="25%" x2="50%" y2="25%" stroke="#22c55e" stroke-width="2" />
-                  <line x1="50%" y1="25%" x2="50%" y2="50%" stroke="#22c55e" stroke-width="2" />
-                  <line x1="0%" y1="75%" x2="50%" y2="75%" stroke="#22c55e" stroke-width="2" />
-                  <line x1="50%" y1="75%" x2="50%" y2="50%" stroke="#22c55e" stroke-width="2" />
-                  <line x1="50%" y1="50%" x2="100%" y2="50%" stroke="#22c55e" stroke-width="2" />
-                </svg>
-              </div>
+              <!-- 连接线: 第一轮 -> 胜者组决赛 -->
+              <div class="bracket-connector connector-merge winners-color"></div>
 
               <!-- 胜者组决赛 -->
               <div class="bracket-round">
@@ -187,9 +173,9 @@
                         </el-button>
                         <el-button
                           v-if="winnersRounds[1].matches[0].status === 'completed'"
-                          type="info"
+                          type="primary"
                           size="small"
-                          plain
+                          text
                           @click="viewMatchDetail(winnersRounds[1].matches[0])"
                         >
                           详情
@@ -204,10 +190,7 @@
 
           <!-- 败者组 -->
           <div class="bracket-section losers-section">
-            <div class="section-header losers">
-              <el-icon><Bottom /></el-icon>
-              败者组 (Loser's Bracket)
-            </div>
+            <div class="section-label losers">败者组</div>
 
             <div class="bracket-container">
               <!-- 败者组第一轮 -->
@@ -245,9 +228,9 @@
                         </el-button>
                         <el-button
                           v-if="match.status === 'completed'"
-                          type="info"
+                          type="primary"
                           size="small"
-                          plain
+                          text
                           @click="viewMatchDetail(match)"
                         >
                           详情
@@ -258,13 +241,8 @@
                 </div>
               </div>
 
-              <!-- SVG连接线: 败者组第一轮 -> 第二轮 -->
-              <div class="bracket-connector">
-                <svg class="connector-svg">
-                  <line x1="0%" y1="25%" x2="100%" y2="25%" stroke="#f59e0b" stroke-width="2" />
-                  <line x1="0%" y1="75%" x2="100%" y2="75%" stroke="#f59e0b" stroke-width="2" />
-                </svg>
-              </div>
+              <!-- 连接线: 败者组第一轮 -> 第二轮 -->
+              <div class="bracket-connector connector-parallel losers-color"></div>
 
               <!-- 败者组第二轮 -->
               <div class="bracket-round">
@@ -302,9 +280,9 @@
                         </el-button>
                         <el-button
                           v-if="match.status === 'completed'"
-                          type="info"
+                          type="primary"
                           size="small"
-                          plain
+                          text
                           @click="viewMatchDetail(match)"
                         >
                           详情
@@ -315,16 +293,8 @@
                 </div>
               </div>
 
-              <!-- SVG连接线: 败者组第二轮 -> 第三轮 -->
-              <div class="bracket-connector">
-                <svg class="connector-svg">
-                  <line x1="0%" y1="25%" x2="50%" y2="25%" stroke="#f59e0b" stroke-width="2" />
-                  <line x1="50%" y1="25%" x2="50%" y2="50%" stroke="#f59e0b" stroke-width="2" />
-                  <line x1="0%" y1="75%" x2="50%" y2="75%" stroke="#f59e0b" stroke-width="2" />
-                  <line x1="50%" y1="75%" x2="50%" y2="50%" stroke="#f59e0b" stroke-width="2" />
-                  <line x1="50%" y1="50%" x2="100%" y2="50%" stroke="#f59e0b" stroke-width="2" />
-                </svg>
-              </div>
+              <!-- 连接线: 败者组第二轮 -> 第三轮 -->
+              <div class="bracket-connector connector-merge losers-color"></div>
 
               <!-- 败者组第三轮 -->
               <div class="bracket-round">
@@ -355,9 +325,9 @@
                         </el-button>
                         <el-button
                           v-if="losersRounds[2].matches[0].status === 'completed'"
-                          type="info"
+                          type="primary"
                           size="small"
-                          plain
+                          text
                           @click="viewMatchDetail(losersRounds[2].matches[0])"
                         >
                           详情
@@ -368,12 +338,8 @@
                 </div>
               </div>
 
-              <!-- SVG连接线: 败者组第三轮 -> 败者组决赛 -->
-              <div class="bracket-connector">
-                <svg class="connector-svg">
-                  <line x1="0%" y1="50%" x2="100%" y2="50%" stroke="#f59e0b" stroke-width="2" />
-                </svg>
-              </div>
+              <!-- 连接线: 败者组第三轮 -> 败者组决赛 -->
+              <div class="bracket-connector connector-straight losers-color"></div>
 
               <!-- 败者组决赛 -->
               <div class="bracket-round">
@@ -407,9 +373,9 @@
                         </el-button>
                         <el-button
                           v-if="losersRounds[3].matches[0].status === 'completed'"
-                          type="info"
+                          type="primary"
                           size="small"
-                          plain
+                          text
                           @click="viewMatchDetail(losersRounds[3].matches[0])"
                         >
                           详情
@@ -424,10 +390,7 @@
 
           <!-- 总决赛 -->
           <div class="bracket-section finals-section">
-            <div class="section-header finals">
-              <el-icon><Trophy /></el-icon>
-              总决赛 (Grand Final)
-            </div>
+            <div class="section-label finals">总决赛</div>
 
             <div class="grand-final-area">
               <div class="final-match-card" :class="{ completed: finalMatch.status === 'completed' }">
@@ -472,8 +435,7 @@
 
               <!-- 冠军展示 -->
               <div v-if="champion" class="champion-display">
-                <div class="champion-crown">👑</div>
-                <div class="champion-trophy">🏆</div>
+                <el-icon :size="32" color="#f59e0b"><Trophy /></el-icon>
                 <div class="champion-info">
                   <div class="champion-label">冠军</div>
                   <div class="champion-name">{{ champion.name }}</div>
@@ -482,7 +444,7 @@
             </div>
           </div>
         </div>
-      </el-card>
+      </div>
 
       <TournamentCompletionSection
         v-if="playoffsCompleted"
@@ -492,7 +454,6 @@
         :banner-champion="champion?.name || ''"
         :banner-description="`获得 ${getRegionName(selectedRegion)} 夏季赛冠军！`"
       />
-    </div>
 
     <!-- 比赛详情弹窗 -->
     <MatchDetailDialog
@@ -509,11 +470,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft,
   DArrowRight,
   Trophy,
-  Top,
-  Bottom,
   VideoPlay,
 } from '@element-plus/icons-vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
@@ -1482,432 +1440,438 @@ onMounted(async () => {
 })
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .summer-playoffs-management {
-  padding: 24px;
-
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 24px;
-
-    .header-content .header-left {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      align-items: flex-start;
-
-      .page-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 28px;
-        font-weight: 700;
-        margin: 0;
-        color: #1f2937;
-      }
-
-      .page-description {
-        margin: 0;
-        color: #6b7280;
-        font-size: 14px;
-      }
-    }
-  }
-
-  .playoffs-status-card {
-    background: white;
-    border-radius: 16px;
-    padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-
-    .status-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid #e5e7eb;
-
-      .status-info {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-
-        h2 {
-          margin: 0;
-          font-size: 20px;
-          font-weight: 600;
-        }
-      }
-    }
-
-    .regular-season-alert {
-      margin-bottom: 24px;
-    }
-
-    .teams-stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 20px;
-      margin-bottom: 24px;
-      padding: 20px;
-      background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-      border-radius: 12px;
-    }
-  }
-
-  .bracket-card {
-    border-radius: 12px;
-
-    .card-header .stage-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 18px;
-      font-weight: 600;
-    }
-  }
-
-  .full-bracket {
-    display: flex;
-    flex-direction: column;
-    gap: 32px;
-  }
-
-  .bracket-section {
-    border-radius: 12px;
-    padding: 20px;
-
-    &.winners-section {
-      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
-    }
-
-    &.losers-section {
-      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-    }
-
-    &.finals-section {
-      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-      border: 2px solid #3b82f6;
-    }
-
-    .section-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 20px;
-      padding-bottom: 12px;
-      border-bottom: 2px solid;
-
-      &.winners {
-        color: #16a34a;
-        border-color: #22c55e;
-      }
-
-      &.losers {
-        color: #d97706;
-        border-color: #f59e0b;
-      }
-
-      &.finals {
-        color: #2563eb;
-        border-color: #3b82f6;
-      }
-    }
-  }
-
-  .bracket-container {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    overflow-x: auto;
-    padding: 20px 0;
-  }
-
-  .bracket-round {
-    min-width: 220px;
-    flex-shrink: 0;
-
-    .round-header {
-      text-align: center;
-      font-size: 13px;
-      font-weight: 600;
-      color: #6b7280;
-      margin-bottom: 16px;
-      padding: 6px 12px;
-      background: rgba(255, 255, 255, 0.8);
-      border-radius: 6px;
-
-      .drop-hint {
-        font-size: 11px;
-        color: #9ca3af;
-        font-weight: normal;
-      }
-    }
-  }
-
-  .matches-column {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    min-height: 220px;
-    justify-content: space-around;
-
-    &.final {
-      justify-content: center;
-      min-height: 100px;
-    }
-  }
-
-  .match-card-wrapper {
-    display: flex;
-    align-items: center;
-  }
-
-  .match-card {
-    background: white;
-    border-radius: 10px;
-    padding: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    border-left: 4px solid #d1d5db;
-    min-width: 200px;
-    transition: all 0.2s;
-
-    &:hover {
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    }
-
-    &.winners {
-      border-left-color: #22c55e;
-    }
-
-    &.losers {
-      border-left-color: #f59e0b;
-    }
-
-    &.completed {
-      border-left-color: #3b82f6;
-    }
-
-    &.final-match {
-      border-left-width: 6px;
-    }
-
-    .drop-in-indicator {
-      font-size: 10px;
-      color: #9ca3af;
-      margin-bottom: 4px;
-      padding: 2px 6px;
-      background: #f3f4f6;
-      border-radius: 4px;
-      display: inline-block;
-    }
-
-    .match-teams {
-      .match-team {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 6px 8px;
-        border-radius: 4px;
-        transition: background 0.2s;
-
-        &.winner {
-          background: linear-gradient(90deg, #dcfce7, transparent);
-        }
-
-        .seed {
-          font-size: 11px;
-          color: #9ca3af;
-          min-width: 20px;
-        }
-
-        .name {
-          flex: 1;
-          font-weight: 600;
-          font-size: 14px;
-        }
-
-        .score {
-          font-size: 16px;
-          font-weight: 700;
-          min-width: 20px;
-          text-align: center;
-        }
-      }
-    }
-
-    .match-actions {
-      margin-top: 8px;
-      display: flex;
-      gap: 8px;
-      justify-content: flex-end;
-    }
-  }
-
-  // SVG连接线
-  .bracket-connector {
-    width: 100px;
-    min-width: 100px;
-    flex-shrink: 0;
-    align-self: stretch;
-
-    .connector-svg {
-      width: 100%;
-      height: 100%;
-    }
-  }
-
-  // 总决赛区域
-  .grand-final-area {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 24px;
-    padding: 20px;
-  }
-
-  .final-match-card {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 40px;
-    padding: 32px 48px;
-    background: white;
-    border-radius: 16px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-    border: 3px solid #e5e7eb;
-    position: relative;
-
-    &.completed {
-      border-color: #22c55e;
-    }
-
-    .final-team {
-      text-align: center;
-      padding: 20px 28px;
-      background: #f9fafb;
-      border-radius: 12px;
-      min-width: 140px;
-      transition: all 0.3s;
-
-      &.champion {
-        background: linear-gradient(135deg, #3b82f6, #2563eb);
-        color: white;
-        transform: scale(1.1);
-        box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
-      }
-
-      .team-label {
-        font-size: 11px;
-        color: #6b7280;
-        margin-bottom: 6px;
-      }
-
-      &.champion .team-label {
-        color: rgba(255, 255, 255, 0.8);
-      }
-
-      .team-name {
-        font-size: 22px;
-        font-weight: 700;
-        margin-bottom: 8px;
-      }
-
-      .team-score {
-        font-size: 40px;
-        font-weight: 900;
-      }
-    }
-
-    .vs-badge {
-      text-align: center;
-
-      span {
-        display: block;
-        font-size: 28px;
-        font-weight: 900;
-        color: #3b82f6;
-      }
-
-      small {
-        font-size: 12px;
-        color: #9ca3af;
-      }
-    }
-
-    .final-actions {
-      position: absolute;
-      bottom: -50px;
-    }
-  }
-
-  .champion-display {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 20px 40px;
-    background: linear-gradient(135deg, #3b82f6, #2563eb);
-    border-radius: 12px;
-    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
-    margin-top: 20px;
-
-    .champion-crown {
-      font-size: 32px;
-      animation: bounce 1s infinite;
-    }
-
-    .champion-trophy {
-      font-size: 48px;
-    }
-
-    .champion-info {
-      .champion-label {
-        font-size: 14px;
-        color: rgba(255, 255, 255, 0.8);
-      }
-
-      .champion-name {
-        font-size: 28px;
-        font-weight: 900;
-        color: white;
-      }
-    }
-  }
-
-  @keyframes bounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-5px); }
-  }
+  padding: 0;
 }
 
-@media (max-width: 1200px) {
-  .summer-playoffs-management {
-    .bracket-container {
-      flex-direction: column;
-      align-items: stretch;
-    }
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
 
-    .bracket-connector {
-      display: none;
-    }
+.page-header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
 
-    .bracket-round {
-      width: 100%;
-    }
+.page-header p {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+}
 
-    .matches-column {
-      min-height: auto;
-    }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
-    .final-match-card {
-      flex-direction: column;
-      gap: 20px;
-    }
-  }
+.back-btn {
+  padding: 5px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.back-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: #f5f3ff;
+}
+
+.filter-section {
+  margin-bottom: 16px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-group label {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.stats-bar {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px 24px;
+  margin-bottom: 16px;
+  gap: 24px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 28px;
+  background: #e2e8f0;
+}
+
+.table-section {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.full-bracket {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 16px;
+}
+
+.bracket-section {
+  border-radius: 10px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+}
+
+.bracket-section.winners-section {
+  border-left: 3px solid #22c55e;
+}
+
+.bracket-section.losers-section {
+  border-left: 3px solid #f59e0b;
+}
+
+.bracket-section.finals-section {
+  border-left: 3px solid #6366f1;
+}
+
+.section-label {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.section-label.winners { color: #16a34a; }
+.section-label.losers { color: #d97706; }
+.section-label.finals { color: #6366f1; }
+
+.bracket-container {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+}
+
+.bracket-round {
+  min-width: 210px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.round-header {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 12px;
+  padding: 4px 10px;
+  background: #f8fafc;
+  border-radius: 4px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drop-hint {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.matches-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  justify-content: space-around;
+  min-height: 200px;
+}
+
+.matches-column.final {
+  justify-content: center;
+  min-height: 100px;
+}
+
+.match-card-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.match-card {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #e2e8f0;
+  min-width: 195px;
+  transition: all 0.15s;
+}
+
+.match-card:hover {
+  border-color: #cbd5e1;
+}
+
+.match-card.winners { border-left-color: #22c55e; }
+.match-card.losers { border-left-color: #f59e0b; }
+.match-card.completed { border-left-color: #6366f1; }
+.match-card.final-match { border-left-width: 4px; }
+
+.drop-in-indicator {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.match-card .match-teams .match-team {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.match-card .match-teams .match-team.winner {
+  background: #f0fdf4;
+}
+
+.match-card .match-teams .match-team .seed {
+  font-size: 10px;
+  color: #94a3b8;
+  min-width: 18px;
+}
+
+.match-card .match-teams .match-team .name {
+  flex: 1;
+  font-weight: 500;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.match-card .match-teams .match-team .score {
+  font-size: 15px;
+  font-weight: 700;
+  min-width: 18px;
+  text-align: center;
+  color: #0f172a;
+}
+
+.match-card .match-actions {
+  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* CSS连接线 */
+.bracket-connector {
+  width: 60px;
+  min-width: 60px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bracket-connector::before {
+  content: '';
+  height: 44px;
+  flex-shrink: 0;
+}
+
+.bracket-connector::after {
+  content: '';
+  flex: 1;
+}
+
+.winners-color { --line-color: #22c55e; }
+.losers-color { --line-color: #f59e0b; }
+
+.connector-merge::after {
+  background:
+    linear-gradient(var(--line-color), var(--line-color)) 0 25% / 50% 2px no-repeat,
+    linear-gradient(var(--line-color), var(--line-color)) 0 75% / 50% 2px no-repeat,
+    linear-gradient(var(--line-color), var(--line-color)) calc(50% - 1px) 50% / 2px 50% no-repeat,
+    linear-gradient(var(--line-color), var(--line-color)) 100% 50% / 50% 2px no-repeat;
+}
+
+.connector-parallel::after {
+  background:
+    linear-gradient(var(--line-color), var(--line-color)) 0 25% / 100% 2px no-repeat,
+    linear-gradient(var(--line-color), var(--line-color)) 0 75% / 100% 2px no-repeat;
+}
+
+.connector-straight::after {
+  background:
+    linear-gradient(var(--line-color), var(--line-color)) 0 50% / 100% 2px no-repeat;
+}
+
+.grand-final-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 16px;
+}
+
+.final-match-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  padding: 24px 36px;
+  background: #ffffff;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.final-match-card.completed {
+  border-color: #6366f1;
+}
+
+.final-team {
+  text-align: center;
+  padding: 16px 24px;
+  background: #f8fafc;
+  border-radius: 10px;
+  min-width: 120px;
+  transition: all 0.2s;
+}
+
+.final-team.champion {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+}
+
+.final-team .team-label {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.final-team.champion .team-label {
+  color: #d97706;
+}
+
+.final-team .team-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.final-team.champion .team-name {
+  color: #92400e;
+}
+
+.final-team .team-score {
+  font-size: 32px;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.vs-badge {
+  text-align: center;
+}
+
+.vs-badge span {
+  display: block;
+  font-size: 20px;
+  font-weight: 900;
+  color: #6366f1;
+}
+
+.vs-badge small {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.final-actions {
+  display: flex;
+  align-items: center;
+  margin-left: 12px;
+}
+
+.champion-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 10px;
+}
+
+.champion-info .champion-label {
+  font-size: 12px;
+  color: #92400e;
+}
+
+.champion-info .champion-name {
+  font-size: 20px;
+  font-weight: 800;
+  color: #78350f;
 }
 </style>

@@ -122,6 +122,7 @@
         <div class="table-section" v-if="mvpRanking.length > 0 || mvpLoading">
           <div class="section-header">
             <span class="section-title">MVP 排行</span>
+            <span class="mvp-hint">次数 / 场均</span>
           </div>
           <div v-if="mvpLoading" style="padding: 16px;">
             <el-skeleton :rows="3" animated />
@@ -496,14 +497,6 @@ const getWinRate = (team: any) => {
   return Math.round((team.wins / total) * 100)
 }
 
-const getStatusTagType = (status: string) => {
-  switch (status) {
-    case 'active': return 'success'
-    case 'upcoming': return 'info'
-    case 'completed': return 'primary'
-    default: return 'info'
-  }
-}
 
 const getStatusText = (status: string) => {
   switch (status) {
@@ -982,6 +975,12 @@ onMounted(async () => {
   padding: 2px 8px;
   background: #f5f3ff;
   border-radius: 4px;
+}
+
+.mvp-hint {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 400;
 }
 
 /* 积分榜 */

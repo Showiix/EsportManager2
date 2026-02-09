@@ -2,40 +2,20 @@
   <div class="madrid-management">
     <!-- 页面头部 -->
     <div class="page-header">
-      <div class="header-content">
-        <div class="header-left">
-          <el-button text @click="goBack">
-            <el-icon><ArrowLeft /></el-icon>
-            返回赛事列表
-          </el-button>
-          <h1 class="page-title">
-            <el-icon><Trophy /></el-icon>
-            马德里大师赛 (Madrid Masters)
-          </h1>
-          <p class="page-description">
-            32支队伍（各赛区春季赛常规赛前8名），8个小组BO3单循环，东西半区BO5淘汰赛
-          </p>
-        </div>
+      <div>
+        <h1>马德里大师赛</h1>
+        <p>32支队伍 · 8个小组BO3单循环 · 东西半区BO5淘汰赛</p>
       </div>
       <div class="header-actions">
-        <el-button
-          v-if="madridBracket.status === 'group_stage' && !isGroupStageComplete"
-          type="primary"
-          @click="batchSimulateGroupStage"
-          :loading="simulatingGroupStage"
-        >
+        <el-button v-if="madridBracket.status === 'group_stage' && !isGroupStageComplete" type="primary" size="small" @click="batchSimulateGroupStage" :loading="simulatingGroupStage">
           <el-icon><DArrowRight /></el-icon>
           {{ simulatingGroupStage ? `模拟中 (${groupSimProgress}%)` : '模拟小组赛' }}
         </el-button>
-        <el-button
-          v-if="madridBracket.status === 'knockout_stage'"
-          type="warning"
-          @click="batchSimulateKnockout"
-          :loading="simulatingKnockout"
-        >
+        <el-button v-if="madridBracket.status === 'knockout_stage'" type="primary" size="small" @click="batchSimulateKnockout" :loading="simulatingKnockout">
           <el-icon><DArrowRight /></el-icon>
           {{ simulatingKnockout ? `模拟中 (${simulationProgress}%)` : '模拟淘汰赛' }}
         </el-button>
+        <button class="back-btn" @click="goBack">&larr; 返回赛事列表</button>
       </div>
     </div>
 
@@ -46,7 +26,7 @@
       type="warning"
       :closable="false"
       show-icon
-      class="phase-warning-alert"
+      style="margin-bottom: 16px;"
     >
       <template #default>
         <div class="phase-warning-content">
@@ -57,89 +37,60 @@
       </template>
     </el-alert>
 
-    <!-- 马德里大师赛状态卡片 -->
-    <div class="madrid-status-card">
-      <div class="status-header">
-        <div class="status-info">
-          <h2>S{{ viewingSeason }} 马德里大师赛</h2>
-          <el-tag :type="getStatusType(madridBracket.status)" size="large">
-            {{ getStatusText(madridBracket.status) }}
-          </el-tag>
-        </div>
+    <!-- 马德里大师赛状态 -->
+    <div class="filter-section">
+      <div class="filter-row">
+        <span style="font-weight: 600; color: #0f172a;">S{{ viewingSeason }} 马德里大师赛</span>
+        <el-tag :type="getStatusType(madridBracket.status)" size="small">{{ getStatusText(madridBracket.status) }}</el-tag>
       </div>
+    </div>
 
-      <!-- 参赛队伍统计 -->
-      <div class="teams-stats">
-        <el-statistic title="参赛队伍总数" :value="32" />
-        <el-statistic title="小组数量" :value="8" suffix="组" />
-        <el-statistic title="东半区队伍" :value="16" />
-        <el-statistic title="西半区队伍" :value="16" />
+    <!-- 参赛队伍统计 -->
+    <div class="stats-bar">
+      <div class="stat-item"><span class="stat-value">32</span><span class="stat-label">参赛队伍</span></div>
+      <div class="stat-divider"></div>
+      <div class="stat-item"><span class="stat-value">8</span><span class="stat-label">小组</span></div>
+      <div class="stat-divider"></div>
+      <div class="stat-item"><span class="stat-value">16</span><span class="stat-label">东半区</span></div>
+      <div class="stat-divider"></div>
+      <div class="stat-item"><span class="stat-value">16</span><span class="stat-label">西半区</span></div>
+    </div>
+
+    <!-- 小组赛阶段 -->
+    <div v-if="madridBracket.status !== 'not_started'" class="table-section">
+      <div class="section-header">
+        <span class="section-title">小组赛阶段</span>
+        <el-tag v-if="isGroupStageComplete" type="success" size="small">已完成</el-tag>
+        <el-tag v-else type="warning" size="small">进行中</el-tag>
       </div>
+      <div class="groups-grid">
+        <ClauchGroupStanding
+          v-for="group in madridBracket.groups"
+          :key="group.groupName"
+          :group="group"
+          @simulate-match="handleSimulateMatch"
+          @view-detail="viewMatchDetails"
+        />
+      </div>
+      <!-- 生成淘汰赛按钮 -->
+      <div v-if="isGroupStageComplete && madridBracket.status === 'group_stage'" style="padding: 16px; text-align: center;">
+        <el-button type="primary" size="small" @click="handleGenerateKnockout" :loading="generatingKnockout">
+          <el-icon><Plus /></el-icon> 生成淘汰赛对阵
+        </el-button>
+      </div>
+    </div>
 
-      <!-- 小组赛阶段 -->
-      <el-card v-if="madridBracket.status !== 'not_started'" class="stage-card">
-        <template #header>
-          <div class="card-header">
-            <span>📊 小组赛阶段</span>
-            <el-tag v-if="isGroupStageComplete" type="success">已完成</el-tag>
-            <el-tag v-else type="warning">进行中</el-tag>
-          </div>
-        </template>
-
-        <!-- 小组赛积分榜 -->
-        <div class="group-standings">
-          <el-tabs v-model="activeGroup" type="card">
-            <el-tab-pane
-              v-for="group in madridBracket.groups"
-              :key="group.groupName"
-              :label="`${group.groupName}组`"
-              :name="group.groupName"
-            >
-              <ClauchGroupStanding
-                :group="group"
-                @simulate-match="handleSimulateMatch"
-                @view-detail="viewMatchDetails"
-              />
-            </el-tab-pane>
-          </el-tabs>
-        </div>
-
-        <!-- 生成淘汰赛按钮 -->
-        <div v-if="isGroupStageComplete && madridBracket.status === 'group_stage'" class="generate-knockout-section">
-          <el-alert
-            title="小组赛已完成！"
-            description="所有小组赛比赛已完成，各小组前2名已晋级。现在可以生成淘汰赛对阵。"
-            type="success"
-            :closable="false"
-            show-icon
-            class="mb-4"
-          />
-          <el-button
-            type="primary"
-            size="large"
-            @click="handleGenerateKnockout"
-            :loading="generatingKnockout"
-          >
-            <el-icon><Plus /></el-icon>
-            生成淘汰赛对阵
-          </el-button>
-        </div>
-      </el-card>
-
-      <!-- 淘汰赛阶段 -->
-      <el-card v-if="madridBracket.status === 'knockout_stage' || madridBracket.status === 'completed'" class="stage-card">
-        <template #header>
-          <div class="card-header">
-            <span>🏅 淘汰赛阶段</span>
-            <el-tag v-if="madridBracket.status === 'completed'" type="success">已完成</el-tag>
-            <el-tag v-else type="warning">进行中</el-tag>
-          </div>
-        </template>
-
-        <!-- 淘汰赛对阵图 -->
+    <!-- 淘汰赛阶段 -->
+    <div v-if="madridBracket.status === 'knockout_stage' || madridBracket.status === 'completed'" class="table-section">
+      <div class="section-header">
+        <span class="section-title">淘汰赛阶段</span>
+        <el-tag v-if="madridBracket.status === 'completed'" type="success" size="small">已完成</el-tag>
+        <el-tag v-else type="warning" size="small">进行中</el-tag>
+      </div>
+      <div class="knockout-content">
         <div class="knockout-brackets">
-          <div class="bracket-section">
-            <h3>东半区</h3>
+          <div class="bracket-half">
+            <div class="section-label">东半区</div>
             <ClauchKnockoutBracket
               v-if="madridBracket.knockoutEast"
               :knockout="madridBracket.knockoutEast"
@@ -148,9 +99,8 @@
               @view-detail="viewMatchDetails"
             />
           </div>
-
-          <div class="bracket-section">
-            <h3>西半区</h3>
+          <div class="bracket-half">
+            <div class="section-label">西半区</div>
             <ClauchKnockoutBracket
               v-if="madridBracket.knockoutWest"
               :knockout="madridBracket.knockoutWest"
@@ -160,42 +110,30 @@
             />
           </div>
         </div>
-
-        <!-- 决赛区域 -->
-        <div v-if="showFinals" class="finals-section">
-          <h3>🏆 决赛阶段</h3>
+        <!-- Finals section -->
+        <div v-if="showFinals" class="finals-content">
+          <div class="section-label finals">决赛阶段</div>
           <div class="finals-matches">
-            <!-- 季军赛 -->
-            <div v-if="madridBracket.thirdPlaceMatch" class="final-match third-place">
-              <h4>🥉 季军赛</h4>
-              <ClauchMatchCard
-                :match="madridBracket.thirdPlaceMatch"
-                @simulate="handleSimulateMatch"
-                @view-detail="viewMatchDetails"
-              />
+            <div v-if="madridBracket.thirdPlaceMatch" class="final-match-block">
+              <div class="match-label">季军赛</div>
+              <ClauchMatchCard :match="madridBracket.thirdPlaceMatch" @simulate="handleSimulateMatch" @view-detail="viewMatchDetails" />
             </div>
-
-            <!-- 总决赛 -->
-            <div v-if="madridBracket.grandFinal" class="final-match grand-final">
-              <h4>🏆 总决赛</h4>
-              <ClauchMatchCard
-                :match="madridBracket.grandFinal"
-                @simulate="handleSimulateMatch"
-                @view-detail="viewMatchDetails"
-              />
+            <div v-if="madridBracket.grandFinal" class="final-match-block">
+              <div class="match-label">总决赛</div>
+              <ClauchMatchCard :match="madridBracket.grandFinal" @simulate="handleSimulateMatch" @view-detail="viewMatchDetails" />
             </div>
           </div>
         </div>
-      </el-card>
-
-      <TournamentCompletionSection
-        v-if="madridBracket.status === 'completed'"
-        :standings="madridStandings"
-        banner-title="马德里大师赛已完成！"
-        :banner-champion="madridBracket.champion?.teamName || ''"
-        banner-description="获得马德里大师赛冠军！"
-      />
+      </div>
     </div>
+
+    <TournamentCompletionSection
+      v-if="madridBracket.status === 'completed'"
+      :standings="madridStandings"
+      banner-title="马德里大师赛已完成！"
+      :banner-champion="madridBracket.champion?.teamName || ''"
+      banner-description="获得马德里大师赛冠军！"
+    />
 
     <!-- PowerEngine 比赛详情弹窗 -->
     <MatchDetailDialog
@@ -212,8 +150,6 @@ import { ref, computed, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Trophy,
-  ArrowLeft,
   DArrowRight,
   Plus
 } from '@element-plus/icons-vue'
@@ -282,7 +218,6 @@ const loading = ref(false)
 const generatingKnockout = ref(false)
 const simulatingKnockout = ref(false)
 const simulationProgress = ref(0)
-const activeGroup = ref('A')
 
 const { simulationProgress: groupSimProgress, isSimulating: simulatingGroupStage, batchSimulate } = useBatchSimulation()
 
@@ -997,253 +932,177 @@ const showChampionCelebration = (championName: string) => {
 }
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .madrid-management {
-  padding: 24px;
-
-  .phase-warning-alert {
-    margin-bottom: 24px;
-
-    .phase-warning-content {
-      p {
-        margin: 4px 0;
-        line-height: 1.6;
-
-        strong {
-          color: var(--el-color-warning);
-        }
-      }
-    }
-  }
-
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 24px;
-
-    .header-content {
-      .header-left {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        align-items: flex-start;
-      }
-
-      .page-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 28px;
-        font-weight: 700;
-        margin: 0;
-        color: #1f2937;
-      }
-
-      .page-description {
-        margin: 0;
-        color: #6b7280;
-        font-size: 14px;
-      }
-    }
-
-    .header-actions {
-      display: flex;
-      gap: 12px;
-    }
-  }
-
-  .madrid-status-card {
-    background: white;
-    border-radius: 12px;
-    padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-
-    .status-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid #e5e7eb;
-
-      .status-info {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-
-        h2 {
-          margin: 0;
-          font-size: 20px;
-          font-weight: 600;
-          color: #1f2937;
-        }
-      }
-    }
-
-    .teams-stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 20px;
-      margin-bottom: 32px;
-      padding: 20px;
-      background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-      border-radius: 12px;
-    }
-
-    .stage-card {
-      margin-bottom: 24px;
-
-      .card-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-    }
-
-    .generate-knockout-section {
-      margin-top: 24px;
-      text-align: center;
-
-      .el-button {
-        margin-top: 16px;
-      }
-    }
-
-    .knockout-brackets {
-      display: flex;
-      flex-direction: column;
-      gap: 32px;
-      margin-top: 24px;
-
-      .bracket-section {
-        border: 2px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 20px;
-        background: white;
-
-        h3 {
-          margin: 0 0 16px 0;
-          font-size: 18px;
-          font-weight: 600;
-          color: #1f2937;
-          text-align: center;
-        }
-
-        overflow-x: auto;
-        overflow-y: hidden;
-
-        &::-webkit-scrollbar {
-          height: 8px;
-        }
-
-        &::-webkit-scrollbar-track {
-          background: #f3f4f6;
-          border-radius: 4px;
-        }
-
-        &::-webkit-scrollbar-thumb {
-          background: #d1d5db;
-          border-radius: 4px;
-
-          &:hover {
-            background: #9ca3af;
-          }
-        }
-      }
-    }
-
-    .finals-section {
-      margin-top: 32px;
-      padding: 24px;
-      background: linear-gradient(135deg, #fef3c7 0%, #fde047 100%);
-      border-radius: 12px;
-
-      h3 {
-        margin: 0 0 24px 0;
-        font-size: 20px;
-        font-weight: 700;
-        text-align: center;
-        color: #92400e;
-      }
-
-      .finals-matches {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 24px;
-
-        .final-match {
-          h4 {
-            margin: 0 0 12px 0;
-            font-size: 16px;
-            font-weight: 600;
-            text-align: center;
-          }
-
-          &.third-place {
-            border: 2px solid #d97706;
-            padding: 16px;
-            border-radius: 8px;
-            background: white;
-          }
-
-          &.grand-final {
-            border: 2px solid #f59e0b;
-            padding: 16px;
-            border-radius: 8px;
-            background: white;
-          }
-        }
-      }
-    }
-
-  }
-
-  .mb-4 {
-    margin-bottom: 16px;
-  }
+  padding: 0;
 }
 
-// 冠军庆祝动画
-@keyframes champion-bounce {
-  0% {
-    transform: scale(0.3) rotate(-10deg);
-    opacity: 0;
-  }
-  50% {
-    transform: scale(1.05) rotate(5deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-    opacity: 1;
-  }
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
 }
 
-:deep(.champion-celebration-box) {
-  animation: champion-bounce 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-  background: linear-gradient(135deg, #fef3c7 0%, #fde047 100%);
-  border: 3px solid #fbbf24;
+.page-header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
 
-  .el-message-box__title {
-    font-size: 28px;
-    font-weight: 900;
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
+.page-header p {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+}
 
-  .el-message-box__content {
-    font-size: 18px;
-    color: #92400e;
-  }
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
 
-  .el-button--primary {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    border: none;
+.back-btn {
+  background: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 13px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
 
-    &:hover {
-      background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-    }
-  }
+.back-btn:hover {
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.filter-section {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 16px 20px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 32px;
+  background: #e2e8f0;
+}
+
+.table-section {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.groups-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 16px;
+}
+
+.knockout-content {
+  padding: 16px;
+}
+
+.section-label {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #0f172a;
+}
+
+.section-label.finals {
+  text-align: center;
+  font-size: 14px;
+}
+
+.knockout-brackets {
+  display: flex;
+  gap: 16px;
+}
+
+.bracket-half {
+  flex: 1;
+  overflow-x: auto;
+}
+
+.finals-content {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.finals-matches {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+}
+
+.final-match-block {
+  text-align: center;
+}
+
+.match-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 8px;
 }
 </style>

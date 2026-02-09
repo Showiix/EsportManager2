@@ -167,193 +167,118 @@ const handleViewDetail = () => {
 }
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .msi-match-card {
-  background: white;
-  border: 2px solid #e2e8f0;
-  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #e2e8f0;
+  border-radius: 8px;
   overflow: hidden;
-  min-width: 140px;
-  transition: all 0.2s ease;
+  min-width: 150px;
+  transition: all 0.15s;
+}
 
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  }
+.msi-match-card:hover {
+  border-color: #cbd5e1;
+}
 
-  &.is-completed {
-    background: #f8fafc;
-  }
+.msi-match-card.is-completed {
+  border-left-color: #6366f1;
+}
 
-  &.is-highlight {
-    border-width: 3px;
-  }
+.msi-match-card.is-highlight {
+  border-left-width: 4px;
+}
 
-  &.is-final {
-    border-width: 3px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-  }
+.msi-match-card.is-final {
+  border-left-width: 4px;
+}
 
-  // 颜色主题
-  &.theme-emerald {
-    border-color: #10b981;
+/* Theme colors - border-left */
+.msi-match-card.theme-emerald { border-left-color: #10b981; }
+.msi-match-card.theme-blue { border-left-color: #3b82f6; }
+.msi-match-card.theme-green { border-left-color: #22c55e; }
+.msi-match-card.theme-amber { border-left-color: #f59e0b; }
+.msi-match-card.theme-orange { border-left-color: #f97316; }
+.msi-match-card.theme-red { border-left-color: #ef4444; }
 
-    .match-label-bar {
-      background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
-      color: #065f46;
-    }
+.match-label-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #f8fafc;
+  color: #64748b;
+}
 
-    .team-row.winner {
-      background: #d1fae5;
-      .team-name, .team-score { color: #059669; }
-    }
-  }
+/* Theme label colors */
+.msi-match-card.theme-emerald .match-label-bar { background: #f0fdf4; color: #059669; }
+.msi-match-card.theme-blue .match-label-bar { background: #eff6ff; color: #1e40af; }
+.msi-match-card.theme-green .match-label-bar { background: #f0fdf4; color: #166534; }
+.msi-match-card.theme-amber .match-label-bar { background: #fef3c7; color: #92400e; }
+.msi-match-card.theme-orange .match-label-bar { background: #fff7ed; color: #9a3412; }
+.msi-match-card.theme-red .match-label-bar { background: #fef2f2; color: #991b1b; }
+.msi-match-card.theme-red.is-final .match-label-bar { background: #ef4444; color: #ffffff; }
 
-  &.theme-blue {
-    border-color: #3b82f6;
+.label-text {
+  letter-spacing: 0.5px;
+}
 
-    .match-label-bar {
-      background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-      color: #1e40af;
-    }
+.teams-section {
+  padding: 6px 8px;
+}
 
-    .team-row.winner {
-      background: #dbeafe;
-      .team-name, .team-score { color: #2563eb; }
-    }
-  }
+.team-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 4px;
+  margin: 2px 0;
+  transition: all 0.15s;
+}
 
-  &.theme-green {
-    border-color: #22c55e;
+.team-row.winner {
+  background: #f0fdf4;
+  font-weight: 700;
+}
 
-    .match-label-bar {
-      background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
-      color: #166534;
-    }
+.team-info {
+  flex: 1;
+}
 
-    .team-row.winner {
-      background: #dcfce7;
-      .team-name, .team-score { color: #16a34a; }
-    }
-  }
+.team-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0f172a;
+}
 
-  &.theme-amber {
-    border-color: #f59e0b;
+.team-score {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  min-width: 18px;
+  text-align: center;
+}
 
-    .match-label-bar {
-      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-      color: #92400e;
-    }
+.vs-divider {
+  text-align: center;
+  padding: 1px 0;
+}
 
-    .team-row.winner {
-      background: #fef3c7;
-      .team-name, .team-score { color: #d97706; }
-    }
-  }
+.vs-text {
+  font-size: 9px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
 
-  &.theme-orange {
-    border-color: #f97316;
-
-    .match-label-bar {
-      background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
-      color: #9a3412;
-    }
-
-    .team-row.winner {
-      background: #fed7aa;
-      .team-name, .team-score { color: #ea580c; }
-    }
-  }
-
-  &.theme-red {
-    border-color: #ef4444;
-
-    .match-label-bar {
-      background: linear-gradient(135deg, #fecaca 0%, #fca5a5 100%);
-      color: #991b1b;
-    }
-
-    .team-row.winner {
-      background: #fee2e2;
-      .team-name, .team-score { color: #dc2626; }
-    }
-
-    &.is-final {
-      .match-label-bar {
-        background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
-        color: white;
-      }
-    }
-  }
-
-  .match-label-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 10px;
-    font-size: 11px;
-    font-weight: 600;
-
-    .label-text {
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-  }
-
-  .teams-section {
-    padding: 8px;
-  }
-
-  .team-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 10px;
-    border-radius: 6px;
-    margin: 4px 0;
-    background: #f8fafc;
-    transition: all 0.2s;
-
-    &.winner {
-      font-weight: 700;
-    }
-
-    .team-info {
-      flex: 1;
-    }
-
-    .team-name {
-      font-size: 13px;
-      font-weight: 500;
-      color: #334155;
-    }
-
-    .team-score {
-      font-size: 16px;
-      font-weight: 700;
-      color: #475569;
-      min-width: 20px;
-      text-align: center;
-    }
-  }
-
-  .vs-divider {
-    text-align: center;
-    padding: 2px 0;
-
-    .vs-text {
-      font-size: 10px;
-      font-weight: 700;
-      color: #94a3b8;
-    }
-  }
-
-  .action-section {
-    display: flex;
-    justify-content: center;
-    padding: 8px;
-    background: #f8fafc;
-    border-top: 1px solid #e2e8f0;
-  }
+.action-section {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid #f1f5f9;
 }
 </style>

@@ -122,6 +122,7 @@
         <div class="table-section" v-if="mvpRanking.length > 0 || mvpLoading">
           <div class="section-header">
             <span class="section-title">MVP 排行</span>
+            <span class="mvp-hint">次数 / 场均</span>
           </div>
           <div v-if="mvpLoading" style="padding: 16px;">
             <el-skeleton :rows="3" animated />
@@ -1017,6 +1018,12 @@ watch(
   padding: 2px 8px;
   background: #f5f3ff;
   border-radius: 4px;
+}
+
+.mvp-hint {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 400;
 }
 
 .standings-head {

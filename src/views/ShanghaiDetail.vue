@@ -2,52 +2,43 @@
   <div class="shanghai-management">
     <!-- 页面头部 -->
     <div class="page-header">
-      <div class="header-content">
-        <div class="header-left">
-          <el-button text @click="goBack">
-            <el-icon><ArrowLeft /></el-icon>
-            返回赛事列表
-          </el-button>
-          <h1 class="page-title">
-            <el-icon><Trophy /></el-icon>
-            上海大师赛
-          </h1>
-          <p class="page-description">
-            12支队伍(各赛区夏季赛冠亚季军)参赛,双败淘汰赛制,决出世界最强战队
-          </p>
-        </div>
+      <div>
+        <h1>上海大师赛</h1>
+        <p>12支队伍(各赛区夏季赛冠亚季军) · 双败淘汰赛制</p>
       </div>
       <div class="header-actions">
-        <el-button @click="refreshData" :icon="Refresh">刷新数据</el-button>
+        <el-button @click="refreshData" :icon="Refresh" size="small">刷新</el-button>
+        <button class="back-btn" @click="goBack">&larr; 返回赛事列表</button>
       </div>
     </div>
 
-    <!-- 上海大师赛状态卡片 -->
-    <div v-if="currentBracket" class="shanghai-status-card">
-      <div class="status-header">
-        <div class="status-info">
-          <h2>S{{ viewingSeason }} 上海大师赛</h2>
-          <el-tag :type="getStatusType(currentBracket.status)" size="large">
-            {{ getStatusText(currentBracket.status) }}
-          </el-tag>
-        </div>
-        <div class="status-actions">
-          <el-button
-            v-if="hasRealTeamData && currentBracket.status !== 'completed'"
-            type="warning"
-            @click="batchSimulate"
-            :loading="batchSimulating"
-            :icon="Promotion"
-          >
-            {{ batchSimulating ? `模拟中 (${simulationProgress}%)` : '一键模拟全部' }}
-          </el-button>
+    <!-- 上海大师赛状态 -->
+    <div v-if="currentBracket">
+      <div class="filter-section">
+        <div class="filter-row">
+          <div class="filter-group">
+            <label>S{{ viewingSeason }} 上海大师赛</label>
+            <el-tag :type="getStatusType(currentBracket.status)" size="small">
+              {{ getStatusText(currentBracket.status) }}
+            </el-tag>
+          </div>
+          <div class="filter-group" v-if="hasRealTeamData && currentBracket.status !== 'completed'">
+            <el-button
+              type="warning"
+              size="small"
+              @click="batchSimulate"
+              :loading="batchSimulating"
+            >
+              {{ batchSimulating ? `模拟中 (${simulationProgress}%)` : '一键模拟全部' }}
+            </el-button>
+          </div>
         </div>
       </div>
 
       <!-- 参赛队伍分组 -->
       <div class="teams-groups">
-        <div class="team-group legendary">
-          <h3><el-icon><Star /></el-icon> 传奇组 (夏季赛冠军)</h3>
+        <div class="team-group">
+          <div class="group-header legendary">传奇组 <span class="group-hint">(夏季赛冠军)</span></div>
           <div class="team-list">
             <template v-if="hasRealTeamData && legendaryGroupTeams.length > 0">
               <div
@@ -65,8 +56,8 @@
           </div>
         </div>
 
-        <div class="team-group challenger">
-          <h3><el-icon><Medal /></el-icon> 挑战者组 (夏季赛亚军)</h3>
+        <div class="team-group">
+          <div class="group-header challenger">挑战者组 <span class="group-hint">(夏季赛亚军)</span></div>
           <div class="team-list">
             <template v-if="hasRealTeamData && challengerGroupTeams.length > 0">
               <div
@@ -84,8 +75,8 @@
           </div>
         </div>
 
-        <div class="team-group qualifier">
-          <h3><el-icon><Flag /></el-icon> 资格赛组 (夏季赛季军)</h3>
+        <div class="team-group">
+          <div class="group-header qualifier">资格赛组 <span class="group-hint">(夏季赛季军)</span></div>
           <div class="team-list">
             <template v-if="hasRealTeamData && qualifierGroupTeams.length > 0">
               <div
@@ -116,12 +107,8 @@
           />
         </template>
         <div v-else class="bracket-placeholder">
-          <el-empty description="赛事尚未开始">
-            <template #image>
-              <el-icon :size="64" color="#c0c4cc"><Trophy /></el-icon>
-            </template>
-            <p class="placeholder-text">请先完成夏季赛季后赛，确定参赛队伍后才能进行上海大师赛对阵</p>
-          </el-empty>
+          <p>赛事尚未开始</p>
+          <p class="placeholder-text">请先完成夏季赛季后赛，确定参赛队伍后才能进行上海大师赛对阵</p>
         </div>
       </div>
 
@@ -171,13 +158,7 @@ import { ref, computed, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Trophy,
-  Refresh,
-  Promotion,
-  Star,
-  Medal,
-  Flag,
-  ArrowLeft
+  Refresh
 } from '@element-plus/icons-vue'
 import MSIBracketView from '@/components/msi/MSIBracketView.vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
@@ -1498,403 +1479,246 @@ onMounted(() => {
 })
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .shanghai-management {
   padding: 24px;
-
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 24px;
-
-    .header-content {
-      .header-left {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        align-items: flex-start;
-      }
-
-      .page-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 28px;
-        font-weight: 700;
-        margin: 0 0 8px 0;
-        color: #1f2937;
-      }
-
-      .page-description {
-        margin: 0;
-        color: #6b7280;
-        font-size: 14px;
-      }
-    }
-
-    .header-actions {
-      display: flex;
-      gap: 12px;
-    }
-  }
-
-  .shanghai-status-card {
-    background: white;
-    border-radius: 12px;
-    padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-
-    .status-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid #e5e7eb;
-
-      .status-info {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-
-        h2 {
-          margin: 0;
-          font-size: 20px;
-          font-weight: 600;
-          color: #1f2937;
-        }
-      }
-
-      .status-actions {
-        display: flex;
-        gap: 12px;
-      }
-    }
-
-    .teams-groups {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-      margin-bottom: 32px;
-
-      .team-group {
-        padding: 16px;
-        border-radius: 8px;
-        border: 2px solid;
-
-        h3 {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin: 0 0 12px 0;
-          font-size: 16px;
-          font-weight: 600;
-        }
-
-        .team-list {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-
-          .team-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 12px;
-            background: white;
-            border-radius: 6px;
-
-            .team-name {
-              font-weight: 500;
-              color: #374151;
-            }
-
-            &.pending {
-              background: #f3f4f6;
-              justify-content: center;
-
-              .team-name {
-                color: #9ca3af;
-                font-style: italic;
-              }
-            }
-          }
-        }
-
-        &.legendary {
-          border-color: #f59e0b;
-          background: #fffbeb;
-
-          h3 {
-            color: #d97706;
-          }
-        }
-
-        &.challenger {
-          border-color: #3b82f6;
-          background: #eff6ff;
-
-          h3 {
-            color: #2563eb;
-          }
-        }
-
-        &.qualifier {
-          border-color: #10b981;
-          background: #f0fdf4;
-
-          h3 {
-            color: #059669;
-          }
-        }
-      }
-    }
-
-    .bracket-section {
-      margin-bottom: 32px;
-
-      .bracket-placeholder {
-        padding: 60px 20px;
-        background: #f9fafb;
-        border-radius: 12px;
-        border: 2px dashed #e5e7eb;
-
-        .placeholder-text {
-          margin-top: 16px;
-          color: #6b7280;
-          font-size: 14px;
-        }
-      }
-    }
-
-    .loser-standings {
-      margin-top: 24px;
-      margin-bottom: 16px;
-
-      h4 {
-        margin: 0 0 12px 0;
-        font-size: 16px;
-        font-weight: 600;
-        color: #6b7280;
-      }
-
-      .loser-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-
-        .loser-item {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 12px 16px;
-          border-radius: 8px;
-          border: 1px solid;
-
-          .rank-badge {
-            .rank-number {
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              width: 28px;
-              height: 28px;
-              border-radius: 50%;
-              background: #9ca3af;
-              color: white;
-              font-size: 14px;
-              font-weight: 600;
-            }
-          }
-
-          .team-name {
-            flex: 1;
-            font-size: 15px;
-            font-weight: 500;
-            color: #374151;
-          }
-
-          .points {
-            font-size: 14px;
-            font-weight: 600;
-            color: #10b981;
-          }
-
-          &.loser-r2 {
-            border-color: #a78bfa;
-            background: #f5f3ff;
-          }
-
-          &.loser-r1 {
-            border-color: #f9a8d4;
-            background: #fdf2f8;
-          }
-        }
-      }
-    }
-  }
-
-  .match-details-content {
-    .match-type-badge {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-
-    .teams-matchup {
-      display: flex;
-      align-items: center;
-      gap: 24px;
-      padding: 24px;
-      background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
-      border-radius: 12px;
-      margin-bottom: 16px;
-
-      .team-card {
-        flex: 1;
-        text-align: center;
-
-        .team-name {
-          font-size: 20px;
-          font-weight: 600;
-          color: #1f2937;
-          margin-bottom: 8px;
-        }
-
-        .team-badge {
-          font-size: 12px;
-          color: #6b7280;
-        }
-      }
-
-      .vs-divider {
-        font-size: 18px;
-        font-weight: 700;
-        color: #9ca3af;
-      }
-    }
-
-    .match-result,
-    .match-pending {
-      margin-bottom: 16px;
-      text-align: center;
-
-      .result-badge {
-        margin-bottom: 12px;
-      }
-
-      .score-display {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 16px;
-        font-size: 36px;
-        font-weight: 700;
-
-        .score-value {
-          color: #6b7280;
-          transition: all 0.3s;
-
-          &.winner-score {
-            color: #10b981;
-            transform: scale(1.1);
-          }
-        }
-
-        .score-separator {
-          color: #d1d5db;
-        }
-
-        .score-label {
-          font-size: 14px;
-          color: #6b7280;
-          margin: 0 8px;
-        }
-      }
-    }
-
-    .match-time {
-      padding: 12px;
-      background: #f9fafb;
-      border-radius: 6px;
-      margin-bottom: 16px;
-
-      .label {
-        color: #6b7280;
-        margin-right: 8px;
-      }
-
-      .value {
-        font-weight: 500;
-        color: #374151;
-      }
-    }
-
-    .dialog-actions {
-      display: flex;
-      justify-content: center;
-      gap: 12px;
-    }
-  }
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
-@keyframes champion-bounce {
-  0% {
-    transform: scale(0.3) rotate(-10deg);
-    opacity: 0;
-  }
-  50% {
-    transform: scale(1.05) rotate(5deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-    opacity: 1;
-  }
+/* Page header */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
 }
 
-@keyframes trophy-shake {
-  0% { transform: rotate(-5deg); }
-  100% { transform: rotate(5deg); }
+.page-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px 0;
 }
 
-@keyframes pulse {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
-  }
-  50% {
-    transform: scale(1.05);
-    box-shadow: 0 6px 20px rgba(245, 158, 11, 0.6);
-  }
+.page-header p {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
 }
 
-:deep(.champion-celebration-box) {
-  animation: champion-bounce 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-  background: linear-gradient(135deg, #fef3c7 0%, #fde047 100%);
-  border: 3px solid #fbbf24;
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
-  .el-message-box__title {
-    font-size: 28px;
-    font-weight: 900;
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    animation: trophy-shake 0.5s infinite alternate;
-  }
+.back-btn {
+  background: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
 
-  .el-message-box__content {
-    font-size: 18px;
-    color: #92400e;
-  }
+.back-btn:hover {
+  color: #6366f1;
+  border-color: #6366f1;
+}
 
-  .el-button--primary {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    border: none;
-    animation: pulse 1.5s infinite;
+/* Filter section */
+.filter-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  background: #fff;
+}
 
-    &:hover {
-      background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-    }
-  }
+.filter-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-group label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+/* Teams groups */
+.teams-groups {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.team-group {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  background: #fff;
+}
+
+.group-header {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.group-header.legendary {
+  color: #d97706;
+  border-bottom-color: #f59e0b;
+}
+
+.group-header.challenger {
+  color: #2563eb;
+  border-bottom-color: #3b82f6;
+}
+
+.group-header.qualifier {
+  color: #059669;
+  border-bottom-color: #10b981;
+}
+
+.group-hint {
+  font-weight: 400;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.team-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.team-item .team-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0f172a;
+}
+
+.team-item.pending {
+  justify-content: center;
+  border-style: dashed;
+}
+
+.team-item.pending .team-name {
+  color: #94a3b8;
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* Bracket section */
+.bracket-section {
+  margin-bottom: 24px;
+}
+
+.bracket-placeholder {
+  text-align: center;
+  padding: 48px 20px;
+  border: 1px dashed #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.bracket-placeholder p {
+  margin: 0 0 6px 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.bracket-placeholder .placeholder-text {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+/* Loser standings */
+.loser-standings {
+  margin-top: 20px;
+  margin-bottom: 12px;
+}
+
+.loser-standings h4 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.loser-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.loser-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.loser-item .rank-badge .rank-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #94a3b8;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.loser-item .team-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: #0f172a;
+}
+
+.loser-item .points {
+  font-size: 13px;
+  font-weight: 600;
+  color: #6366f1;
+}
+
+.loser-item.loser-r2 {
+  border-color: #c4b5fd;
+  background: #f5f3ff;
+}
+
+.loser-item.loser-r1 {
+  border-color: #fbcfe8;
+  background: #fdf2f8;
 }
 </style>
