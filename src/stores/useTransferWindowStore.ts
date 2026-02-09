@@ -41,6 +41,10 @@ export const EVENT_TYPE_NAMES: Record<string, string> = {
   EMERGENCY_SIGNING: '紧急签约',
   DRAFT_PICK_AUCTION: '选秀权拍卖',
   FINANCIAL_ADJUSTMENT: '财政调整',
+  PLAYER_REQUEST_TRANSFER: '球员求转',
+  LOAN: '租借',
+  LOAN_RETURN: '租借归还',
+  PLAYER_RELEASE: '解约放人',
 }
 
 /** 事件等级配置 */

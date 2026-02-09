@@ -209,7 +209,10 @@
           </template>
           <div class="type-distribution">
             <div v-for="(count, type) in historyReport.events_by_type" :key="type" class="type-item">
-              <span class="type-name">{{ type }}</span>
+              <span class="type-name">{{ EVENT_TYPE_NAMES[type as string] ?? type }}</span>
+              <div class="type-bar-wrapper">
+                <div class="type-bar" :style="{ width: getHistoryTypePercentage(count) + '%', background: getHistoryTypeColor(type as string) }"></div>
+              </div>
               <span class="type-count">{{ count }}</span>
             </div>
           </div>
@@ -243,7 +246,7 @@ import {
   InfoFilled,
   Document,
 } from '@element-plus/icons-vue'
-import { useTransferWindowStore, ROUND_NAMES } from '@/stores/useTransferWindowStore'
+import { useTransferWindowStore, ROUND_NAMES, EVENT_TYPE_NAMES } from '@/stores/useTransferWindowStore'
 import { useSeasonStore } from '@/stores/useSeasonStore'
 import { useTimeStore } from '@/stores/useTimeStore'
 import { queryApi, transferWindowApi } from '@/api/tauri'
@@ -382,6 +385,31 @@ function continueTransfer() {
 // 查看转会报告
 function goToReport(windowId: number) {
   router.push(`/transfer/report/${windowId}`)
+}
+
+// 历史类型分布百分比
+function getHistoryTypePercentage(count: number): number {
+  if (!historyReport.value) return 0
+  const max = Math.max(...Object.values(historyReport.value.events_by_type))
+  return max > 0 ? (count / max) * 100 : 0
+}
+
+// 历史类型颜色
+function getHistoryTypeColor(type: string): string {
+  const colors: Record<string, string> = {
+    CONTRACT_RENEWAL: '#22c55e',
+    CONTRACT_TERMINATION: '#ef4444',
+    FREE_AGENT_SIGNING: '#3b82f6',
+    TRANSFER_PURCHASE: '#f59e0b',
+    PLAYER_RETIREMENT: '#6b7280',
+    PLAYER_LISTED: '#f97316',
+    EMERGENCY_SIGNING: '#8b5cf6',
+    SEASON_SETTLEMENT: '#06b6d4',
+    DRAFT_PICK_AUCTION: '#14b8a6',
+    FINANCIAL_ADJUSTMENT: '#ec4899',
+    PLAYER_REQUEST_TRANSFER: '#e11d48',
+  }
+  return colors[type] ?? '#9ca3af'
 }
 
 // 加载历史赛季数据
@@ -816,28 +844,47 @@ onMounted(async () => {
 
 .type-distribution {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 12px;
 }
 
 .type-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: #f5f7fa;
-  border-radius: 8px;
+  gap: 12px;
 }
 
 .type-name {
-  font-size: 14px;
+  width: 80px;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 500;
   color: #606266;
+  text-align: right;
+}
+
+.type-bar-wrapper {
+  flex: 1;
+  height: 24px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.type-bar {
+  height: 100%;
+  border-radius: 6px;
+  min-width: 4px;
+  transition: width 0.3s ease;
 }
 
 .type-count {
-  font-size: 16px;
+  width: 36px;
+  flex-shrink: 0;
+  font-size: 14px;
   font-weight: 700;
   color: #303133;
+  text-align: right;
 }
 
 .phase-warning {

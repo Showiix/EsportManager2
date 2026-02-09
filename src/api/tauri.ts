@@ -735,6 +735,9 @@ export const draftApi = {
   deleteDraftPoolPlayers: (regionId: number, playerIds?: number[]) =>
     invokeCommand<number>('delete_draft_pool_players', { regionId, playerIds }),
 
+  generateRookies: (regionId: number, count?: number, seed?: number) =>
+    invokeCommand<DraftPoolPlayer[]>('generate_rookies', { regionId, count, seed }),
+
   // 选秀状态查询
   getDraftRegionStatus: (regionId: number, seasonId?: number) =>
     invokeCommand<DraftRegionStatus>('get_draft_region_status', { regionId, seasonId }),

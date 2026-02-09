@@ -2,32 +2,35 @@
   <div class="contract-center">
     <!-- 页面标题 -->
     <div class="page-header">
-      <div class="header-content">
+      <div>
         <h1>选手合同中心</h1>
         <p>管理和查看所有选手的合同、薪资与状态信息</p>
       </div>
-      <div class="header-stats">
-        <div class="stat-item">
-          <span class="stat-value">{{ totalPlayers }}</span>
-          <span class="stat-label">总选手数</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ expiringContracts }}</span>
-          <span class="stat-label">合同即将到期</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ freeAgents }}</span>
-          <span class="stat-label">自由球员</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ formatSalary(totalSalary, false) }}</span>
-          <span class="stat-label">总薪资支出</span>
-        </div>
+    </div>
+    <div class="stats-bar">
+      <div class="stat-item">
+        <span class="stat-value">{{ totalPlayers }}</span>
+        <span class="stat-label">总选手数</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ expiringContracts }}</span>
+        <span class="stat-label">即将到期</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ freeAgents }}</span>
+        <span class="stat-label">自由球员</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ formatSalary(totalSalary, false) }}</span>
+        <span class="stat-label">总薪资</span>
       </div>
     </div>
 
     <!-- 筛选区域 -->
-    <el-card class="filter-card">
+    <div class="filter-section">
       <div class="filter-row">
         <div class="filter-group">
           <label>搜索选手</label>
@@ -90,14 +93,13 @@
           刷新数据
         </el-button>
       </div>
-    </el-card>
+    </div>
 
     <!-- 数据表格 -->
-    <el-card class="table-card">
+    <div class="table-section">
       <el-table
         :data="paginatedPlayers"
         v-loading="loading"
-        stripe
         style="width: 100%"
         :default-sort="{ prop: 'ability', order: 'descending' }"
         @sort-change="handleSortChange"
@@ -264,7 +266,7 @@
           @current-change="handlePageChange"
         />
       </div>
-    </el-card>
+    </div>
 
     <!-- 选手详情弹窗 -->
     <el-dialog
@@ -654,8 +656,7 @@ onMounted(() => {
 
 <style scoped>
 .contract-center {
-  padding: 20px;
-  background: #f5f7fa;
+  padding: 0;
   min-height: 100vh;
 }
 
@@ -664,58 +665,62 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  padding: 24px;
-  background: linear-gradient(135deg, #1e3a5f 0%, #2d5a7b 100%);
-  border-radius: 12px;
-  color: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin-bottom: 0;
+  padding: 24px 0 16px 0;
 }
 
-.header-content h1 {
-  font-size: 24px;
+.page-header h1 {
+  font-size: 20px;
   font-weight: 700;
-  margin: 0 0 8px 0;
+  margin: 0 0 4px 0;
+  color: #0f172a;
 }
 
-.header-content p {
-  font-size: 14px;
-  opacity: 0.85;
+.page-header p {
+  font-size: 13px;
+  color: #64748b;
   margin: 0;
 }
 
-.header-stats {
+/* 统计栏 */
+.stats-bar {
   display: flex;
-  gap: 30px;
+  align-items: baseline;
+  gap: 24px;
+  padding: 16px 24px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 20px;
 }
 
-.stat-item {
+.stats-bar .stat-item {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
+  align-items: flex-start;
 }
 
-.stat-value {
+.stats-bar .stat-value {
   display: block;
-  font-size: 28px;
+  font-size: 20px;
   font-weight: 700;
+  color: #0f172a;
 }
 
-.stat-label {
+.stats-bar .stat-label {
   font-size: 12px;
-  opacity: 0.85;
+  color: #94a3b8;
 }
 
-/* 筛选卡片 */
-.filter-card {
+.stat-divider {
+  width: 1px;
+  height: 32px;
+  background: #e2e8f0;
+}
+
+/* 筛选区域 */
+.filter-section {
   margin-bottom: 20px;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-}
-
-.filter-card :deep(.el-card__body) {
-  padding: 12px 16px;
 }
 
 .filter-row {
@@ -733,40 +738,59 @@ onMounted(() => {
 
 .filter-group label {
   font-size: 12px;
-  color: #909399;
+  color: #94a3b8;
   font-weight: 500;
   white-space: nowrap;
 }
 
-/* 表格卡片 */
-.table-card {
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+/* 表格区域 */
+.table-section {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
 }
 
-.table-card :deep(.el-table th.el-table__cell) {
-  background: #f8f9fb;
-  color: #606266;
-  font-size: 13px;
+.table-section :deep(.el-table) {
+  --el-table-border-color: transparent;
+  --el-table-header-bg-color: transparent;
+}
+
+.table-section :deep(.el-table th.el-table__cell) {
+  background: transparent;
+  color: #94a3b8;
+  font-size: 11px;
   font-weight: 600;
-  padding: 8px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 10px 0;
+  border-bottom: 1px solid #e2e8f0;
 }
 
-.table-card :deep(.el-table td.el-table__cell) {
+.table-section :deep(.el-table td.el-table__cell) {
   padding: 6px 0;
+  border-bottom: 1px solid #f8fafc;
+}
+
+.table-section :deep(.el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell) {
+  background: #f8fafc;
+}
+
+.table-section :deep(.el-table__inner-wrapper::before) {
+  display: none;
 }
 
 /* 修复固定列溢出问题 */
-.table-card :deep(.el-table__fixed),
-.table-card :deep(.el-table__fixed-right) {
+.table-section :deep(.el-table__fixed),
+.table-section :deep(.el-table__fixed-right) {
   z-index: 10;
 }
 
-.table-card :deep(.el-table__fixed-right-patch) {
+.table-section :deep(.el-table__fixed-right-patch) {
   z-index: 10;
 }
 
-.table-card :deep(.el-table .el-table__cell) {
+.table-section :deep(.el-table .el-table__cell) {
   overflow: hidden;
 }
 
@@ -774,27 +798,27 @@ onMounted(() => {
 .player-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .player-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: white;
-  background: #909399;
+  background: #94a3b8;
 }
 
 .player-avatar.position-top { background: linear-gradient(135deg, #f56c6c, #e6a23c); }
 .player-avatar.position-jug { background: linear-gradient(135deg, #67c23a, #85ce61); }
-.player-avatar.position-mid { background: linear-gradient(135deg, #409eff, #66b1ff); }
+.player-avatar.position-mid { background: linear-gradient(135deg, #6366f1, #818cf8); }
 .player-avatar.position-adc { background: linear-gradient(135deg, #e6a23c, #f7ba2a); }
-.player-avatar.position-sup { background: linear-gradient(135deg, #909399, #b4b4b4); }
+.player-avatar.position-sup { background: linear-gradient(135deg, #94a3b8, #b4b4b4); }
 
 .player-details {
   display: flex;
@@ -804,8 +828,8 @@ onMounted(() => {
 
 .player-name {
   font-weight: 600;
-  font-size: 14px;
-  color: #303133;
+  font-size: 13px;
+  color: #0f172a;
 }
 
 .player-team {
@@ -814,7 +838,7 @@ onMounted(() => {
 
 /* 年龄样式 */
 .age-young { color: #67c23a; font-weight: 600; }
-.age-prime { color: #303133; }
+.age-prime { color: #0f172a; }
 .age-old { color: #f56c6c; }
 
 /* 能力值样式 */
@@ -827,18 +851,18 @@ onMounted(() => {
 
 .stat-cell .stat-value {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .ability-value, .potential-value {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .ability-elite { color: #e6a23c; }
-.ability-high { color: #409eff; }
+.ability-high { color: #6366f1; }
 .ability-medium { color: #67c23a; }
-.ability-low { color: #909399; }
+.ability-low { color: #94a3b8; }
 
 /* 合同信息 */
 .contract-info {
@@ -850,11 +874,11 @@ onMounted(() => {
 .contract-salary, .contract-duration {
   display: flex;
   gap: 4px;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .contract-salary .label, .contract-duration .label {
-  color: #909399;
+  color: #94a3b8;
 }
 
 .contract-salary .value {
@@ -865,7 +889,7 @@ onMounted(() => {
 .contract-active { color: #67c23a; }
 .contract-expiring { color: #e6a23c; font-weight: 600; }
 .contract-expired { color: #f56c6c; }
-.contract-none { color: #909399; }
+.contract-none { color: #94a3b8; }
 
 /* 身价 */
 .market-value {
@@ -877,20 +901,22 @@ onMounted(() => {
 
 .current-value {
   font-weight: 600;
-  color: #409eff;
+  font-size: 13px;
+  color: #6366f1;
 }
 
 .base-value {
   font-size: 11px;
-  color: #909399;
+  color: #94a3b8;
 }
 
 /* 分页 */
 .pagination-wrapper {
-  margin-top: 16px;
+  margin-top: 0;
   padding: 16px;
   display: flex;
   justify-content: center;
+  border-top: 1px solid #f8fafc;
 }
 
 /* 详情弹窗 */
@@ -901,12 +927,12 @@ onMounted(() => {
 }
 
 .detail-section h4 {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: #0f172a;
   margin: 0 0 12px 0;
   padding-bottom: 8px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .detail-grid {
@@ -923,19 +949,19 @@ onMounted(() => {
 
 .detail-item .label {
   font-size: 12px;
-  color: #909399;
+  color: #94a3b8;
 }
 
 .detail-item .value {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  color: #303133;
+  color: #0f172a;
 }
 
-.detail-item .value.ability { color: #409eff; font-size: 18px; }
+.detail-item .value.ability { color: #6366f1; font-size: 18px; }
 .detail-item .value.potential { color: #67c23a; font-size: 18px; }
 .detail-item .value.salary { color: #67c23a; }
-.detail-item .value.market-value { color: #409eff; }
+.detail-item .value.market-value { color: #6366f1; }
 
 .value-with-progress {
   display: flex;
@@ -949,14 +975,8 @@ onMounted(() => {
 
 /* 响应式 */
 @media (max-width: 1200px) {
-  .page-header {
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .header-stats {
-    width: 100%;
-    justify-content: space-around;
+  .stats-bar {
+    flex-wrap: wrap;
   }
 
   .filter-row {

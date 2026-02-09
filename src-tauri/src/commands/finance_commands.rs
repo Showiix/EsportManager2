@@ -136,8 +136,8 @@ pub async fn get_team_finance_summary(
     .await
     .map_err(|e| e.to_string())?;
 
-    // 计算本赛季收入
-    let total_income: i64 = sqlx::query_scalar(
+    // 计算本赛季收入（交易记录）
+    let tx_income: i64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(amount), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND amount > 0"
     )
     .bind(&save_id)
@@ -147,8 +147,8 @@ pub async fn get_team_finance_summary(
     .await
     .unwrap_or(0);
 
-    // 计算本赛季支出
-    let total_expense: i64 = sqlx::query_scalar(
+    // 计算本赛季支出（交易记录）
+    let tx_expense: i64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(ABS(amount)), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND amount < 0"
     )
     .bind(&save_id)
@@ -178,6 +178,18 @@ pub async fn get_team_finance_summary(
     };
 
     let status = engine.get_financial_status(&team, total_salary as u64);
+    let sponsorship = engine.calculate_sponsorship(&team);
+
+    // 如果没有交易记录，用引擎计算预估值
+    let (total_income, total_expense) = if tx_income == 0 && tx_expense == 0 {
+        let league_share = engine.calculate_league_share(&region_code, None);
+        let operating_cost = engine.calculate_operating_cost(total_salary as u64);
+        let income = sponsorship + league_share;
+        let expense = total_salary as u64 + operating_cost;
+        (income, expense)
+    } else {
+        (tx_income as u64, tx_expense as u64)
+    };
 
     // 确定财务状态文本
     let financial_status = if balance > 10_000_000 {
@@ -192,8 +204,6 @@ pub async fn get_team_finance_summary(
         "Bankrupt"
     };
 
-    let sponsorship = engine.calculate_sponsorship(&team);
-
     Ok(CommandResult::ok(TeamFinanceSummary {
         team_id,
         team_name,
@@ -201,8 +211,8 @@ pub async fn get_team_finance_summary(
         region_id: region_id as u64,
         region_code,
         balance,
-        total_income: total_income as u64,
-        total_expense: total_expense as u64,
+        total_income,
+        total_expense,
         financial_status: financial_status.to_string(),
         is_crisis: status.is_crisis,
         transfer_budget: status.transfer_budget,
@@ -304,7 +314,7 @@ pub async fn get_all_teams_finance(
         .unwrap_or(0);
 
         // 计算本赛季收入
-        let total_income: i64 = sqlx::query_scalar(
+        let tx_income: i64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(amount), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND amount > 0"
         )
         .bind(&save_id)
@@ -315,7 +325,7 @@ pub async fn get_all_teams_finance(
         .unwrap_or(0);
 
         // 计算本赛季支出
-        let total_expense: i64 = sqlx::query_scalar(
+        let tx_expense: i64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(ABS(amount)), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND amount < 0"
         )
         .bind(&save_id)
@@ -343,6 +353,17 @@ pub async fn get_all_teams_finance(
         let status = engine.get_financial_status(&team, total_salary as u64);
         let sponsorship = engine.calculate_sponsorship(&team);
 
+        // 如果没有交易记录，用引擎计算预估值
+        let (total_income, total_expense) = if tx_income == 0 && tx_expense == 0 {
+            let league_share = engine.calculate_league_share(&region_code, None);
+            let operating_cost = engine.calculate_operating_cost(total_salary as u64);
+            let income = sponsorship + league_share;
+            let expense = total_salary as u64 + operating_cost;
+            (income, expense)
+        } else {
+            (tx_income as u64, tx_expense as u64)
+        };
+
         let financial_status = if balance > 10_000_000 {
             "Wealthy"
         } else if balance >= 5_000_000 {
@@ -362,8 +383,8 @@ pub async fn get_all_teams_finance(
             region_id: region_id as u64,
             region_code,
             balance,
-            total_income: total_income as u64,
-            total_expense: total_expense as u64,
+            total_income,
+            total_expense,
             financial_status: financial_status.to_string(),
             is_crisis: status.is_crisis,
             transfer_budget: status.transfer_budget,

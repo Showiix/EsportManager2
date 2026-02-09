@@ -2,19 +2,24 @@
   <div class="team-honor-rankings">
     <!-- 页面标题 -->
     <div class="page-header">
-      <h1><el-icon><OfficeBuilding /></el-icon> 战队荣誉榜</h1>
-      <p>TEAM HONOR RANKINGS</p>
+      <div>
+        <h1>战队荣誉榜</h1>
+        <p>查看所有战队的荣誉记录与排名</p>
+      </div>
+      <button class="back-btn" @click="router.push('/honors')">← 返回荣誉殿堂</button>
     </div>
 
     <!-- 筛选和排序 -->
-    <div class="filter-bar">
-      <div class="sort-options">
-        <span class="label">排序:</span>
-        <el-radio-group v-model="sortBy" size="small">
-          <el-radio-button value="champion"><el-icon><Trophy /></el-icon> 总冠军</el-radio-button>
-          <el-radio-button value="international">🌍国际冠军</el-radio-button>
-          <el-radio-button value="runner_up">🥈亚军数</el-radio-button>
-        </el-radio-group>
+    <div class="filter-section">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label>排序</label>
+          <el-radio-group v-model="sortBy" size="small">
+            <el-radio-button value="champion">总冠军</el-radio-button>
+            <el-radio-button value="international">国际冠军</el-radio-button>
+            <el-radio-button value="runner_up">亚军数</el-radio-button>
+          </el-radio-group>
+        </div>
       </div>
     </div>
 
@@ -47,15 +52,15 @@
             <div class="stat-row">
               <div class="stat-item">
                 <span class="stat-value">{{ team.champion_count }}</span>
-                <span class="stat-label"><el-icon><Trophy /></el-icon>冠军</span>
+                <span class="stat-label">冠军</span>
               </div>
               <div class="stat-item">
                 <span class="stat-value">{{ team.international_champion_count }}</span>
-                <span class="stat-label">🌍国际</span>
+                <span class="stat-label">国际</span>
               </div>
               <div class="stat-item">
                 <span class="stat-value">{{ team.runner_up_count }}</span>
-                <span class="stat-label">🥈亚军</span>
+                <span class="stat-label">亚军</span>
               </div>
             </div>
           </div>
@@ -64,7 +69,7 @@
       </div>
 
       <!-- 其他排名列表 -->
-      <el-card class="rankings-table-card">
+      <div class="table-section">
         <div class="table-list">
           <div
             v-for="team in restRankings"
@@ -77,16 +82,16 @@
               <span class="name">{{ team.team_name }}</span>
             </div>
             <div class="stats">
-              <span class="stat"><el-icon><Trophy /></el-icon>{{ team.champion_count }}</span>
-              <span class="stat">🌍{{ team.international_champion_count }}</span>
-              <span class="stat">🥈{{ team.runner_up_count }}</span>
+              <span class="stat">{{ team.champion_count }} 冠</span>
+              <span class="stat">{{ team.international_champion_count }} 国际</span>
+              <span class="stat">{{ team.runner_up_count }} 亚</span>
             </div>
             <div class="action">
               <el-button size="small" type="primary" text>详情 →</el-button>
             </div>
           </div>
         </div>
-      </el-card>
+      </div>
     </div>
   </div>
 </template>
@@ -94,7 +99,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Trophy, OfficeBuilding } from '@element-plus/icons-vue'
+
 import { tauriApi, type TeamHonorRanking } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
 
@@ -158,9 +163,9 @@ const getRankClass = (rank: number): string => {
 
 // 获取排名徽章
 const getRankBadge = (rank: number): string => {
-  if (rank === 1) return '🥇 #1'
-  if (rank === 2) return '🥈 #2'
-  if (rank === 3) return '🥉 #3'
+  if (rank === 1) return '#1'
+  if (rank === 2) return '#2'
+  if (rank === 3) return '#3'
   return `#${rank}`
 }
 
@@ -174,53 +179,51 @@ onMounted(() => {
 })
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .team-honor-rankings {
-  padding: 20px;
-  background: #ffffff;
-  min-height: 100vh;
+  padding: 0;
 }
 
 .page-header {
-  text-align: center;
-  padding: 30px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 20px;
-
-  h1 {
-    font-size: 28px;
-    color: #303133;
-    margin-bottom: 8px;
-  }
-
-  p {
-    font-size: 14px;
-    color: #909399;
-    letter-spacing: 2px;
-  }
 }
 
-.filter-bar {
+.page-header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
+
+.page-header p {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+}
+
+.filter-section {
+  margin-bottom: 16px;
+}
+
+.filter-row {
   display: flex;
-  justify-content: center;
-  margin-bottom: 30px;
+  align-items: center;
+  gap: 20px;
+}
 
-  .label {
-    color: #606266;
-    margin-right: 10px;
-    line-height: 32px;
-  }
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
-  :deep(.el-radio-button__inner) {
-    background: #f5f7fa;
-    border-color: #dcdfe6;
-    color: #606266;
-  }
-
-  :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-    background: linear-gradient(135deg, #f59e0b, #d97706);
-    border-color: #f59e0b;
-    color: #fff;
-  }
+.filter-group label {
+  font-size: 13px;
+  color: #64748b;
+  white-space: nowrap;
 }
 
 .loading-container {
@@ -228,151 +231,168 @@ onMounted(() => {
 }
 
 .rankings-list {
-  max-width: 1000px;
-  margin: 0 auto;
 }
 
 .top-three {
   display: flex;
-  justify-content: center;
-  gap: 20px;
-  margin-bottom: 30px;
+  gap: 16px;
+  margin-bottom: 20px;
 }
 
 .top-card {
-  width: 280px;
-  padding: 25px;
-  background: #f5f7fa;
-  border-radius: 16px;
+  flex: 1;
+  padding: 20px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
   text-align: center;
   cursor: pointer;
-  transition: all 0.3s ease;
-  border: 2px solid transparent;
-
-  &:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-  }
-
-  &.gold {
-    border-color: #ffd700;
-    background: linear-gradient(135deg, #fffbeb, #fef3c7);
-  }
-
-  &.silver {
-    border-color: #c0c0c0;
-    background: linear-gradient(135deg, #f9fafb, #f3f4f6);
-  }
-
-  &.bronze {
-    border-color: #cd7f32;
-    background: linear-gradient(135deg, #fff7ed, #fed7aa);
-  }
-
-  .rank-badge {
-    font-size: 24px;
-    margin-bottom: 15px;
-  }
-
-  .team-info {
-    margin-bottom: 20px;
-
-    .team-name {
-      font-size: 22px;
-      font-weight: bold;
-      color: #303133;
-    }
-  }
-
-  .honor-stats {
-    margin-bottom: 15px;
-
-    .stat-row {
-      display: flex;
-      justify-content: space-around;
-    }
-
-    .stat-item {
-      text-align: center;
-
-      .stat-value {
-        display: block;
-        font-size: 22px;
-        font-weight: bold;
-        color: #303133;
-      }
-
-      .stat-label {
-        font-size: 12px;
-        color: #909399;
-      }
-    }
-  }
-
-  .view-detail {
-    font-size: 12px;
-    color: #909399;
-  }
+  transition: all 0.2s ease;
 }
 
-.rankings-table-card {
+.top-card:hover {
+  border-color: #6366f1;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.1);
+}
+
+.top-card.gold {
+  border-left: 3px solid #f59e0b;
+}
+
+.top-card.silver {
+  border-left: 3px solid #94a3b8;
+}
+
+.top-card.bronze {
+  border-left: 3px solid #d97706;
+}
+
+.top-card .rank-badge {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  color: #94a3b8;
+}
+
+.top-card.gold .rank-badge { color: #f59e0b; }
+.top-card.silver .rank-badge { color: #6b7280; }
+.top-card.bronze .rank-badge { color: #d97706; }
+
+.top-card .team-info {
+  margin-bottom: 16px;
+}
+
+.top-card .team-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.top-card .honor-stats {
+  margin-bottom: 12px;
+}
+
+.top-card .stat-row {
+  display: flex;
+  justify-content: space-around;
+}
+
+.top-card .stat-item {
+  text-align: center;
+}
+
+.top-card .stat-value {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.top-card .stat-label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.top-card .view-detail {
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.table-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
   background: #ffffff;
-  border: 1px solid #ebeef5;
-
-  :deep(.el-card__body) {
-    padding: 0;
-  }
 }
 
-.table-list {
-  .ranking-row {
-    display: flex;
-    align-items: center;
-    padding: 15px 20px;
-    border-bottom: 1px solid #ebeef5;
-    cursor: pointer;
-    transition: background 0.2s;
+.ranking-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid #f8fafc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
 
-    &:hover {
-      background: #f5f7fa;
-    }
+.ranking-row:hover {
+  background: #f8fafc;
+  padding-left: 24px;
+}
 
-    &:last-child {
-      border-bottom: none;
-    }
+.ranking-row:last-child {
+  border-bottom: none;
+}
 
-    .rank-num {
-      width: 60px;
-      font-size: 16px;
-      font-weight: bold;
-      color: #909399;
-    }
+.ranking-row .rank-num {
+  width: 50px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #94a3b8;
+}
 
-    .team-info {
-      flex: 1;
+.ranking-row .team-info {
+  flex: 1;
+}
 
-      .name {
-        font-size: 16px;
-        font-weight: 500;
-        color: #303133;
-      }
-    }
+.ranking-row .team-info .name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #0f172a;
+}
 
-    .stats {
-      display: flex;
-      gap: 20px;
-      margin-right: 20px;
+.ranking-row .stats {
+  display: flex;
+  gap: 16px;
+  margin-right: 16px;
+}
 
-      .stat {
-        font-size: 14px;
-        color: #606266;
-      }
-    }
+.ranking-row .stats .stat {
+  font-size: 13px;
+  color: #64748b;
+}
 
-    .action {
-      width: 80px;
-      text-align: right;
-    }
-  }
+.ranking-row .action {
+  width: 70px;
+  text-align: right;
+}
+
+.back-btn {
+  padding: 5px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.back-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: #f5f3ff;
 }
 </style>

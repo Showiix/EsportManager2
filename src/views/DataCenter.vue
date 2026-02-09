@@ -145,6 +145,53 @@
       </div>
     </div>
 
+    <!-- 四象限散点图 -->
+    <div class="scatter-chart-section" v-if="rankings.length > 0">
+      <el-card shadow="hover">
+        <template #header>
+          <div class="card-header clickable" @click="scatterExpanded = !scatterExpanded">
+            <div class="card-header-left">
+              <el-icon class="collapse-arrow" :class="{ collapsed: !scatterExpanded }">
+                <ArrowDown />
+              </el-icon>
+              <span class="card-title">选手四象限分析</span>
+            </div>
+            <div class="scatter-controls" v-show="scatterExpanded" @click.stop>
+              <el-button-group size="small">
+                <el-button :type="scatterColorMode === 'position' ? 'primary' : ''" @click="scatterColorMode = 'position'">按位置</el-button>
+                <el-button :type="scatterColorMode === 'region' ? 'primary' : ''" @click="scatterColorMode = 'region'">按赛区</el-button>
+              </el-button-group>
+            </div>
+          </div>
+        </template>
+        <el-collapse-transition>
+          <div v-show="scatterExpanded">
+            <div class="scatter-chart-wrapper">
+              <v-chart class="scatter-chart" :option="scatterOption" autoresize @click="onScatterClick" />
+            </div>
+            <!-- 颜色图例 -->
+            <div class="scatter-legend">
+              <span
+                v-for="item in scatterLegendItems"
+                :key="item.label"
+                class="legend-item"
+              >
+                <span class="legend-dot" :style="{ backgroundColor: item.color }"></span>
+                {{ item.label }}
+              </span>
+            </div>
+            <!-- 四象限标签 -->
+            <div class="quadrant-legend">
+              <span class="q q1">核心基石（高影响力+高稳定性）</span>
+              <span class="q q2">波动明星（高影响力+低稳定性）</span>
+              <span class="q q3">稳定绿叶（低影响力+高稳定性）</span>
+              <span class="q q4">待培养（低影响力+低稳定性）</span>
+            </div>
+          </div>
+        </el-collapse-transition>
+      </el-card>
+    </div>
+
     <!-- 排行榜表格 -->
     <el-card class="rankings-card">
       <template #header>
@@ -262,15 +309,17 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { DataLine, Refresh, ArrowRight, User, VideoCamera, TrendCharts, Star } from '@element-plus/icons-vue'
+import { DataLine, Refresh, ArrowRight, ArrowDown, User, VideoCamera, TrendCharts, Star } from '@element-plus/icons-vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { BarChart } from 'echarts/charts'
+import { BarChart, ScatterChart } from 'echarts/charts'
 import {
   TitleComponent,
   TooltipComponent,
   GridComponent,
-  LegendComponent
+  LegendComponent,
+  MarkLineComponent,
+  MarkAreaComponent
 } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { usePlayerStore } from '@/stores/usePlayerStore'
@@ -286,10 +335,13 @@ import { createLogger } from '@/utils/logger'
 use([
   CanvasRenderer,
   BarChart,
+  ScatterChart,
   TitleComponent,
   TooltipComponent,
   GridComponent,
-  LegendComponent
+  LegendComponent,
+  MarkLineComponent,
+  MarkAreaComponent
 ])
 
 const logger = createLogger('DataCenter')
@@ -300,6 +352,8 @@ const seasonStore = useSeasonStore()
 
 // 本地战队映射表
 const teamsMap = ref<Map<number, string>>(new Map())
+// 战队→赛区映射表（用 Record 代替 Map，确保 Vue 响应式追踪）
+const teamsRegionMap = ref<Record<string, number>>({})
 
 // 状态
 const selectedSeason = ref(seasonStore.currentSeason)
@@ -307,6 +361,11 @@ const selectedPosition = ref('')
 const searchQuery = ref('')
 const loading = ref(false)
 const rankings = ref<PlayerSeasonStats[]>([])
+
+// 散点图着色模式
+const scatterColorMode = ref<'position' | 'region'>('position')
+// 散点图展开/折叠
+const scatterExpanded = ref(true)
 
 // 排序状态
 const sortField = ref('yearlyTopScore')
@@ -438,6 +497,227 @@ const positionComparisonOption = computed(() => {
   }
 })
 
+// 散点图着色方案
+const positionColorMap: Record<string, string> = {
+  TOP: '#e6a23c',
+  JUG: '#67c23a',
+  MID: '#409eff',
+  ADC: '#f56c6c',
+  SUP: '#909399'
+}
+
+const regionColorMap: Record<number, string> = {
+  1: '#e6393f',  // LPL
+  2: '#1a56db',  // LCK
+  3: '#059669',  // LEC
+  4: '#8b5cf6'   // LCS
+}
+
+const regionNameMap: Record<number, string> = {
+  1: 'LPL',
+  2: 'LCK',
+  3: 'LEC',
+  4: 'LCS'
+}
+
+// 获取选手赛区ID
+const getPlayerRegionId = (teamId: string | number | null): number => {
+  if (!teamId) return 0
+  return teamsRegionMap.value.get(Number(teamId)) || 0
+}
+
+// 散点图四象限配置
+const scatterOption = computed(() => {
+  const players = filteredRankings.value
+  if (players.length === 0) return {}
+
+  // 数据：[稳定性, 影响力, 选手名, 战队名, 位置, playerId, regionId]
+  const data = players.map(p => [
+    p.consistencyScore || 0,      // x: 稳定性 0-100
+    p.avgImpact || 0,             // y: 影响力
+    p.playerName,
+    getTeamName(p.teamId),
+    p.position,
+    p.playerId,
+    getPlayerRegionId(p.teamId)
+  ])
+
+  // 计算均值线
+  const avgStability = data.reduce((s, d) => s + (d[0] as number), 0) / data.length
+  const avgImpact = data.reduce((s, d) => s + (d[1] as number), 0) / data.length
+
+  // 计算数据范围，动态设置坐标轴让数据居中
+  const stabilities = data.map(d => d[0] as number)
+  const impacts = data.map(d => d[1] as number)
+  const minStability = Math.min(...stabilities)
+  const maxStability = Math.max(...stabilities)
+  const minImpact = Math.min(...impacts)
+  const maxImpact = Math.max(...impacts)
+
+  // 稳定性轴：数据范围两侧加 15% padding，限制在 [0, 100]
+  const xRange = maxStability - minStability || 20
+  const xPad = xRange * 0.15
+  const xMin = Math.max(0, Math.floor((minStability - xPad) / 5) * 5)
+  const xMax = Math.min(100, Math.ceil((maxStability + xPad) / 5) * 5)
+
+  // 影响力轴：数据范围两侧加 20% padding
+  const yRange = maxImpact - minImpact || 5
+  const yPad = yRange * 0.2
+  const yMin = Math.floor((minImpact - yPad) * 2) / 2
+  const yMax = Math.ceil((maxImpact + yPad) * 2) / 2
+
+  return {
+    tooltip: {
+      trigger: 'item' as const,
+      formatter: (params: any) => {
+        const [stability, impact, name, team, pos] = params.data
+        const regionId = params.data[6] as number
+        const regionName = regionNameMap[regionId] || '-'
+        return `<b>${name}</b> (${POSITION_NAMES[pos as PlayerPosition] || pos})<br/>` +
+          `战队: ${team}<br/>` +
+          `赛区: ${regionName}<br/>` +
+          `稳定性: ${(stability as number).toFixed(0)}<br/>` +
+          `影响力: ${(impact as number) >= 0 ? '+' : ''}${(impact as number).toFixed(2)}`
+      }
+    },
+    grid: {
+      left: '5%',
+      right: '5%',
+      bottom: '8%',
+      top: '8%',
+      containLabel: true
+    },
+    xAxis: {
+      name: '稳定性 →',
+      nameLocation: 'end' as const,
+      nameTextStyle: { color: '#6b7280', fontSize: 12 },
+      min: xMin,
+      max: xMax,
+      axisLabel: { color: '#6b7280' },
+      splitLine: { lineStyle: { color: '#f3f4f6' } }
+    },
+    yAxis: {
+      name: '↑ 影响力',
+      nameLocation: 'end' as const,
+      nameTextStyle: { color: '#6b7280', fontSize: 12 },
+      min: yMin,
+      max: yMax,
+      axisLabel: { color: '#6b7280' },
+      splitLine: { lineStyle: { color: '#f3f4f6' } }
+    },
+    series: [{
+      type: 'scatter',
+      data,
+      symbolSize: (val: any[]) => Math.max(10, Math.abs(val[1] as number) * 1.5 + 10),
+      itemStyle: {
+        color: (params: any) => {
+          if (scatterColorMode.value === 'region') {
+            const regionId = params.data[6] as number
+            return regionColorMap[regionId] || '#909399'
+          }
+          return positionColorMap[params.data[4] as string] || '#909399'
+        },
+        opacity: 0.8
+      },
+      emphasis: {
+        itemStyle: {
+          opacity: 1,
+          shadowBlur: 10,
+          shadowColor: 'rgba(0, 0, 0, 0.2)'
+        }
+      },
+      markLine: {
+        silent: true,
+        lineStyle: {
+          color: '#d1d5db',
+          type: 'dashed' as const
+        },
+        label: {
+          color: '#9ca3af',
+          fontSize: 11
+        },
+        data: [
+          {
+            xAxis: avgStability,
+            label: { formatter: `平均稳定性: ${avgStability.toFixed(0)}`, position: 'insideEndTop' as const }
+          },
+          {
+            yAxis: avgImpact,
+            label: { formatter: `平均影响力: ${avgImpact.toFixed(1)}`, position: 'insideEndTop' as const }
+          }
+        ]
+      },
+      markArea: {
+        silent: true,
+        data: [
+          // 右上：核心基石
+          [{
+            xAxis: avgStability,
+            yAxis: avgImpact,
+            itemStyle: { color: 'rgba(16, 185, 129, 0.04)' }
+          }, {
+            xAxis: 100,
+            yAxis: 'max'
+          }],
+          // 左上：波动明星
+          [{
+            xAxis: 0,
+            yAxis: avgImpact,
+            itemStyle: { color: 'rgba(245, 158, 11, 0.04)' }
+          }, {
+            xAxis: avgStability,
+            yAxis: 'max'
+          }],
+          // 右下：稳定绿叶
+          [{
+            xAxis: avgStability,
+            yAxis: 'min',
+            itemStyle: { color: 'rgba(59, 130, 246, 0.04)' }
+          }, {
+            xAxis: 100,
+            yAxis: avgImpact
+          }],
+          // 左下：待培养
+          [{
+            xAxis: 0,
+            yAxis: 'min',
+            itemStyle: { color: 'rgba(156, 163, 175, 0.04)' }
+          }, {
+            xAxis: avgStability,
+            yAxis: avgImpact
+          }]
+        ]
+      }
+    }]
+  }
+})
+
+// 散点图颜色图例数据
+const scatterLegendItems = computed(() => {
+  if (scatterColorMode.value === 'position') {
+    return [
+      { label: 'TOP', color: positionColorMap.TOP },
+      { label: 'JUG', color: positionColorMap.JUG },
+      { label: 'MID', color: positionColorMap.MID },
+      { label: 'ADC', color: positionColorMap.ADC },
+      { label: 'SUP', color: positionColorMap.SUP }
+    ]
+  }
+  return [
+    { label: 'LPL', color: regionColorMap[1] },
+    { label: 'LCK', color: regionColorMap[2] },
+    { label: 'LEC', color: regionColorMap[3] },
+    { label: 'LCS', color: regionColorMap[4] }
+  ]
+})
+
+// 散点图点击事件
+const onScatterClick = (params: any) => {
+  if (params.data && params.data[5]) {
+    router.push(`/data-center/player/${params.data[5]}?season=S${selectedSeason.value}`)
+  }
+}
+
 // Top5 选手
 const top5Players = computed(() => {
   return filteredRankings.value.slice(0, 5)
@@ -525,11 +805,16 @@ const handleSizeChange = (size: number) => {
 const refreshData = async () => {
   // 加载战队数据（用于显示战队名称）
   try {
-    if (teamsMap.value.size === 0) {
+    if (teamsMap.value.size === 0 || teamsRegionMap.value.size === 0) {
       const teams = await teamApi.getAllTeams()
+      const newTeamsMap = new Map<number, string>()
+      const newRegionMap = new Map<number, number>()
       teams.forEach(t => {
-        teamsMap.value.set(t.id, t.short_name || t.name)
+        newTeamsMap.set(t.id, t.short_name || t.name)
+        newRegionMap.set(t.id, t.region_id)
       })
+      teamsMap.value = newTeamsMap
+      teamsRegionMap.value = newRegionMap
       logger.debug('[DataCenter] 加载战队数据:', teamsMap.value.size, '支队伍')
     }
   } catch (e) {
@@ -1014,6 +1299,111 @@ watch([selectedPosition, searchQuery], () => {
 
     &.score-normal {
       color: #6b7280;
+    }
+  }
+
+  // 散点图区域
+  .scatter-chart-section {
+    margin-bottom: 24px;
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+
+      &.clickable {
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .card-header-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .collapse-arrow {
+        transition: transform 0.3s;
+        color: #9ca3af;
+        font-size: 16px;
+
+        &.collapsed {
+          transform: rotate(-90deg);
+        }
+      }
+
+      .card-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #1f2937;
+      }
+    }
+
+    .scatter-chart-wrapper {
+      height: 500px;
+
+      .scatter-chart {
+        width: 100%;
+        height: 100%;
+      }
+    }
+
+    .scatter-legend {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      padding: 12px 0 8px;
+
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: #4b5563;
+
+        .legend-dot {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          display: inline-block;
+        }
+      }
+    }
+
+    .quadrant-legend {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      padding: 8px 0 4px;
+      border-top: 1px solid #f3f4f6;
+
+      .q {
+        font-size: 12px;
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-weight: 500;
+      }
+
+      .q1 {
+        color: #059669;
+        background: rgba(16, 185, 129, 0.08);
+      }
+
+      .q2 {
+        color: #d97706;
+        background: rgba(245, 158, 11, 0.08);
+      }
+
+      .q3 {
+        color: #2563eb;
+        background: rgba(59, 130, 246, 0.08);
+      }
+
+      .q4 {
+        color: #6b7280;
+        background: rgba(156, 163, 175, 0.08);
+      }
     }
   }
 

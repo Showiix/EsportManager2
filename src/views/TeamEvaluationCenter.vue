@@ -2,39 +2,39 @@
   <div class="evaluation-center">
     <!-- 页面标题 -->
     <div class="page-header">
-      <div class="header-content">
+      <div>
         <h1>战队评估中心</h1>
         <div class="header-sub-row">
           <p>查看各战队的赛季评估、策略分析与阵容需求</p>
-          <SeasonSelector
-            v-model="selectedSeason"
-            @update:model-value="onSeasonChange"
-            width="140px"
-          />
-        </div>
-      </div>
-      <div class="header-stats">
-        <div class="stat-item">
-          <span class="stat-value">{{ evaluations.length }}</span>
-          <span class="stat-label">战队总数</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ dynastyCount }}</span>
-          <span class="stat-label">王朝战队</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ rebuildCount }}</span>
-          <span class="stat-label">重建战队</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ avgStability.toFixed(0) }}</span>
-          <span class="stat-label">平均稳定性</span>
+          <SeasonSelector v-model="selectedSeason" @update:model-value="onSeasonChange" width="140px" />
         </div>
       </div>
     </div>
 
+    <div class="stats-bar">
+      <div class="stat-item">
+        <span class="stat-value">{{ evaluations.length }}</span>
+        <span class="stat-label">战队总数</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ dynastyCount }}</span>
+        <span class="stat-label">王朝战队</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ rebuildCount }}</span>
+        <span class="stat-label">重建战队</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ avgStability.toFixed(0) }}</span>
+        <span class="stat-label">平均稳定性</span>
+      </div>
+    </div>
+
     <!-- 筛选区域 -->
-    <el-card class="filter-card">
+    <div class="filter-section">
       <div class="filter-row">
         <div class="filter-group">
           <label>搜索战队</label>
@@ -83,24 +83,23 @@
           清除评估数据
         </el-button>
       </div>
-    </el-card>
+    </div>
 
     <!-- 空状态提示 -->
-    <el-card v-if="!loading && evaluations.length === 0" class="empty-card">
+    <div v-if="!loading && evaluations.length === 0" class="empty-section">
       <el-empty description="还未开始转会期">
         <template #image>
           <el-icon :size="80" color="#c0c4cc"><Calendar /></el-icon>
         </template>
         <p class="empty-hint">战队评估数据将在转会期开始后生成</p>
       </el-empty>
-    </el-card>
+    </div>
 
     <!-- 数据表格 -->
-    <el-card v-else class="table-card">
+    <div v-else class="table-section">
       <el-table
         :data="paginatedEvaluations"
         v-loading="loading"
-        stripe
         style="width: 100%"
         :default-sort="{ prop: 'stability_score', order: 'descending' }"
         @row-click="handleRowClick"
@@ -226,7 +225,7 @@
           @current-change="handlePageChange"
         />
       </div>
-    </el-card>
+    </div>
 
     <!-- 战队详情弹窗 -->
     <el-dialog
@@ -751,34 +750,28 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* ===== Layout ===== */
 .evaluation-center {
-  padding: 20px;
-  background: #f5f7fa;
+  padding: 0;
   min-height: 100vh;
 }
 
+/* ===== Page Header ===== */
 .page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding: 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
-  color: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin-bottom: 16px;
 }
 
-.header-content h1 {
-  margin: 0 0 8px 0;
-  font-size: 24px;
+.page-header h1 {
+  margin: 0 0 6px 0;
+  font-size: 22px;
   font-weight: 700;
+  color: #0f172a;
 }
 
-.header-content p {
+.page-header p {
   margin: 0;
-  opacity: 0.85;
-  font-size: 14px;
+  font-size: 13px;
+  color: #64748b;
 }
 
 .header-sub-row {
@@ -787,53 +780,44 @@ onMounted(async () => {
   gap: 12px;
 }
 
-.season-select :deep(.el-input__wrapper) {
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: none;
-  color: white;
-}
-
-.season-select :deep(.el-input__inner) {
-  color: white;
-}
-
-.season-select :deep(.el-input__inner::placeholder) {
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.season-select :deep(.el-select__suffix) {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.header-stats {
+/* ===== Stats Bar ===== */
+.stats-bar {
   display: flex;
-  gap: 30px;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 24px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 16px;
 }
 
 .stat-item {
-  text-align: center;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .stat-value {
-  display: block;
-  font-size: 28px;
+  font-size: 20px;
   font-weight: 700;
+  color: #0f172a;
 }
 
 .stat-label {
   font-size: 12px;
-  opacity: 0.85;
+  color: #94a3b8;
 }
 
-.filter-card {
-  margin-bottom: 20px;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+.stat-divider {
+  width: 1px;
+  height: 24px;
+  background: #e2e8f0;
 }
 
-.filter-card :deep(.el-card__body) {
-  padding: 12px 16px;
+/* ===== Filter Section ===== */
+.filter-section {
+  margin-bottom: 16px;
 }
 
 .filter-row {
@@ -851,29 +835,51 @@ onMounted(async () => {
 
 .filter-group label {
   font-size: 12px;
-  color: #909399;
+  color: #94a3b8;
   font-weight: 500;
   white-space: nowrap;
 }
 
-.table-card {
+/* ===== Table Section ===== */
+.table-section {
   margin-bottom: 20px;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
 }
 
-.table-card :deep(.el-table th.el-table__cell) {
-  background: #f8f9fb;
-  color: #606266;
-  font-size: 13px;
+.table-section :deep(.el-table) {
+  --el-table-border-color: #f1f5f9;
+  --el-table-row-hover-bg-color: #f8fafc;
+}
+
+.table-section :deep(.el-table th.el-table__cell) {
+  background: transparent;
+  color: #94a3b8;
+  font-size: 11px;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 10px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.table-section :deep(.el-table td.el-table__cell) {
   padding: 8px 0;
+  color: #0f172a;
+  border-bottom: 1px solid #f1f5f9;
 }
 
-.table-card :deep(.el-table td.el-table__cell) {
-  padding: 6px 0;
+.table-section :deep(.el-table__body tr:hover > td.el-table__cell) {
+  background: #f8fafc;
 }
 
+.table-section :deep(.el-table--enable-row-hover .el-table__body tr:hover > td) {
+  background-color: #f8fafc;
+}
+
+/* ===== Team Info ===== */
 .team-info {
   display: flex;
   align-items: center;
@@ -882,8 +888,10 @@ onMounted(async () => {
 
 .team-name {
   font-weight: 500;
+  color: #0f172a;
 }
 
+/* ===== Rank ===== */
 .rank-change {
   display: flex;
   flex-direction: row;
@@ -894,23 +902,25 @@ onMounted(async () => {
 .rank-number {
   font-size: 18px;
   font-weight: 600;
+  color: #0f172a;
 }
 
 .rank-up {
-  color: #67c23a;
+  color: #22c55e;
   font-size: 12px;
 }
 
 .rank-down {
-  color: #f56c6c;
+  color: #ef4444;
   font-size: 12px;
 }
 
 .rank-same {
-  color: #909399;
+  color: #94a3b8;
   font-size: 12px;
 }
 
+/* ===== Stability ===== */
 .stability-display {
   display: flex;
   flex-direction: column;
@@ -922,79 +932,84 @@ onMounted(async () => {
 }
 
 .stability-high {
-  color: #67c23a;
+  color: #22c55e;
 }
 
 .stability-medium {
-  color: #e6a23c;
+  color: #f59e0b;
 }
 
 .stability-low {
-  color: #f56c6c;
+  color: #ef4444;
 }
 
+/* ===== Power ===== */
 .power-value {
   font-weight: 500;
-  color: #409eff;
+  color: #3b82f6;
 }
 
+/* ===== Age ===== */
 .age-young {
-  color: #67c23a;
+  color: #22c55e;
 }
 
 .age-prime {
-  color: #409eff;
+  color: #3b82f6;
 }
 
 .age-old {
-  color: #e6a23c;
+  color: #f59e0b;
 }
 
+/* ===== Ability ===== */
 .ability-elite {
-  color: #f56c6c;
+  color: #ef4444;
   font-weight: 600;
 }
 
 .ability-good {
-  color: #e6a23c;
+  color: #f59e0b;
 }
 
 .ability-average {
-  color: #909399;
+  color: #94a3b8;
 }
 
 .ability-low {
-  color: #c0c4cc;
+  color: #cbd5e1;
 }
 
+/* ===== Budget ===== */
 .budget-high {
-  color: #67c23a;
+  color: #22c55e;
 }
 
 .budget-medium {
-  color: #e6a23c;
+  color: #f59e0b;
 }
 
 .budget-low {
-  color: #f56c6c;
+  color: #ef4444;
 }
 
-/* 空状态样式 */
-.empty-card {
-  margin-bottom: 20px;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+/* ===== Empty Section ===== */
+.empty-section {
   text-align: center;
-  padding: 40px 0;
+  padding: 60px 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  margin-bottom: 20px;
 }
 
 .empty-hint {
-  color: #909399;
+  color: #94a3b8;
   font-size: 14px;
   margin-top: 12px;
 }
 
-/* 分页 */
+/* ===== Pagination ===== */
 .pagination-wrapper {
   display: flex;
   justify-content: center;
@@ -1002,103 +1017,44 @@ onMounted(async () => {
   padding: 16px;
 }
 
-/* 弹窗样式 */
-.team-detail-dialog {
-  max-height: 70vh;
-  overflow-y: auto;
-}
-
-.detail-section {
-  margin-bottom: 24px;
-}
-
-.detail-section h4 {
-  margin: 0 0 12px 0;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #ebeef5;
-  color: #303133;
-  font-size: 16px;
-}
-
-.detail-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-.detail-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.detail-item .label {
-  font-size: 12px;
-  color: #909399;
-}
-
-.detail-item .value {
-  font-size: 14px;
-  color: #303133;
-  font-weight: 500;
-}
-
-.detail-item .value.power {
-  color: #409eff;
-  font-size: 18px;
-}
-
-.strategy-description {
-  margin-top: 12px;
-  padding: 12px;
-  background: #f5f7fa;
-  border-radius: 6px;
-}
-
-.strategy-description p {
-  margin: 0;
-  color: #606266;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.gap-negative {
-  color: #f56c6c;
-}
-
-.gap-positive {
-  color: #67c23a;
-}
-
+/* ===== Stay Score ===== */
 .stay-high {
-  color: #67c23a;
+  color: #22c55e;
   font-weight: 500;
 }
 
 .stay-medium {
-  color: #e6a23c;
+  color: #f59e0b;
   font-weight: 500;
 }
 
 .stay-low {
-  color: #f56c6c;
+  color: #ef4444;
   font-weight: 500;
 }
 
 .reason-text {
   font-size: 12px;
-  color: #606266;
+  color: #64748b;
 }
 
 .empty-text {
-  color: #c0c4cc;
+  color: #cbd5e1;
   font-style: italic;
 }
 
-/* 新弹窗样式 */
+.gap-negative {
+  color: #ef4444;
+}
+
+.gap-positive {
+  color: #22c55e;
+}
+
+/* ===== Dialog ===== */
 .team-detail-modal :deep(.el-dialog__header) {
   padding: 16px 20px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid #e2e8f0;
   margin-right: 0;
 }
 
@@ -1118,7 +1074,7 @@ onMounted(async () => {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: #303133;
+  color: #0f172a;
 }
 
 .team-badges {
@@ -1132,68 +1088,71 @@ onMounted(async () => {
   padding-right: 8px;
 }
 
-/* 核心指标卡片 */
+/* ===== Metrics Row (Dialog) ===== */
 .metrics-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
   margin-bottom: 20px;
+  background: #0f172a;
+  border-radius: 10px;
+  padding: 16px;
 }
 
 .metric-card {
-  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
-  border-radius: 10px;
-  padding: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 14px;
   display: flex;
   gap: 12px;
   align-items: center;
 }
 
 .metric-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 10px;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
   font-weight: 700;
   color: white;
-  background: linear-gradient(135deg, #409eff 0%, #66b1ff 100%);
+  background: #3b82f6;
   flex-shrink: 0;
 }
 
 .metric-icon.rank {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #6366f1;
 }
 
 .metric-icon.stability {
-  background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
+  background: #22c55e;
 }
 
 .metric-icon.stability.stability-medium {
-  background: linear-gradient(135deg, #e6a23c 0%, #f0c78a 100%);
+  background: #f59e0b;
 }
 
 .metric-icon.stability.stability-low {
-  background: linear-gradient(135deg, #f56c6c 0%, #f89898 100%);
+  background: #ef4444;
 }
 
 .metric-icon.power {
-  background: linear-gradient(135deg, #409eff 0%, #66b1ff 100%);
+  background: #3b82f6;
 }
 
 .metric-icon.budget {
-  background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
+  background: #22c55e;
   font-size: 12px;
 }
 
 .metric-icon.budget.budget-medium {
-  background: linear-gradient(135deg, #e6a23c 0%, #f0c78a 100%);
+  background: #f59e0b;
 }
 
 .metric-icon.budget.budget-low {
-  background: linear-gradient(135deg, #f56c6c 0%, #f89898 100%);
+  background: #ef4444;
 }
 
 .rank-value {
@@ -1210,25 +1169,25 @@ onMounted(async () => {
 
 .metric-label {
   font-size: 12px;
-  color: #909399;
+  color: #94a3b8;
 }
 
 .metric-change {
   font-size: 11px;
-  color: #909399;
+  color: #64748b;
 }
 
 .metric-sub {
   font-size: 11px;
-  color: #909399;
+  color: #64748b;
 }
 
-/* 战略说明 */
+/* ===== Strategy Section (Dialog) ===== */
 .strategy-section {
   display: flex;
   gap: 12px;
   padding: 16px;
-  background: linear-gradient(135deg, #ecf5ff 0%, #f0f9eb 100%);
+  background: #f8fafc;
   border-radius: 10px;
   margin-bottom: 20px;
   align-items: flex-start;
@@ -1246,19 +1205,19 @@ onMounted(async () => {
 }
 
 .strategy-icon.dynasty {
-  background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
+  background: #22c55e;
 }
 
 .strategy-icon.maintain {
-  background: linear-gradient(135deg, #409eff 0%, #66b1ff 100%);
+  background: #3b82f6;
 }
 
 .strategy-icon.upgrade {
-  background: linear-gradient(135deg, #e6a23c 0%, #f0c78a 100%);
+  background: #f59e0b;
 }
 
 .strategy-icon.rebuild {
-  background: linear-gradient(135deg, #f56c6c 0%, #f89898 100%);
+  background: #ef4444;
 }
 
 .strategy-text {
@@ -1269,20 +1228,20 @@ onMounted(async () => {
 
 .strategy-title {
   font-size: 14px;
-  color: #303133;
+  color: #0f172a;
   font-weight: 500;
 }
 
 .strategy-reason {
   font-size: 13px;
-  color: #606266;
+  color: #64748b;
   line-height: 1.5;
 }
 
-/* Section Card */
+/* ===== Section Card (Dialog) ===== */
 .section-card {
   background: white;
-  border: 1px solid #ebeef5;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
   padding: 16px;
   margin-bottom: 16px;
@@ -1299,18 +1258,18 @@ onMounted(async () => {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: #0f172a;
 }
 
 .section-badge {
   font-size: 12px;
-  color: #909399;
-  background: #f5f7fa;
+  color: #94a3b8;
+  background: #f1f5f9;
   padding: 2px 8px;
   border-radius: 10px;
 }
 
-/* 位置需求网格 */
+/* ===== Position Grid (Dialog) ===== */
 .position-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -1318,30 +1277,30 @@ onMounted(async () => {
 }
 
 .position-card {
-  background: #f5f7fa;
+  background: #f8fafc;
   border-radius: 8px;
   padding: 10px;
-  border-left: 3px solid #c0c4cc;
+  border-left: 3px solid #cbd5e1;
 }
 
 .position-card.critical {
-  border-left-color: #f56c6c;
-  background: linear-gradient(135deg, #fef0f0 0%, #fdf5f5 100%);
+  border-left-color: #ef4444;
+  background: #f8fafc;
 }
 
 .position-card.high {
-  border-left-color: #e6a23c;
-  background: linear-gradient(135deg, #fdf6ec 0%, #fefaf4 100%);
+  border-left-color: #f59e0b;
+  background: #f8fafc;
 }
 
 .position-card.medium {
-  border-left-color: #409eff;
-  background: linear-gradient(135deg, #ecf5ff 0%, #f4f9ff 100%);
+  border-left-color: #3b82f6;
+  background: #f8fafc;
 }
 
 .position-card.low {
-  border-left-color: #67c23a;
-  background: linear-gradient(135deg, #f0f9eb 0%, #f7fbf4 100%);
+  border-left-color: #22c55e;
+  background: #f8fafc;
 }
 
 .position-header {
@@ -1362,23 +1321,23 @@ onMounted(async () => {
 }
 
 .starter-name {
-  color: #303133;
+  color: #0f172a;
   font-weight: 500;
 }
 
 .starter-stats {
-  color: #909399;
+  color: #94a3b8;
   font-size: 11px;
 }
 
 .no-starter {
-  color: #c0c4cc;
+  color: #cbd5e1;
   font-style: italic;
 }
 
 .position-reason {
   margin-top: 6px;
-  color: #606266;
+  color: #64748b;
   font-size: 11px;
   line-height: 1.4;
 }

@@ -188,54 +188,119 @@
 
     <!-- 历史赛季：显示选秀记录 -->
     <template v-else>
-      <el-card v-if="historyLoading" class="section-block">
+      <div v-if="historyLoading" class="section-block">
         <el-skeleton :rows="5" animated />
-      </el-card>
+      </div>
 
       <template v-else>
+        <!-- 历史赛季统计概览 -->
+        <div class="history-stats">
+          <div class="stat-card">
+            <div class="stat-icon blue"><el-icon :size="24"><User /></el-icon></div>
+            <div class="stat-body">
+              <div class="stat-value">{{ historyTotalPicks }}</div>
+              <div class="stat-label">总选秀人数</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon green"><el-icon :size="24"><Check /></el-icon></div>
+            <div class="stat-body">
+              <div class="stat-value">{{ historyCompletedRegions }}</div>
+              <div class="stat-label">已完成赛区</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon gold"><el-icon :size="24"><Star /></el-icon></div>
+            <div class="stat-body">
+              <div class="stat-value">{{ historyTopPick?.player_name || '-' }}</div>
+              <div class="stat-label">状元秀</div>
+            </div>
+          </div>
+        </div>
+
         <!-- 各赛区选秀结果 -->
-        <div class="section-block" v-for="region in regionsWithHistoryStatus" :key="region.id">
-          <div class="section-header">
-            <h2 class="section-title">
-              <span class="region-badge-inline" :class="region.code?.toLowerCase()">{{ region.code }}</span>
-              {{ region.name }} 选秀结果
-            </h2>
-            <el-tag v-if="region.status === 'completed'" type="success" size="small">已完成</el-tag>
-            <el-tag v-else-if="region.status === 'not_started'" type="info" size="small">未进行</el-tag>
-            <el-tag v-else type="warning" size="small">{{ region.status }}</el-tag>
+        <div
+          v-for="region in regionsWithHistoryStatus"
+          :key="region.id"
+          class="history-region-card"
+        >
+          <!-- 赛区头部横幅 -->
+          <div class="history-region-header" :class="region.code?.toLowerCase()">
+            <div class="header-left">
+              <div class="region-badge-lg">{{ region.code }}</div>
+              <div class="header-text">
+                <h2>{{ region.name }} 选秀结果</h2>
+                <span class="pick-count" v-if="region.draftResults.length > 0">
+                  共 {{ region.draftResults.length }} 位新秀
+                </span>
+              </div>
+            </div>
+            <div class="header-status">
+              <span v-if="region.status === 'completed'" class="status-chip completed">
+                <el-icon><Check /></el-icon> 已完成
+              </span>
+              <span v-else-if="region.status === 'not_started'" class="status-chip not-started">
+                未进行
+              </span>
+              <span v-else class="status-chip other">{{ region.status }}</span>
+            </div>
           </div>
 
-          <!-- 选秀结果表格 -->
-          <el-table
-            v-if="region.draftResults.length > 0"
-            :data="region.draftResults"
-            stripe
-            size="small"
-            style="width: 100%"
-          >
-            <el-table-column prop="pick_number" label="顺位" width="70" align="center">
-              <template #default="{ row }">
-                <span class="pick-number" :class="{ 'top-pick': row.pick_number <= 3 }">
-                  #{{ row.pick_number }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="team_name" label="战队" width="150" />
-            <el-table-column prop="player_name" label="选手" width="150" />
-            <el-table-column prop="position" label="位置" width="80" align="center" />
-            <el-table-column prop="ability" label="能力" width="80" align="center">
-              <template #default="{ row }">
-                <span :class="getAbilityClass(row.ability)">{{ row.ability }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="potential" label="潜力" width="80" align="center">
-              <template #default="{ row }">
-                <span :class="getAbilityClass(row.potential)">{{ row.potential }}</span>
-              </template>
-            </el-table-column>
-          </el-table>
+          <!-- 选秀结果内容 -->
+          <div class="history-region-body" v-if="region.draftResults.length > 0">
+            <!-- 前三名高亮展示 -->
+            <div class="top-picks" v-if="region.draftResults.length >= 3">
+              <div
+                v-for="(pick, idx) in region.draftResults.slice(0, 3)"
+                :key="idx"
+                class="top-pick-card"
+                :class="['pick-' + (idx + 1)]"
+              >
+                <div class="pick-medal">{{ idx === 0 ? '状元' : idx === 1 ? '榜眼' : '探花' }}</div>
+                <div class="pick-player">{{ pick.player_name }}</div>
+                <div class="pick-position">{{ getPositionLabel(pick.position) }}</div>
+                <div class="pick-attrs">
+                  <span class="attr">
+                    <span class="attr-val" :class="getAbilityClass(pick.ability)">{{ pick.ability }}</span>
+                    <span class="attr-label">能力</span>
+                  </span>
+                  <span class="attr">
+                    <span class="attr-val potential">{{ pick.potential }}</span>
+                    <span class="attr-label">潜力</span>
+                  </span>
+                </div>
+                <div class="pick-team">
+                  <el-icon><OfficeBuilding /></el-icon>
+                  {{ pick.team_name }}
+                </div>
+              </div>
+            </div>
 
-          <el-empty v-else description="该赛区没有选秀数据" :image-size="60" />
+            <!-- 剩余选秀名单 -->
+            <div class="remaining-picks" v-if="region.draftResults.length > 3">
+              <div class="remaining-header">其他选秀</div>
+              <div class="remaining-grid">
+                <div
+                  v-for="pick in region.draftResults.slice(3)"
+                  :key="pick.pick_number"
+                  class="remaining-item"
+                >
+                  <span class="ri-rank">#{{ pick.pick_number }}</span>
+                  <span class="ri-name">{{ pick.player_name }}</span>
+                  <span class="ri-pos">{{ getPositionLabel(pick.position) }}</span>
+                  <span class="ri-ability" :class="getAbilityClass(pick.ability)">{{ pick.ability }}</span>
+                  <span class="ri-potential">{{ pick.potential }}</span>
+                  <span class="ri-team">{{ pick.team_name }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 空状态 -->
+          <div class="history-region-body empty" v-else>
+            <el-icon :size="40" color="#d1d5db"><FolderOpened /></el-icon>
+            <p>该赛区本赛季未进行选秀</p>
+          </div>
         </div>
       </template>
     </template>
@@ -255,6 +320,7 @@ import {
   Document,
   Trophy,
   FolderOpened,
+  OfficeBuilding,
 } from '@element-plus/icons-vue'
 import { useDraftStoreTauri } from '@/stores/useDraftStoreTauri'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
@@ -362,6 +428,32 @@ const draftedCount = computed(() => {
   return regionsWithStatus.value.filter(r => r.completed).length * 14
 })
 const remainingPicks = computed(() => totalProspects.value - draftedCount.value)
+
+// 历史赛季统计
+const historyTotalPicks = computed(() => {
+  return regionsWithHistoryStatus.value.reduce((sum, r) => sum + r.draftResults.length, 0)
+})
+
+const historyCompletedRegions = computed(() => {
+  return regionsWithHistoryStatus.value.filter(r => r.status === 'completed').length
+})
+
+const historyTopPick = computed(() => {
+  for (const region of regionsWithHistoryStatus.value) {
+    const first = region.draftResults.find((d: any) => d.pick_number === 1)
+    if (first) return first
+  }
+  return null
+})
+
+// 位置中文映射
+function getPositionLabel(pos: string): string {
+  const map: Record<string, string> = {
+    Top: '上单', Jungle: '打野', Mid: '中单', Bot: 'ADC', Support: '辅助',
+    TOP: '上单', JUG: '打野', MID: '中单', ADC: 'ADC', SUP: '辅助',
+  }
+  return map[pos] || pos
+}
 
 // 能力值颜色
 function getAbilityClass(value: number): string {
@@ -856,43 +948,299 @@ const goToPool = () => {
   }
 }
 
-/* 历史模式 */
-.region-badge-inline {
-  display: inline-flex;
+/* ====== 历史选秀结果 ====== */
+
+.history-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+/* 赛区结果卡片 */
+.history-region-card {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 24px;
+  background: white;
+}
+
+.history-region-header {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 24px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 700;
+  padding: 20px 24px;
   color: white;
-  margin-right: 8px;
 
-  &.lpl {
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-  }
-  &.lck {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  }
-  &.lec {
-    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-  }
-  &.lcs {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-  }
-}
+  &.lpl { background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%); }
+  &.lck { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); }
+  &.lec { background: linear-gradient(135deg, #22c55e 0%, #15803d 100%); }
+  &.lcs { background: linear-gradient(135deg, #f59e0b 0%, #b45309 100%); }
 
-.pick-number {
-  font-weight: 600;
-  color: #6b7280;
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
 
-  &.top-pick {
-    color: #f59e0b;
+  .region-badge-lg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.2);
+    font-size: 15px;
     font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  .header-text {
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 0 0 2px 0;
+    }
+
+    .pick-count {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+  }
+
+  .status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+
+    &.completed {
+      background: rgba(255, 255, 255, 0.25);
+      color: white;
+    }
+
+    &.not-started {
+      background: rgba(255, 255, 255, 0.15);
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    &.other {
+      background: rgba(255, 255, 255, 0.15);
+      color: rgba(255, 255, 255, 0.8);
+    }
   }
 }
 
+.history-region-body {
+  padding: 24px;
+
+  &.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 48px 24px;
+
+    p {
+      font-size: 14px;
+      color: #9ca3af;
+      margin: 0;
+    }
+  }
+}
+
+/* 前三名高亮 */
+.top-picks {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.top-pick-card {
+  padding: 20px;
+  border-radius: 14px;
+  text-align: center;
+  border: 2px solid transparent;
+  transition: transform 0.2s;
+
+  &:hover {
+    transform: translateY(-2px);
+  }
+
+  &.pick-1 {
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    border-color: #fbbf24;
+
+    .pick-medal {
+      background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+      color: white;
+    }
+  }
+
+  &.pick-2 {
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    border-color: #93c5fd;
+
+    .pick-medal {
+      background: linear-gradient(135deg, #93c5fd 0%, #60a5fa 100%);
+      color: white;
+    }
+  }
+
+  &.pick-3 {
+    background: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%);
+    border-color: #f9a8d4;
+
+    .pick-medal {
+      background: linear-gradient(135deg, #f9a8d4 0%, #f472b6 100%);
+      color: white;
+    }
+  }
+
+  .pick-medal {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+
+  .pick-player {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 4px;
+  }
+
+  .pick-position {
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 12px;
+  }
+
+  .pick-attrs {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-bottom: 14px;
+
+    .attr {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+
+      .attr-val {
+        font-size: 22px;
+        font-weight: 700;
+
+        &.potential {
+          color: #8b5cf6;
+        }
+      }
+
+      .attr-label {
+        font-size: 11px;
+        color: #9ca3af;
+      }
+    }
+  }
+
+  .pick-team {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #4b5563;
+  }
+}
+
+/* 剩余选秀 */
+.remaining-picks {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 20px;
+
+  .remaining-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: #6b7280;
+    margin-bottom: 12px;
+  }
+}
+
+.remaining-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.remaining-item {
+  display: grid;
+  grid-template-columns: 50px 1fr 60px 50px 50px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  transition: background 0.15s;
+
+  &:nth-child(odd) {
+    background: #f9fafb;
+  }
+
+  &:hover {
+    background: #f3f4f6;
+  }
+
+  .ri-rank {
+    font-size: 14px;
+    font-weight: 700;
+    color: #9ca3af;
+  }
+
+  .ri-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .ri-pos {
+    font-size: 12px;
+    color: #6b7280;
+    text-align: center;
+  }
+
+  .ri-ability {
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .ri-potential {
+    font-size: 14px;
+    font-weight: 600;
+    color: #8b5cf6;
+    text-align: center;
+  }
+
+  .ri-team {
+    font-size: 13px;
+    color: #6b7280;
+    text-align: right;
+  }
+}
+
+/* 能力值颜色 */
 .ability-legendary {
   color: #ef4444;
   font-weight: 700;

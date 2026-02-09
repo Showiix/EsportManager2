@@ -2,39 +2,39 @@
   <div class="evaluation-center">
     <!-- 页面标题 -->
     <div class="page-header">
-      <div class="header-content">
+      <div>
         <h1>选手评估中心</h1>
         <div class="header-sub-row">
           <p>查看各选手的去留意愿、薪资评估与合同状态</p>
-          <SeasonSelector
-            v-model="selectedSeason"
-            @update:model-value="onSeasonChange"
-            width="140px"
-          />
-        </div>
-      </div>
-      <div class="header-stats">
-        <div class="stat-item">
-          <span class="stat-value">{{ evaluations.length }}</span>
-          <span class="stat-label">选手总数</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ wantToLeaveCount }}</span>
-          <span class="stat-label">想离开</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ wantToStayCount }}</span>
-          <span class="stat-label">愿留队</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ avgStayScore.toFixed(0) }}</span>
-          <span class="stat-label">平均留队意愿</span>
+          <SeasonSelector v-model="selectedSeason" @update:model-value="onSeasonChange" width="140px" />
         </div>
       </div>
     </div>
 
+    <div class="stats-bar">
+      <div class="stat-item">
+        <span class="stat-value">{{ evaluations.length }}</span>
+        <span class="stat-label">选手总数</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ wantToLeaveCount }}</span>
+        <span class="stat-label">想离开</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ wantToStayCount }}</span>
+        <span class="stat-label">愿留队</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ avgStayScore.toFixed(0) }}</span>
+        <span class="stat-label">平均留队意愿</span>
+      </div>
+    </div>
+
     <!-- 筛选区域 -->
-    <el-card class="filter-card">
+    <div class="filter-section">
       <div class="filter-row">
         <div class="filter-group">
           <label>搜索选手</label>
@@ -89,24 +89,23 @@
           刷新数据
         </el-button>
       </div>
-    </el-card>
+    </div>
 
     <!-- 空状态提示 -->
-    <el-card v-if="!loading && evaluations.length === 0" class="empty-card">
+    <div v-if="!loading && evaluations.length === 0" class="empty-section">
       <el-empty description="还未开始转会期">
         <template #image>
           <el-icon :size="80" color="#c0c4cc"><Calendar /></el-icon>
         </template>
         <p class="empty-hint">选手评估数据将在转会期开始后生成</p>
       </el-empty>
-    </el-card>
+    </div>
 
     <!-- 数据表格 -->
-    <el-card v-else class="table-card">
+    <div v-else class="table-section">
       <el-table
         :data="paginatedEvaluations"
         v-loading="loading"
-        stripe
         style="width: 100%"
         :default-sort="{ prop: 'ability', order: 'descending' }"
         max-height="calc(100vh - 380px)"
@@ -216,7 +215,7 @@
           @current-change="handlePageChange"
         />
       </div>
-    </el-card>
+    </div>
   </div>
 </template>
 
@@ -426,259 +425,65 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.evaluation-center {
-  padding: 20px;
-  background: #f5f7fa;
-  min-height: 100vh;
-}
+.evaluation-center { padding: 0; }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding: 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
-  color: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-}
+.page-header { margin-bottom: 20px; }
+.page-header h1 { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0 0 4px 0; }
+.page-header p { font-size: 13px; color: #94a3b8; margin: 0; }
+.header-sub-row { display: flex; align-items: center; gap: 12px; }
 
-.header-content h1 {
-  margin: 0 0 8px 0;
-  font-size: 24px;
-  font-weight: 700;
-}
+.stats-bar { display: flex; align-items: center; padding: 14px 24px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 12px; }
+.stat-item { display: flex; align-items: baseline; gap: 6px; flex: 1; justify-content: center; }
+.stat-value { font-size: 20px; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+.stat-label { font-size: 12px; color: #94a3b8; font-weight: 500; }
+.stat-divider { width: 1px; height: 24px; background: #e2e8f0; flex-shrink: 0; }
 
-.header-content p {
-  margin: 0;
-  opacity: 0.85;
-  font-size: 14px;
-}
+.filter-section { margin-bottom: 16px; }
+.filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.filter-group { display: flex; align-items: center; gap: 6px; }
+.filter-group label { font-size: 12px; color: #94a3b8; font-weight: 500; white-space: nowrap; }
 
-.header-sub-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+.empty-section { border: 1px solid #e2e8f0; border-radius: 10px; padding: 40px 0; text-align: center; margin-bottom: 16px; }
+.empty-hint { color: #94a3b8; font-size: 13px; margin-top: 12px; }
 
-.season-select :deep(.el-input__wrapper) {
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: none;
-  color: white;
-}
+.table-section { border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.table-section :deep(.el-table th.el-table__cell) { font-weight: 600; color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; background: transparent; border-bottom: 1px solid #f1f5f9; padding: 10px 0; }
+.table-section :deep(.el-table__body tr) { transition: background-color 0.15s; }
+.table-section :deep(.el-table__body tr td) { padding: 12px 0; border-bottom: 1px solid #f8fafc; }
+.table-section :deep(.el-table__body tr:hover > td) { background-color: #f8fafc !important; }
+.table-section :deep(.el-table__body tr:last-child td) { border-bottom: none; }
 
-.season-select :deep(.el-input__inner) {
-  color: white;
-}
+.player-info { display: flex; align-items: center; gap: 8px; }
+.player-name { font-weight: 600; font-size: 13px; color: #0f172a; }
+.team-cell { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.team-cell :deep(.el-tag) { min-width: 36px; text-align: center; }
+.team-name { color: #64748b; font-size: 13px; }
 
-.season-select :deep(.el-input__inner::placeholder) {
-  color: rgba(255, 255, 255, 0.6);
-}
+.salary-value { color: #f59e0b; font-weight: 600; font-size: 13px; }
+.ability-elite { color: #ef4444; font-weight: 700; }
+.ability-good { color: #f59e0b; font-weight: 600; }
+.ability-average { color: #3b82f6; }
+.ability-low { color: #94a3b8; }
+.age-young { color: #22c55e; }
+.age-prime { color: #3b82f6; }
+.age-old { color: #f59e0b; }
+.stay-high { color: #22c55e; font-weight: 600; }
+.stay-medium { color: #f59e0b; font-weight: 600; }
+.stay-low { color: #ef4444; font-weight: 600; }
+.satisfaction-high { color: #22c55e; }
+.satisfaction-medium { color: #f59e0b; }
+.satisfaction-low { color: #ef4444; }
+.loyalty-high { color: #22c55e; }
+.loyalty-medium { color: #f59e0b; }
+.loyalty-low { color: #ef4444; }
+.reason-text { font-size: 12px; color: #64748b; }
+.stay-score-display { display: flex; align-items: center; }
 
-.season-select :deep(.el-select__suffix) {
-  color: rgba(255, 255, 255, 0.8);
-}
+.pagination-wrapper { display: flex; justify-content: center; margin-top: 16px; }
 
-.header-stats {
-  display: flex;
-  gap: 30px;
-}
-
-.stat-item {
-  text-align: center;
-}
-
-.stat-value {
-  display: block;
-  font-size: 28px;
-  font-weight: 700;
-}
-
-.stat-label {
-  font-size: 12px;
-  opacity: 0.85;
-}
-
-.filter-card {
-  margin-bottom: 20px;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-}
-
-.filter-card :deep(.el-card__body) {
-  padding: 12px 16px;
-}
-
-.filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-}
-
-.filter-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.filter-group label {
-  font-size: 12px;
-  color: #909399;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.table-card {
-  margin-bottom: 20px;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-}
-
-.table-card :deep(.el-table th.el-table__cell) {
-  background: #f8f9fb;
-  color: #606266;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 8px 0;
-}
-
-.table-card :deep(.el-table td.el-table__cell) {
-  padding: 6px 0;
-}
-
-.player-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.player-name {
-  font-weight: 500;
-}
-
-.team-cell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
-.team-cell :deep(.el-tag) {
-  min-width: 36px;
-  text-align: center;
-}
-
-.team-name {
-  color: #606266;
-}
-
-.salary-value {
-  color: #f59e0b;
-  font-weight: 500;
-}
-
-.ability-elite {
-  color: #f56c6c;
-  font-weight: 700;
-}
-
-.ability-good {
-  color: #e6a23c;
-  font-weight: 600;
-}
-
-.ability-average {
-  color: #409eff;
-}
-
-.ability-low {
-  color: #909399;
-}
-
-.age-young {
-  color: #67c23a;
-}
-
-.age-prime {
-  color: #409eff;
-}
-
-.age-old {
-  color: #e6a23c;
-}
-
-.stay-high {
-  color: #67c23a;
-  font-weight: 600;
-}
-
-.stay-medium {
-  color: #e6a23c;
-  font-weight: 600;
-}
-
-.stay-low {
-  color: #f56c6c;
-  font-weight: 600;
-}
-
-.satisfaction-high {
-  color: #67c23a;
-}
-
-.satisfaction-medium {
-  color: #e6a23c;
-}
-
-.satisfaction-low {
-  color: #f56c6c;
-}
-
-.loyalty-high {
-  color: #67c23a;
-}
-
-.loyalty-medium {
-  color: #e6a23c;
-}
-
-.loyalty-low {
-  color: #f56c6c;
-}
-
-.reason-text {
-  font-size: 12px;
-  color: #606266;
-}
-
-.stay-score-display {
-  display: flex;
-  align-items: center;
-}
-
-/* 空状态样式 */
-.empty-card {
-  margin-bottom: 20px;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-  text-align: center;
-  padding: 40px 0;
-}
-
-.empty-hint {
-  color: #909399;
-  font-size: 14px;
-  margin-top: 12px;
-}
-
-/* 分页 */
-.pagination-wrapper {
-  display: flex;
-  justify-content: center;
-  margin-top: 16px;
-  padding: 16px;
+@media (max-width: 1200px) {
+  .stats-bar { flex-wrap: wrap; gap: 8px; }
+  .stat-divider { display: none; }
+  .filter-row { flex-direction: column; align-items: stretch; }
 }
 </style>

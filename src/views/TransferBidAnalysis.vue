@@ -2,7 +2,7 @@
   <div class="bid-analysis">
     <!-- 页面标题 -->
     <div class="page-header">
-      <div class="header-content">
+      <div>
         <h1>
           竞价分析中心
           <span class="formula-trigger" @click="showFormulaDialog = true" title="意愿度计算说明">
@@ -11,39 +11,40 @@
         </h1>
         <div class="header-sub-row">
           <p>S{{ selectedSeason || seasonId }} 赛季 · R4/R5 竞价过程透明化</p>
-          <SeasonSelector
-            v-model="selectedSeason"
-            @update:model-value="onSeasonChange"
-            width="140px"
-          />
-        </div>
-      </div>
-      <div class="header-stats" v-if="overview">
-        <div class="stat-item">
-          <span class="stat-value">{{ overview.total_players }}</span>
-          <span class="stat-label">涉及选手</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ overview.total_bids }}</span>
-          <span class="stat-label">总出价数</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value success">{{ overview.successful_signings }}</span>
-          <span class="stat-label">成功签约</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value danger">{{ overview.failed_signings }}</span>
-          <span class="stat-label">竞价失败</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ overview.avg_bids_per_player.toFixed(1) }}</span>
-          <span class="stat-label">平均竞标数</span>
+          <SeasonSelector v-model="selectedSeason" @update:model-value="onSeasonChange" width="140px" />
         </div>
       </div>
     </div>
 
+    <div class="stats-bar" v-if="overview">
+      <div class="stat-item">
+        <span class="stat-value">{{ overview.total_players }}</span>
+        <span class="stat-label">涉及选手</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ overview.total_bids }}</span>
+        <span class="stat-label">总出价</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value income">{{ overview.successful_signings }}</span>
+        <span class="stat-label">成功签约</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value expense">{{ overview.failed_signings }}</span>
+        <span class="stat-label">竞价失败</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ overview.avg_bids_per_player.toFixed(1) }}</span>
+        <span class="stat-label">平均竞标</span>
+      </div>
+    </div>
+
     <!-- 筛选区域 -->
-    <el-card class="filter-card">
+    <div class="filter-section">
       <div class="filter-row">
         <div class="filter-group">
           <label>轮次</label>
@@ -83,20 +84,19 @@
           </el-select>
         </div>
       </div>
-    </el-card>
+    </div>
 
     <!-- 空状态 -->
-    <el-card v-if="!loading && (!overview || overview.total_players === 0)" class="empty-card">
+    <div v-if="!loading && (!overview || overview.total_players === 0)" class="empty-section">
       <el-empty description="暂无竞价数据，从下个转会期开始记录" />
-    </el-card>
+    </div>
 
     <!-- 选手竞价列表 -->
-    <el-card v-if="overview && filteredAnalyses.length > 0" class="table-card">
+    <div v-if="overview && filteredAnalyses.length > 0" class="table-section">
       <el-table
         :data="paginatedData"
         v-loading="loading"
         row-key="playerKey"
-        stripe
         style="width: 100%"
         :default-sort="{ prop: 'player_ability', order: 'descending' }"
         @sort-change="handleSortChange"
@@ -240,7 +240,7 @@
           @current-change="handlePageChange"
         />
       </div>
-    </el-card>
+    </div>
 
     <!-- 加载中 -->
     <div v-if="loading && !overview" class="loading-container">
@@ -577,300 +577,77 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.bid-analysis {
-  padding: 20px;
-  background: #f5f7fa;
-  min-height: 100vh;
-}
+.bid-analysis { padding: 0; }
+.page-header { margin-bottom: 20px; }
+.page-header h1 { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0 0 4px 0; display: inline-flex; align-items: center; }
+.page-header p { font-size: 13px; color: #94a3b8; margin: 0; }
+.header-sub-row { display: flex; align-items: center; gap: 12px; }
 
-/* ========== 页面标题（渐变色） ========== */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding: 24px;
-  background: linear-gradient(135deg, #2d3a4e 0%, #3a5068 50%, #2d5a7b 100%);
-  border-radius: 12px;
-  color: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-}
+.stats-bar { display: flex; align-items: center; padding: 14px 24px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 12px; }
+.stat-item { display: flex; align-items: baseline; gap: 6px; flex: 1; justify-content: center; }
+.stat-item .stat-value { font-size: 20px; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+.stat-item .stat-value.income { color: #10b981; }
+.stat-item .stat-value.expense { color: #ef4444; }
+.stat-item .stat-label { font-size: 12px; color: #94a3b8; font-weight: 500; }
+.stat-divider { width: 1px; height: 24px; background: #e2e8f0; flex-shrink: 0; }
 
-.header-content h1 {
-  font-size: 24px;
-  font-weight: 700;
-  margin: 0 0 8px 0;
-}
+.filter-section { margin-bottom: 16px; }
+.filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.filter-group { display: flex; align-items: center; gap: 6px; }
+.filter-group label { font-size: 12px; color: #94a3b8; font-weight: 500; white-space: nowrap; }
 
-.header-content p {
-  font-size: 14px;
-  opacity: 0.85;
-  margin: 0;
-}
+.empty-section { border: 1px solid #e2e8f0; border-radius: 10px; padding: 40px; text-align: center; }
+.table-section { border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; }
+.table-section :deep(.el-table th.el-table__cell) { font-weight: 600; color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; background: transparent; border-bottom: 1px solid #f1f5f9; padding: 10px 0; }
+.table-section :deep(.el-table__body tr) { transition: background-color 0.15s; }
+.table-section :deep(.el-table__body tr td) { padding: 12px 0; border-bottom: 1px solid #f8fafc; }
+.table-section :deep(.el-table__body tr:hover > td) { background-color: #f8fafc !important; }
+.table-section :deep(.el-table__fixed), .table-section :deep(.el-table__fixed-right) { z-index: 10; }
+.table-section :deep(.el-table .el-table__cell) { overflow: hidden; }
 
-.header-sub-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+.player-info { display: flex; align-items: center; gap: 10px; }
+.player-avatar { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; background: #94a3b8; flex-shrink: 0; }
+.player-avatar.position-top { background: #ef4444; }
+.player-avatar.position-jug { background: #22c55e; }
+.player-avatar.position-mid { background: #3b82f6; }
+.player-avatar.position-bot { background: #f59e0b; }
+.player-avatar.position-sup { background: #6b7280; }
+.player-details { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.player-name { font-weight: 600; font-size: 13px; color: #0f172a; }
+.player-source { font-size: 12px; }
 
-.season-select :deep(.el-input__wrapper) {
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: none;
-  color: white;
-}
+.ability-display { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.ability-value { font-weight: 700; font-size: 14px; }
+.ability-elite { color: #f59e0b; }
+.ability-high { color: #3b82f6; }
+.ability-medium { color: #22c55e; }
+.ability-low { color: #94a3b8; }
+.age-young { color: #22c55e; font-weight: 600; }
+.age-prime { color: #0f172a; }
+.age-old { color: #ef4444; }
+.bid-count { font-weight: 600; font-size: 15px; }
+.bid-count.bid-hot { color: #f59e0b; }
+.outcome-cell { display: flex; align-items: center; }
 
-.season-select :deep(.el-input__inner) {
-  color: white;
-}
+.bid-detail-container { padding: 16px 24px; background: #f8fafc; }
+.bid-detail-header { font-size: 13px; font-weight: 600; color: #64748b; margin-bottom: 10px; }
+.money-value { color: #3b82f6; font-weight: 500; }
+.score-value { font-weight: 700; font-size: 13px; }
+.score-high { color: #22c55e; }
+.score-mid { color: #f59e0b; }
+.score-low { color: #ef4444; }
+.willingness-cell { display: flex; align-items: center; gap: 8px; }
+.willingness-value { font-size: 13px; font-weight: 700; min-width: 36px; text-align: right; }
+.willingness-value.pass { color: #22c55e; }
+.willingness-value.fail { color: #ef4444; }
 
-.season-select :deep(.el-input__inner::placeholder) {
-  color: rgba(255, 255, 255, 0.6);
-}
+.pagination-wrapper { margin-top: 16px; display: flex; justify-content: center; }
+.loading-container { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 80px 0; color: #94a3b8; }
 
-.season-select :deep(.el-select__suffix) {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.header-stats {
-  display: flex;
-  gap: 30px;
-}
-
-.stat-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-
-.stat-item .stat-value {
-  display: block;
-  font-size: 28px;
-  font-weight: 700;
-}
-
-.stat-item .stat-value.success {
-  color: #95d475;
-}
-
-.stat-item .stat-value.danger {
-  color: #f89898;
-}
-
-.stat-item .stat-label {
-  font-size: 12px;
-  opacity: 0.85;
-}
-
-/* ========== 筛选卡片 ========== */
-.filter-card {
-  margin-bottom: 20px;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-}
-
-.filter-card :deep(.el-card__body) {
-  padding: 12px 16px;
-}
-
-.filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-}
-
-.filter-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.filter-group label {
-  font-size: 12px;
-  color: #909399;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-/* ========== 空状态 ========== */
-.empty-card {
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-}
-
-/* ========== 表格卡片 ========== */
-.table-card {
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-}
-
-.table-card :deep(.el-table th.el-table__cell) {
-  background: #f8f9fb;
-  color: #606266;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 8px 0;
-}
-
-.table-card :deep(.el-table td.el-table__cell) {
-  padding: 6px 0;
-}
-
-/* 固定列溢出修复 */
-.table-card :deep(.el-table__fixed),
-.table-card :deep(.el-table__fixed-right) {
-  z-index: 10;
-}
-
-.table-card :deep(.el-table .el-table__cell) {
-  overflow: hidden;
-}
-
-/* ========== 选手信息列 ========== */
-.player-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.player-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-  color: white;
-  background: #909399;
-  flex-shrink: 0;
-}
-
-.player-avatar.position-top { background: linear-gradient(135deg, #f56c6c, #e6a23c); }
-.player-avatar.position-jug { background: linear-gradient(135deg, #67c23a, #85ce61); }
-.player-avatar.position-mid { background: linear-gradient(135deg, #409eff, #66b1ff); }
-.player-avatar.position-bot { background: linear-gradient(135deg, #e6a23c, #f7ba2a); }
-.player-avatar.position-sup { background: linear-gradient(135deg, #909399, #b4b4b4); }
-
-.player-details {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.player-name {
-  font-weight: 600;
-  font-size: 14px;
-  color: #303133;
-}
-
-.player-source {
-  font-size: 12px;
-}
-
-/* ========== 能力值 ========== */
-.ability-display {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.ability-value {
-  font-weight: 700;
-  font-size: 14px;
-}
-
-.ability-elite { color: #e6a23c; }
-.ability-high { color: #409eff; }
-.ability-medium { color: #67c23a; }
-.ability-low { color: #909399; }
-
-/* ========== 年龄 ========== */
-.age-young { color: #67c23a; font-weight: 600; }
-.age-prime { color: #303133; }
-.age-old { color: #f56c6c; }
-
-/* ========== 竞标数 ========== */
-.bid-count {
-  font-weight: 600;
-  font-size: 15px;
-}
-
-.bid-count.bid-hot {
-  color: #e6a23c;
-}
-
-/* ========== 结果列 ========== */
-.outcome-cell {
-  display: flex;
-  align-items: center;
-}
-
-/* ========== 展开行：竞价详情 ========== */
-.bid-detail-container {
-  padding: 16px 24px;
-  background: #fafbfc;
-}
-
-.bid-detail-header {
-  font-size: 13px;
-  font-weight: 600;
-  color: #606266;
-  margin-bottom: 10px;
-}
-
-.money-value {
-  color: #409eff;
-  font-weight: 500;
-}
-
-.score-value {
-  font-weight: 700;
-  font-size: 13px;
-}
-
-.score-high { color: #67c23a; }
-.score-mid { color: #e6a23c; }
-.score-low { color: #f56c6c; }
-
-.willingness-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.willingness-value {
-  font-size: 13px;
-  font-weight: 700;
-  min-width: 36px;
-  text-align: right;
-}
-
-.willingness-value.pass { color: #67c23a; }
-.willingness-value.fail { color: #f56c6c; }
-
-/* ========== 分页 ========== */
-.pagination-wrapper {
-  margin-top: 16px;
-  padding: 16px;
-  display: flex;
-  justify-content: center;
-}
-
-/* ========== 加载中 ========== */
-.loading-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 80px 0;
-  color: var(--el-text-color-secondary);
+@media (max-width: 1200px) {
+  .stats-bar { flex-wrap: wrap; gap: 8px; }
+  .stat-divider { display: none; }
+  .filter-row { flex-direction: column; align-items: stretch; }
 }
 
 /* ========== 公式触发器 ========== */
@@ -1183,27 +960,5 @@ onMounted(async () => {
 .threshold-arrow {
   color: #67c23a;
   margin: 0 4px;
-}
-
-/* ========== 响应式 ========== */
-@media (max-width: 1200px) {
-  .page-header {
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .header-stats {
-    width: 100%;
-    justify-content: space-around;
-  }
-
-  .filter-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .filter-group {
-    width: 100%;
-  }
 }
 </style>

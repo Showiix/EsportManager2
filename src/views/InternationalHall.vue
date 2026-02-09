@@ -1,16 +1,16 @@
 <template>
   <div class="international-hall">
     <!-- 页面头部 -->
-    <div class="hall-header">
-      <div class="header-content">
-        <h1>国 际 荣 誉 殿 堂</h1>
-        <p class="subtitle">INTERNATIONAL HALL OF FAME</p>
-        <p class="slogan">"记录每一个属于冠军的荣耀时刻"</p>
+    <div class="page-header">
+      <div>
+        <h1>国际荣誉殿堂</h1>
+        <p>记录每一个属于冠军的荣耀时刻</p>
       </div>
+      <button class="back-btn" @click="router.push('/honors')">← 返回荣誉殿堂</button>
     </div>
 
     <!-- 筛选栏 -->
-    <div class="filter-bar">
+    <div class="filter-section">
       <el-radio-group v-model="selectedType" size="default">
         <el-radio-button value="all">全部</el-radio-button>
         <el-radio-button value="WorldChampionship">世界赛</el-radio-button>
@@ -38,7 +38,7 @@
       <!-- 按赛事类型分组显示 -->
       <div v-for="(group, type) in groupedChampions" :key="type" class="tournament-section">
         <div class="section-header">
-          <span class="section-icon">{{ getTournamentIcon(type) }}</span>
+          <el-icon class="section-icon"><Trophy /></el-icon>
           <span class="section-title">{{ getTournamentDisplayName(type) }}</span>
         </div>
         <div class="section-divider"></div>
@@ -88,7 +88,7 @@
               <div v-else-if="championDetails[champion.tournament_id]" class="expanded-content">
                 <!-- 冠军阵容 -->
                 <div class="roster-section">
-                  <div class="roster-title">🥇 冠军阵容</div>
+                  <div class="roster-title"><el-icon><Trophy /></el-icon> 冠军阵容</div>
                   <div class="roster-grid">
                     <div
                       v-for="player in championDetails[champion.tournament_id].champion_roster"
@@ -104,13 +104,13 @@
                 <!-- 亚季殿军 -->
                 <div class="rankings-section">
                   <div class="ranking-item silver">
-                    🥈 亚军: {{ championDetails[champion.tournament_id].runner_up_team_name }}
+                    <el-icon><Medal /></el-icon> 亚军: {{ championDetails[champion.tournament_id].runner_up_team_name }}
                   </div>
                   <div v-if="championDetails[champion.tournament_id].third_team_name" class="ranking-item bronze">
-                    🥉 季军: {{ championDetails[champion.tournament_id].third_team_name }}
+                    <el-icon><Medal /></el-icon> 季军: {{ championDetails[champion.tournament_id].third_team_name }}
                   </div>
                   <div v-if="championDetails[champion.tournament_id].fourth_team_name" class="ranking-item fourth">
-                    4️⃣ 殿军: {{ championDetails[champion.tournament_id].fourth_team_name }}
+                    <el-icon><Medal /></el-icon> 殿军: {{ championDetails[champion.tournament_id].fourth_team_name }}
                   </div>
                 </div>
               </div>
@@ -126,12 +126,14 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Trophy } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { Trophy, Medal } from '@element-plus/icons-vue'
 import { tauriApi, type InternationalChampionCard, type ChampionDetail } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('InternationalHall')
 
+const router = useRouter()
 const loading = ref(true)
 const loadingDetail = ref(false)
 const champions = ref<InternationalChampionCard[]>([])
@@ -205,20 +207,6 @@ const toggleExpand = async (tournamentId: number) => {
   }
 }
 
-// 获取赛事图标
-const getTournamentIcon = (type: string): string => {
-  const icons: Record<string, string> = {
-    'WorldChampionship': '🌍',
-    'Msi': '🌸',
-    'MadridMasters': '🏔️',
-    'ShanghaiMasters': '🌊',
-    'ClaudeIntercontinental': '⚡',
-    'IcpIntercontinental': '🌐',
-    'SuperIntercontinental': '✨',
-  }
-  return icons[type] || '🏆'
-}
-
 // 获取赛事显示名称
 const getTournamentDisplayName = (type: string): string => {
   const names: Record<string, string> = {
@@ -280,283 +268,324 @@ onMounted(() => {
 })
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .international-hall {
-  padding: 20px;
-  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
-  min-height: 100vh;
+  padding: 0;
 }
 
-.hall-header {
-  text-align: center;
-  padding: 40px 0;
-  margin-bottom: 30px;
-
-  .header-content {
-    h1 {
-      font-size: 36px;
-      font-weight: bold;
-      color: #ffd700;
-      letter-spacing: 8px;
-      text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
-      margin-bottom: 10px;
-    }
-
-    .subtitle {
-      font-size: 16px;
-      color: #b8860b;
-      letter-spacing: 4px;
-      margin-bottom: 15px;
-    }
-
-    .slogan {
-      font-size: 14px;
-      color: #888;
-      font-style: italic;
-    }
-  }
-}
-
-.filter-bar {
+.page-header {
   display: flex;
-  justify-content: center;
-  margin-bottom: 30px;
-
-  :deep(.el-radio-button__inner) {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
-    color: #ccc;
-
-    &:hover {
-      color: #ffd700;
-    }
-  }
-
-  :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-    background: linear-gradient(135deg, #ffd700, #ff8c00);
-    border-color: #ffd700;
-    color: #1a1a2e;
-  }
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
 }
 
-.loading-container, .empty-icon {
-  text-align: center;
-  padding: 60px;
-  font-size: 48px;
+.page-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+  letter-spacing: -0.3px;
+}
+
+.page-header p {
+  font-size: 13px;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.filter-section {
+  margin-bottom: 16px;
+}
+
+.loading-container {
+  padding: 40px;
+}
+
+.empty-icon {
+  color: #cbd5e1;
 }
 
 .hall-content {
-  max-width: 1400px;
-  margin: 0 auto;
+  margin: 0;
 }
 
+/* 赛事分组 */
 .tournament-section {
-  margin-bottom: 50px;
-
-  .section-header {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    margin-bottom: 15px;
-
-    .section-icon {
-      font-size: 28px;
-    }
-
-    .section-title {
-      font-size: 22px;
-      font-weight: bold;
-      color: #fff;
-    }
-  }
-
-  .section-divider {
-    height: 2px;
-    background: linear-gradient(90deg, #ffd700, transparent);
-    margin-bottom: 25px;
-  }
+  margin-bottom: 32px;
 }
 
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.section-icon {
+  font-size: 18px;
+  color: #94a3b8;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.section-divider {
+  height: 1px;
+  background: #f1f5f9;
+  margin-bottom: 16px;
+}
+
+/* 卡片网格 */
 .champions-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 20px;
+  gap: 12px;
 }
 
 .champion-card {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  border: 2px solid transparent;
-
-  &:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-  }
-
-  // 赛事类型边框颜色
-  &.worlds { border-color: #ffd700; }
-  &.msi { border-color: #9b59b6; }
-  &.madrid { border-color: #e74c3c; }
-  &.shanghai { border-color: #3498db; }
-  &.claude { border-color: #e67e22; }
-  &.icp { border-color: #2ecc71; }
-  &.super { border-image: linear-gradient(45deg, #ff6b6b, #ffd93d, #6bcb77, #4d96ff, #9b59b6) 1; }
+  transition: all 0.2s ease;
 }
 
+.champion-card:hover {
+  border-color: #6366f1;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.1);
+}
+
+.champion-card.worlds {
+  border-left: 3px solid #f59e0b;
+}
+
+.champion-card.msi {
+  border-left: 3px solid #8b5cf6;
+}
+
+.champion-card.madrid {
+  border-left: 3px solid #ef4444;
+}
+
+.champion-card.shanghai {
+  border-left: 3px solid #3b82f6;
+}
+
+.champion-card.claude {
+  border-left: 3px solid #f97316;
+}
+
+.champion-card.icp {
+  border-left: 3px solid #22c55e;
+}
+
+.champion-card.super {
+  border-left: 3px solid #6366f1;
+}
+
+/* 卡片收起状态 */
 .card-collapsed {
-  width: 160px;
-  padding: 20px;
+  width: 150px;
+  padding: 14px;
   text-align: center;
-
-  .trophy-icon {
-    font-size: 36px;
-    margin-bottom: 12px;
-  }
-
-  .team-name {
-    font-size: 18px;
-    font-weight: bold;
-    color: #fff;
-    margin-bottom: 10px;
-  }
-
-  .tournament-info {
-    font-size: 14px;
-    color: #aaa;
-    margin-bottom: 8px;
-
-    .season {
-      color: #ffd700;
-      margin-right: 5px;
-    }
-  }
-
-  .result {
-    font-size: 16px;
-    color: #ffd700;
-    font-weight: bold;
-    margin-bottom: 8px;
-  }
-
-  .final-score {
-    font-size: 13px;
-    color: #888;
-  }
-
-  .expand-hint {
-    font-size: 12px;
-    color: #666;
-    margin-top: 12px;
-  }
 }
 
+.card-collapsed .trophy-icon {
+  margin-bottom: 8px;
+  color: #94a3b8;
+}
+
+.card-collapsed .team-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.card-collapsed .tournament-info {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.card-collapsed .tournament-info .season {
+  color: #6366f1;
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.card-collapsed .result {
+  font-size: 12px;
+  color: #0f172a;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.card-collapsed .final-score {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.card-collapsed .expand-hint {
+  font-size: 11px;
+  color: #cbd5e1;
+  margin-top: 8px;
+}
+
+/* 卡片展开状态 */
 .card-expanded {
-  width: 400px;
-  padding: 25px;
+  width: 360px;
+  padding: 20px;
+  background: #ffffff;
+}
 
-  .expanded-header {
-    text-align: center;
-    padding-bottom: 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    margin-bottom: 20px;
+.expanded-header {
+  text-align: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 14px;
+}
 
-    .trophy-icon.large {
-      font-size: 48px;
-      margin-bottom: 15px;
-    }
+.expanded-header .trophy-icon.large {
+  margin-bottom: 10px;
+  color: #94a3b8;
+}
 
-    .team-name.large {
-      font-size: 24px;
-      font-weight: bold;
-      color: #fff;
-      margin-bottom: 10px;
-    }
+.expanded-header .team-name.large {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
 
-    .tournament-full {
-      font-size: 16px;
-      color: #ffd700;
-      margin-bottom: 5px;
-    }
+.expanded-header .tournament-full {
+  font-size: 13px;
+  color: #6366f1;
+  margin-bottom: 2px;
+}
 
-    .tournament-en {
-      font-size: 12px;
-      color: #888;
-      margin-bottom: 10px;
-    }
+.expanded-header .tournament-en {
+  font-size: 11px;
+  color: #cbd5e1;
+  margin-bottom: 6px;
+}
 
-    .final-info {
-      font-size: 14px;
-      color: #aaa;
-    }
-  }
-
-  .roster-section {
-    margin-bottom: 20px;
-
-    .roster-title {
-      font-size: 14px;
-      color: #ffd700;
-      margin-bottom: 12px;
-    }
-
-    .roster-grid {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-
-      .roster-player {
-        flex: 1;
-        text-align: center;
-        padding: 10px;
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 8px;
-
-        .player-name {
-          font-size: 14px;
-          color: #fff;
-          font-weight: 500;
-          margin-bottom: 4px;
-        }
-
-        .player-position {
-          font-size: 12px;
-          color: #888;
-        }
-      }
-    }
-  }
-
-  .rankings-section {
-    padding: 15px;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 8px;
-
-    .ranking-item {
-      padding: 8px 0;
-      font-size: 14px;
-
-      &.silver { color: #c0c0c0; }
-      &.bronze { color: #cd7f32; }
-      &.fourth { color: #888; }
-    }
-  }
-
-  .collapse-hint {
-    text-align: center;
-    font-size: 12px;
-    color: #666;
-    margin-top: 15px;
-    cursor: pointer;
-
-    &:hover {
-      color: #ffd700;
-    }
-  }
+.expanded-header .final-info {
+  font-size: 13px;
+  color: #64748b;
 }
 
 .detail-loading {
-  padding: 20px;
+  padding: 16px;
+}
+
+/* 冠军阵容 */
+.roster-section {
+  margin-bottom: 14px;
+}
+
+.roster-title {
+  font-size: 13px;
+  color: #0f172a;
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.roster-title .el-icon {
+  color: #f59e0b;
+}
+
+.roster-grid {
+  display: flex;
+  gap: 6px;
+}
+
+.roster-player {
+  flex: 1;
+  text-align: center;
+  padding: 8px 4px;
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+  border-radius: 6px;
+}
+
+.player-name {
+  font-size: 12px;
+  color: #0f172a;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.player-position {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+/* 名次区 */
+.rankings-section {
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+  border-radius: 6px;
+}
+
+.ranking-item {
+  padding: 4px 0;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ranking-item.silver {
+  color: #64748b;
+}
+
+.ranking-item.bronze {
+  color: #d97706;
+}
+
+.ranking-item.fourth {
+  color: #94a3b8;
+}
+
+.collapse-hint {
+  text-align: center;
+  font-size: 12px;
+  color: #cbd5e1;
+  margin-top: 12px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.collapse-hint:hover {
+  color: #6366f1;
+}
+
+.back-btn {
+  padding: 5px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.back-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: #f5f3ff;
 }
 </style>

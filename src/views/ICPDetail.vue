@@ -61,7 +61,7 @@
     <div class="icp-status-card">
       <div class="status-header">
         <div class="status-info">
-          <h2>ICP 四赛区洲际对抗赛</h2>
+          <h2>S{{ viewingSeason }} ICP 四赛区洲际对抗赛</h2>
           <el-tag :type="getStatusType(icpTournament.status)" size="large">
             {{ getStatusText(icpTournament.status) }}
           </el-tag>
@@ -429,73 +429,15 @@
       </el-card>
 
       <!-- 最终排名 -->
-      <div v-if="icpTournament.status === 'completed'" class="final-standings">
-        <h3>赛区最终排名与积分</h3>
-        <div class="standings-grid">
-          <div class="standing-item champion">
-            <div class="rank-badge">🏆 最强赛区</div>
-            <div class="region-flag large" :class="icpTournament.champion?.region.toLowerCase()">
-              {{ getRegionFlag(icpTournament.champion?.region || '') }}
-            </div>
-            <div class="region-name">{{ icpTournament.champion?.regionName }}</div>
-            <div class="points-detail">
-              <div>参赛队伍: +12分</div>
-              <div>未参赛队伍: +6分</div>
-            </div>
-          </div>
-
-          <div class="standing-item runner-up">
-            <div class="rank-badge">🥈 第二名</div>
-            <div class="region-flag large" :class="icpTournament.runnerUp?.region.toLowerCase()">
-              {{ getRegionFlag(icpTournament.runnerUp?.region || '') }}
-            </div>
-            <div class="region-name">{{ icpTournament.runnerUp?.regionName }}</div>
-            <div class="points-detail">
-              <div>参赛队伍: +8分</div>
-              <div>未参赛队伍: +4分</div>
-            </div>
-          </div>
-
-          <div class="standing-item third">
-            <div class="rank-badge">🥉 第三名</div>
-            <div class="region-flag large" :class="icpTournament.thirdPlace?.region.toLowerCase()">
-              {{ getRegionFlag(icpTournament.thirdPlace?.region || '') }}
-            </div>
-            <div class="region-name">{{ icpTournament.thirdPlace?.regionName }}</div>
-            <div class="points-detail">
-              <div>参赛队伍: +6分</div>
-              <div>未参赛队伍: +3分</div>
-            </div>
-          </div>
-
-          <div class="standing-item fourth">
-            <div class="rank-badge">4️⃣ 第四名</div>
-            <div class="region-flag large" :class="icpTournament.fourthPlace?.region.toLowerCase()">
-              {{ getRegionFlag(icpTournament.fourthPlace?.region || '') }}
-            </div>
-            <div class="region-name">{{ icpTournament.fourthPlace?.regionName }}</div>
-            <div class="points-detail">
-              <div>参赛队伍: +4分</div>
-              <div>未参赛队伍: +2分</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ICP完成后的操作区 -->
-        <div class="icp-completed-actions">
-          <el-alert
-            title="ICP洲际对抗赛已完成！"
-            type="success"
-            :closable="false"
-            show-icon
-            class="completion-alert"
-          >
-            <template #default>
-              <p>恭喜 <strong>{{ icpTournament.champion?.regionName }}</strong> 成为本届最强赛区！</p>
-            </template>
-          </el-alert>
-        </div>
-      </div>
+      <TournamentCompletionSection
+        v-if="icpTournament.status === 'completed'"
+        :standings="icpStandings"
+        title="赛区最终排名与积分"
+        variant="region"
+        banner-title="ICP洲际对抗赛已完成！"
+        :banner-champion="icpTournament.champion?.regionName || ''"
+        banner-description="成为本届最强赛区！"
+      />
     </div>
 
     <!-- 比赛详情弹窗 -->
@@ -521,6 +463,8 @@ import {
 import ICPSeedGroupStanding from '@/components/icp/ICPSeedGroupStanding.vue'
 import ICPRegionBattleCard from '@/components/icp/ICPRegionBattleCard.vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
+import TournamentCompletionSection from '@/components/common/TournamentCompletionSection.vue'
+import type { StandingItem } from '@/types/tournament'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
@@ -607,6 +551,13 @@ const isGroupStageComplete = computed(() => {
 const sortedRegionStats = computed(() => {
   return [...icpTournament.regionStats].sort((a, b) => b.totalBadges - a.totalBadges)
 })
+
+const icpStandings = computed<StandingItem[]>(() => [
+  { rank: 1, label: '最强赛区', name: icpTournament.champion?.regionName || '', regionFlag: getRegionFlag(icpTournament.champion?.region || ''), points: '', pointsDetail: ['参赛队伍: +12分', '未参赛队伍: +6分'] },
+  { rank: 2, label: '第二名', name: icpTournament.runnerUp?.regionName || '', regionFlag: getRegionFlag(icpTournament.runnerUp?.region || ''), points: '', pointsDetail: ['参赛队伍: +8分', '未参赛队伍: +4分'] },
+  { rank: 3, label: '第三名', name: icpTournament.thirdPlace?.regionName || '', regionFlag: getRegionFlag(icpTournament.thirdPlace?.region || ''), points: '', pointsDetail: ['参赛队伍: +6分', '未参赛队伍: +3分'] },
+  { rank: 4, label: '第四名', name: icpTournament.fourthPlace?.regionName || '', regionFlag: getRegionFlag(icpTournament.fourthPlace?.region || ''), points: '', pointsDetail: ['参赛队伍: +4分', '未参赛队伍: +2分'] },
+])
 
 // 方法
 const goBack = () => {
@@ -2688,6 +2639,7 @@ onMounted(() => {
         display: flex;
         flex-direction: column;
         gap: 8px;
+        align-items: flex-start;
       }
 
       .page-title {
@@ -3008,94 +2960,6 @@ onMounted(() => {
       }
     }
 
-    .final-standings {
-      margin-top: 32px;
-
-      h3 {
-        margin: 0 0 16px 0;
-        font-size: 18px;
-        font-weight: 600;
-        color: #1f2937;
-      }
-
-      .standings-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 16px;
-        margin-bottom: 24px;
-
-        .standing-item {
-          padding: 20px;
-          border-radius: 12px;
-          text-align: center;
-          border: 2px solid;
-
-          .rank-badge {
-            font-size: 18px;
-            font-weight: 700;
-            margin-bottom: 12px;
-          }
-
-          .region-flag.large {
-            font-size: 48px;
-            margin-bottom: 8px;
-          }
-
-          .region-name {
-            font-size: 14px;
-            font-weight: 600;
-            color: #374151;
-            margin-bottom: 12px;
-          }
-
-          .points-detail {
-            font-size: 12px;
-            color: #10b981;
-            line-height: 1.6;
-          }
-
-          &.champion {
-            border-color: #f59e0b;
-            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-          }
-
-          &.runner-up {
-            border-color: #9ca3af;
-            background: linear-gradient(135deg, #f9fafb 0%, #e5e7eb 100%);
-          }
-
-          &.third {
-            border-color: #d97706;
-            background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
-          }
-
-          &.fourth {
-            border-color: #60a5fa;
-            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-          }
-        }
-      }
-
-      .icp-completed-actions {
-        margin-top: 32px;
-
-        .completion-alert {
-          margin-bottom: 20px;
-          border-radius: 8px;
-
-          p {
-            margin: 8px 0;
-            font-size: 14px;
-            line-height: 1.6;
-
-            strong {
-              color: #f59e0b;
-              font-weight: 700;
-            }
-          }
-        }
-      }
-    }
   }
 
   // 加赛样式

@@ -241,6 +241,7 @@ npm run tauri build
 | `doc-writer` | 项目文档编写 |
 | `db-backup` | 数据库备份 |
 | `skill-creator` | 创建新技能 |
+| `page-style` | 页面视觉风格规范 |
 
 ## 常见开发任务
 

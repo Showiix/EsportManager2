@@ -101,8 +101,10 @@
                 :key="type"
                 class="type-item"
               >
-                <div class="type-bar" :style="{ width: getTypePercentage(count) + '%', background: getTypeColor(type as string) }"></div>
                 <span class="type-name">{{ getTypeName(type as string) }}</span>
+                <div class="type-bar-wrapper">
+                  <div class="type-bar" :style="{ width: getTypePercentage(count) + '%', background: getTypeColor(type as string) }"></div>
+                </div>
                 <span class="type-count">{{ count }}</span>
               </div>
             </div>
@@ -142,44 +144,55 @@
           <div class="card-header">
             <el-icon><OfficeBuilding /></el-icon>
             <span>球队转会汇总</span>
+            <span class="header-sub">{{ sortedTeamSummaries.length }} 支球队</span>
           </div>
         </template>
-        <el-table :data="sortedTeamSummaries" stripe style="width: 100%">
-          <el-table-column prop="team_name" label="球队" width="180">
-            <template #default="{ row }">
+
+        <!-- 表头 -->
+        <div class="team-table-header">
+          <span class="th-team">球队</span>
+          <span class="th-center">转入</span>
+          <span class="th-center">转出</span>
+          <span class="th-right">支出</span>
+          <span class="th-right">收入</span>
+          <span class="th-right">净收支</span>
+        </div>
+
+        <!-- 列表 -->
+        <div class="team-table-body">
+          <div
+            v-for="(row, idx) in sortedTeamSummaries"
+            :key="row.team_id ?? idx"
+            class="team-row"
+            :class="{ 'net-positive': row.net_spend < 0, 'net-negative': row.net_spend > 0 }"
+          >
+            <div class="td-team">
+              <div class="team-avatar">{{ (row.team_name || '').slice(0, 2) }}</div>
               <span class="team-name">{{ row.team_name }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="players_in" label="转入" width="100" align="center">
-            <template #default="{ row }">
-              <el-tag v-if="row.players_in > 0" type="success" size="small">+{{ row.players_in }}</el-tag>
-              <span v-else class="zero">0</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="players_out" label="转出" width="100" align="center">
-            <template #default="{ row }">
-              <el-tag v-if="row.players_out > 0" type="danger" size="small">-{{ row.players_out }}</el-tag>
-              <span v-else class="zero">0</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="money_spent" label="支出" width="150" align="right">
-            <template #default="{ row }">
-              <span class="money spent">{{ formatAmount(row.money_spent) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="money_earned" label="收入" width="150" align="right">
-            <template #default="{ row }">
-              <span class="money earned">{{ formatAmount(row.money_earned) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="net_spend" label="净支出" width="150" align="right">
-            <template #default="{ row }">
-              <span class="money" :class="row.net_spend > 0 ? 'spent' : 'earned'">
-                {{ row.net_spend > 0 ? '-' : '+' }}{{ formatAmount(Math.abs(row.net_spend)) }}
+            </div>
+            <div class="td-center">
+              <span v-if="row.players_in > 0" class="badge in">+{{ row.players_in }}</span>
+              <span v-else class="badge zero">0</span>
+            </div>
+            <div class="td-center">
+              <span v-if="row.players_out > 0" class="badge out">-{{ row.players_out }}</span>
+              <span v-else class="badge zero">0</span>
+            </div>
+            <div class="td-right">
+              <span class="money spent" v-if="row.money_spent > 0">-{{ formatAmount(row.money_spent) }}</span>
+              <span class="money zero-text" v-else>-</span>
+            </div>
+            <div class="td-right">
+              <span class="money earned" v-if="row.money_earned > 0">+{{ formatAmount(row.money_earned) }}</span>
+              <span class="money zero-text" v-else>-</span>
+            </div>
+            <div class="td-right">
+              <span class="net-value" :class="row.net_spend > 0 ? 'negative' : row.net_spend < 0 ? 'positive' : 'neutral'">
+                {{ row.net_spend > 0 ? '-' : row.net_spend < 0 ? '+' : '' }}{{ formatAmount(Math.abs(row.net_spend)) }}
               </span>
-            </template>
-          </el-table-column>
-        </el-table>
+            </div>
+          </div>
+        </div>
       </el-card>
 
       <!-- 头条事件 -->
@@ -264,10 +277,12 @@ const route = useRoute()
 const isLoading = ref(true)
 const report = ref<TransferReport | null>(null)
 
-// 按净支出排序的球队汇总
+// 按净支出排序的球队汇总（过滤掉 team_id=0 的系统汇总行）
 const sortedTeamSummaries = computed(() => {
   if (!report.value) return []
-  return [...report.value.team_summaries].sort((a, b) => b.net_spend - a.net_spend)
+  return [...report.value.team_summaries]
+    .filter(t => t.team_id > 0 && t.team_name)
+    .sort((a, b) => b.net_spend - a.net_spend)
 })
 
 // 加载报告
@@ -310,6 +325,10 @@ function getTypeColor(type: string): string {
     SEASON_SETTLEMENT: '#06b6d4',
     DRAFT_PICK_AUCTION: '#14b8a6',
     FINANCIAL_ADJUSTMENT: '#ec4899',
+    PLAYER_REQUEST_TRANSFER: '#e11d48',
+    LOAN: '#0ea5e9',
+    LOAN_RETURN: '#64748b',
+    PLAYER_RELEASE: '#dc2626',
   }
   return colors[type] ?? '#9ca3af'
 }
@@ -499,23 +518,37 @@ onMounted(() => {
   gap: 12px;
 }
 
-.type-bar {
+.type-name {
+  width: 80px;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #606266;
+  text-align: right;
+}
+
+.type-bar-wrapper {
+  flex: 1;
   height: 24px;
-  border-radius: 4px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.type-bar {
+  height: 100%;
+  border-radius: 6px;
   min-width: 4px;
   transition: width 0.3s ease;
 }
 
-.type-name {
-  flex: 1;
-  font-size: 13px;
-  color: #606266;
-}
-
 .type-count {
+  width: 36px;
+  flex-shrink: 0;
   font-size: 14px;
   font-weight: 600;
   color: #303133;
+  text-align: right;
 }
 
 /* 等级分布 */
@@ -586,23 +619,133 @@ onMounted(() => {
 .level-bar.b { background: #3b82f6; }
 .level-bar.c { background: #9ca3af; }
 
-/* 球队汇总表格 */
+/* 球队转会汇总 */
 .teams-card {
   border-radius: 16px;
   margin-bottom: 24px;
 }
 
-.team-name {
-  font-weight: 600;
-  color: #303133;
+.header-sub {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 400;
+  color: #909399;
 }
 
-.zero {
-  color: #c0c4cc;
+/* 自定义表头 */
+.team-table-header {
+  display: grid;
+  grid-template-columns: 1fr 70px 70px 120px 120px 120px;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #f8fafc;
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.th-team, .th-center, .th-right {
+  font-size: 12px;
+  font-weight: 600;
+  color: #909399;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.th-center { text-align: center; }
+.th-right { text-align: right; }
+
+/* 行 */
+.team-table-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.team-row {
+  display: grid;
+  grid-template-columns: 1fr 70px 70px 120px 120px 120px;
+  gap: 8px;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: 10px;
+  transition: background 0.15s;
+}
+
+.team-row:hover {
+  background: #f8fafc;
+}
+
+.team-row.net-positive {
+  border-left: 3px solid #22c55e;
+}
+
+.team-row.net-negative {
+  border-left: 3px solid #ef4444;
+}
+
+/* 球队列 */
+.td-team {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.team-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #e0e7ff, #c7d2fe);
+  color: #4338ca;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.team-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* 转入转出 */
+.td-center {
+  text-align: center;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.badge.in {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge.out {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badge.zero {
+  background: #f3f4f6;
+  color: #d1d5db;
+}
+
+/* 金额列 */
+.td-right {
+  text-align: right;
 }
 
 .money {
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .money.spent {
@@ -611,6 +754,28 @@ onMounted(() => {
 
 .money.earned {
   color: #22c55e;
+}
+
+.money.zero-text {
+  color: #d1d5db;
+}
+
+/* 净收支 */
+.net-value {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.net-value.positive {
+  color: #22c55e;
+}
+
+.net-value.negative {
+  color: #ef4444;
+}
+
+.net-value.neutral {
+  color: #9ca3af;
 }
 
 /* 头条事件 */

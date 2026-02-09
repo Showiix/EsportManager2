@@ -45,7 +45,7 @@
     <div class="playoffs-status-card">
       <div class="status-header">
         <div class="status-info">
-          <h2>夏季季后赛</h2>
+          <h2>S{{ viewingSeason }} 夏季季后赛</h2>
           <el-tag :type="playoffsCompleted ? 'success' : regularSeasonCompleted ? 'warning' : 'info'" size="large">
             {{ playoffsCompleted ? '已完成' : regularSeasonCompleted ? '进行中' : '等待常规赛结束' }}
           </el-tag>
@@ -484,52 +484,14 @@
         </div>
       </el-card>
 
-      <!-- 最终排名 -->
-      <div v-if="playoffsCompleted" class="final-standings">
-        <div class="standings-header">
-          <h3>🏆 最终排名</h3>
-          <span class="subtitle">年度积分已发放</span>
-        </div>
-        <div class="standings-grid">
-          <div class="standing-item champion">
-            <div class="rank-icon">👑</div>
-            <div class="rank-label">冠军</div>
-            <div class="team-name">{{ champion?.name }}</div>
-            <div class="points-badge">+12 分</div>
-          </div>
-          <div class="standing-item runner-up">
-            <div class="rank-icon">🥈</div>
-            <div class="rank-label">亚军</div>
-            <div class="team-name">{{ runnerUp?.name }}</div>
-            <div class="points-badge">+10 分</div>
-          </div>
-          <div class="standing-item third">
-            <div class="rank-icon">🥉</div>
-            <div class="rank-label">季军</div>
-            <div class="team-name">{{ thirdPlace?.name }}</div>
-            <div class="points-badge">+8 分</div>
-          </div>
-          <div class="standing-item fourth">
-            <div class="rank-icon">4</div>
-            <div class="rank-label">殿军</div>
-            <div class="team-name">{{ fourthPlace?.name }}</div>
-            <div class="points-badge">+6 分</div>
-          </div>
-        </div>
-
-        <div class="completion-section">
-          <el-alert
-            title="夏季季后赛已完成！"
-            type="success"
-            :closable="false"
-            show-icon
-          >
-            <template #default>
-              <p>恭喜 <strong>{{ champion?.name }}</strong> 获得 {{ getRegionName(selectedRegion) }} 夏季赛冠军！</p>
-            </template>
-          </el-alert>
-        </div>
-      </div>
+      <TournamentCompletionSection
+        v-if="playoffsCompleted"
+        :standings="summerStandings"
+        subtitle="年度积分已发放"
+        banner-title="夏季季后赛已完成！"
+        :banner-champion="champion?.name || ''"
+        :banner-description="`获得 ${getRegionName(selectedRegion)} 夏季赛冠军！`"
+      />
     </div>
 
     <!-- 比赛详情弹窗 -->
@@ -555,6 +517,8 @@ import {
   VideoPlay,
 } from '@element-plus/icons-vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
+import TournamentCompletionSection from '@/components/common/TournamentCompletionSection.vue'
+import type { StandingItem } from '@/types/tournament'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
@@ -1011,6 +975,13 @@ const updatePlayoffsData = async () => {
 // 方法
 const goBack = () => router.push('/tournaments')
 const getRegionName = (regionId: number) => regions.value.find(r => r.id === regionId)?.name || 'LPL'
+
+const summerStandings = computed<StandingItem[]>(() => [
+  { rank: 1, label: '冠军', name: champion.value?.name || '', points: '+12 分' },
+  { rank: 2, label: '亚军', name: runnerUp.value?.name || '', points: '+10 分' },
+  { rank: 3, label: '季军', name: thirdPlace.value?.name || '', points: '+8 分' },
+  { rank: 4, label: '殿军', name: fourthPlace.value?.name || '', points: '+6 分' },
+])
 
 const handleRegionChange = async (regionId: number) => {
   playoffsCompleted.value = false
@@ -1525,6 +1496,7 @@ onMounted(async () => {
       display: flex;
       flex-direction: column;
       gap: 8px;
+      align-items: flex-start;
 
       .page-title {
         display: flex;
@@ -1911,192 +1883,6 @@ onMounted(async () => {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-5px); }
   }
-
-  // 最终排名
-  .final-standings {
-    margin-top: 32px;
-    padding: 24px;
-    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-    border-radius: 16px;
-    border: 2px solid #3b82f6;
-
-    .standings-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 2px dashed #3b82f6;
-
-      h3 {
-        margin: 0;
-        font-size: 22px;
-        font-weight: 700;
-        color: #1e40af;
-      }
-
-      .subtitle {
-        font-size: 13px;
-        color: #1d4ed8;
-        background: rgba(59, 130, 246, 0.2);
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-weight: 500;
-      }
-    }
-
-    .standings-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-      margin-bottom: 24px;
-
-      .standing-item {
-        padding: 20px 16px;
-        border-radius: 16px;
-        text-align: center;
-        border: 2px solid;
-        background: white;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-
-        &:hover {
-          transform: translateY(-4px);
-          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-        }
-
-        .rank-icon {
-          font-size: 36px;
-          margin-bottom: 8px;
-          line-height: 1;
-        }
-
-        .rank-label {
-          font-size: 12px;
-          font-weight: 600;
-          color: #6b7280;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-          margin-bottom: 8px;
-        }
-
-        .team-name {
-          font-size: 20px;
-          font-weight: 800;
-          margin-bottom: 12px;
-          color: #1f2937;
-        }
-
-        .points-badge {
-          display: inline-block;
-          font-size: 14px;
-          font-weight: 700;
-          padding: 6px 14px;
-          border-radius: 20px;
-          background: linear-gradient(135deg, #10b981, #059669);
-          color: white;
-          box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
-        }
-
-        &.champion {
-          border-color: #3b82f6;
-          background: linear-gradient(135deg, #eff6ff, #dbeafe);
-          position: relative;
-          overflow: hidden;
-
-          &::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, #3b82f6, #2563eb, #3b82f6);
-          }
-
-          .rank-icon {
-            font-size: 42px;
-            filter: drop-shadow(0 2px 4px rgba(59, 130, 246, 0.5));
-          }
-
-          .rank-label {
-            color: #1e40af;
-          }
-
-          .team-name {
-            color: #1e40af;
-          }
-
-          .points-badge {
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
-            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
-          }
-        }
-
-        &.runner-up {
-          border-color: #9ca3af;
-          background: linear-gradient(135deg, #f9fafb, #f3f4f6);
-
-          .rank-icon {
-            filter: drop-shadow(0 2px 4px rgba(156, 163, 175, 0.4));
-          }
-
-          .rank-label {
-            color: #4b5563;
-          }
-        }
-
-        &.third {
-          border-color: #d97706;
-          background: linear-gradient(135deg, #fffbeb, #fef3c7);
-
-          .rank-icon {
-            filter: drop-shadow(0 2px 4px rgba(217, 119, 6, 0.4));
-          }
-
-          .rank-label {
-            color: #92400e;
-          }
-        }
-
-        &.fourth {
-          border-color: #60a5fa;
-          background: linear-gradient(135deg, #eff6ff, #dbeafe);
-
-          .rank-icon {
-            font-weight: 900;
-            font-size: 28px;
-            color: #3b82f6;
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-          }
-
-          .rank-label {
-            color: #1d4ed8;
-          }
-        }
-      }
-    }
-
-    .completion-section {
-      :deep(.el-alert) {
-        border-radius: 12px;
-        background: white;
-        border: 1px solid #22c55e;
-
-        p {
-          margin: 8px 0 0 0;
-
-          strong {
-            color: #3b82f6;
-            font-weight: 700;
-          }
-        }
-      }
-    }
-  }
 }
 
 @media (max-width: 1200px) {
@@ -2121,38 +1907,6 @@ onMounted(async () => {
     .final-match-card {
       flex-direction: column;
       gap: 20px;
-    }
-
-    .final-standings {
-      padding: 16px;
-
-      .standings-header {
-        flex-direction: column;
-        gap: 12px;
-        text-align: center;
-      }
-
-      .standings-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-
-        .standing-item {
-          padding: 16px 12px;
-
-          .rank-icon {
-            font-size: 28px;
-          }
-
-          .team-name {
-            font-size: 16px;
-          }
-
-          .points-badge {
-            font-size: 12px;
-            padding: 4px 10px;
-          }
-        }
-      }
     }
   }
 }

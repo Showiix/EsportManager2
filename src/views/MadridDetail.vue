@@ -61,7 +61,7 @@
     <div class="madrid-status-card">
       <div class="status-header">
         <div class="status-info">
-          <h2>马德里大师赛</h2>
+          <h2>S{{ viewingSeason }} 马德里大师赛</h2>
           <el-tag :type="getStatusType(madridBracket.status)" size="large">
             {{ getStatusText(madridBracket.status) }}
           </el-tag>
@@ -188,54 +188,13 @@
         </div>
       </el-card>
 
-      <!-- 最终排名 -->
-      <div v-if="madridBracket.status === 'completed'" class="final-standings">
-        <h3>最终排名与积分</h3>
-        <div class="standings-grid">
-          <div class="standing-item champion">
-            <div class="rank-badge">🏆 冠军</div>
-            <div class="team-name">{{ madridBracket.champion?.teamName }}</div>
-            <div class="region-name">{{ madridBracket.champion?.regionName }}</div>
-            <div class="points">+20分</div>
-          </div>
-
-          <div class="standing-item runner-up">
-            <div class="rank-badge">🥈 亚军</div>
-            <div class="team-name">{{ madridBracket.runnerUp?.teamName }}</div>
-            <div class="region-name">{{ madridBracket.runnerUp?.regionName }}</div>
-            <div class="points">+16分</div>
-          </div>
-
-          <div class="standing-item third">
-            <div class="rank-badge">🥉 季军</div>
-            <div class="team-name">{{ madridBracket.thirdPlace?.teamName }}</div>
-            <div class="region-name">{{ madridBracket.thirdPlace?.regionName }}</div>
-            <div class="points">+12分</div>
-          </div>
-
-          <div class="standing-item fourth">
-            <div class="rank-badge">4️⃣ 殿军</div>
-            <div class="team-name">{{ madridBracket.fourthPlace?.teamName }}</div>
-            <div class="region-name">{{ madridBracket.fourthPlace?.regionName }}</div>
-            <div class="points">+8分</div>
-          </div>
-        </div>
-
-        <!-- 马德里大师赛完成后的操作区 -->
-        <div class="madrid-completed-actions">
-          <el-alert
-            title="马德里大师赛已完成！"
-            type="success"
-            :closable="false"
-            show-icon
-            class="completion-alert"
-          >
-            <template #default>
-              <p>恭喜 <strong>{{ madridBracket.champion?.teamName }}</strong> 获得马德里大师赛冠军！</p>
-            </template>
-          </el-alert>
-        </div>
-      </div>
+      <TournamentCompletionSection
+        v-if="madridBracket.status === 'completed'"
+        :standings="madridStandings"
+        banner-title="马德里大师赛已完成！"
+        :banner-champion="madridBracket.champion?.teamName || ''"
+        banner-description="获得马德里大师赛冠军！"
+      />
     </div>
 
     <!-- PowerEngine 比赛详情弹窗 -->
@@ -262,9 +221,12 @@ import ClauchGroupStanding from '@/components/clauch/ClauchGroupStanding.vue'
 import ClauchKnockoutBracket from '@/components/clauch/ClauchKnockoutBracket.vue'
 import ClauchMatchCard from '@/components/clauch/ClauchMatchCard.vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
+import TournamentCompletionSection from '@/components/common/TournamentCompletionSection.vue'
+import type { StandingItem } from '@/types/tournament'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useTimeStore } from '@/stores/useTimeStore'
+import { useGameStore } from '@/stores/useGameStore'
 import { internationalApi, matchApi } from '@/api/tauri'
 import type { BracketInfo, MatchBracketInfo, GroupStandingInfo } from '@/api/tauri'
 import type { ClauchMatch, ClauchGroup, ClauchGroupStanding as ClauchGroupStandingType, ClauchKnockoutBracket as ClauchKnockoutBracketType } from '@/types/clauch'
@@ -278,6 +240,9 @@ const logger = createLogger('MadridDetail')
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
 const timeStore = useTimeStore()
+const gameStore = useGameStore()
+
+const viewingSeason = computed(() => Number(route.query.season) || gameStore.gameState?.current_season || 1)
 
 // 阶段检查
 const MADRID_PHASE = 'MADRID_MASTERS'
@@ -584,6 +549,13 @@ const isGroupStageComplete = computed(() => {
 const showFinals = computed(() => {
   return madridBracket.thirdPlaceMatch || madridBracket.grandFinal
 })
+
+const madridStandings = computed<StandingItem[]>(() => [
+  { rank: 1, label: '冠军', name: madridBracket.champion?.teamName || '', regionName: madridBracket.champion?.regionName, points: '+20分' },
+  { rank: 2, label: '亚军', name: madridBracket.runnerUp?.teamName || '', regionName: madridBracket.runnerUp?.regionName, points: '+16分' },
+  { rank: 3, label: '季军', name: madridBracket.thirdPlace?.teamName || '', regionName: madridBracket.thirdPlace?.regionName, points: '+12分' },
+  { rank: 4, label: '殿军', name: madridBracket.fourthPlace?.teamName || '', regionName: madridBracket.fourthPlace?.regionName, points: '+8分' },
+])
 
 // 方法
 const goBack = () => {
@@ -1055,6 +1027,7 @@ const showChampionCelebration = (championName: string) => {
         display: flex;
         flex-direction: column;
         gap: 8px;
+        align-items: flex-start;
       }
 
       .page-title {
@@ -1224,97 +1197,6 @@ const showChampionCelebration = (championName: string) => {
       }
     }
 
-    .final-standings {
-      margin-top: 32px;
-
-      h3 {
-        margin: 0 0 16px 0;
-        font-size: 18px;
-        font-weight: 600;
-        color: #1f2937;
-      }
-
-      .standings-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 16px;
-        margin-bottom: 24px;
-
-        .standing-item {
-          padding: 20px;
-          border-radius: 8px;
-          text-align: center;
-          border: 2px solid;
-
-          .rank-badge {
-            font-size: 18px;
-            margin-bottom: 8px;
-            white-space: nowrap;
-          }
-
-          .team-name {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #1f2937;
-          }
-
-          .region-name {
-            font-size: 14px;
-            color: #6b7280;
-            margin-bottom: 8px;
-          }
-
-          .points {
-            font-size: 16px;
-            font-weight: 700;
-            color: #10b981;
-          }
-
-          &.champion {
-            border-color: #f59e0b;
-            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-          }
-
-          &.runner-up {
-            border-color: #9ca3af;
-            background: linear-gradient(135deg, #f9fafb 0%, #e5e7eb 100%);
-          }
-
-          &.third {
-            border-color: #d97706;
-            background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
-          }
-
-          &.fourth {
-            border-color: #60a5fa;
-            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-          }
-        }
-      }
-
-      .madrid-completed-actions {
-        margin-top: 32px;
-        text-align: center;
-
-        .completion-alert {
-          margin-bottom: 20px;
-          border-radius: 8px;
-          text-align: left;
-
-          p {
-            margin: 8px 0;
-            font-size: 14px;
-            line-height: 1.6;
-
-            strong {
-              color: #f59e0b;
-              font-weight: 700;
-            }
-          }
-        }
-      }
-    }
   }
 
   .mb-4 {

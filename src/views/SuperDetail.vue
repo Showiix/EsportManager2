@@ -115,7 +115,7 @@
     <div class="super-status-card">
       <div class="status-header">
         <div class="status-info">
-          <h2>Super洲际年度邀请赛</h2>
+          <h2>S{{ viewingSeason }} Super洲际年度邀请赛</h2>
           <el-tag :type="getStatusType(superBracket.status)" size="large">
             {{ getStatusText(superBracket.status) }}
           </el-tag>
@@ -267,54 +267,13 @@
         />
       </el-card>
 
-      <!-- 最终排名 -->
-      <div v-if="superBracket.status === 'completed'" class="final-standings">
-        <h3>最终排名与积分</h3>
-        <div class="standings-grid">
-          <div class="standing-item champion">
-            <div class="rank-badge">🏆 冠军</div>
-            <div class="team-name">{{ superBracket.champion?.teamName }}</div>
-            <div class="region-name">{{ superBracket.champion?.regionName }}</div>
-            <div class="points">+35分</div>
-          </div>
-
-          <div class="standing-item runner-up">
-            <div class="rank-badge">🥈 亚军</div>
-            <div class="team-name">{{ superBracket.runnerUp?.teamName }}</div>
-            <div class="region-name">{{ superBracket.runnerUp?.regionName }}</div>
-            <div class="points">+30分</div>
-          </div>
-
-          <div class="standing-item third">
-            <div class="rank-badge">🥉 季军</div>
-            <div class="team-name">{{ superBracket.thirdPlace?.teamName }}</div>
-            <div class="region-name">{{ superBracket.thirdPlace?.regionName }}</div>
-            <div class="points">+25分</div>
-          </div>
-
-          <div class="standing-item fourth">
-            <div class="rank-badge">4️⃣ 殿军</div>
-            <div class="team-name">{{ superBracket.fourthPlace?.teamName }}</div>
-            <div class="region-name">{{ superBracket.fourthPlace?.regionName }}</div>
-            <div class="points">+20分</div>
-          </div>
-        </div>
-
-        <!-- Super洲际赛完成后的操作区 -->
-        <div class="super-completed-actions">
-          <el-alert
-            title="Super洲际年度邀请赛已完成！"
-            type="success"
-            :closable="false"
-            show-icon
-            class="completion-alert"
-          >
-            <template #default>
-              <p>恭喜 <strong>{{ superBracket.champion?.teamName }}</strong> 获得Super洲际年度邀请赛冠军，成为本赛季最强战队！</p>
-            </template>
-          </el-alert>
-        </div>
-      </div>
+      <TournamentCompletionSection
+        v-if="superBracket.status === 'completed'"
+        :standings="superStandings"
+        banner-title="Super洲际年度邀请赛已完成！"
+        :banner-champion="superBracket.champion?.teamName || ''"
+        banner-description="获得Super洲际年度邀请赛冠军，成为本赛季最强战队！"
+      />
     </div>
 
     <!-- 比赛详情弹窗 -->
@@ -344,6 +303,8 @@ import {
 import SuperGroupStanding from '@/components/super/SuperGroupStanding.vue'
 import SuperKnockoutBracket from '@/components/super/SuperKnockoutBracket.vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
+import TournamentCompletionSection from '@/components/common/TournamentCompletionSection.vue'
+import type { StandingItem } from '@/types/tournament'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
@@ -762,6 +723,13 @@ const canGenerateFinalStage = computed(() => {
     isChampionPrepComplete.value &&
     !superBracket.finalStage
 })
+
+const superStandings = computed<StandingItem[]>(() => [
+  { rank: 1, label: '冠军', name: superBracket.champion?.teamName || '', regionName: superBracket.champion?.regionName, points: '+35分' },
+  { rank: 2, label: '亚军', name: superBracket.runnerUp?.teamName || '', regionName: superBracket.runnerUp?.regionName, points: '+30分' },
+  { rank: 3, label: '季军', name: superBracket.thirdPlace?.teamName || '', regionName: superBracket.thirdPlace?.regionName, points: '+25分' },
+  { rank: 4, label: '殿军', name: superBracket.fourthPlace?.teamName || '', regionName: superBracket.fourthPlace?.regionName, points: '+20分' },
+])
 
 // 方法
 const goBack = () => {
@@ -1522,6 +1490,7 @@ onMounted(() => {
         display: flex;
         flex-direction: column;
         gap: 8px;
+        align-items: flex-start;
       }
 
       .page-title {
@@ -1758,98 +1727,6 @@ onMounted(() => {
           &.fighter {
             border-color: #6b7280;
             background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
-          }
-        }
-      }
-    }
-
-    .final-standings {
-      margin-top: 32px;
-
-      h3 {
-        margin: 0 0 16px 0;
-        font-size: 18px;
-        font-weight: 600;
-        color: #1f2937;
-      }
-
-      .standings-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 16px;
-        margin-bottom: 24px;
-
-        .standing-item {
-          padding: 20px;
-          border-radius: 8px;
-          text-align: center;
-          border: 2px solid;
-
-          .rank-badge {
-            font-size: 18px;
-            margin-bottom: 8px;
-            white-space: nowrap;
-          }
-
-          .team-name {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #1f2937;
-          }
-
-          .region-name {
-            font-size: 14px;
-            color: #6b7280;
-            margin-bottom: 8px;
-          }
-
-          .points {
-            font-size: 16px;
-            font-weight: 700;
-            color: #8b5cf6;
-          }
-
-          &.champion {
-            border-color: #8b5cf6;
-            background: linear-gradient(135deg, #f3e8ff 0%, #ddd6fe 100%);
-          }
-
-          &.runner-up {
-            border-color: #9ca3af;
-            background: linear-gradient(135deg, #f9fafb 0%, #e5e7eb 100%);
-          }
-
-          &.third {
-            border-color: #d97706;
-            background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
-          }
-
-          &.fourth {
-            border-color: #60a5fa;
-            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-          }
-        }
-      }
-
-      .super-completed-actions {
-        margin-top: 32px;
-        text-align: center;
-
-        .completion-alert {
-          margin-bottom: 20px;
-          border-radius: 8px;
-          text-align: left;
-
-          p {
-            margin: 8px 0;
-            font-size: 14px;
-            line-height: 1.6;
-
-            strong {
-              color: #8b5cf6;
-              font-weight: 700;
-            }
           }
         }
       }

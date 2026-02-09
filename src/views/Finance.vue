@@ -17,93 +17,58 @@
     </div>
 
     <!-- 统计概览 -->
-    <el-row :gutter="16" class="stats-row">
-      <el-col :span="6">
-        <el-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon gold">
-              <el-icon :size="28"><Coin /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-number">{{ formatMoney(stats.totalAssets) }}</div>
-              <div class="stat-label">总资产</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon green">
-              <el-icon :size="28"><Top /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-number">{{ formatMoney(stats.totalIncome) }}</div>
-              <div class="stat-label">本赛季收入</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon red">
-              <el-icon :size="28"><Bottom /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-number">{{ formatMoney(stats.totalExpense) }}</div>
-              <div class="stat-label">本赛季支出</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon" :class="stats.netProfit >= 0 ? 'blue' : 'orange'">
-              <el-icon :size="28"><TrendCharts /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-number" :class="{ negative: stats.netProfit < 0 }">
-                {{ stats.netProfit >= 0 ? '+' : '' }}{{ formatMoney(stats.netProfit) }}
-              </div>
-              <div class="stat-label">净利润</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <div class="stats-bar">
+      <div class="stat-item">
+        <span class="stat-value">{{ formatMoney(stats.totalAssets) }}</span>
+        <span class="stat-label">总资产</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value income">+{{ formatMoney(stats.totalIncome) }}</span>
+        <span class="stat-label">收入</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value expense">-{{ formatMoney(stats.totalExpense) }}</span>
+        <span class="stat-label">支出</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value" :class="stats.netProfit >= 0 ? 'income' : 'expense'">
+          {{ stats.netProfit >= 0 ? '+' : '' }}{{ formatMoney(stats.netProfit) }}
+        </span>
+        <span class="stat-label">净利润</span>
+      </div>
+    </div>
 
     <!-- 财务状态分布 -->
-    <el-card class="status-distribution-card">
-      <div class="status-distribution">
-        <div class="status-item wealthy">
-          <span class="status-dot dot-wealthy"></span>
-          <span class="status-label">富裕</span>
-          <span class="status-count">{{ stats.wealthyCount }}</span>
-        </div>
-        <div class="status-item healthy">
-          <span class="status-dot dot-healthy"></span>
-          <span class="status-label">健康</span>
-          <span class="status-count">{{ stats.healthyCount }}</span>
-        </div>
-        <div class="status-item tight">
-          <span class="status-dot dot-tight"></span>
-          <span class="status-label">紧张</span>
-          <span class="status-count">{{ stats.tightCount }}</span>
-        </div>
-        <div class="status-item deficit">
-          <span class="status-dot dot-deficit"></span>
-          <span class="status-label">赤字</span>
-          <span class="status-count">{{ stats.deficitCount }}</span>
-        </div>
-        <div class="status-item bankrupt">
-          <span class="status-dot dot-bankrupt"></span>
-          <span class="status-label">破产</span>
-          <span class="status-count">{{ stats.bankruptCount }}</span>
-        </div>
+    <div class="status-bar">
+      <div class="status-item">
+        <span class="status-dot wealthy"></span>
+        <span class="status-name">富裕</span>
+        <span class="status-count">{{ stats.wealthyCount }}</span>
       </div>
-    </el-card>
+      <div class="status-item">
+        <span class="status-dot healthy"></span>
+        <span class="status-name">健康</span>
+        <span class="status-count">{{ stats.healthyCount }}</span>
+      </div>
+      <div class="status-item">
+        <span class="status-dot tight"></span>
+        <span class="status-name">紧张</span>
+        <span class="status-count">{{ stats.tightCount }}</span>
+      </div>
+      <div class="status-item">
+        <span class="status-dot deficit"></span>
+        <span class="status-name">赤字</span>
+        <span class="status-count">{{ stats.deficitCount }}</span>
+      </div>
+      <div class="status-item">
+        <span class="status-dot bankrupt"></span>
+        <span class="status-name">破产</span>
+        <span class="status-count">{{ stats.bankruptCount }}</span>
+      </div>
+    </div>
 
     <!-- 战队财务列表 -->
     <el-card class="finance-card">
@@ -146,7 +111,6 @@
       <el-table
         v-else
         :data="filteredTeams"
-        stripe
         class="finance-table"
         @row-click="handleRowClick"
       >
@@ -196,18 +160,9 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="100" align="center">
+        <el-table-column label="" width="80" align="center">
           <template #default="{ row }">
-            <el-button
-              type="primary"
-              size="small"
-              round
-              class="detail-btn"
-              @click.stop="openDetail(row)"
-            >
-              <el-icon class="mr-1"><View /></el-icon>
-              详情
-            </el-button>
+            <button class="detail-btn" @click.stop="openDetail(row)">详情</button>
           </template>
         </el-table-column>
       </el-table>
@@ -227,12 +182,7 @@ import { ref, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import {
-  Coin,
-  Top,
-  Bottom,
-  TrendCharts,
   Search,
-  View,
   Refresh,
 } from '@element-plus/icons-vue'
 import { useFinanceStore, type FinancialStatus } from '@/stores/useFinanceStore'
@@ -347,234 +297,213 @@ async function handleRefresh() {
   padding: 0;
 }
 
-/* 页面标题 */
+/* ====== 页面标题 ====== */
 .page-header {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .page-header h1 {
-  font-size: 26px;
-  font-weight: 800;
-  color: var(--text-primary, #1d2129);
-  margin: 0 0 6px 0;
-  letter-spacing: -0.5px;
+  font-size: 24px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+  letter-spacing: -0.3px;
 }
 
 .page-header p {
-  font-size: 14px;
-  color: var(--text-tertiary, #86909c);
+  font-size: 13px;
+  color: #94a3b8;
   margin: 0;
 }
 
-/* 统计卡片 */
-.stats-row {
-  margin-bottom: 20px;
-}
-
-.stat-card {
-  border-radius: 14px;
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
-  transition: box-shadow 0.25s ease, transform 0.25s ease;
-}
-
-.stat-card:hover {
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
-  transform: translateY(-2px);
-}
-
-.stat-content {
+/* ====== 统计条 ====== */
+.stats-bar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 4px 0;
+  padding: 14px 24px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 12px;
 }
 
-.stat-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
+.stat-item {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  flex-shrink: 0;
-}
-
-.stat-icon.gold { background: linear-gradient(135deg, #fbbf24, #f59e0b); box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); }
-.stat-icon.green { background: linear-gradient(135deg, #34d399, #10b981); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
-.stat-icon.red { background: linear-gradient(135deg, #f87171, #ef4444); box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); }
-.stat-icon.blue { background: linear-gradient(135deg, #60a5fa, #3b82f6); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
-.stat-icon.orange { background: linear-gradient(135deg, #fb923c, #f97316); box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3); }
-.stat-icon.purple { background: linear-gradient(135deg, #a78bfa, #8b5cf6); box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); }
-
-.stat-info {
+  align-items: baseline;
+  gap: 6px;
   flex: 1;
-  min-width: 0;
+  justify-content: center;
 }
 
-.stat-number {
-  font-size: 22px;
-  font-weight: 800;
-  color: var(--text-primary, #1d2129);
-  letter-spacing: -0.5px;
-  line-height: 1.2;
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
 }
 
-.stat-number.negative {
+.stat-value.income {
+  color: #10b981;
+}
+
+.stat-value.expense {
   color: #ef4444;
 }
 
 .stat-label {
-  font-size: 13px;
-  color: var(--text-tertiary, #86909c);
-  margin-top: 4px;
+  font-size: 12px;
+  color: #94a3b8;
   font-weight: 500;
 }
 
-/* 状态分布 */
-.status-distribution-card {
-  margin-bottom: 20px;
-  border-radius: 14px;
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
+.stat-divider {
+  width: 1px;
+  height: 24px;
+  background: #e2e8f0;
+  flex-shrink: 0;
 }
 
-.status-distribution {
+/* ====== 状态分布 ====== */
+.status-bar {
   display: flex;
-  justify-content: space-around;
   align-items: center;
-  padding: 6px 0;
+  gap: 0;
+  padding: 10px 24px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 16px;
 }
 
 .status-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 20px;
-  border-radius: 10px;
-  background: #f7f8fa;
-  transition: background 0.2s ease;
-}
-
-.status-item:hover {
-  background: #f0f1f3;
+  gap: 6px;
+  flex: 1;
+  justify-content: center;
+  padding: 4px 0;
 }
 
 .status-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.04);
+  flex-shrink: 0;
 }
 
-.status-dot.dot-wealthy { background-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15); }
-.status-dot.dot-healthy { background-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
-.status-dot.dot-tight { background-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15); }
-.status-dot.dot-deficit { background-color: #f97316; box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15); }
-.status-dot.dot-bankrupt { background-color: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15); }
+.status-dot.wealthy { background: #10b981; }
+.status-dot.healthy { background: #3b82f6; }
+.status-dot.tight { background: #f59e0b; }
+.status-dot.deficit { background: #f97316; }
+.status-dot.bankrupt { background: #ef4444; }
 
-.status-label {
-  font-size: 14px;
-  color: #4e5969;
+.status-name {
+  font-size: 12px;
+  color: #64748b;
   font-weight: 500;
 }
 
 .status-count {
-  font-size: 20px;
-  font-weight: 800;
-  color: #1d2129;
-  min-width: 20px;
-  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
 }
 
-/* 财务卡片 */
+/* ====== 财务主卡片 ====== */
 .finance-card {
-  border-radius: 14px;
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  box-shadow: none;
 }
 
+/* ====== 筛选栏 ====== */
 .filter-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
-  padding: 14px 16px;
-  background: #f7f8fa;
-  border-radius: 10px;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
 }
 
 .filter-left {
   display: flex;
-  gap: 12px;
+  gap: 10px;
 }
 
 .filter-right {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
-/* 表格 */
+/* ====== 表格 ====== */
 .finance-table {
   width: 100%;
 }
 
 .finance-table :deep(.el-table__header th) {
   font-weight: 600;
-  color: #86909c;
-  font-size: 13px;
+  color: #94a3b8;
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
-  background: #fafbfc;
+  letter-spacing: 0.5px;
+  background: transparent;
+  border-bottom: 1px solid #f1f5f9;
+  padding: 10px 0;
 }
 
-.finance-table :deep(.el-table__row) {
+.finance-table :deep(.el-table__body tr) {
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s;
 }
 
-.finance-table :deep(.el-table__row td) {
-  padding: 14px 0;
+.finance-table :deep(.el-table__body tr td) {
+  padding: 12px 0;
+  border-bottom: 1px solid #f8fafc;
 }
 
-.finance-table :deep(.el-table__row:hover > td) {
-  background-color: #f0f7ff !important;
+.finance-table :deep(.el-table__body tr:hover > td) {
+  background-color: #f8fafc !important;
 }
 
-/* 战队单元格 */
+.finance-table :deep(.el-table__body tr:last-child td) {
+  border-bottom: none;
+}
+
+.finance-table :deep(.el-table__body tr.el-table__row--striped td) {
+  background: transparent;
+}
+
+/* ====== 战队单元格 ====== */
 .team-cell {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .team-info {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 5px;
+  gap: 3px;
 }
 
 .team-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: #1d2129;
+  color: #0f172a;
 }
 
-/* 金额样式 */
+/* ====== 金额样式 ====== */
 .money-value {
   font-size: 14px;
-  font-weight: 700;
-  color: #1d2129;
+  font-weight: 600;
+  color: #0f172a;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.2px;
 }
 
 .money-value.negative {
@@ -584,39 +513,37 @@ async function handleRefresh() {
 .money-income {
   color: #10b981;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
 .money-expense {
   color: #ef4444;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
-/* 详情按钮 */
+/* ====== 详情按钮 ====== */
 .detail-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
+  padding: 5px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #475569;
   font-size: 12px;
-  font-weight: 600;
-  padding: 6px 14px;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
 }
 
 .detail-btn:hover {
-  background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(102, 126, 234, 0.45);
+  border-color: #6366f1;
+  color: #6366f1;
+  background: #f5f3ff;
 }
 
-.detail-btn .mr-1 {
-  margin-right: 4px;
-}
-
-/* 响应式 */
+/* ====== 响应式 ====== */
 @media (max-width: 768px) {
   .filter-row {
     flex-direction: column;
@@ -628,9 +555,14 @@ async function handleRefresh() {
     width: 100%;
   }
 
-  .status-distribution {
+  .stats-bar,
+  .status-bar {
     flex-wrap: wrap;
     gap: 8px;
+  }
+
+  .stat-divider {
+    display: none;
   }
 }
 </style>

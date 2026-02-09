@@ -20,10 +20,14 @@
         </div>
       </div>
       <div class="header-right">
+        <el-button type="success" @click="showGenerateDialog = true" :loading="isGenerating">
+          <el-icon><MagicStick /></el-icon>
+          自动生成
+        </el-button>
         <el-dropdown trigger="click" @command="handleImportCommand">
           <el-button type="primary">
             <el-icon><Upload /></el-icon>
-            导入新秀
+            手动添加
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </el-button>
           <template #dropdown>
@@ -114,6 +118,10 @@
         <h3>选手池为空</h3>
         <p>请导入新秀数据来填充选手池</p>
         <div class="empty-actions">
+          <el-button type="success" @click="showGenerateDialog = true" :loading="isGenerating">
+            <el-icon><MagicStick /></el-icon>
+            自动生成新秀
+          </el-button>
           <el-button type="primary" @click="handleImportCommand('file')">
             <el-icon><Document /></el-icon>
             批量导入文件
@@ -141,7 +149,7 @@
           </div>
           <div class="card-body">
             <div class="player-name">{{ player.gameId }}</div>
-            <div class="player-position">{{ player.position }}</div>
+            <div class="player-position">{{ normalizePosition(player.position) }}</div>
           </div>
           <div class="card-stats">
             <div class="stat-item">
@@ -156,10 +164,10 @@
             </div>
           </div>
           <div class="card-footer">
-            <el-button size="small" text type="primary" @click="editPlayer(player)">
+            <el-button size="small" type="primary" plain @click="editPlayer(player)">
               <el-icon><Edit /></el-icon>
             </el-button>
-            <el-button size="small" text type="danger" @click="removePlayer(player.id)">
+            <el-button size="small" type="danger" plain @click="removePlayer(player.id)">
               <el-icon><Delete /></el-icon>
             </el-button>
           </div>
@@ -175,11 +183,11 @@
         </el-form-item>
         <el-form-item label="位置">
           <el-select v-model="importForm.position" placeholder="选择位置" style="width: 100%">
-            <el-option label="上单" value="TOP" />
-            <el-option label="打野" value="JUG" />
-            <el-option label="中单" value="MID" />
-            <el-option label="ADC" value="ADC" />
-            <el-option label="辅助" value="SUP" />
+            <el-option label="上单" value="Top" />
+            <el-option label="打野" value="Jungle" />
+            <el-option label="中单" value="Mid" />
+            <el-option label="ADC" value="Bot" />
+            <el-option label="辅助" value="Support" />
           </el-select>
         </el-form-item>
         <el-form-item label="能力值">
@@ -190,9 +198,9 @@
         </el-form-item>
         <el-form-item label="天赋标签">
           <el-radio-group v-model="importForm.tag">
-            <el-radio value="MEDIOCRE">平庸</el-radio>
-            <el-radio value="NORMAL">一般</el-radio>
-            <el-radio value="GENIUS">天才</el-radio>
+            <el-radio value="Ordinary">平庸</el-radio>
+            <el-radio value="Normal">一般</el-radio>
+            <el-radio value="Genius">天才</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
@@ -210,11 +218,11 @@
         </el-form-item>
         <el-form-item label="位置">
           <el-select v-model="editForm.position" placeholder="选择位置" style="width: 100%">
-            <el-option label="上单" value="TOP" />
-            <el-option label="打野" value="JUG" />
-            <el-option label="中单" value="MID" />
-            <el-option label="ADC" value="ADC" />
-            <el-option label="辅助" value="SUP" />
+            <el-option label="上单" value="Top" />
+            <el-option label="打野" value="Jungle" />
+            <el-option label="中单" value="Mid" />
+            <el-option label="ADC" value="Bot" />
+            <el-option label="辅助" value="Support" />
           </el-select>
         </el-form-item>
         <el-form-item label="能力值">
@@ -225,15 +233,58 @@
         </el-form-item>
         <el-form-item label="天赋标签">
           <el-radio-group v-model="editForm.tag">
-            <el-radio value="MEDIOCRE">平庸</el-radio>
-            <el-radio value="NORMAL">一般</el-radio>
-            <el-radio value="GENIUS">天才</el-radio>
+            <el-radio value="Ordinary">平庸</el-radio>
+            <el-radio value="Normal">一般</el-radio>
+            <el-radio value="Genius">天才</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showEditDialog = false">取消</el-button>
         <el-button type="primary" @click="savePlayer">保存修改</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 自动生成新秀对话框 -->
+    <el-dialog v-model="showGenerateDialog" title="自动生成新秀" width="480px">
+      <div class="generate-content">
+        <div class="generate-info">
+          <p>为 <strong>{{ currentRegionName }}</strong> 赛区自动生成拟真新秀，包含符合赛区风格的游戏 ID 和真实姓名。</p>
+        </div>
+        <el-form label-width="100px" class="generate-form">
+          <el-form-item label="生成数量">
+            <el-input-number
+              v-model="generateCount"
+              :min="1"
+              :max="50"
+              :step="5"
+              controls-position="right"
+              style="width: 200px"
+            />
+            <div class="form-hint">建议每赛区生成 10~20 名</div>
+          </el-form-item>
+        </el-form>
+        <div class="generate-preview">
+          <div class="preview-item">
+            <span class="preview-label">当前赛区</span>
+            <span class="preview-value">{{ currentRegionName }}</span>
+          </div>
+          <div class="preview-item">
+            <span class="preview-label">已有新秀</span>
+            <span class="preview-value">{{ currentPoolData.length }} 人</span>
+          </div>
+          <div class="preview-item">
+            <span class="preview-label">即将生成</span>
+            <span class="preview-value highlight">{{ generateCount }} 人</span>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showGenerateDialog = false">取消</el-button>
+        <el-button type="success" @click="handleGenerateRookies" :loading="isGenerating">
+          <el-icon><MagicStick /></el-icon>
+          开始生成
+        </el-button>
       </template>
     </el-dialog>
 
@@ -373,7 +424,11 @@ TheShy,TOP,72,88,GENIUS</pre>
           >
             <el-table-column type="index" label="#" width="50" />
             <el-table-column prop="gameId" label="游戏ID" min-width="100" />
-            <el-table-column prop="position" label="位置" width="70" align="center" />
+            <el-table-column prop="position" label="位置" width="70" align="center">
+              <template #default="{ row }">
+                {{ normalizePosition(row.position) }}
+              </template>
+            </el-table-column>
             <el-table-column prop="ability" label="能力" width="70" align="center">
               <template #default="{ row }">
                 <span :style="{ color: getAbilityColor(row.ability), fontWeight: 600 }">
@@ -434,6 +489,7 @@ import {
   Plus,
   SuccessFilled,
   RefreshLeft,
+  MagicStick,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { draftApi, queryApi } from '@/api/tauri'
@@ -468,24 +524,27 @@ const parsedPlayers = ref<Omit<PoolPlayer, 'id' | 'region'>[]>([])
 const isDragover = ref(false)
 const activeFormatTab = ref<'json' | 'csv'>('json')
 const isLoading = ref(false)
+const showGenerateDialog = ref(false)
+const generateCount = ref(14)
+const isGenerating = ref(false)
 
 // 导入表单
 const importForm = ref({
   gameId: '',
-  position: 'MID',
+  position: 'Mid',
   ability: 50,
   potential: 70,
-  tag: 'NORMAL',
+  tag: 'Normal',
 })
 
 // 编辑表单
 const editForm = ref({
   id: '',
   gameId: '',
-  position: 'MID',
+  position: 'Mid',
   ability: 50,
   potential: 70,
-  tag: 'NORMAL',
+  tag: 'Normal',
 })
 
 // 选手池数据
@@ -562,16 +621,34 @@ const currentPoolData = computed(() => {
 })
 
 const geniusCount = computed(() => {
-  return currentPoolData.value.filter(p => p.tag === 'GENIUS').length
+  return currentPoolData.value.filter(p => normalizeTag(p.tag) === 'Genius').length
 })
 
 const normalCount = computed(() => {
-  return currentPoolData.value.filter(p => p.tag === 'NORMAL').length
+  return currentPoolData.value.filter(p => normalizeTag(p.tag) === 'Normal').length
 })
 
 const mediocreCount = computed(() => {
-  return currentPoolData.value.filter(p => p.tag === 'MEDIOCRE').length
+  return currentPoolData.value.filter(p => normalizeTag(p.tag) === 'Ordinary').length
 })
+
+// 标签/位置规范化（兼容后端 "Genius"/"Normal"/"Ordinary" 和旧格式 "GENIUS"/"NORMAL"/"MEDIOCRE"）
+const normalizeTag = (tag: string): string => {
+  const t = tag.toLowerCase()
+  if (t === 'genius') return 'Genius'
+  if (t === 'normal') return 'Normal'
+  if (t === 'ordinary' || t === 'mediocre') return 'Ordinary'
+  return tag
+}
+
+const normalizePosition = (pos: string): string => {
+  const p = pos.toLowerCase()
+  const map: Record<string, string> = {
+    top: '上单', jungle: '打野', mid: '中单', bot: 'ADC', support: '辅助',
+    jug: '打野', adc: 'ADC', sup: '辅助',
+  }
+  return map[p] || pos
+}
 
 // 方法
 const getRegionPoolCount = (region: string) => {
@@ -579,27 +656,28 @@ const getRegionPoolCount = (region: string) => {
 }
 
 const getCardClass = (tag: string) => {
-  if (tag === 'GENIUS') return 'genius'
-  if (tag === 'MEDIOCRE') return 'mediocre'
+  const t = normalizeTag(tag)
+  if (t === 'Genius') return 'genius'
+  if (t === 'Ordinary') return 'mediocre'
   return 'normal'
 }
 
 const getTagLabel = (tag: string) => {
   const labels: Record<string, string> = {
-    'GENIUS': '天才',
-    'NORMAL': '一般',
-    'MEDIOCRE': '平庸',
+    'Genius': '天才',
+    'Normal': '一般',
+    'Ordinary': '平庸',
   }
-  return labels[tag] || tag
+  return labels[normalizeTag(tag)] || tag
 }
 
 const getTagType = (tag: string) => {
   const types: Record<string, string> = {
-    'GENIUS': 'warning',
-    'NORMAL': '',
-    'MEDIOCRE': 'info',
+    'Genius': 'warning',
+    'Normal': '',
+    'Ordinary': 'info',
   }
-  return types[tag] || ''
+  return types[normalizeTag(tag)] || ''
 }
 
 const getAbilityColor = (ability: number) => {
@@ -631,10 +709,10 @@ const importPlayer = async () => {
     // 重置表单
     importForm.value = {
       gameId: '',
-      position: 'MID',
+      position: 'Mid',
       ability: 50,
       potential: 70,
-      tag: 'NORMAL',
+      tag: 'Normal',
     }
 
     await loadPoolData(selectedRegion.value)
@@ -844,25 +922,33 @@ const parseCSVContent = (content: string) => {
 
 // 验证和规范化选手数据
 const validateAndNormalizePlayers = (players: any[]): Omit<PoolPlayer, 'id' | 'region'>[] => {
-  const validPositions = ['TOP', 'JUG', 'MID', 'ADC', 'SUP']
-  const validTags = ['GENIUS', 'NORMAL', 'MEDIOCRE']
+  const validPositions = ['top', 'jungle', 'mid', 'bot', 'support', 'jug', 'adc', 'sup']
+  const validTags = ['genius', 'normal', 'ordinary', 'mediocre']
+
+  // 统一位置格式为后端格式
+  const posMap: Record<string, string> = {
+    top: 'Top', jungle: 'Jungle', jug: 'Jungle', mid: 'Mid', bot: 'Bot', adc: 'Bot', support: 'Support', sup: 'Support',
+  }
+  // 统一 tag 格式为后端格式
+  const tagMap: Record<string, string> = {
+    genius: 'Genius', normal: 'Normal', ordinary: 'Ordinary', mediocre: 'Ordinary',
+  }
 
   return players
     .filter(p => {
-      // 验证必填字段
       if (!p.gameId || typeof p.gameId !== 'string') return false
-      if (!validPositions.includes(p.position?.toUpperCase())) return false
+      if (!validPositions.includes(p.position?.toLowerCase())) return false
       if (isNaN(p.ability) || p.ability < 30 || p.ability > 80) return false
       if (isNaN(p.potential) || p.potential < 50 || p.potential > 99) return false
-      if (!validTags.includes(p.tag?.toUpperCase())) return false
+      if (!validTags.includes(p.tag?.toLowerCase())) return false
       return true
     })
     .map(p => ({
       gameId: p.gameId.trim(),
-      position: p.position.toUpperCase(),
+      position: posMap[p.position.toLowerCase()] || p.position,
       ability: Number(p.ability),
       potential: Number(p.potential),
-      tag: p.tag.toUpperCase(),
+      tag: tagMap[p.tag.toLowerCase()] || p.tag,
     }))
 }
 
@@ -886,6 +972,23 @@ const confirmBatchImport = async () => {
   } catch (e) {
     logger.error('Failed to batch import:', e)
     ElMessage.error('批量导入失败')
+  }
+}
+
+// 自动生成新秀
+const handleGenerateRookies = async () => {
+  isGenerating.value = true
+  try {
+    const regionId = await getRegionId(selectedRegion.value)
+    const generated = await draftApi.generateRookies(regionId, generateCount.value)
+    showGenerateDialog.value = false
+    await loadPoolData(selectedRegion.value)
+    ElMessage.success(`成功生成 ${generated.length} 名 ${currentRegionName.value} 新秀`)
+  } catch (e) {
+    logger.error('Failed to generate rookies:', e)
+    ElMessage.error('生成新秀失败')
+  } finally {
+    isGenerating.value = false
   }
 }
 </script>
@@ -929,6 +1032,12 @@ const confirmBatchImport = async () => {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .header-icon {
@@ -1207,7 +1316,7 @@ const confirmBatchImport = async () => {
         color: #1e40af;
       }
 
-      &.mediocre {
+      &.mediocre, &.ordinary {
         background: #f3f4f6;
         color: #6b7280;
       }
@@ -1264,6 +1373,65 @@ const confirmBatchImport = async () => {
     gap: 8px;
     padding-top: 12px;
     border-top: 1px solid #e5e7eb;
+  }
+}
+
+/* 自动生成对话框 */
+.generate-content {
+  .generate-info {
+    margin-bottom: 20px;
+
+    p {
+      font-size: 14px;
+      color: #4b5563;
+      margin: 0;
+      line-height: 1.6;
+
+      strong {
+        color: #1f2937;
+      }
+    }
+  }
+
+  .generate-form {
+    margin-bottom: 20px;
+
+    .form-hint {
+      font-size: 12px;
+      color: #9ca3af;
+      margin-top: 4px;
+    }
+  }
+
+  .generate-preview {
+    padding: 16px;
+    background: #f9fafb;
+    border-radius: 10px;
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+
+    .preview-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+
+      .preview-label {
+        font-size: 12px;
+        color: #6b7280;
+      }
+
+      .preview-value {
+        font-size: 18px;
+        font-weight: 700;
+        color: #1f2937;
+
+        &.highlight {
+          color: #22c55e;
+        }
+      }
+    }
   }
 }
 

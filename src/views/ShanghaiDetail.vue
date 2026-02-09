@@ -3,13 +3,19 @@
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-content">
-        <h1 class="page-title">
-          <el-icon><Trophy /></el-icon>
-          上海大师赛
-        </h1>
-        <p class="page-description">
-          12支队伍(各赛区夏季赛冠亚季军)参赛,双败淘汰赛制,决出世界最强战队
-        </p>
+        <div class="header-left">
+          <el-button text @click="goBack">
+            <el-icon><ArrowLeft /></el-icon>
+            返回赛事列表
+          </el-button>
+          <h1 class="page-title">
+            <el-icon><Trophy /></el-icon>
+            上海大师赛
+          </h1>
+          <p class="page-description">
+            12支队伍(各赛区夏季赛冠亚季军)参赛,双败淘汰赛制,决出世界最强战队
+          </p>
+        </div>
       </div>
       <div class="header-actions">
         <el-button @click="refreshData" :icon="Refresh">刷新数据</el-button>
@@ -20,7 +26,7 @@
     <div v-if="currentBracket" class="shanghai-status-card">
       <div class="status-header">
         <div class="status-info">
-          <h2>{{ currentBracket.seasonYear }} 上海大师赛</h2>
+          <h2>S{{ viewingSeason }} 上海大师赛</h2>
           <el-tag :type="getStatusType(currentBracket.status)" size="large">
             {{ getStatusText(currentBracket.status) }}
           </el-tag>
@@ -120,82 +126,34 @@
       </div>
 
       <!-- 最终排名 -->
-      <div v-if="currentBracket.status === 'completed'" class="final-standings">
-        <h3>最终排名与积分</h3>
-        <div class="standings-grid">
-          <div class="standing-item champion">
-            <div class="rank-badge">🏆 冠军</div>
-            <div class="team-name">{{ currentBracket.champion?.teamName }}</div>
-            <div class="points">+{{ currentBracket.pointsDistribution.champion }}分</div>
-          </div>
-
-          <div class="standing-item runner-up">
-            <div class="rank-badge">🥈 亚军</div>
-            <div class="team-name">{{ currentBracket.runnerUp?.teamName }}</div>
-            <div class="points">+{{ currentBracket.pointsDistribution.runnerUp }}分</div>
-          </div>
-
-          <div class="standing-item third">
-            <div class="rank-badge">🥉 季军</div>
-            <div class="team-name">{{ currentBracket.thirdPlace?.teamName }}</div>
-            <div class="points">+{{ currentBracket.pointsDistribution.thirdPlace }}分</div>
-          </div>
-
-          <div class="standing-item fourth">
-            <div class="rank-badge">4️⃣ 殿军</div>
-            <div class="team-name">{{ currentBracket.fourthPlace?.teamName }}</div>
-            <div class="points">+{{ currentBracket.pointsDistribution.fourthPlace }}分</div>
-          </div>
-        </div>
-
-        <!-- 败者组第二轮 (5-6名) -->
+      <TournamentCompletionSection
+        v-if="currentBracket.status === 'completed'"
+        :standings="shanghaiStandings"
+        banner-title="上海大师赛已完成！"
+        :banner-champion="currentBracket.champion?.teamName || ''"
+        banner-description="获得上海大师赛冠军！"
+      >
         <div v-if="currentBracket.loserRound2?.length > 0" class="loser-standings">
           <h4>败者组第二轮 (5-6名)</h4>
           <div class="loser-grid">
-            <div
-              v-for="(team, index) in currentBracket.loserRound2"
-              :key="team.teamId"
-              class="loser-item loser-r2"
-            >
+            <div v-for="(team, index) in currentBracket.loserRound2" :key="team.teamId" class="loser-item loser-r2">
               <div class="rank-badge"><span class="rank-number">{{ 5 + Number(index) }}</span></div>
               <div class="team-name">{{ team.teamName }}</div>
               <div class="points">+{{ currentBracket.pointsDistribution.loserRound2 }}分</div>
             </div>
           </div>
         </div>
-
-        <!-- 败者组第一轮 (7-8名) -->
         <div v-if="currentBracket.loserRound1?.length > 0" class="loser-standings">
           <h4>败者组第一轮 (7-8名)</h4>
           <div class="loser-grid">
-            <div
-              v-for="(team, index) in currentBracket.loserRound1"
-              :key="team.teamId"
-              class="loser-item loser-r1"
-            >
+            <div v-for="(team, index) in currentBracket.loserRound1" :key="team.teamId" class="loser-item loser-r1">
               <div class="rank-badge"><span class="rank-number">{{ 7 + Number(index) }}</span></div>
               <div class="team-name">{{ team.teamName }}</div>
               <div class="points">+{{ currentBracket.pointsDistribution.loserRound1 }}分</div>
             </div>
           </div>
         </div>
-
-        <!-- 完成后的操作区 -->
-        <div class="completed-actions">
-          <el-alert
-            title="上海大师赛已完成！"
-            type="success"
-            :closable="false"
-            show-icon
-            class="completion-alert"
-          >
-            <template #default>
-              <p>恭喜 <strong>{{ currentBracket.champion?.teamName }}</strong> 获得上海大师赛冠军！</p>
-              <p>现在可以继续进行S世界赛了。</p>
-            </template>
-          </el-alert>
-        </div>
-      </div>
+      </TournamentCompletionSection>
     </div>
 
     <!-- 比赛详情弹窗 -->
@@ -210,7 +168,7 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Trophy,
@@ -218,10 +176,13 @@ import {
   Promotion,
   Star,
   Medal,
-  Flag
+  Flag,
+  ArrowLeft
 } from '@element-plus/icons-vue'
 import MSIBracketView from '@/components/msi/MSIBracketView.vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
+import TournamentCompletionSection from '@/components/common/TournamentCompletionSection.vue'
+import type { StandingItem } from '@/types/tournament'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
@@ -236,6 +197,7 @@ import { useBatchSimulation } from '@/composables/useBatchSimulation'
 const logger = createLogger('ShanghaiDetail')
 
 const route = useRoute()
+const router = useRouter()
 
 const matchDetailStore = useMatchDetailStore()
 const playerStore = usePlayerStore()
@@ -368,6 +330,13 @@ const currentMatchDetail = ref<MatchDetail | null>(null)
 // 计算属性 - 使用 mock 数据
 const currentBracket = computed(() => mockBracket as any)
 
+const shanghaiStandings = computed<StandingItem[]>(() => [
+  { rank: 1, label: '冠军', name: currentBracket.value.champion?.teamName || '', points: `+${currentBracket.value.pointsDistribution.champion}分` },
+  { rank: 2, label: '亚军', name: currentBracket.value.runnerUp?.teamName || '', points: `+${currentBracket.value.pointsDistribution.runnerUp}分` },
+  { rank: 3, label: '季军', name: currentBracket.value.thirdPlace?.teamName || '', points: `+${currentBracket.value.pointsDistribution.thirdPlace}分` },
+  { rank: 4, label: '殿军', name: currentBracket.value.fourthPlace?.teamName || '', points: `+${currentBracket.value.pointsDistribution.fourthPlace}分` },
+])
+
 // 是否有真实队伍数据（从后端加载）
 const hasRealTeamData = computed(() => {
   // 优先检查是否有从 API 获取的参赛队伍数据
@@ -438,6 +407,10 @@ const qualifierGroupTeams = computed(() => {
   }
   return []
 })
+
+const goBack = () => {
+  router.push('/tournaments')
+}
 
 /**
  * 刷新数据（自动清理重复赛事）
@@ -1536,6 +1509,13 @@ onMounted(() => {
     margin-bottom: 24px;
 
     .header-content {
+      .header-left {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: flex-start;
+      }
+
       .page-title {
         display: flex;
         align-items: center;
@@ -1688,157 +1668,66 @@ onMounted(() => {
       }
     }
 
-    .final-standings {
-      h3 {
-        margin: 0 0 16px 0;
-        font-size: 18px;
+    .loser-standings {
+      margin-top: 24px;
+      margin-bottom: 16px;
+
+      h4 {
+        margin: 0 0 12px 0;
+        font-size: 16px;
         font-weight: 600;
-        color: #1f2937;
+        color: #6b7280;
       }
 
-      .standings-grid {
+      .loser-grid {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 16px;
-        margin-bottom: 24px;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
 
-        .standing-item {
-          padding: 20px;
+        .loser-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 16px;
           border-radius: 8px;
-          text-align: center;
-          border: 2px solid;
+          border: 1px solid;
 
           .rank-badge {
-            font-size: 24px;
-            margin-bottom: 8px;
+            .rank-number {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              width: 28px;
+              height: 28px;
+              border-radius: 50%;
+              background: #9ca3af;
+              color: white;
+              font-size: 14px;
+              font-weight: 600;
+            }
           }
 
           .team-name {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #1f2937;
+            flex: 1;
+            font-size: 15px;
+            font-weight: 500;
+            color: #374151;
           }
 
           .points {
-            font-size: 16px;
-            font-weight: 700;
+            font-size: 14px;
+            font-weight: 600;
             color: #10b981;
           }
 
-          &.champion {
-            border-color: #f59e0b;
-            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+          &.loser-r2 {
+            border-color: #a78bfa;
+            background: #f5f3ff;
           }
 
-          &.runner-up {
-            border-color: #9ca3af;
-            background: linear-gradient(135deg, #f9fafb 0%, #e5e7eb 100%);
-          }
-
-          &.third {
-            border-color: #d97706;
-            background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
-          }
-
-          &.fourth {
-            border-color: #60a5fa;
-            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-          }
-        }
-      }
-
-      .completed-actions {
-        margin-top: 32px;
-
-        .completion-alert {
-          margin-bottom: 20px;
-          border-radius: 8px;
-
-          p {
-            margin: 8px 0;
-            font-size: 14px;
-            line-height: 1.6;
-
-            strong {
-              color: #f59e0b;
-              font-weight: 700;
-            }
-          }
-        }
-
-        .action-buttons {
-          display: flex;
-          justify-content: center;
-          gap: 16px;
-
-          .el-button {
-            min-width: 200px;
-          }
-        }
-      }
-
-      // 败者组排名样式
-      .loser-standings {
-        margin-top: 24px;
-
-        h4 {
-          margin: 0 0 12px 0;
-          font-size: 16px;
-          font-weight: 600;
-          color: #6b7280;
-        }
-
-        .loser-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 12px;
-
-          .loser-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            border-radius: 8px;
-            border: 1px solid;
-
-            .rank-badge {
-              .rank-number {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                width: 28px;
-                height: 28px;
-                border-radius: 50%;
-                background: #9ca3af;
-                color: white;
-                font-size: 14px;
-                font-weight: 600;
-              }
-            }
-
-            .team-name {
-              flex: 1;
-              font-size: 15px;
-              font-weight: 500;
-              color: #374151;
-            }
-
-            .points {
-              font-size: 14px;
-              font-weight: 600;
-              color: #10b981;
-            }
-
-            &.loser-r2 {
-              border-color: #a78bfa;
-              background: #f5f3ff;
-            }
-
-            &.loser-r1 {
-              border-color: #f9a8d4;
-              background: #fdf2f8;
-            }
+          &.loser-r1 {
+            border-color: #f9a8d4;
+            background: #fdf2f8;
           }
         }
       }

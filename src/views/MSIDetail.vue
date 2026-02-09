@@ -3,13 +3,19 @@
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-content">
-        <h1 class="page-title">
-          <el-icon><Trophy /></el-icon>
-          MSI季中邀请赛
-        </h1>
-        <p class="page-description">
-          12支队伍(各赛区春季赛冠亚季军)参赛,双败淘汰赛制,决出世界最强战队
-        </p>
+        <div class="header-left">
+          <el-button text @click="goBack">
+            <el-icon><ArrowLeft /></el-icon>
+            返回赛事列表
+          </el-button>
+          <h1 class="page-title">
+            <el-icon><Trophy /></el-icon>
+            MSI季中邀请赛
+          </h1>
+          <p class="page-description">
+            12支队伍(各赛区春季赛冠亚季军)参赛,双败淘汰赛制,决出世界最强战队
+          </p>
+        </div>
       </div>
       <div class="header-actions">
         <el-button @click="refreshData" :icon="Refresh">刷新数据</el-button>
@@ -20,7 +26,7 @@
     <div v-if="currentMSIBracket" class="msi-status-card">
       <div class="status-header">
         <div class="status-info">
-          <h2>{{ currentMSIBracket.seasonYear }} MSI季中邀请赛</h2>
+          <h2>S{{ viewingSeason }} MSI季中邀请赛</h2>
           <el-tag :type="getStatusType(currentMSIBracket.status)" size="large">
             {{ getStatusText(currentMSIBracket.status) }}
           </el-tag>
@@ -235,7 +241,7 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Trophy,
@@ -243,7 +249,8 @@ import {
   Promotion,
   Star,
   Medal,
-  Flag
+  Flag,
+  ArrowLeft
 } from '@element-plus/icons-vue'
 import MSIBracketView from '@/components/msi/MSIBracketView.vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
@@ -263,6 +270,7 @@ import { useBatchSimulation, buildMatchDetail, recordMatchPerformances } from '@
 const logger = createLogger('MSIDetail')
 
 const route = useRoute()
+const router = useRouter()
 
 // Stores
 const matchDetailStore = useMatchDetailStore()
@@ -508,6 +516,10 @@ const generateTeamPlayers = (teamId: string, teamName: string, regionName: strin
   } as Player))
 }
 
+const goBack = () => {
+  router.push('/tournaments')
+}
+
 /**
  * 刷新数据
  */
@@ -545,6 +557,7 @@ const loadMSIData = async () => {
 
     if (msiTournament) {
       currentTournamentId.value = msiTournament.id
+      mockMSIBracket.seasonYear = seasonId
       logger.debug('[MSI] 选择赛事:', msiTournament.id, msiTournament.name, 'match_count:', msiTournament.match_count)
 
       // 如果没有比赛但队伍已就绪，尝试重新生成对阵
@@ -1478,6 +1491,13 @@ onMounted(() => {
     margin-bottom: 24px;
 
     .header-content {
+      .header-left {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: flex-start;
+      }
+
       .page-title {
         display: flex;
         align-items: center;

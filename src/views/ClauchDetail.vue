@@ -61,7 +61,7 @@
     <div class="clauch-status-card">
       <div class="status-header">
         <div class="status-info">
-          <h2>C洲际赛</h2>
+          <h2>S{{ viewingSeason }} C洲际赛</h2>
           <el-tag :type="getStatusType(clauchBracket.status)" size="large">
             {{ getStatusText(clauchBracket.status) }}
           </el-tag>
@@ -209,54 +209,13 @@
         </div>
       </el-card>
 
-      <!-- 最终排名 -->
-      <div v-if="clauchBracket.status === 'completed'" class="final-standings">
-        <h3>最终排名与积分</h3>
-        <div class="standings-grid">
-          <div class="standing-item champion">
-            <div class="rank-badge">🏆 冠军</div>
-            <div class="team-name">{{ clauchBracket.champion?.teamName }}</div>
-            <div class="region-name">{{ clauchBracket.champion?.regionName }}</div>
-            <div class="points">+20分</div>
-          </div>
-
-          <div class="standing-item runner-up">
-            <div class="rank-badge">🥈 亚军</div>
-            <div class="team-name">{{ clauchBracket.runnerUp?.teamName }}</div>
-            <div class="region-name">{{ clauchBracket.runnerUp?.regionName }}</div>
-            <div class="points">+16分</div>
-          </div>
-
-          <div class="standing-item third">
-            <div class="rank-badge">🥉 季军</div>
-            <div class="team-name">{{ clauchBracket.thirdPlace?.teamName }}</div>
-            <div class="region-name">{{ clauchBracket.thirdPlace?.regionName }}</div>
-            <div class="points">+12分</div>
-          </div>
-
-          <div class="standing-item fourth">
-            <div class="rank-badge">4️⃣ 殿军</div>
-            <div class="team-name">{{ clauchBracket.fourthPlace?.teamName }}</div>
-            <div class="region-name">{{ clauchBracket.fourthPlace?.regionName }}</div>
-            <div class="points">+8分</div>
-          </div>
-        </div>
-
-        <!-- C洲际赛完成后的操作区 -->
-        <div class="clauch-completed-actions">
-          <el-alert
-            title="C洲际赛已完成！"
-            type="success"
-            :closable="false"
-            show-icon
-            class="completion-alert"
-          >
-            <template #default>
-              <p>恭喜 <strong>{{ clauchBracket.champion?.teamName }}</strong> 获得C洲际赛冠军！</p>
-            </template>
-          </el-alert>
-        </div>
-      </div>
+      <TournamentCompletionSection
+        v-if="clauchBracket.status === 'completed'"
+        :standings="clauchStandings"
+        banner-title="C洲际赛已完成！"
+        :banner-champion="clauchBracket.champion?.teamName || ''"
+        banner-description="获得C洲际赛冠军！"
+      />
     </div>
 
     <!-- 比赛详情弹窗 -->
@@ -283,6 +242,8 @@ import ClauchGroupStanding from '@/components/clauch/ClauchGroupStanding.vue'
 import ClauchKnockoutBracket from '@/components/clauch/ClauchKnockoutBracket.vue'
 import ClauchMatchCard from '@/components/clauch/ClauchMatchCard.vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
+import TournamentCompletionSection from '@/components/common/TournamentCompletionSection.vue'
+import type { StandingItem } from '@/types/tournament'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useTimeStore } from '@/stores/useTimeStore'
@@ -376,6 +337,13 @@ const isGroupStageComplete = computed(() => {
 const showFinals = computed(() => {
   return clauchBracket.thirdPlaceMatch || clauchBracket.grandFinal
 })
+
+const clauchStandings = computed<StandingItem[]>(() => [
+  { rank: 1, label: '冠军', name: clauchBracket.champion?.teamName || '', regionName: clauchBracket.champion?.regionName, points: '+20分' },
+  { rank: 2, label: '亚军', name: clauchBracket.runnerUp?.teamName || '', regionName: clauchBracket.runnerUp?.regionName, points: '+16分' },
+  { rank: 3, label: '季军', name: clauchBracket.thirdPlace?.teamName || '', regionName: clauchBracket.thirdPlace?.regionName, points: '+12分' },
+  { rank: 4, label: '殿军', name: clauchBracket.fourthPlace?.teamName || '', regionName: clauchBracket.fourthPlace?.regionName, points: '+8分' },
+])
 
 // 方法
 const goBack = () => {
@@ -1072,6 +1040,7 @@ onMounted(async () => {
         display: flex;
         flex-direction: column;
         gap: 8px;
+        align-items: flex-start;
       }
 
       .page-title {
@@ -1241,97 +1210,6 @@ onMounted(async () => {
       }
     }
 
-    .final-standings {
-      margin-top: 32px;
-
-      h3 {
-        margin: 0 0 16px 0;
-        font-size: 18px;
-        font-weight: 600;
-        color: #1f2937;
-      }
-
-      .standings-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 16px;
-        margin-bottom: 24px;
-
-        .standing-item {
-          padding: 20px;
-          border-radius: 8px;
-          text-align: center;
-          border: 2px solid;
-
-          .rank-badge {
-            font-size: 18px;
-            margin-bottom: 8px;
-            white-space: nowrap;
-          }
-
-          .team-name {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #1f2937;
-          }
-
-          .region-name {
-            font-size: 14px;
-            color: #6b7280;
-            margin-bottom: 8px;
-          }
-
-          .points {
-            font-size: 16px;
-            font-weight: 700;
-            color: #10b981;
-          }
-
-          &.champion {
-            border-color: #f59e0b;
-            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-          }
-
-          &.runner-up {
-            border-color: #9ca3af;
-            background: linear-gradient(135deg, #f9fafb 0%, #e5e7eb 100%);
-          }
-
-          &.third {
-            border-color: #d97706;
-            background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
-          }
-
-          &.fourth {
-            border-color: #60a5fa;
-            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-          }
-        }
-      }
-
-      .clauch-completed-actions {
-        margin-top: 32px;
-        text-align: center;
-
-        .completion-alert {
-          margin-bottom: 20px;
-          border-radius: 8px;
-          text-align: left;
-
-          p {
-            margin: 8px 0;
-            font-size: 14px;
-            line-height: 1.6;
-
-            strong {
-              color: #f59e0b;
-              font-weight: 700;
-            }
-          }
-        }
-      }
-    }
   }
 
   .mb-4 {

@@ -10,168 +10,128 @@
         </div>
       </div>
       <div class="header-actions">
-        <el-button type="warning" @click="handleFixTournamentStatus" :loading="isFixing">
-          <el-icon><Tools /></el-icon>
-          修复状态
-        </el-button>
-        <el-button type="primary" @click="refreshTournaments" :loading="isLoading">
-          <el-icon><Refresh /></el-icon>
-          刷新
-        </el-button>
+        <el-tooltip content="修复赛事状态" placement="bottom">
+          <el-button circle size="small" @click="handleFixTournamentStatus" :loading="isFixing">
+            <el-icon><Tools /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <el-tooltip content="刷新" placement="bottom">
+          <el-button circle size="small" @click="refreshTournaments" :loading="isLoading">
+            <el-icon><Refresh /></el-icon>
+          </el-button>
+        </el-tooltip>
       </div>
     </div>
 
-    <!-- 统计概览 -->
-    <el-row :gutter="16" class="stats-row">
-      <el-col :span="6">
-        <el-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon blue">
-              <el-icon :size="28"><Trophy /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-number">{{ tournaments.length }}</div>
-              <div class="stat-label">赛事总数</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon green">
-              <el-icon :size="28"><VideoPlay /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-number">{{ activeTournaments }}</div>
-              <div class="stat-label">进行中</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon orange">
-              <el-icon :size="28"><Clock /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-number">{{ upcomingTournaments }}</div>
-              <div class="stat-label">未开始</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon purple">
-              <el-icon :size="28"><CircleCheck /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-number">{{ completedTournaments }}</div>
-              <div class="stat-label">已完成</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <!-- 统计栏 -->
+    <div class="stats-bar">
+      <div class="stat-item">
+        <span class="stat-value">{{ tournaments.length }}</span>
+        <span class="stat-label">赛事总数</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value highlight">{{ activeTournaments }}</span>
+        <span class="stat-label">进行中</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ upcomingTournaments }}</span>
+        <span class="stat-label">未开始</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ completedTournaments }}</span>
+        <span class="stat-label">已完成</span>
+      </div>
+    </div>
 
     <!-- 加载状态 -->
-    <el-card v-if="isLoading" class="loading-card">
+    <div v-if="isLoading" class="loading-container">
       <el-skeleton :rows="10" animated />
-    </el-card>
+    </div>
 
     <!-- 赛事卡片网格 -->
-    <el-row v-else :gutter="20">
-      <el-col :span="8" v-for="group in groupedTournaments" :key="group.isLeague ? group.type : group.originalTournament?.id">
-        <el-card class="tournament-card" :class="group.status">
-          <!-- 联赛头部 -->
-          <div v-if="group.isLeague" class="tournament-header league">
-            <div class="tournament-badge">联赛</div>
-            <div class="tournament-icon">{{ group.icon }}</div>
-            <!-- 赛区标签 -->
-            <div v-if="group.regions.length > 0" class="region-tags">
-              <span v-for="region in group.regions" :key="region" class="region-tag">{{ region }}</span>
-            </div>
-          </div>
-          <!-- 国际赛事头部 - 使用图片 -->
-          <div v-else class="tournament-header international" :style="getTournamentHeaderStyle(group.originalTournament)">
-            <div class="tournament-badge">国际赛</div>
-          </div>
+    <div v-else class="tournament-grid">
+      <div
+        v-for="group in groupedTournaments"
+        :key="group.isLeague ? group.type : group.originalTournament?.id"
+        class="tournament-card"
+        :class="[group.status, group.isLeague ? 'league' : 'international']"
+      >
+        <div class="card-top">
+          <span class="card-badge" :class="group.isLeague ? 'league' : 'international'">
+            {{ group.isLeague ? '联赛' : '国际赛' }}
+          </span>
+          <el-tag
+            :type="group.status === 'active' ? 'success' : group.status === 'completed' ? '' : 'info'"
+            size="small"
+          >
+            {{ group.status === 'active' ? '进行中' : group.status === 'completed' ? '已完成' : '未开始' }}
+          </el-tag>
+        </div>
 
-          <!-- 赛事内容 -->
-          <div class="tournament-content">
-            <div class="tournament-title-row">
-              <h3 class="tournament-name">{{ group.name }}</h3>
-              <el-tag :type="group.status === 'active' ? 'success' : group.status === 'completed' ? 'primary' : 'info'" size="default">
-                {{ group.status === 'active' ? '进行中' : group.status === 'completed' ? '已完成' : '未开始' }}
-              </el-tag>
-            </div>
+        <h3 class="tournament-name">{{ group.name }}</h3>
+        <p class="tournament-desc">
+          {{ group.isLeague ? `四大赛区 ${group.tournaments.length} 场赛事` : group.originalTournament?.tournament_type || '' }}
+        </p>
 
-            <p class="tournament-description">
-              {{ group.isLeague ? `四大赛区 ${group.tournaments.length} 场赛事` : group.originalTournament?.tournament_type || '' }}
-            </p>
+        <div class="card-meta">
+          <span class="meta-item">
+            <el-icon><Trophy /></el-icon>
+            S{{ selectedSeason }} 赛季
+          </span>
+          <span v-if="group.regions.length > 0" class="meta-item">
+            <el-icon><UserFilled /></el-icon>
+            {{ group.regions.join(' / ') }}
+          </span>
+        </div>
 
-            <div class="tournament-info">
-              <div class="info-item">
-                <el-icon><Trophy /></el-icon>
-                <span>S{{ selectedSeason }} 赛季</span>
-              </div>
-              <div class="info-item" v-if="group.regions.length > 0">
-                <el-icon><UserFilled /></el-icon>
-                <span>{{ group.regions.join(' / ') }}</span>
-              </div>
-            </div>
+        <div v-if="group.regions.length > 0" class="region-tags">
+          <span v-for="region in group.regions" :key="region" class="region-tag">{{ region }}</span>
+        </div>
 
-            <!-- 操作按钮 -->
-            <div class="tournament-actions">
-              <el-button
-                v-if="group.status === 'active'"
-                type="success"
-                @click="navigateToGroup(group)"
-              >
-                <el-icon><VideoPlay /></el-icon>
-                继续比赛
-              </el-button>
-              <el-button
-                v-else-if="group.status === 'upcoming'"
-                type="primary"
-                disabled
-              >
-                <el-icon><Clock /></el-icon>
-                等待开始
-              </el-button>
-              <el-button
-                v-else
-                type="info"
-                @click="navigateToGroup(group)"
-              >
-                <el-icon><View /></el-icon>
-                查看结果
-              </el-button>
-              <el-button @click="navigateToGroup(group)">
-                详情
-              </el-button>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+        <!-- 操作按钮 -->
+        <div class="card-actions">
+          <el-button
+            v-if="group.status === 'active'"
+            type="success"
+            size="small"
+            @click="navigateToGroup(group)"
+          >
+            <el-icon><VideoPlay /></el-icon>
+            继续比赛
+          </el-button>
+          <el-button
+            v-else-if="group.status === 'upcoming'"
+            size="small"
+            disabled
+          >
+            <el-icon><Clock /></el-icon>
+            等待开始
+          </el-button>
+          <el-button
+            v-else
+            size="small"
+            @click="navigateToGroup(group)"
+          >
+            <el-icon><View /></el-icon>
+            查看结果
+          </el-button>
+          <button class="detail-btn" @click="navigateToGroup(group)">详情 →</button>
+        </div>
+      </div>
+    </div>
 
     <!-- 空状态 -->
-    <el-card v-if="!isLoading && tournaments.length === 0" class="empty-card">
-      <el-empty description="暂无赛事数据，请先加载存档" />
-    </el-card>
+    <el-empty v-if="!isLoading && tournaments.length === 0" description="暂无赛事数据，请先加载存档" />
 
     <!-- 赛季时间线 -->
-    <el-card v-if="tournaments.length > 0" class="timeline-card">
-      <template #header>
-        <div class="timeline-header">
-          <h2>赛季时间线</h2>
-          <el-tag type="primary" effect="dark">{{ currentSeason }}</el-tag>
-        </div>
-      </template>
+    <div v-if="tournaments.length > 0" class="table-section timeline-section">
+      <div class="timeline-header">
+        <h2>赛季时间线</h2>
+        <el-tag type="primary" size="small">{{ currentSeason }}</el-tag>
+      </div>
 
       <el-timeline>
         <el-timeline-item
@@ -195,7 +155,7 @@
           </div>
         </el-timeline-item>
       </el-timeline>
-    </el-card>
+    </div>
   </div>
 </template>
 
@@ -208,7 +168,6 @@ import {
   Trophy,
   VideoPlay,
   Clock,
-  CircleCheck,
   UserFilled,
   View,
   Refresh,
@@ -243,6 +202,16 @@ const isFixing = ref(false)
 onMounted(async () => {
   selectedSeason.value = seasonStore.currentSeason
   await loadAllTournaments()
+  // 自动检测并修复赛事状态
+  try {
+    const result = await timeApi.fixTournamentStatus()
+    if (result.fixed_count > 0) {
+      ElMessage.success(result.message)
+      await loadAllTournaments()
+    }
+  } catch (e) {
+    logger.error('Auto fix tournament status failed:', e)
+  }
 })
 
 // 监听赛季切换
@@ -387,10 +356,10 @@ const leagueTypes = ['SpringRegular', 'SpringPlayoffs', 'SummerRegular', 'Summer
 
 // 联赛类型配置
 const leagueTypeConfig: Record<string, { name: string, icon: string, order: number }> = {
-  'SpringRegular': { name: '春季常规赛', icon: '🌸', order: 1 },
-  'SpringPlayoffs': { name: '春季季后赛', icon: '🏆', order: 2 },
-  'SummerRegular': { name: '夏季常规赛', icon: '☀️', order: 4 },
-  'SummerPlayoffs': { name: '夏季季后赛', icon: '🏆', order: 5 },
+  'SpringRegular': { name: '春季常规赛', icon: '', order: 1 },
+  'SpringPlayoffs': { name: '春季季后赛', icon: '', order: 2 },
+  'SummerRegular': { name: '夏季常规赛', icon: '', order: 4 },
+  'SummerPlayoffs': { name: '夏季季后赛', icon: '', order: 5 },
 }
 
 // 赛事分组（只合并联赛，国际赛事保持原样）
@@ -568,101 +537,322 @@ const navigateToGroup = async (group: TournamentGroup) => {
   }
 }
 
-// 获取国际赛事头部样式（背景图片）
-const getTournamentHeaderStyle = (tournament: any) => {
-  if (!tournament) return {}
-
-  const type = tournament.tournament_type || ''
-  const imageMap: Record<string, string> = {
-    'Msi': '/images/tournaments/msi.png',
-    'WorldChampionship': '/images/tournaments/worlds.png',
-    'ShanghaiMasters': '/images/tournaments/shanghai.png',
-    'MadridMasters': '/images/tournaments/madrid.png',
-    'ClaudeIntercontinental': '/images/tournaments/claude.png',
-  }
-
-  const imagePath = imageMap[type]
-  if (imagePath) {
-    return {
-      backgroundImage: `url(${imagePath})`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center'
-    }
-  }
-
-  return {}
-}
 </script>
 
 <style scoped>
-.tournaments-view { padding: 0; }
+.tournaments-view {
+  padding: 0;
+}
 
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.page-header h1 { font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 8px 0; }
-.page-header p { font-size: 14px; color: var(--text-tertiary); margin: 0; }
-.header-actions { display: flex; gap: 12px; }
+/* 页面标题 */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
 
-.stats-row { margin-bottom: 20px; }
-.stat-card { border-radius: 12px; }
-.stat-content { display: flex; align-items: center; gap: 16px; padding: 8px 0; }
-/* stat-icon 基础结构已在 main.css 全局定义，此处仅覆盖本页特殊渐变 */
-.stat-icon.blue { background: linear-gradient(135deg, #667eea, #764ba2); }
-.stat-icon.green { background: linear-gradient(135deg, #11998e, #38ef7d); }
-.stat-icon.orange { background: linear-gradient(135deg, #f093fb, #f5576c); }
-.stat-icon.purple { background: linear-gradient(135deg, #4facfe, #00f2fe); }
-.stat-info { flex: 1; }
-.stat-number { font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1; }
-.stat-label { font-size: 14px; color: var(--text-tertiary); margin-top: 4px; }
+.page-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+  letter-spacing: -0.3px;
+}
 
-.loading-card, .empty-card { border-radius: 12px; margin-bottom: 20px; }
+.page-header p {
+  font-size: 13px;
+  color: #94a3b8;
+  margin: 0;
+}
 
-/* 赛事卡片 */
-.tournament-card { margin-bottom: 20px; border-radius: 12px; overflow: hidden; transition: all 0.3s ease; }
-.tournament-card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15); }
-.tournament-card.active { border-left: 4px solid #67c23a; }
-.tournament-card.upcoming { border-left: 4px solid #409eff; }
-.tournament-card.completed { border-left: 4px solid #909399; }
-.tournament-card :deep(.el-card__body) { padding: 0; }
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
 
-.tournament-header { height: 140px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
-.tournament-header.league { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-.tournament-header.international { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-.tournament-badge { position: absolute; top: 12px; left: 12px; padding: 4px 12px; background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(4px); border-radius: 20px; color: white; font-size: 12px; font-weight: 500; z-index: 1; }
-.tournament-icon { font-size: 48px; }
-.region-tags { position: absolute; bottom: 12px; left: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
-.region-tag { padding: 2px 8px; background: rgba(255, 255, 255, 0.25); backdrop-filter: blur(4px); border-radius: 12px; color: white; font-size: 11px; font-weight: 500; }
+/* 统计栏 */
+.stats-bar {
+  display: flex;
+  align-items: center;
+  padding: 14px 24px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 20px;
+}
 
-.tournament-content { padding: 20px; }
-.tournament-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.tournament-name { font-size: 18px; font-weight: 700; color: #303133; margin: 0; }
-.tournament-description { font-size: 14px; color: #909399; margin: 0 0 16px 0; line-height: 1.5; }
+.stat-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  justify-content: center;
+}
 
-.tournament-info { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
-.info-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #606266; }
-.info-item .el-icon { color: #909399; }
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
 
-.tournament-actions { display: flex; gap: 8px; }
-.tournament-actions .el-button { flex: 1; }
+.stat-value.highlight {
+  color: #6366f1;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 24px;
+  background: #e2e8f0;
+  flex-shrink: 0;
+}
+
+/* 加载 */
+.loading-container {
+  padding: 40px;
+}
+
+/* 赛事卡片网格 */
+.tournament-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.tournament-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 20px;
+  transition: all 0.2s ease;
+}
+
+.tournament-card:hover {
+  border-color: #6366f1;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.08);
+}
+
+.tournament-card.active {
+  border-left: 3px solid #10b981;
+}
+
+.tournament-card.upcoming {
+  border-left: 3px solid #6366f1;
+}
+
+.tournament-card.completed {
+  border-left: 3px solid #94a3b8;
+}
+
+/* 卡片顶部 */
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.card-badge {
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.card-badge.league {
+  background: rgba(99, 102, 241, 0.08);
+  color: #6366f1;
+}
+
+.card-badge.international {
+  background: rgba(139, 92, 246, 0.08);
+  color: #8b5cf6;
+}
+
+/* 卡片内容 */
+.tournament-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
+
+.tournament-desc {
+  font-size: 13px;
+  color: #94a3b8;
+  margin: 0 0 12px 0;
+}
+
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.meta-item .el-icon {
+  color: #94a3b8;
+}
+
+/* 赛区标签 */
+.region-tags {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.region-tag {
+  padding: 2px 8px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+/* 操作按钮 */
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.detail-btn {
+  margin-left: auto;
+  padding: 5px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.detail-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: #f5f3ff;
+}
 
 /* 时间线 */
-.timeline-card { margin-top: 20px; border-radius: 12px; }
-.timeline-header { display: flex; justify-content: space-between; align-items: center; }
-.timeline-header h2 { font-size: 18px; font-weight: 600; color: #303133; margin: 0; }
+.table-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 20px;
+  background: #ffffff;
+}
+
+.timeline-section {
+  margin-top: 4px;
+  padding: 20px 24px;
+}
+
+.timeline-section :deep(.el-timeline) {
+  padding-left: 0;
+}
+
+.timeline-section :deep(.el-timeline-item__tail) {
+  left: 5px;
+}
+
+.timeline-section :deep(.el-timeline-item__node) {
+  left: 0;
+}
+
+.timeline-section :deep(.el-timeline-item__wrapper) {
+  padding-left: 24px;
+}
+
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.timeline-header h2 {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
 .timeline-content {
-  padding: 12px 16px;
-  background: #f5f7fa;
-  border-radius: 8px;
-  transition: all 0.3s ease;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border: 1px solid #f1f5f9;
+  transition: all 0.2s ease;
 }
+
 .timeline-content.current-phase {
-  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
-  border: 2px solid #4caf50;
-  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
+  background: #f0fdf4;
+  border: 1px solid #10b981;
 }
+
 .timeline-content.current-phase .timeline-name {
-  color: #2e7d32;
+  color: #10b981;
 }
-.timeline-title { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-.timeline-name { font-weight: 600; color: #303133; }
-.timeline-desc { font-size: 13px; color: #909399; margin: 0; }
+
+.timeline-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.timeline-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.timeline-desc {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 0;
+}
+
+/* 响应式 */
+@media (max-width: 1200px) {
+  .tournament-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stats-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .stat-divider {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .tournament-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

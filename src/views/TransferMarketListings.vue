@@ -2,27 +2,31 @@
   <div class="transfer-market-listings">
     <!-- 页面标题 -->
     <div class="page-header">
-      <div class="header-content">
+      <div>
         <h1>转会挂牌市场</h1>
         <p>查看当前转会窗口中被挂牌出售的选手和自由球员</p>
       </div>
-      <div class="header-stats">
-        <div class="stat-item">
-          <span class="stat-value">{{ activeCount }}</span>
-          <span class="stat-label">在售选手</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ soldCount }}</span>
-          <span class="stat-label">已售出</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ freeAgentCount }}</span>
-          <span class="stat-label">自由球员</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">{{ formatValue(totalDealAmount) }}</span>
-          <span class="stat-label">总成交额</span>
-        </div>
+    </div>
+
+    <div class="stats-bar">
+      <div class="stat-item">
+        <span class="stat-value">{{ activeCount }}</span>
+        <span class="stat-label">在售选手</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ soldCount }}</span>
+        <span class="stat-label">已售出</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ freeAgentCount }}</span>
+        <span class="stat-label">自由球员</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ formatValue(totalDealAmount) }}</span>
+        <span class="stat-label">总成交额</span>
       </div>
     </div>
 
@@ -46,7 +50,7 @@
     />
 
     <!-- 筛选区域 -->
-    <el-card class="filter-card">
+    <div class="filter-section">
       <div class="filter-row">
         <div class="filter-group">
           <label>搜索选手</label>
@@ -92,14 +96,13 @@
           刷新数据
         </el-button>
       </div>
-    </el-card>
+    </div>
 
     <!-- 数据表格 -->
-    <el-card class="table-card">
+    <div class="table-section">
       <el-table
         :data="paginatedList"
         v-loading="loading"
-        stripe
         style="width: 100%"
         :default-sort="{ prop: 'ability', order: 'descending' }"
         @sort-change="handleSortChange"
@@ -241,7 +244,7 @@
           @current-change="handlePageChange"
         />
       </div>
-    </el-card>
+    </div>
   </div>
 </template>
 
@@ -502,227 +505,67 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.transfer-market-listings {
-  padding: 20px;
-  background: #f5f7fa;
-  min-height: 100vh;
-}
+.transfer-market-listings { padding: 0; }
 
-/* 页面标题 */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding: 24px;
-  background: linear-gradient(135deg, #1e3a5f 0%, #2d5a7b 100%);
-  border-radius: 12px;
-  color: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-}
+.page-header { margin-bottom: 20px; }
+.page-header h1 { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0 0 4px 0; letter-spacing: -0.3px; }
+.page-header p { font-size: 13px; color: #94a3b8; margin: 0; }
 
-.header-content h1 {
-  font-size: 24px;
-  font-weight: 700;
-  margin: 0 0 8px 0;
-}
+.stats-bar { display: flex; align-items: center; padding: 14px 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 12px; }
+.stat-item { display: flex; align-items: baseline; gap: 6px; flex: 1; justify-content: center; }
+.stat-value { font-size: 20px; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+.stat-label { font-size: 12px; color: #94a3b8; font-weight: 500; }
+.stat-divider { width: 1px; height: 24px; background: #e2e8f0; flex-shrink: 0; }
 
-.header-content p {
-  font-size: 14px;
-  opacity: 0.85;
-  margin: 0;
-}
+.filter-section { margin-bottom: 16px; }
+.filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.filter-group { display: flex; align-items: center; gap: 6px; }
+.filter-group label { font-size: 12px; color: #94a3b8; font-weight: 500; white-space: nowrap; }
 
-.header-stats {
-  display: flex;
-  gap: 30px;
-}
+.table-section { border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; }
 
-.stat-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
+/* Table - apply to el-table inside table-section */
+.table-section :deep(.el-table th.el-table__cell) { font-weight: 600; color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; background: transparent; border-bottom: 1px solid #f1f5f9; padding: 10px 0; }
+.table-section :deep(.el-table__body tr) { transition: background-color 0.15s; }
+.table-section :deep(.el-table__body tr td) { padding: 12px 0; border-bottom: 1px solid #f8fafc; }
+.table-section :deep(.el-table__body tr:hover > td) { background-color: #f8fafc !important; }
+.table-section :deep(.el-table__body tr:last-child td) { border-bottom: none; }
+.table-section :deep(.el-table__fixed), .table-section :deep(.el-table__fixed-right) { z-index: 10; }
+.table-section :deep(.el-table .el-table__cell) { overflow: hidden; }
 
-.stat-value {
-  display: block;
-  font-size: 28px;
-  font-weight: 700;
-}
+/* Player info */
+.player-info { display: flex; align-items: center; gap: 10px; }
+.player-avatar { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: white; background: #94a3b8; }
+.player-avatar.position-top { background: #ef4444; }
+.player-avatar.position-jug { background: #22c55e; }
+.player-avatar.position-mid { background: #3b82f6; }
+.player-avatar.position-adc { background: #f59e0b; }
+.player-avatar.position-sup { background: #6b7280; }
+.player-details { display: flex; flex-direction: column; gap: 2px; }
+.player-name { font-weight: 600; font-size: 13px; color: #0f172a; }
+.player-team { font-size: 12px; }
 
-.stat-label {
-  font-size: 12px;
-  opacity: 0.85;
-}
+/* Values */
+.age-young { color: #22c55e; font-weight: 600; }
+.age-prime { color: #0f172a; }
+.age-old { color: #ef4444; }
+.ability-display { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.ability-value, .potential-value { font-weight: 700; font-size: 14px; }
+.ability-elite { color: #f59e0b; }
+.ability-high { color: #3b82f6; }
+.ability-medium { color: #22c55e; }
+.ability-low { color: #94a3b8; }
+.market-value-text { font-weight: 600; color: #3b82f6; font-size: 13px; }
+.deal-price { font-weight: 600; color: #ef4444; font-size: 13px; }
+.text-gray { color: #cbd5e1; }
 
-/* 筛选卡片 */
-.filter-card {
-  margin-bottom: 20px;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-}
+.pagination-wrapper { margin-top: 16px; display: flex; justify-content: center; }
 
-.filter-card :deep(.el-card__body) {
-  padding: 12px 16px;
-}
-
-.filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-}
-
-.filter-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.filter-group label {
-  font-size: 12px;
-  color: #909399;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-/* 表格卡片 */
-.table-card {
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-}
-
-.table-card :deep(.el-table th.el-table__cell) {
-  background: #f8f9fb;
-  color: #606266;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 8px 0;
-}
-
-.table-card :deep(.el-table td.el-table__cell) {
-  padding: 6px 0;
-}
-
-.table-card :deep(.el-table__fixed),
-.table-card :deep(.el-table__fixed-right) {
-  z-index: 10;
-}
-
-.table-card :deep(.el-table .el-table__cell) {
-  overflow: hidden;
-}
-
-/* 选手信息 */
-.player-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.player-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-  color: white;
-  background: #909399;
-}
-
-.player-avatar.position-top { background: linear-gradient(135deg, #f56c6c, #e6a23c); }
-.player-avatar.position-jug { background: linear-gradient(135deg, #67c23a, #85ce61); }
-.player-avatar.position-mid { background: linear-gradient(135deg, #409eff, #66b1ff); }
-.player-avatar.position-adc { background: linear-gradient(135deg, #e6a23c, #f7ba2a); }
-.player-avatar.position-sup { background: linear-gradient(135deg, #909399, #b4b4b4); }
-
-.player-details {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.player-name {
-  font-weight: 600;
-  font-size: 14px;
-  color: #303133;
-}
-
-.player-team {
-  font-size: 12px;
-}
-
-/* 年龄样式 */
-.age-young { color: #67c23a; font-weight: 600; }
-.age-prime { color: #303133; }
-.age-old { color: #f56c6c; }
-
-/* 能力值样式 */
-.ability-display {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.ability-value, .potential-value {
-  font-weight: 700;
-  font-size: 14px;
-}
-
-.ability-elite { color: #e6a23c; }
-.ability-high { color: #409eff; }
-.ability-medium { color: #67c23a; }
-.ability-low { color: #909399; }
-
-/* 身价 */
-.market-value-text {
-  font-weight: 600;
-  color: #409eff;
-}
-
-/* 成交价 */
-.deal-price {
-  font-weight: 600;
-  color: #f56c6c;
-}
-
-/* 灰色文本 */
-.text-gray {
-  color: #c0c4cc;
-}
-
-/* 分页 */
-.pagination-wrapper {
-  margin-top: 16px;
-  padding: 16px;
-  display: flex;
-  justify-content: center;
-}
-
-/* 响应式 */
 @media (max-width: 1200px) {
-  .page-header {
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .header-stats {
-    width: 100%;
-    justify-content: space-around;
-  }
-
-  .filter-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .filter-group {
-    width: 100%;
-  }
+  .page-header { flex-direction: column; gap: 16px; }
+  .stats-bar { flex-wrap: wrap; gap: 8px; }
+  .stat-divider { display: none; }
+  .filter-row { flex-direction: column; align-items: stretch; }
+  .filter-group { width: 100%; }
 }
 </style>

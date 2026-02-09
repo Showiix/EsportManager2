@@ -43,7 +43,7 @@
     <div class="worlds-status-card">
       <div class="status-header">
         <div class="status-info">
-          <h2>S 世界赛</h2>
+          <h2>S{{ viewingSeason }} 世界赛</h2>
           <el-tag :type="getStatusType(worldsBracket.status)" size="large">
             {{ getStatusText(worldsBracket.status) }}
           </el-tag>
@@ -253,78 +253,28 @@
       </el-card>
 
       <!-- 最终排名 -->
-      <div v-if="worldsBracket.status === 'completed'" class="final-standings">
-        <h3>最终排名与积分</h3>
-        <div class="standings-grid">
-          <div class="standing-item champion">
-            <div class="rank-badge">🏆 冠军</div>
-            <div class="team-name">{{ worldsBracket.champion?.teamName }}</div>
-            <div class="region-name">{{ worldsBracket.champion?.regionName }}</div>
-            <div class="points">+20分</div>
-          </div>
-
-          <div class="standing-item runner-up">
-            <div class="rank-badge">🥈 亚军</div>
-            <div class="team-name">{{ worldsBracket.runnerUp?.teamName }}</div>
-            <div class="region-name">{{ worldsBracket.runnerUp?.regionName }}</div>
-            <div class="points">+16分</div>
-          </div>
-
-          <div class="standing-item third">
-            <div class="rank-badge">🥉 季军</div>
-            <div class="team-name">{{ worldsBracket.thirdPlace?.teamName }}</div>
-            <div class="region-name">{{ worldsBracket.thirdPlace?.regionName }}</div>
-            <div class="points">+12分</div>
-          </div>
-
-          <div class="standing-item fourth">
-            <div class="rank-badge">4️⃣ 殿军</div>
-            <div class="team-name">{{ worldsBracket.fourthPlace?.teamName }}</div>
-            <div class="region-name">{{ worldsBracket.fourthPlace?.regionName }}</div>
-            <div class="points">+8分</div>
-          </div>
-        </div>
-
-        <!-- 其他排名 -->
+      <TournamentCompletionSection
+        v-if="worldsBracket.status === 'completed'"
+        :standings="worldsStandings"
+        banner-title="世界赛已完成！"
+        :banner-champion="worldsBracket.champion?.teamName || ''"
+        banner-description="获得世界赛冠军，成为世界最强战队！"
+      >
         <div class="other-rankings">
           <h4>八强止步（+6分）</h4>
           <div class="teams-list">
-            <div
-              v-for="(team, index) in worldsBracket.quarterFinalists"
-              :key="index"
-              class="team-chip"
-            >
+            <div v-for="(team, index) in worldsBracket.quarterFinalists" :key="index" class="team-chip">
               {{ team?.teamName }} ({{ team?.regionName }})
             </div>
           </div>
-
           <h4>小组赛止步（+4分）</h4>
           <div class="teams-list">
-            <div
-              v-for="(team, index) in worldsBracket.groupStageEliminated"
-              :key="index"
-              class="team-chip eliminated"
-            >
+            <div v-for="(team, index) in worldsBracket.groupStageEliminated" :key="index" class="team-chip eliminated">
               {{ team?.teamName }} ({{ team?.regionName }})
             </div>
           </div>
         </div>
-
-        <!-- 世界赛完成后的操作区 -->
-        <div class="worlds-completed-actions">
-          <el-alert
-            title="世界赛已完成！"
-            type="success"
-            :closable="false"
-            show-icon
-            class="completion-alert"
-          >
-            <template #default>
-              <p>恭喜 <strong>{{ worldsBracket.champion?.teamName }}</strong> 获得世界赛冠军，成为世界最强战队！</p>
-            </template>
-          </el-alert>
-        </div>
-      </div>
+      </TournamentCompletionSection>
     </div>
 
     <!-- 比赛详情弹窗 -->
@@ -352,6 +302,8 @@ import {
 import WorldsSwissRound from '@/components/worlds/WorldsSwissRound.vue'
 import WorldsKnockoutBracket from '@/components/worlds/WorldsKnockoutBracket.vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
+import TournamentCompletionSection from '@/components/common/TournamentCompletionSection.vue'
+import type { StandingItem } from '@/types/tournament'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
@@ -911,6 +863,13 @@ const thirdPlaceMatch = computed(() =>
 const grandFinal = computed(() =>
   worldsBracket.knockoutMatches.find(m => m.round === 'FINAL')
 )
+
+const worldsStandings = computed<StandingItem[]>(() => [
+  { rank: 1, label: '冠军', name: worldsBracket.champion?.teamName || '', regionName: worldsBracket.champion?.regionName, points: '+20分' },
+  { rank: 2, label: '亚军', name: worldsBracket.runnerUp?.teamName || '', regionName: worldsBracket.runnerUp?.regionName, points: '+16分' },
+  { rank: 3, label: '季军', name: worldsBracket.thirdPlace?.teamName || '', regionName: worldsBracket.thirdPlace?.regionName, points: '+12分' },
+  { rank: 4, label: '殿军', name: worldsBracket.fourthPlace?.teamName || '', regionName: worldsBracket.fourthPlace?.regionName, points: '+8分' },
+])
 
 // 方法
 const goBack = () => {
@@ -1711,6 +1670,7 @@ onMounted(() => {
         display: flex;
         flex-direction: column;
         gap: 8px;
+        align-items: flex-start;
       }
 
       .page-title {
@@ -1954,131 +1914,37 @@ onMounted(() => {
       margin-top: 24px;
     }
 
-    .final-standings {
-      margin-top: 32px;
+    .other-rankings {
+      margin-bottom: 24px;
 
-      h3 {
-        margin: 0 0 16px 0;
-        font-size: 18px;
+      h4 {
+        font-size: 16px;
         font-weight: 600;
-        color: #1f2937;
+        color: #374151;
+        margin: 20px 0 12px 0;
       }
 
-      .standings-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 16px;
-        margin-bottom: 24px;
+      .teams-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
 
-        .standing-item {
-          padding: 20px;
-          border-radius: 12px;
-          text-align: center;
-          border: 2px solid;
-          transition: transform 0.2s;
+        .team-chip {
+          padding: 8px 16px;
+          background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+          border: 1px solid #d1d5db;
+          border-radius: 20px;
+          font-size: 14px;
+          color: #374151;
+          transition: all 0.2s;
 
           &:hover {
-            transform: translateY(-4px);
+            background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%);
+            transform: translateY(-2px);
           }
 
-          .rank-badge {
-            font-size: 24px;
-            margin-bottom: 8px;
-          }
-
-          .team-name {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #1f2937;
-          }
-
-          .region-name {
-            font-size: 14px;
-            color: #6b7280;
-            margin-bottom: 8px;
-          }
-
-          .points {
-            font-size: 16px;
-            font-weight: 700;
-            color: #10b981;
-          }
-
-          &.champion {
-            border-color: #f59e0b;
-            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-          }
-
-          &.runner-up {
-            border-color: #9ca3af;
-            background: linear-gradient(135deg, #f9fafb 0%, #e5e7eb 100%);
-          }
-
-          &.third {
-            border-color: #d97706;
-            background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
-          }
-
-          &.fourth {
-            border-color: #60a5fa;
-            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-          }
-        }
-      }
-
-      .other-rankings {
-        margin-bottom: 32px;
-
-        h4 {
-          font-size: 16px;
-          font-weight: 600;
-          color: #374151;
-          margin: 20px 0 12px 0;
-        }
-
-        .teams-list {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 12px;
-
-          .team-chip {
-            padding: 8px 16px;
-            background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
-            border: 1px solid #d1d5db;
-            border-radius: 20px;
-            font-size: 14px;
-            color: #374151;
-            transition: all 0.2s;
-
-            &:hover {
-              background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%);
-              transform: translateY(-2px);
-            }
-
-            &.eliminated {
-              opacity: 0.7;
-            }
-          }
-        }
-      }
-
-      .worlds-completed-actions {
-        margin-top: 32px;
-
-        .completion-alert {
-          margin-bottom: 20px;
-          border-radius: 8px;
-
-          p {
-            margin: 8px 0;
-            font-size: 14px;
-            line-height: 1.6;
-
-            strong {
-              color: #f59e0b;
-              font-weight: 700;
-            }
+          &.eliminated {
+            opacity: 0.7;
           }
         }
       }
