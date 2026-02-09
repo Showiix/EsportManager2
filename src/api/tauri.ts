@@ -496,6 +496,11 @@ export const HONOR_TYPE_MAP: Record<string, string> = {
   // 年度荣誉
   'ANNUAL_MVP': '年度MVP',
   'ANNUAL_TOP20': '年度Top20',
+  'ANNUAL_ALL_PRO1ST': '年度最佳阵容一阵',
+  'ANNUAL_ALL_PRO2ND': '年度最佳阵容二阵',
+  'ANNUAL_ALL_PRO3RD': '年度最佳阵容三阵',
+  'ANNUAL_MOST_CONSISTENT': '年度最稳定选手',
+  'ANNUAL_MOST_DOMINANT': '年度最具统治力选手',
   'ANNUAL_BEST_TOP': '年度最佳上单',
   'ANNUAL_BEST_JUNGLE': '年度最佳打野',
   'ANNUAL_BEST_MID': '年度最佳中单',
@@ -522,6 +527,11 @@ export const HONOR_TAG_TYPE: Record<string, string> = {
   // 年度荣誉
   'ANNUAL_MVP': 'danger',          // 红色（最高荣誉）
   'ANNUAL_TOP20': 'warning',       // 金色
+  'ANNUAL_ALL_PRO1ST': 'warning', // 金色（一阵）
+  'ANNUAL_ALL_PRO2ND': '',        // 银色（二阵）
+  'ANNUAL_ALL_PRO3RD': 'success', // 绿色（三阵）
+  'ANNUAL_MOST_CONSISTENT': 'primary', // 蓝色
+  'ANNUAL_MOST_DOMINANT': 'danger',    // 红色
   'ANNUAL_BEST_TOP': 'success',    // 绿色
   'ANNUAL_BEST_JUNGLE': 'success', // 绿色
   'ANNUAL_BEST_MID': 'success',    // 绿色

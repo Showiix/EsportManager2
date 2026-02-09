@@ -190,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -219,13 +219,22 @@ import {
   Reading,
 } from '@element-plus/icons-vue'
 import { useGameStore } from '@/stores/useGameStore'
+import { useTimeStore } from '@/stores/useTimeStore'
 
 const route = useRoute()
 const router = useRouter()
 const gameStore = useGameStore()
+const timeStore = useTimeStore()
 
-const currentSeason = ref('S1')
-const currentPhase = ref('春季赛常规赛')
+const currentSeason = computed(() => `S${timeStore.currentSeason}`)
+const currentPhase = computed(() => timeStore.phaseDisplayName)
+
+// 存档加载后立即获取时间状态
+watch(() => gameStore.hasSaveLoaded, async (loaded) => {
+  if (loaded) {
+    await timeStore.fetchTimeState()
+  }
+}, { immediate: true })
 
 // 当前激活的菜单项
 const activeMenu = computed(() => route.path)

@@ -1898,6 +1898,11 @@ fn position_to_rank(position: &str) -> Option<u32> {
         "THIRD" => Some(3),
         "FOURTH" => Some(4),
         "5TH_8TH" | "QUARTER_FINAL" => Some(5),
+        // ICP积分位置
+        "FIRST_PARTICIPANT" | "FIRST_NON_PARTICIPANT" => Some(1),
+        "SECOND_PARTICIPANT" | "SECOND_NON_PARTICIPANT" => Some(2),
+        "THIRD_PARTICIPANT" | "THIRD_NON_PARTICIPANT" => Some(3),
+        "FOURTH_PARTICIPANT" | "FOURTH_NON_PARTICIPANT" => Some(4),
         _ => None,
     }
 }

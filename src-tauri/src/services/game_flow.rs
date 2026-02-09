@@ -2656,7 +2656,7 @@ impl GameFlowService {
                     LEFT JOIN teams ht ON m.home_team_id = ht.id
                     LEFT JOIN teams at ON m.away_team_id = at.id
                     WHERE m.tournament_id = ? AND (m.stage LIKE 'ICP_FINAL%' OR m.stage LIKE 'ICP_SEMI%')
-                    AND UPPER(m.status) = 'COMPLETED' AND m.stage NOT LIKE '%TIEBREAKER%'
+                    AND UPPER(m.status) = 'COMPLETED'
                     ORDER BY m.stage
                     "#
                 )
