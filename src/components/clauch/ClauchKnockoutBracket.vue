@@ -17,19 +17,30 @@
           </span>
         </div>
         <div class="matches-column">
-          <ClauchMatchCard
-            v-for="match in filteredRound1"
-            :key="match.id"
-            :match="match"
-            :simulating="simulatingMatchId === match.id"
-            @simulate="handleSimulateMatch"
-            @view-detail="handleViewDetail"
-          />
+          <div v-for="match in filteredRound1" :key="match.id" class="match-slot">
+            <ClauchMatchCard
+              :match="match"
+              :simulating="simulatingMatchId === match.id"
+              @simulate="handleSimulateMatch"
+              @view-detail="handleViewDetail"
+            />
+          </div>
         </div>
       </div>
 
       <!-- 连接线: 第一轮 → 半决赛 -->
-      <div class="bracket-connector connector-double-merge">
+      <div v-if="filteredRound1.length > 0 && filteredSemiFinals.length > 0" class="bracket-connector">
+        <div class="connector-spacer"></div>
+        <div class="connector-body">
+          <div class="connector-group">
+            <div class="cg-input"></div>
+            <div class="cg-input"></div>
+          </div>
+          <div class="connector-group">
+            <div class="cg-input"></div>
+            <div class="cg-input"></div>
+          </div>
+        </div>
       </div>
 
       <!-- 半决赛 -->
@@ -40,20 +51,27 @@
             {{ getRoundStatusText(filteredSemiFinals) }}
           </span>
         </div>
-        <div class="matches-column semi-finals">
-          <ClauchMatchCard
-            v-for="match in filteredSemiFinals"
-            :key="match.id"
-            :match="match"
-            :simulating="simulatingMatchId === match.id"
-            @simulate="handleSimulateMatch"
-            @view-detail="handleViewDetail"
-          />
+        <div class="matches-column">
+          <div v-for="match in filteredSemiFinals" :key="match.id" class="match-slot">
+            <ClauchMatchCard
+              :match="match"
+              :simulating="simulatingMatchId === match.id"
+              @simulate="handleSimulateMatch"
+              @view-detail="handleViewDetail"
+            />
+          </div>
         </div>
       </div>
 
       <!-- 连接线: 半决赛 → 决赛 -->
-      <div class="bracket-connector connector-merge">
+      <div v-if="filteredSemiFinals.length > 0 && filteredFinal.length > 0" class="bracket-connector">
+        <div class="connector-spacer"></div>
+        <div class="connector-body">
+          <div class="connector-group">
+            <div class="cg-input"></div>
+            <div class="cg-input"></div>
+          </div>
+        </div>
       </div>
 
       <!-- 决赛 -->
@@ -64,15 +82,15 @@
             {{ getRoundStatusText(filteredFinal) }}
           </span>
         </div>
-        <div class="matches-column final">
-          <ClauchMatchCard
-            v-for="match in filteredFinal"
-            :key="match.id"
-            :match="match"
-            :simulating="simulatingMatchId === match.id"
-            @simulate="handleSimulateMatch"
-            @view-detail="handleViewDetail"
-          />
+        <div class="matches-column">
+          <div v-for="match in filteredFinal" :key="match.id" class="match-slot">
+            <ClauchMatchCard
+              :match="match"
+              :simulating="simulatingMatchId === match.id"
+              @simulate="handleSimulateMatch"
+              @view-detail="handleViewDetail"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -272,7 +290,6 @@ const handleViewDetail = (matchId: string | number) => {
 .bracket-container {
   display: flex;
   align-items: stretch;
-  gap: 0;
   overflow-x: auto;
   padding: 12px 0;
 }
@@ -326,78 +343,92 @@ const handleViewDetail = (matchId: string | number) => {
   color: #64748b;
 }
 
+/* 比赛列 - 使用 flex-1 slot 确保对齐 */
 .matches-column {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   flex: 1;
-  justify-content: space-around;
-  min-height: 400px;
 }
 
-.matches-column.semi-finals {
-  justify-content: space-around;
-  min-height: 400px;
+.match-slot {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
 }
 
-.matches-column.final {
-  justify-content: center;
-  min-height: 200px;
+.match-slot > :deep(*) {
+  width: 100%;
 }
 
-/* CSS bracket connectors */
+/* 连接线列 */
 .bracket-connector {
-  width: 60px;
-  min-width: 60px;
+  width: 40px;
+  min-width: 40px;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 顶部留白，对齐 round-header (28px height + 12px margin) */
+.connector-spacer {
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.connector-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 每一对比赛的连接组 */
+.connector-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   position: relative;
 }
 
-/* Double merge: 4 matches → 2 (two separate merge patterns stacked) */
-.bracket-connector.connector-double-merge {
-  display: flex;
-  flex-direction: column;
-}
-
-.bracket-connector.connector-double-merge::before {
-  content: '';
+/* 每个输入槽位对应一场比赛 */
+.cg-input {
   flex: 1;
-  background:
-    linear-gradient(#cbd5e1, #cbd5e1) 0 25% / 50% 2px no-repeat,
-    linear-gradient(#cbd5e1, #cbd5e1) 0 75% / 50% 2px no-repeat,
-    linear-gradient(#cbd5e1, #cbd5e1) calc(50% - 1px) 25% / 2px 50% no-repeat,
-    linear-gradient(#cbd5e1, #cbd5e1) 50% 50% / 50% 2px no-repeat;
+  position: relative;
 }
 
-.bracket-connector.connector-double-merge::after {
+/* 从比赛卡片中心引出的水平线 → 到中间竖线 */
+.cg-input::after {
   content: '';
-  flex: 1;
-  background:
-    linear-gradient(#cbd5e1, #cbd5e1) 0 25% / 50% 2px no-repeat,
-    linear-gradient(#cbd5e1, #cbd5e1) 0 75% / 50% 2px no-repeat,
-    linear-gradient(#cbd5e1, #cbd5e1) calc(50% - 1px) 25% / 2px 50% no-repeat,
-    linear-gradient(#cbd5e1, #cbd5e1) 50% 50% / 50% 2px no-repeat;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 50%;
+  height: 2px;
+  background: #cbd5e1;
+  transform: translateY(-1px);
 }
 
-/* Standard merge: 2 → 1 */
-.bracket-connector.connector-merge {
-  display: flex;
-  flex-direction: column;
-}
-
-.bracket-connector.connector-merge::before {
+/* 竖线：连接两条输入水平线 */
+.connector-group::before {
   content: '';
-  height: 28px;
-  flex-shrink: 0;
+  position: absolute;
+  left: 50%;
+  top: 25%;
+  bottom: 25%;
+  width: 2px;
+  background: #cbd5e1;
+  transform: translateX(-1px);
 }
 
-.bracket-connector.connector-merge::after {
+/* 输出水平线：从中间到下一轮比赛 */
+.connector-group::after {
   content: '';
-  flex: 1;
-  background:
-    linear-gradient(#cbd5e1, #cbd5e1) 0 25% / 50% 2px no-repeat,
-    linear-gradient(#cbd5e1, #cbd5e1) 0 75% / 50% 2px no-repeat,
-    linear-gradient(#cbd5e1, #cbd5e1) calc(50% - 1px) 50% / 2px 50% no-repeat,
-    linear-gradient(#cbd5e1, #cbd5e1) 100% 50% / 50% 2px no-repeat;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  right: 0;
+  height: 2px;
+  background: #cbd5e1;
+  transform: translateY(-1px);
 }
 </style>

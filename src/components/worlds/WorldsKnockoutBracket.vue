@@ -9,19 +9,31 @@
             {{ getRoundStatusText(quarterFinalMatches) }}
           </span>
         </div>
-        <div class="matches-column quarter">
-          <WorldsMatchCard
-            v-for="match in quarterFinalMatches"
-            :key="match.id"
-            :match="match"
-            @simulate="handleSimulate"
-            @view-detail="handleViewMatch"
-          />
+        <div class="matches-column">
+          <div v-for="match in quarterFinalMatches" :key="match.id" class="match-slot">
+            <WorldsMatchCard
+              :match="match"
+              @simulate="handleSimulate"
+              @view-detail="handleViewMatch"
+            />
+          </div>
         </div>
       </div>
 
       <!-- 连接线 八强->半决赛 -->
-      <div class="bracket-connector connector-merge"></div>
+      <div class="bracket-connector">
+        <div class="connector-spacer"></div>
+        <div class="connector-body">
+          <div class="connector-group">
+            <div class="cg-input"></div>
+            <div class="cg-input"></div>
+          </div>
+          <div class="connector-group">
+            <div class="cg-input"></div>
+            <div class="cg-input"></div>
+          </div>
+        </div>
+      </div>
 
       <!-- 半决赛 -->
       <div class="bracket-round">
@@ -31,33 +43,42 @@
             {{ getRoundStatusText(semiFinalMatches) }}
           </span>
         </div>
-        <div class="matches-column semi">
-          <WorldsMatchCard
-            v-for="match in semiFinalMatches"
-            :key="match.id"
-            :match="match"
-            @simulate="handleSimulate"
-            @view-detail="handleViewMatch"
-          />
+        <div class="matches-column">
+          <div v-for="match in semiFinalMatches" :key="match.id" class="match-slot">
+            <WorldsMatchCard
+              :match="match"
+              @simulate="handleSimulate"
+              @view-detail="handleViewMatch"
+            />
+          </div>
         </div>
       </div>
 
       <!-- 连接线 半决赛->决赛 -->
-      <div class="bracket-connector connector-merge"></div>
+      <div class="bracket-connector">
+        <div class="connector-spacer"></div>
+        <div class="connector-body">
+          <div class="connector-group">
+            <div class="cg-input"></div>
+            <div class="cg-input"></div>
+          </div>
+        </div>
+      </div>
 
       <!-- 决赛区域 -->
       <div class="bracket-round finals-round">
         <div class="round-header final-header">
           <h4>决赛</h4>
         </div>
-        <div class="matches-column final">
-          <WorldsMatchCard
-            v-if="grandFinal"
-            :match="grandFinal"
-            :is-final="true"
-            @simulate="handleSimulate"
-            @view-detail="handleViewMatch"
-          />
+        <div class="matches-column">
+          <div v-if="grandFinal" class="match-slot">
+            <WorldsMatchCard
+              :match="grandFinal"
+              :is-final="true"
+              @simulate="handleSimulate"
+              @view-detail="handleViewMatch"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -139,7 +160,7 @@ const handleViewMatch = (match: WorldsKnockoutMatch) => {
 
 .bracket-container {
   display: flex;
-  gap: 0;
+  align-items: stretch;
   min-width: max-content;
   padding: 20px 0;
   overflow-x: auto;
@@ -156,11 +177,12 @@ const handleViewMatch = (match: WorldsKnockoutMatch) => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   padding: 8px 12px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
+  height: 28px;
 }
 
 .round-header h4 {
@@ -189,11 +211,6 @@ const handleViewMatch = (match: WorldsKnockoutMatch) => {
   line-height: 1.4;
 }
 
-.badge-primary {
-  background: #eef2ff;
-  color: #6366f1;
-}
-
 .badge-success {
   background: #f0fdf4;
   color: #22c55e;
@@ -209,64 +226,105 @@ const handleViewMatch = (match: WorldsKnockoutMatch) => {
   color: #64748b;
 }
 
+/* 比赛列 - 使用 flex-1 slot 确保对齐 */
 .matches-column {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   flex: 1;
-  justify-content: space-around;
 }
 
-.matches-column.quarter {
-  gap: 8px;
+.match-slot {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
 }
 
-.matches-column.semi {
-  justify-content: space-around;
-  padding: 40px 0;
-}
-
-.matches-column.final {
-  justify-content: center;
-  padding: 80px 0;
+.match-slot > :deep(*) {
+  width: 100%;
 }
 
 .finals-round {
   min-width: 240px;
 }
 
+/* 连接线列 */
 .bracket-connector {
-  width: 60px;
-  min-width: 60px;
+  width: 40px;
+  min-width: 40px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
 }
 
-.bracket-connector::before {
-  content: '';
-  height: 28px;
+/* 顶部留白，对齐 round-header (28px height + 12px margin) */
+.connector-spacer {
+  height: 40px;
   flex-shrink: 0;
 }
 
-.bracket-connector::after {
-  content: '';
+.connector-body {
   flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
-.connector-merge::after {
-  background:
-    linear-gradient(#cbd5e1, #cbd5e1) 0 25% / 50% 2px no-repeat,
-    linear-gradient(#cbd5e1, #cbd5e1) 0 75% / 50% 2px no-repeat,
-    linear-gradient(#cbd5e1, #cbd5e1) calc(50% - 1px) 50% / 2px 50% no-repeat,
-    linear-gradient(#cbd5e1, #cbd5e1) 100% 50% / 50% 2px no-repeat;
+/* 每一对比赛的连接组 */
+.connector-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
 }
 
+/* 每个输入槽位对应一场比赛 */
+.cg-input {
+  flex: 1;
+  position: relative;
+}
+
+/* 从比赛卡片中心引出的水平线 → 到中间竖线 */
+.cg-input::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 50%;
+  height: 2px;
+  background: #cbd5e1;
+  transform: translateY(-1px);
+}
+
+/* 竖线：连接两条输入水平线 */
+.connector-group::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 25%;
+  bottom: 25%;
+  width: 2px;
+  background: #cbd5e1;
+  transform: translateX(-1px);
+}
+
+/* 输出水平线：从中间到下一轮比赛 */
+.connector-group::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  right: 0;
+  height: 2px;
+  background: #cbd5e1;
+  transform: translateY(-1px);
+}
+
+/* 季军赛 */
 .third-place-section {
-  margin-top: 32px;
-  padding: 20px;
+  margin-top: 24px;
+  padding: 16px;
   background: #f8fafc;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid #e2e8f0;
   border-left: 3px solid #94a3b8;
 }
@@ -275,18 +333,18 @@ const handleViewMatch = (match: WorldsKnockoutMatch) => {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .third-place-header h4 {
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   color: #0f172a;
 }
 
 .third-place-desc {
-  font-size: 13px;
+  font-size: 12px;
   color: #64748b;
 }
 

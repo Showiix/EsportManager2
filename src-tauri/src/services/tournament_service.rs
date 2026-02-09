@@ -469,7 +469,7 @@ impl TournamentService {
             matches.push(self.create_match(
                 &mut match_id,
                 tournament_id,
-                "CHALLENGER_QUALIFIER",
+                "CHALLENGER_POSITIONING",
                 1,
                 challenger_teams[0].id,
                 challenger_teams[3].id,
@@ -478,7 +478,7 @@ impl TournamentService {
             matches.push(self.create_match(
                 &mut match_id,
                 tournament_id,
-                "CHALLENGER_QUALIFIER",
+                "CHALLENGER_POSITIONING",
                 2,
                 challenger_teams[1].id,
                 challenger_teams[2].id,
