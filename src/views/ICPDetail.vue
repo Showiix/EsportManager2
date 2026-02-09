@@ -2,40 +2,28 @@
   <div class="icp-management">
     <!-- 页面头部 -->
     <div class="page-header">
-      <div class="header-content">
-        <div class="header-left">
-          <el-button text @click="goBack">
-            <el-icon><ArrowLeft /></el-icon>
-            返回赛事列表
-          </el-button>
-          <h1 class="page-title">
-            <el-icon><Flag /></el-icon>
-            ICP 四赛区洲际对抗赛 (Intercontinental Championship)
-          </h1>
-          <p class="page-description">
-            16支队伍（各赛区夏季赛前4名），按种子分组BO3单循环，决出最强赛区
-          </p>
-        </div>
+      <div>
+        <button class="back-btn" @click="goBack">&larr; 返回赛事列表</button>
+        <h1 class="page-title">ICP 四赛区洲际对抗赛 (Intercontinental Championship)</h1>
+        <p class="page-desc">16支队伍（各赛区夏季赛前4名），按种子分组BO3单循环，决出最强赛区</p>
       </div>
       <div class="header-actions">
-        <el-button
+        <button
           v-if="icpTournament.status === 'group_stage' && !isGroupStageComplete"
-          type="primary"
+          class="action-btn primary-btn"
           @click="batchSimulateGroupStage"
-          :loading="simulatingGroupStage"
+          :disabled="simulatingGroupStage"
         >
-          <el-icon><DArrowRight /></el-icon>
           {{ simulatingGroupStage ? `模拟中 (${groupSimProgress}%)` : '模拟种子组赛' }}
-        </el-button>
-        <el-button
+        </button>
+        <button
           v-if="icpTournament.status === 'region_battle' || icpTournament.status === 'tiebreaker'"
-          type="warning"
+          class="action-btn warning-btn"
           @click="batchSimulateRegionBattle"
-          :loading="simulatingRegionBattle"
+          :disabled="simulatingRegionBattle"
         >
-          <el-icon><DArrowRight /></el-icon>
           {{ simulatingRegionBattle ? `模拟中 (${battleSimProgress}%)` : '模拟赛区对决' }}
-        </el-button>
+        </button>
       </div>
     </div>
 
@@ -62,33 +50,40 @@
       <div class="status-header">
         <div class="status-info">
           <h2>S{{ viewingSeason }} ICP 四赛区洲际对抗赛</h2>
-          <el-tag :type="getStatusType(icpTournament.status)" size="large">
+          <span class="status-badge" :class="getStatusType(icpTournament.status)">
             {{ getStatusText(icpTournament.status) }}
-          </el-tag>
+          </span>
         </div>
       </div>
 
-      <!-- 参赛队伍统计 -->
-      <div class="teams-stats">
-        <el-statistic title="参赛队伍总数" :value="16" />
-        <el-statistic title="参赛赛区" :value="4" suffix="个" />
-        <el-statistic title="种子组数量" :value="4" suffix="组" />
-        <el-statistic title="每赛区队伍" :value="4" suffix="支" />
+      <div class="stats-bar">
+        <div class="stat-item">
+          <span class="stat-value">16</span>
+          <span class="stat-label">参赛队伍总数</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">4</span>
+          <span class="stat-label">参赛赛区</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">4</span>
+          <span class="stat-label">种子组数量</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">4</span>
+          <span class="stat-label">每赛区队伍</span>
+        </div>
       </div>
 
       <!-- 参赛队伍种子分组展示 -->
       <div class="seed-teams-display" v-if="icpTournament.status !== 'not_started'">
-        <h3 class="section-title">
-          <el-icon><User /></el-icon>
-          参赛队伍种子分组
-        </h3>
+        <h3 class="section-title">参赛队伍种子分组</h3>
         <div class="seed-groups-grid">
           <!-- 一号种子 -->
           <div class="seed-group-card seed-1">
             <div class="seed-header">
-              <span class="seed-icon">🥇</span>
               <span class="seed-title">一号种子</span>
-              <el-tag type="danger" size="small">各赛区冠军</el-tag>
+              <span class="status-badge warning">各赛区冠军</span>
             </div>
             <div class="seed-team-list">
               <template v-if="seedTeamsGrouped[1]?.length > 0">
@@ -98,9 +93,7 @@
                   class="seed-team-item"
                 >
                   <span class="team-name">{{ team.teamName }}</span>
-                  <el-tag :type="getRegionTagType(team.region)" size="small">
-                    {{ team.region }}
-                  </el-tag>
+                  <span class="region-label">{{ team.region }}</span>
                 </div>
               </template>
               <div v-else class="seed-team-item pending">
@@ -112,9 +105,8 @@
           <!-- 二号种子 -->
           <div class="seed-group-card seed-2">
             <div class="seed-header">
-              <span class="seed-icon">🥈</span>
               <span class="seed-title">二号种子</span>
-              <el-tag type="warning" size="small">各赛区亚军</el-tag>
+              <span class="status-badge warning">各赛区亚军</span>
             </div>
             <div class="seed-team-list">
               <template v-if="seedTeamsGrouped[2]?.length > 0">
@@ -124,9 +116,7 @@
                   class="seed-team-item"
                 >
                   <span class="team-name">{{ team.teamName }}</span>
-                  <el-tag :type="getRegionTagType(team.region)" size="small">
-                    {{ team.region }}
-                  </el-tag>
+                  <span class="region-label">{{ team.region }}</span>
                 </div>
               </template>
               <div v-else class="seed-team-item pending">
@@ -138,9 +128,8 @@
           <!-- 三号种子 -->
           <div class="seed-group-card seed-3">
             <div class="seed-header">
-              <span class="seed-icon">🥉</span>
               <span class="seed-title">三号种子</span>
-              <el-tag type="success" size="small">各赛区季军</el-tag>
+              <span class="status-badge success">各赛区季军</span>
             </div>
             <div class="seed-team-list">
               <template v-if="seedTeamsGrouped[3]?.length > 0">
@@ -150,9 +139,7 @@
                   class="seed-team-item"
                 >
                   <span class="team-name">{{ team.teamName }}</span>
-                  <el-tag :type="getRegionTagType(team.region)" size="small">
-                    {{ team.region }}
-                  </el-tag>
+                  <span class="region-label">{{ team.region }}</span>
                 </div>
               </template>
               <div v-else class="seed-team-item pending">
@@ -164,9 +151,8 @@
           <!-- 四号种子 -->
           <div class="seed-group-card seed-4">
             <div class="seed-header">
-              <span class="seed-icon">4️⃣</span>
               <span class="seed-title">四号种子</span>
-              <el-tag type="info" size="small">各赛区殿军</el-tag>
+              <span class="status-badge info">各赛区殿军</span>
             </div>
             <div class="seed-team-list">
               <template v-if="seedTeamsGrouped[4]?.length > 0">
@@ -176,9 +162,7 @@
                   class="seed-team-item"
                 >
                   <span class="team-name">{{ team.teamName }}</span>
-                  <el-tag :type="getRegionTagType(team.region)" size="small">
-                    {{ team.region }}
-                  </el-tag>
+                  <span class="region-label">{{ team.region }}</span>
                 </div>
               </template>
               <div v-else class="seed-team-item pending">
@@ -204,7 +188,6 @@
             </div>
             <div class="region-name">{{ region.regionName }}</div>
             <div class="badge-count">
-              <span class="badge-icon">🏅</span>
               <span class="badge-number">{{ region.totalBadges }}</span>
             </div>
             <div v-if="region.ranking" class="region-rank">
@@ -215,14 +198,12 @@
       </div>
 
       <!-- 种子组赛阶段 -->
-      <el-card v-if="icpTournament.status !== 'not_started'" class="stage-card">
-        <template #header>
-          <div class="card-header">
-            <span>🎯 种子组赛阶段</span>
-            <el-tag v-if="isGroupStageComplete" type="success">已完成</el-tag>
-            <el-tag v-else type="warning">进行中</el-tag>
-          </div>
-        </template>
+      <div v-if="icpTournament.status !== 'not_started'" class="table-section">
+        <div class="section-header">
+          <span class="section-title">种子组赛阶段</span>
+          <span v-if="isGroupStageComplete" class="status-badge success">已完成</span>
+          <span v-else class="status-badge warning">进行中</span>
+        </div>
 
         <!-- 种子组积分榜 -->
         <div class="seed-groups">
@@ -252,33 +233,29 @@
             show-icon
             class="mb-4"
           />
-          <el-button
-            type="primary"
-            size="large"
+          <button
+            class="action-btn primary-btn"
             @click="handleGenerateRegionBattle"
-            :loading="generatingRegionBattle"
+            :disabled="generatingRegionBattle"
           >
-            <el-icon><Flag /></el-icon>
             进入赛区对决
-          </el-button>
+          </button>
         </div>
-      </el-card>
+      </div>
 
       <!-- 赛区对决阶段 -->
-      <el-card v-if="icpTournament.status === 'region_battle' || icpTournament.status === 'completed'" class="stage-card">
-        <template #header>
-          <div class="card-header">
-            <span>🏆 赛区对决阶段</span>
-            <el-tag v-if="icpTournament.status === 'completed'" type="success">已完成</el-tag>
-            <el-tag v-else type="warning">进行中</el-tag>
-          </div>
-        </template>
+      <div v-if="icpTournament.status === 'region_battle' || icpTournament.status === 'completed'" class="table-section">
+        <div class="section-header">
+          <span class="section-title">赛区对决阶段</span>
+          <span v-if="icpTournament.status === 'completed'" class="status-badge success">已完成</span>
+          <span v-else class="status-badge warning">进行中</span>
+        </div>
 
         <!-- 赛区对决对阵 -->
         <div class="region-battle-section">
           <!-- 半决赛（如果需要） -->
           <div v-if="icpTournament.semifinal" class="battle-stage">
-            <h4>🥊 半决赛</h4>
+            <h4>半决赛</h4>
             <ICPRegionBattleCard
               :battle="icpTournament.semifinal"
               @simulate-match="handleSimulateRegionMatch"
@@ -305,15 +282,14 @@
               />
               <div class="tiebreaker-match" v-if="icpTournament.semifinal.tiebreakerMatch">
                 <div class="tiebreaker-header">
-                  <span class="tiebreaker-icon">⚔️</span>
                   <span class="tiebreaker-title">一号种子加赛 (BO5)</span>
                 </div>
                 <div class="tiebreaker-teams">
                   <div class="team-side">
                     <span class="team-name">{{ icpTournament.semifinal.tiebreakerMatch.teamAName }}</span>
-                    <el-tag :type="getRegionTagType(icpTournament.semifinal.tiebreakerMatch.teamARegion)" size="small">
+                    <span class="region-label">
                       {{ icpTournament.semifinal.tiebreakerMatch.teamARegion }}
-                    </el-tag>
+                    </span>
                   </div>
                   <div class="vs-section">
                     <template v-if="icpTournament.semifinal.tiebreakerMatch.status === 'completed'">
@@ -324,28 +300,27 @@
                     <span v-else class="vs">VS</span>
                   </div>
                   <div class="team-side">
-                    <el-tag :type="getRegionTagType(icpTournament.semifinal.tiebreakerMatch.teamBRegion)" size="small">
+                    <span class="region-label">
                       {{ icpTournament.semifinal.tiebreakerMatch.teamBRegion }}
-                    </el-tag>
+                    </span>
                     <span class="team-name">{{ icpTournament.semifinal.tiebreakerMatch.teamBName }}</span>
                   </div>
                 </div>
                 <div class="tiebreaker-actions">
-                  <el-button
+                  <button
                     v-if="icpTournament.semifinal.tiebreakerMatch.status !== 'completed'"
-                    type="danger"
+                    class="action-btn warning-btn"
                     @click="handleSimulateTiebreaker(icpTournament.semifinal)"
                   >
-                    <el-icon><DArrowRight /></el-icon>
                     模拟加赛
-                  </el-button>
-                  <el-button
+                  </button>
+                  <button
                     v-else
-                    type="info"
+                    class="action-btn"
                     @click="viewMatchDetails(icpTournament.semifinal.tiebreakerMatch)"
                   >
                     查看详情
-                  </el-button>
+                  </button>
                 </div>
               </div>
             </div>
@@ -353,7 +328,7 @@
 
           <!-- 决赛 -->
           <div v-if="icpTournament.final" class="battle-stage final">
-            <h4>🏆 决赛</h4>
+            <h4>决赛</h4>
             <ICPRegionBattleCard
               :battle="icpTournament.final"
               @simulate-match="handleSimulateRegionMatch"
@@ -380,15 +355,14 @@
               />
               <div class="tiebreaker-match" v-if="icpTournament.final.tiebreakerMatch">
                 <div class="tiebreaker-header">
-                  <span class="tiebreaker-icon">⚔️</span>
                   <span class="tiebreaker-title">一号种子加赛 (BO5)</span>
                 </div>
                 <div class="tiebreaker-teams">
                   <div class="team-side">
                     <span class="team-name">{{ icpTournament.final.tiebreakerMatch.teamAName }}</span>
-                    <el-tag :type="getRegionTagType(icpTournament.final.tiebreakerMatch.teamARegion)" size="small">
+                    <span class="region-label">
                       {{ icpTournament.final.tiebreakerMatch.teamARegion }}
-                    </el-tag>
+                    </span>
                   </div>
                   <div class="vs-section">
                     <template v-if="icpTournament.final.tiebreakerMatch.status === 'completed'">
@@ -399,34 +373,33 @@
                     <span v-else class="vs">VS</span>
                   </div>
                   <div class="team-side">
-                    <el-tag :type="getRegionTagType(icpTournament.final.tiebreakerMatch.teamBRegion)" size="small">
+                    <span class="region-label">
                       {{ icpTournament.final.tiebreakerMatch.teamBRegion }}
-                    </el-tag>
+                    </span>
                     <span class="team-name">{{ icpTournament.final.tiebreakerMatch.teamBName }}</span>
                   </div>
                 </div>
                 <div class="tiebreaker-actions">
-                  <el-button
+                  <button
                     v-if="icpTournament.final.tiebreakerMatch.status !== 'completed'"
-                    type="danger"
+                    class="action-btn warning-btn"
                     @click="handleSimulateTiebreaker(icpTournament.final)"
                   >
-                    <el-icon><DArrowRight /></el-icon>
                     模拟加赛
-                  </el-button>
-                  <el-button
+                  </button>
+                  <button
                     v-else
-                    type="info"
+                    class="action-btn"
                     @click="viewMatchDetails(icpTournament.final.tiebreakerMatch)"
                   >
                     查看详情
-                  </el-button>
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </el-card>
+      </div>
 
       <!-- 最终排名 -->
       <TournamentCompletionSection
@@ -454,12 +427,6 @@
 import { ref, computed, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import {
-  Flag,
-  ArrowLeft,
-  DArrowRight,
-  User
-} from '@element-plus/icons-vue'
 import ICPSeedGroupStanding from '@/components/icp/ICPSeedGroupStanding.vue'
 import ICPRegionBattleCard from '@/components/icp/ICPRegionBattleCard.vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
@@ -2624,471 +2591,480 @@ onMounted(() => {
 })
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .icp-management {
   padding: 24px;
-
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 24px;
-
-    .header-content {
-      .header-left {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        align-items: flex-start;
-      }
-
-      .page-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 28px;
-        font-weight: 700;
-        margin: 0;
-        color: #1f2937;
-      }
-
-      .page-description {
-        margin: 0;
-        color: #6b7280;
-        font-size: 14px;
-      }
-    }
-
-    .header-actions {
-      display: flex;
-      gap: 12px;
-    }
-  }
-
-  .phase-warning-alert {
-    margin-bottom: 24px;
-
-    .phase-warning-content {
-      p {
-        margin: 4px 0;
-        line-height: 1.6;
-
-        strong {
-          color: var(--el-color-warning);
-        }
-      }
-    }
-  }
-
-  .icp-status-card {
-    background: white;
-    border-radius: 12px;
-    padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-
-    .status-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid #e5e7eb;
-
-      .status-info {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-
-        h2 {
-          margin: 0;
-          font-size: 20px;
-          font-weight: 600;
-          color: #1f2937;
-        }
-      }
-    }
-
-    .teams-stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 20px;
-      margin-bottom: 32px;
-      padding: 20px;
-      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-      border-radius: 12px;
-    }
-
-    // 种子队伍分组展示
-    .seed-teams-display {
-      margin-bottom: 32px;
-
-      .section-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin: 0 0 20px 0;
-        font-size: 18px;
-        font-weight: 600;
-        color: #1f2937;
-      }
-
-      .seed-groups-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 16px;
-
-        .seed-group-card {
-          padding: 16px;
-          border-radius: 12px;
-          border: 2px solid;
-          background: white;
-          transition: all 0.3s ease;
-
-          &:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-          }
-
-          &.seed-1 {
-            border-color: #f59e0b;
-            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-
-            .seed-header {
-              .seed-title { color: #b45309; }
-            }
-          }
-
-          &.seed-2 {
-            border-color: #94a3b8;
-            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-
-            .seed-header {
-              .seed-title { color: #475569; }
-            }
-          }
-
-          &.seed-3 {
-            border-color: #a78bfa;
-            background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
-
-            .seed-header {
-              .seed-title { color: #6d28d9; }
-            }
-          }
-
-          &.seed-4 {
-            border-color: #6b7280;
-            background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
-
-            .seed-header {
-              .seed-title { color: #374151; }
-            }
-          }
-
-          .seed-header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 12px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-
-            .seed-icon {
-              font-size: 20px;
-            }
-
-            .seed-title {
-              font-size: 16px;
-              font-weight: 600;
-              flex: 1;
-            }
-          }
-
-          .seed-team-list {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-
-            .seed-team-item {
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              padding: 8px 12px;
-              background: rgba(255, 255, 255, 0.7);
-              border-radius: 6px;
-              border: 1px solid rgba(0, 0, 0, 0.05);
-
-              .team-name {
-                font-weight: 600;
-                color: #1f2937;
-                font-size: 14px;
-              }
-
-              &.pending {
-                .team-name {
-                  color: #9ca3af;
-                  font-style: italic;
-                  font-weight: normal;
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    .region-badges-section {
-      margin-bottom: 24px;
-
-      h3 {
-        margin: 0 0 16px 0;
-        font-size: 18px;
-        font-weight: 600;
-        color: #1f2937;
-      }
-
-      .region-badges-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 16px;
-
-        .region-badge-card {
-          padding: 20px;
-          background: white;
-          border: 2px solid #e5e7eb;
-          border-radius: 12px;
-          text-align: center;
-          transition: all 0.3s ease;
-
-          &:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-          }
-
-          &.champion {
-            border-color: #f59e0b;
-            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-          }
-
-          .region-flag {
-            font-size: 32px;
-            margin-bottom: 8px;
-
-            &.lpl { background: linear-gradient(135deg, #ef4444, #dc2626); -webkit-background-clip: text; }
-            &.lck { background: linear-gradient(135deg, #3b82f6, #1d4ed8); -webkit-background-clip: text; }
-            &.lec { background: linear-gradient(135deg, #22c55e, #16a34a); -webkit-background-clip: text; }
-            &.lcs { background: linear-gradient(135deg, #8b5cf6, #7c3aed); -webkit-background-clip: text; }
-          }
-
-          .region-name {
-            font-size: 14px;
-            font-weight: 600;
-            color: #374151;
-            margin-bottom: 12px;
-          }
-
-          .badge-count {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-
-            .badge-icon {
-              font-size: 20px;
-            }
-
-            .badge-number {
-              font-size: 24px;
-              font-weight: 700;
-              color: #f59e0b;
-            }
-          }
-
-          .region-rank {
-            margin-top: 8px;
-            font-size: 12px;
-            color: #6b7280;
-          }
-        }
-      }
-    }
-
-    .stage-card {
-      margin-bottom: 24px;
-
-      .card-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-    }
-
-    .seed-groups {
-      margin-top: 16px;
-    }
-
-    .generate-region-battle-section {
-      margin-top: 24px;
-      text-align: center;
-
-      .el-button {
-        margin-top: 16px;
-      }
-    }
-
-    .region-battle-section {
-      margin-top: 24px;
-
-      .battle-stage {
-        margin-bottom: 24px;
-        padding: 20px;
-        background: #f9fafb;
-        border-radius: 12px;
-
-        h4 {
-          margin: 0 0 16px 0;
-          font-size: 18px;
-          font-weight: 600;
-          text-align: center;
-          color: #1f2937;
-        }
-
-        &.final {
-          background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-          border: 2px solid #f59e0b;
-        }
-      }
-    }
-
-  }
-
-  // 加赛样式
-  .tiebreaker-section {
-    margin-top: 20px;
-    padding: 16px;
-    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-    border: 2px dashed #f59e0b;
-    border-radius: 12px;
-
-    .tiebreaker-match {
-      background: white;
-      border-radius: 8px;
-      padding: 16px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-
-      .tiebreaker-header {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        margin-bottom: 16px;
-        padding-bottom: 12px;
-        border-bottom: 1px solid #e5e7eb;
-
-        .tiebreaker-icon {
-          font-size: 24px;
-        }
-
-        .tiebreaker-title {
-          font-size: 18px;
-          font-weight: 700;
-          color: #b45309;
-        }
-      }
-
-      .tiebreaker-teams {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 24px;
-        margin-bottom: 16px;
-
-        .team-side {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-
-          .team-name {
-            font-size: 16px;
-            font-weight: 600;
-            color: #1f2937;
-          }
-        }
-
-        .vs-section {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 16px;
-          background: #f3f4f6;
-          border-radius: 8px;
-
-          .score {
-            font-size: 24px;
-            font-weight: 700;
-            color: #1f2937;
-          }
-
-          .vs {
-            font-size: 16px;
-            font-weight: 600;
-            color: #6b7280;
-          }
-        }
-      }
-
-      .tiebreaker-actions {
-        display: flex;
-        justify-content: center;
-      }
-    }
-  }
-
-  .mb-4 {
-    margin-bottom: 16px;
-  }
+  background: #f8fafc;
+  min-height: 100vh;
 }
 
-// 冠军庆祝动画
-@keyframes champion-bounce {
-  0% {
-    transform: scale(0.3) rotate(-10deg);
-    opacity: 0;
-  }
-  50% {
-    transform: scale(1.05) rotate(5deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-    opacity: 1;
-  }
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
 }
 
-:deep(.champion-celebration-box) {
-  animation: champion-bounce 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-  background: linear-gradient(135deg, #fef3c7 0%, #fde047 100%);
-  border: 3px solid #fbbf24;
+.back-btn {
+  background: none;
+  border: none;
+  color: #6366f1;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 8px;
+}
 
-  .el-message-box__title {
-    font-size: 28px;
-    font-weight: 900;
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
+.page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+}
 
-  .el-message-box__content {
-    font-size: 18px;
-    color: #92400e;
-  }
+.page-desc {
+  margin: 4px 0 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
 
-  .el-button--primary {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    border: none;
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
 
-    &:hover {
-      background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-    }
-  }
+.action-btn {
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+}
+
+.action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.primary-btn {
+  background: #6366f1;
+  color: #fff;
+}
+
+.warning-btn {
+  background: #f59e0b;
+  color: #fff;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 10px;
+}
+
+.status-badge.success {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.status-badge.warning {
+  background: #fffbeb;
+  color: #d97706;
+}
+
+.status-badge.info {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.region-label {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.stats-bar {
+  display: flex;
+  gap: 0;
+  margin-bottom: 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.stat-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px;
+  border-right: 1px solid #e2e8f0;
+}
+
+.stat-item:last-child {
+  border-right: none;
+}
+
+.stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.table-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.phase-warning-alert {
+  margin-bottom: 24px;
+}
+
+.phase-warning-content p {
+  margin: 4px 0;
+  line-height: 1.6;
+}
+
+.phase-warning-content p strong {
+  color: var(--el-color-warning);
+}
+
+.icp-status-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 24px;
+  border: 1px solid #e2e8f0;
+}
+
+.status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.status-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.status-info h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.seed-teams-display {
+  margin-bottom: 24px;
+}
+
+.seed-teams-display .section-title {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.seed-groups-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.seed-group-card {
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.seed-group-card.seed-1 {
+  border-color: #f59e0b;
+}
+
+.seed-group-card.seed-1 .seed-title {
+  color: #b45309;
+}
+
+.seed-group-card.seed-2 {
+  border-color: #94a3b8;
+}
+
+.seed-group-card.seed-2 .seed-title {
+  color: #475569;
+}
+
+.seed-group-card.seed-3 {
+  border-color: #a78bfa;
+}
+
+.seed-group-card.seed-3 .seed-title {
+  color: #6d28d9;
+}
+
+.seed-group-card.seed-4 {
+  border-color: #64748b;
+}
+
+.seed-group-card.seed-4 .seed-title {
+  color: #374151;
+}
+
+.seed-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.seed-title {
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.seed-team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.seed-team-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.seed-team-item .team-name {
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.seed-team-item.pending .team-name {
+  color: #94a3b8;
+  font-style: italic;
+  font-weight: normal;
+}
+
+.region-badges-section {
+  margin-bottom: 24px;
+}
+
+.region-badges-section h3 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.region-badges-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.region-badge-card {
+  padding: 20px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.region-badge-card.champion {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.region-flag {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.region-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 12px;
+}
+
+.badge-count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.badge-number {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.region-rank {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.seed-groups {
+  padding: 16px;
+}
+
+.generate-region-battle-section {
+  margin-top: 24px;
+  padding: 16px;
+  text-align: center;
+}
+
+.generate-region-battle-section .action-btn {
+  margin-top: 16px;
+}
+
+.region-battle-section {
+  padding: 16px;
+}
+
+.battle-stage {
+  margin-bottom: 24px;
+  padding: 20px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.battle-stage h4 {
+  margin: 0 0 16px 0;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+  color: #0f172a;
+}
+
+.battle-stage.final {
+  background: #fffbeb;
+  border-color: #f59e0b;
+}
+
+.tiebreaker-section {
+  margin-top: 20px;
+  padding: 16px;
+  background: #fffbeb;
+  border: 1px dashed #f59e0b;
+  border-radius: 10px;
+}
+
+.tiebreaker-match {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+}
+
+.tiebreaker-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.tiebreaker-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.tiebreaker-teams {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.team-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-side .team-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.vs-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.vs-section .score {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.vs-section .vs {
+  font-size: 14px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.tiebreaker-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.mb-4 {
+  margin-bottom: 16px;
 }
 </style>

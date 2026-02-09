@@ -1,10 +1,10 @@
 <template>
   <div class="clauch-group-standing">
     <div class="group-header">
-      <h3 class="group-title">{{ groupName }}组</h3>
-      <el-tag :type="getGroupStatusType()" size="large">
+      <span class="group-title">{{ groupName }}组</span>
+      <span class="status-badge" :class="getGroupStatusType()">
         {{ getGroupStatusText() }}
-      </el-tag>
+      </span>
     </div>
 
     <!-- 小组积分榜 -->
@@ -16,102 +16,39 @@
         style="width: 100%"
         :row-class-name="getRowClassName"
       >
-        <el-table-column
-          prop="position"
-          label="排名"
-          width="70"
-          align="center"
-        >
+        <el-table-column prop="position" label="#" width="45" align="center">
           <template #default="{ row }">
-            <el-tag
-              v-if="row.position <= 2"
-              type="success"
-              size="small"
-            >
-              {{ row.position }}
-            </el-tag>
-            <span v-else>{{ row.position }}</span>
+            <span :class="{ 'rank-qualified': row.position <= 2 }">{{ row.position }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column
-          prop="teamName"
-          label="战队"
-          min-width="150"
-        >
+        <el-table-column prop="teamName" label="战队" min-width="120">
           <template #default="{ row }">
-            <div class="team-cell">
-              <span class="team-name">{{ row.teamName }}</span>
-              <el-icon v-if="row.qualified" class="qualified-icon" color="#67c23a">
-                <Select />
-              </el-icon>
-            </div>
+            <span class="team-name" :class="{ qualified: row.qualified }">{{ row.teamName }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column
-          prop="matchesPlayed"
-          label="场次"
-          width="70"
-          align="center"
-        />
-
-        <el-table-column
-          prop="wins"
-          label="胜"
-          width="60"
-          align="center"
-        >
+        <el-table-column prop="wins" label="胜" width="45" align="center">
           <template #default="{ row }">
             <span class="win-count">{{ row.wins }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column
-          prop="losses"
-          label="负"
-          width="60"
-          align="center"
-        >
+        <el-table-column prop="losses" label="负" width="45" align="center">
           <template #default="{ row }">
             <span class="loss-count">{{ row.losses }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column
-          prop="points"
-          label="积分"
-          width="80"
-          align="center"
-        >
+        <el-table-column prop="points" label="分" width="45" align="center">
           <template #default="{ row }">
             <span class="points-value">{{ row.points }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column
-          label="小局"
-          width="100"
-          align="center"
-        >
+        <el-table-column prop="roundDifferential" label="净局" width="50" align="center">
           <template #default="{ row }">
-            {{ row.roundsWon }}-{{ row.roundsLost }}
-          </template>
-        </el-table-column>
-
-        <el-table-column
-          prop="roundDifferential"
-          label="净胜局"
-          width="90"
-          align="center"
-        >
-          <template #default="{ row }">
-            <span
-              :class="{
-                'positive-diff': row.roundDifferential > 0,
-                'negative-diff': row.roundDifferential < 0
-              }"
-            >
+            <span :class="{ 'positive-diff': row.roundDifferential > 0, 'negative-diff': row.roundDifferential < 0 }">
               {{ row.roundDifferential > 0 ? '+' : '' }}{{ row.roundDifferential }}
             </span>
           </template>
@@ -120,65 +57,40 @@
 
       <!-- 积分规则说明 -->
       <div class="scoring-rules">
-        <el-text size="small" type="info">
-          积分规则: 2:0胜=3分 | 2:1胜=2分 | 1:2负=1分 | 0:2负=0分 | 小组前2名晋级淘汰赛
-        </el-text>
+        <span>2:0胜=3分 | 2:1胜=2分 | 1:2负=1分 | 0:2负=0分</span>
       </div>
     </div>
 
-    <!-- 小组赛程 -->
-    <div class="group-matches">
-      <h4 class="matches-title">小组赛程</h4>
+    <!-- 赛程折叠区 -->
+    <div class="matches-toggle" @click="showMatches = !showMatches">
+      <span>{{ showMatches ? '收起赛程' : '展开赛程' }}</span>
+      <span class="toggle-arrow" :class="{ expanded: showMatches }">&#9662;</span>
+    </div>
 
-      <!-- 按轮次分组显示 -->
-      <div
-        v-for="round in groupedMatches"
-        :key="round.roundNumber"
-        class="round-section"
-      >
-        <div class="round-header">
-          <h5>第{{ round.roundNumber }}轮</h5>
-          <el-tag
-            :type="getRoundProgressType(round)"
-            size="small"
-          >
-            {{ getRoundProgressText(round) }}
-          </el-tag>
-        </div>
-
-        <div class="matches-grid">
-          <ClauchMatchCard
-            v-for="match in round.matches"
-            :key="match.id"
-            :match="match"
-            :simulating="simulatingMatchId === match.id"
-            @simulate="handleSimulateMatch"
-            @view-detail="handleViewDetail"
-          />
-        </div>
+    <div v-show="showMatches" class="group-matches">
+      <div class="matches-grid">
+        <ClauchMatchCard
+          v-for="match in allMatches"
+          :key="match.id"
+          :match="match"
+          :simulating="simulatingMatchId === match.id"
+          @simulate="handleSimulateMatch"
+          @view-detail="handleViewDetail"
+        />
       </div>
     </div>
 
-    <!-- 批量操作 -->
-    <div class="group-actions">
-      <el-button
-        v-if="hasUncompletedMatches"
-        type="primary"
-        :loading="batchSimulating"
-        @click="handleBatchSimulate"
-      >
-        一键模拟全部比赛
-      </el-button>
-      <el-tag v-else type="success" size="large">
-        小组赛已全部完成
-      </el-tag>
+    <div v-show="showMatches" class="group-actions">
+      <button v-if="hasUncompletedMatches" class="batch-btn" :disabled="batchSimulating" @click="handleBatchSimulate">
+        {{ batchSimulating ? '模拟中...' : '一键模拟全部' }}
+      </button>
+      <span v-else class="all-done-label">已全部完成</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Select } from '@element-plus/icons-vue'
+import { computed, ref } from 'vue'
 import type { ClauchMatch, ClauchGroup, ClauchGroupStanding } from '@/types/clauch'
 import ClauchMatchCard from './ClauchMatchCard.vue'
 
@@ -192,6 +104,8 @@ const props = withDefaults(defineProps<Props>(), {
   simulatingMatchId: null,
   batchSimulating: false
 })
+
+const showMatches = ref(false)
 
 const emit = defineEmits<{
   (e: 'simulate-match', match: ClauchMatch): void
@@ -221,28 +135,10 @@ const sortedStandings = computed(() => {
 })
 
 /**
- * 按轮次分组的比赛（过滤掉 undefined/null）
+ * 所有比赛（平铺，过滤掉 undefined/null）
  */
-const groupedMatches = computed(() => {
-  const rounds: { [key: number]: ClauchMatch[] } = {}
-
-  // 先过滤掉 undefined/null 的比赛
-  const validMatches = (props.group.matches || []).filter(m => m != null)
-
-  validMatches.forEach(match => {
-    const roundNumber = match.roundNumber || 1
-    if (!rounds[roundNumber]) {
-      rounds[roundNumber] = []
-    }
-    rounds[roundNumber].push(match)
-  })
-
-  return Object.entries(rounds)
-    .map(([roundNumber, matches]) => ({
-      roundNumber: parseInt(roundNumber),
-      matches
-    }))
-    .sort((a, b) => a.roundNumber - b.roundNumber)
+const allMatches = computed(() => {
+  return (props.group.matches || []).filter((m): m is ClauchMatch => m != null)
 })
 
 /**
@@ -271,30 +167,6 @@ const getGroupStatusType = () => {
 const getGroupStatusText = () => {
   const completed = props.group.matches.filter(m => m.status === 'completed').length
   const total = props.group.matches.length
-
-  if (completed === total) return '已完成'
-  return `${completed}/${total}`
-}
-
-/**
- * 获取轮次进度类型
- */
-const getRoundProgressType = (round: { matches: ClauchMatch[] }) => {
-  const allCompleted = round.matches.every(m => m.status === 'completed')
-  if (allCompleted) return 'success'
-
-  const anyCompleted = round.matches.some(m => m.status === 'completed')
-  if (anyCompleted) return 'warning'
-
-  return 'info'
-}
-
-/**
- * 获取轮次进度文本
- */
-const getRoundProgressText = (round: { matches: ClauchMatch[] }) => {
-  const completed = round.matches.filter(m => m.status === 'completed').length
-  const total = round.matches.length
 
   if (completed === total) return '已完成'
   return `${completed}/${total}`
@@ -332,124 +204,216 @@ const handleBatchSimulate = () => {
 
 <style scoped>
 .clauch-group-standing {
-  background: white;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  padding: 12px;
 }
 
 .group-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid #e4e7ed;
+  margin-bottom: 10px;
 }
 
 .group-title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: bold;
-  color: #303133;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.status-badge.success {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.status-badge.warning {
+  background: #fffbeb;
+  color: #d97706;
+}
+
+.status-badge.info {
+  background: #f1f5f9;
+  color: #64748b;
 }
 
 .standings-table {
-  margin-bottom: 24px;
-}
-
-.team-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .team-name {
+  font-size: 13px;
   font-weight: 500;
+  color: #0f172a;
 }
 
-.qualified-icon {
-  font-size: 16px;
+.team-name.qualified {
+  color: #16a34a;
+}
+
+.rank-qualified {
+  color: #16a34a;
+  font-weight: 600;
 }
 
 .win-count {
-  color: #67c23a;
+  color: #16a34a;
   font-weight: 500;
 }
 
 .loss-count {
-  color: #f56c6c;
+  color: #ef4444;
   font-weight: 500;
 }
 
 .points-value {
-  font-size: 16px;
-  font-weight: bold;
-  color: #409eff;
+  font-weight: 600;
+  color: #6366f1;
 }
 
 .positive-diff {
-  color: #67c23a;
+  color: #16a34a;
   font-weight: 500;
 }
 
 .negative-diff {
-  color: #f56c6c;
+  color: #ef4444;
   font-weight: 500;
 }
 
 .scoring-rules {
-  margin-top: 12px;
-  padding: 12px;
-  background: #f5f7fa;
+  padding: 6px 10px;
+  background: #f8fafc;
   border-radius: 4px;
   text-align: center;
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 :deep(.qualified-row) {
-  background-color: #f0f9ff !important;
+  background-color: #f0fdf4 !important;
+}
+
+.matches-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px;
+  margin-top: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #6366f1;
+  border-top: 1px solid #f1f5f9;
+  user-select: none;
+}
+
+.matches-toggle:hover {
+  color: #4f46e5;
+}
+
+.toggle-arrow {
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+.toggle-arrow.expanded {
+  transform: rotate(180deg);
 }
 
 .group-matches {
-  margin-top: 24px;
-}
-
-.matches-title {
-  margin: 0 0 16px 0;
-  font-size: 16px;
-  font-weight: bold;
-  color: #303133;
+  margin-top: 8px;
 }
 
 .round-section {
-  margin-bottom: 24px;
+  margin-bottom: 12px;
 }
 
 .round-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
-.round-header h5 {
-  margin: 0;
-  font-size: 14px;
+.round-name {
+  font-size: 12px;
   font-weight: 600;
-  color: #606266;
+  color: #64748b;
+}
+
+.round-status {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.round-status.success {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.round-status.warning {
+  background: #fffbeb;
+  color: #d97706;
+}
+
+.round-status.info {
+  background: #f1f5f9;
+  color: #64748b;
 }
 
 .matches-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
 }
 
 .group-actions {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid #e4e7ed;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #f1f5f9;
   display: flex;
   justify-content: center;
+}
+
+.batch-btn {
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  border: none;
+  background: #6366f1;
+  color: #ffffff;
+}
+
+.batch-btn:hover {
+  background: #4f46e5;
+}
+
+.batch-btn:disabled {
+  background: #c7d2fe;
+  cursor: not-allowed;
+}
+
+.all-done-label {
+  font-size: 12px;
+  color: #16a34a;
+  font-weight: 500;
 }
 </style>

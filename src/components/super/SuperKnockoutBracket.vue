@@ -4,9 +4,9 @@
       <h3 class="bracket-title">
         {{ stageTitle }}
       </h3>
-      <el-tag :type="getBracketStatusType()" size="large">
+      <span class="status-badge" :class="'status-' + getBracketStatusType()">
         {{ getBracketStatusText() }}
-      </el-tag>
+      </span>
     </div>
 
     <!-- 第二阶段：挑战者组 -->
@@ -26,7 +26,7 @@
       </div>
 
       <div class="stage-connector">
-        <el-icon><Bottom /></el-icon>
+        <span class="connector-arrow">&#9662;</span>
       </div>
 
       <div class="stage-section">
@@ -63,14 +63,8 @@
           </div>
         </div>
 
-        <!-- 连接线 -->
-        <div class="bracket-connector vertical">
-          <svg class="connector-svg">
-            <line x1="50%" y1="0%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-            <line x1="50%" y1="50%" x2="100%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-            <line x1="50%" y1="100%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-          </svg>
-        </div>
+        <!-- CSS连接线 -->
+        <div class="bracket-connector connector-merge"></div>
 
         <!-- 败者组 -->
         <div class="bracket-column losers">
@@ -88,13 +82,8 @@
           </div>
         </div>
 
-        <!-- 连接线 -->
-        <div class="bracket-connector vertical">
-          <svg class="connector-svg">
-            <line x1="0%" y1="50%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-            <line x1="50%" y1="50%" x2="50%" y2="100%" stroke="#e4e7ed" stroke-width="2" />
-          </svg>
-        </div>
+        <!-- CSS连接线 -->
+        <div class="bracket-connector connector-straight"></div>
 
         <!-- 败者组决赛 -->
         <div class="bracket-column losers-final">
@@ -134,15 +123,8 @@
           </div>
         </div>
 
-        <!-- 连接线 -->
-        <div class="bracket-connector">
-          <svg class="connector-svg">
-            <line x1="0%" y1="25%" x2="50%" y2="37.5%" stroke="#e4e7ed" stroke-width="2" />
-            <line x1="0%" y1="75%" x2="50%" y2="62.5%" stroke="#e4e7ed" stroke-width="2" />
-            <line x1="50%" y1="37.5%" x2="100%" y2="37.5%" stroke="#e4e7ed" stroke-width="2" />
-            <line x1="50%" y1="62.5%" x2="100%" y2="62.5%" stroke="#e4e7ed" stroke-width="2" />
-          </svg>
-        </div>
+        <!-- CSS连接线 -->
+        <div class="bracket-connector connector-merge"></div>
 
         <!-- 次轮 -->
         <div class="final-round">
@@ -161,14 +143,8 @@
           </div>
         </div>
 
-        <!-- 连接线 -->
-        <div class="bracket-connector">
-          <svg class="connector-svg">
-            <line x1="0%" y1="37.5%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-            <line x1="0%" y1="62.5%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-            <line x1="50%" y1="50%" x2="100%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-          </svg>
-        </div>
+        <!-- CSS连接线 -->
+        <div class="bracket-connector connector-merge"></div>
 
         <!-- 决赛区 -->
         <div class="final-round finals">
@@ -178,7 +154,7 @@
           <div class="matches-column finals-column">
             <!-- 季军赛 -->
             <div v-if="finalStage?.thirdPlaceMatch" class="final-match third-place">
-              <h5>🥉 季军赛</h5>
+              <h5>季军赛</h5>
               <SuperMatchCard
                 :match="finalStage.thirdPlaceMatch"
                 @simulate="handleSimulateMatch"
@@ -187,7 +163,7 @@
             </div>
             <!-- 总决赛 -->
             <div v-if="finalStage?.grandFinal" class="final-match grand-final">
-              <h5>🏆 总决赛</h5>
+              <h5>总决赛</h5>
               <SuperMatchCard
                 :match="finalStage.grandFinal"
                 @simulate="handleSimulateMatch"
@@ -203,7 +179,6 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Bottom } from '@element-plus/icons-vue'
 import type { SuperMatch, ChallengerStage, ChampionPrepStage, FinalStage } from '@/types/super'
 import SuperMatchCard from './SuperMatchCard.vue'
 
@@ -309,10 +284,10 @@ const handleViewMatch = (match: SuperMatch) => {
 
 <style scoped>
 .super-knockout-bracket {
-  background: white;
-  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
   padding: 24px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
 }
 
 .bracket-header {
@@ -321,19 +296,42 @@ const handleViewMatch = (match: SuperMatch) => {
   align-items: center;
   margin-bottom: 24px;
   padding-bottom: 16px;
-  border-bottom: 2px solid #e4e7ed;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .bracket-title {
   margin: 0;
-  font-size: 20px;
-  font-weight: bold;
-  color: #303133;
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.status-info {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.status-success {
+  background: #f0fdf4;
+  color: #22c55e;
+}
+
+.status-warning {
+  background: #fffbeb;
+  color: #d97706;
 }
 
 /* 第二阶段：挑战者组 */
 .challenger-stage {
-  padding: 20px;
+  padding: 16px 0;
 }
 
 .stage-section {
@@ -341,16 +339,16 @@ const handleViewMatch = (match: SuperMatch) => {
 }
 
 .section-title {
-  margin: 0 0 8px 0;
-  font-size: 18px;
+  margin: 0 0 6px 0;
+  font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: #0f172a;
 }
 
 .section-desc {
   margin: 0 0 16px 0;
-  font-size: 14px;
-  color: #909399;
+  font-size: 13px;
+  color: #64748b;
 }
 
 .matches-row {
@@ -362,22 +360,26 @@ const handleViewMatch = (match: SuperMatch) => {
 .stage-connector {
   display: flex;
   justify-content: center;
-  margin: 16px 0;
-  font-size: 24px;
-  color: #909399;
+  margin: 12px 0;
+  color: #94a3b8;
+  font-size: 18px;
+}
+
+.connector-arrow {
+  display: inline-block;
 }
 
 /* 第三阶段：冠军赛预备战 */
 .champion-prep-stage {
-  padding: 20px;
+  padding: 16px 0;
 }
 
 .bracket-container {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 0;
   overflow-x: auto;
-  padding: 20px 0;
+  padding: 16px 0;
 }
 
 .bracket-column {
@@ -388,26 +390,32 @@ const handleViewMatch = (match: SuperMatch) => {
 }
 
 .column-header {
-  padding: 12px 16px;
-  border-radius: 8px;
+  padding: 10px 16px;
+  border-radius: 4px;
   text-align: center;
   font-weight: 600;
-  margin-bottom: 16px;
+  font-size: 14px;
+  margin-bottom: 12px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
 }
 
 .winners-header {
-  background: linear-gradient(135deg, #fef3c7 0%, #fde047 100%);
-  color: #92400e;
+  color: #16a34a;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
 }
 
 .losers-header {
-  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-  color: #1e40af;
+  color: #d97706;
+  border-color: #fde68a;
+  background: #fffbeb;
 }
 
 .final-header {
-  background: linear-gradient(135deg, #f3e8ff 0%, #ddd6fe 100%);
-  color: #6b21a8;
+  color: #6366f1;
+  border-color: #c7d2fe;
+  background: #eef2ff;
 }
 
 .match-slot {
@@ -419,35 +427,56 @@ const handleViewMatch = (match: SuperMatch) => {
 
 .empty-match {
   padding: 40px;
-  background: #f5f7fa;
-  border: 2px dashed #e4e7ed;
-  border-radius: 12px;
-  color: #909399;
+  background: #f8fafc;
+  border: 2px dashed #e2e8f0;
+  border-radius: 6px;
+  color: #94a3b8;
   text-align: center;
   width: 100%;
 }
 
-.bracket-connector.vertical {
+/* CSS连接线 */
+.bracket-connector {
   width: 60px;
   min-width: 60px;
-  align-self: stretch;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.connector-svg {
-  width: 100%;
-  height: 100%;
+.bracket-connector::before {
+  content: '';
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.bracket-connector::after {
+  content: '';
+  flex: 1;
+}
+
+.connector-merge::after {
+  background:
+    linear-gradient(#cbd5e1,#cbd5e1) 0 25%/50% 2px no-repeat,
+    linear-gradient(#cbd5e1,#cbd5e1) 0 75%/50% 2px no-repeat,
+    linear-gradient(#cbd5e1,#cbd5e1) calc(50% - 1px) 50%/2px 50% no-repeat,
+    linear-gradient(#cbd5e1,#cbd5e1) 100% 50%/50% 2px no-repeat;
+}
+
+.connector-straight::after {
+  background: linear-gradient(#cbd5e1,#cbd5e1) 0 50%/100% 2px no-repeat;
 }
 
 /* 第四阶段：终极冠军赛 */
 .final-stage {
-  padding: 20px;
+  padding: 16px 0;
 }
 
 .final-bracket-container {
   display: flex;
-  gap: 20px;
+  gap: 0;
   overflow-x: auto;
-  padding: 20px 0;
+  padding: 16px 0;
 }
 
 .final-round {
@@ -456,23 +485,24 @@ const handleViewMatch = (match: SuperMatch) => {
 }
 
 .round-header {
-  margin-bottom: 16px;
-  padding: 12px;
-  background: #f5f7fa;
-  border-radius: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
 }
 
 .round-header h4 {
-  margin: 0 0 4px 0;
-  font-size: 16px;
+  margin: 0 0 2px 0;
+  font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: #0f172a;
 }
 
 .round-desc {
   margin: 0;
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
 }
 
 .matches-column {
@@ -487,31 +517,34 @@ const handleViewMatch = (match: SuperMatch) => {
   gap: 24px;
 }
 
-.bracket-connector {
-  width: 100px;
-  min-width: 100px;
-  align-self: stretch;
-}
-
 .final-match {
   padding: 16px;
-  border-radius: 12px;
+  border-radius: 6px;
 }
 
 .final-match h5 {
   margin: 0 0 12px 0;
-  font-size: 16px;
+  font-size: 15px;
   text-align: center;
+  font-weight: 600;
 }
 
 .final-match.third-place {
-  background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
-  border: 2px solid #d97706;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+}
+
+.final-match.third-place h5 {
+  color: #d97706;
 }
 
 .final-match.grand-final {
-  background: linear-gradient(135deg, #fef3c7 0%, #fde047 100%);
-  border: 2px solid #f59e0b;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+}
+
+.final-match.grand-final h5 {
+  color: #6366f1;
 }
 
 /* 响应式设计 */
@@ -528,17 +561,19 @@ const handleViewMatch = (match: SuperMatch) => {
 
   .bracket-connector {
     width: 100%;
-    height: 60px;
+    height: 40px;
     min-width: auto;
+    flex-direction: row;
   }
 
-  .bracket-connector.vertical {
-    width: 100%;
-    height: 60px;
+  .bracket-connector::before {
+    height: auto;
+    width: 28px;
+    flex-shrink: 0;
   }
 
-  .connector-svg {
-    transform: rotate(90deg);
+  .bracket-connector::after {
+    background: linear-gradient(#cbd5e1,#cbd5e1) 50% 0/2px 100% no-repeat;
   }
 
   .matches-column {

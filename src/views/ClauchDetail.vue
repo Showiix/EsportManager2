@@ -2,40 +2,28 @@
   <div class="clauch-management">
     <!-- 页面头部 -->
     <div class="page-header">
-      <div class="header-content">
-        <div class="header-left">
-          <el-button text @click="goBack">
-            <el-icon><ArrowLeft /></el-icon>
-            返回赛事列表
-          </el-button>
-          <h1 class="page-title">
-            <el-icon><Trophy /></el-icon>
-            C洲际赛 (Clauch Intercontinental Cup)
-          </h1>
-          <p class="page-description">
-            32支队伍（各赛区夏季赛常规赛前8名），8个小组BO3单循环，东西半区BO5淘汰赛
-          </p>
-        </div>
+      <div class="header-left">
+        <button class="back-btn" @click="goBack">&larr; 返回赛事列表</button>
+        <h1 class="page-title">C洲际赛 (Clauch Intercontinental Cup)</h1>
+        <p class="page-desc">32支队伍（各赛区夏季赛常规赛前8名），8个小组BO3单循环，东西半区BO5淘汰赛</p>
       </div>
       <div class="header-actions">
-        <el-button
+        <button
           v-if="clauchBracket.status === 'group_stage' && !isGroupStageComplete"
-          type="primary"
+          class="action-btn primary-btn"
           @click="batchSimulateGroupStage"
-          :loading="simulatingGroupStage"
+          :disabled="simulatingGroupStage"
         >
-          <el-icon><DArrowRight /></el-icon>
           {{ simulatingGroupStage ? `模拟中 (${groupSimProgress}%)` : '模拟小组赛' }}
-        </el-button>
-        <el-button
+        </button>
+        <button
           v-if="clauchBracket.status === 'knockout_stage'"
-          type="warning"
+          class="action-btn warning-btn"
           @click="batchSimulateKnockout"
-          :loading="simulatingKnockout"
+          :disabled="simulatingKnockout"
         >
-          <el-icon><DArrowRight /></el-icon>
           {{ simulatingKnockout ? `模拟中 (${simulationProgress}%)` : '模拟淘汰赛' }}
-        </el-button>
+        </button>
       </div>
     </div>
 
@@ -60,20 +48,30 @@
     <!-- C洲际赛状态卡片 -->
     <div class="clauch-status-card">
       <div class="status-header">
-        <div class="status-info">
-          <h2>S{{ viewingSeason }} C洲际赛</h2>
-          <el-tag :type="getStatusType(clauchBracket.status)" size="large">
-            {{ getStatusText(clauchBracket.status) }}
-          </el-tag>
-        </div>
+        <h2 class="status-title">S{{ viewingSeason }} C洲际赛</h2>
+        <span class="status-badge" :class="getStatusType(clauchBracket.status)">
+          {{ getStatusText(clauchBracket.status) }}
+        </span>
       </div>
 
       <!-- 参赛队伍统计 -->
-      <div class="teams-stats">
-        <el-statistic title="参赛队伍总数" :value="32" />
-        <el-statistic title="小组数量" :value="8" suffix="组" />
-        <el-statistic title="东半区队伍" :value="16" />
-        <el-statistic title="西半区队伍" :value="16" />
+      <div class="stats-bar">
+        <div class="stat-item">
+          <span class="stat-value">32</span>
+          <span class="stat-label">参赛队伍总数</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">8</span>
+          <span class="stat-label">小组数量</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">16</span>
+          <span class="stat-label">东半区队伍</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">16</span>
+          <span class="stat-label">西半区队伍</span>
+        </div>
       </div>
 
       <!-- 赛事数据异常警告 -->
@@ -98,31 +96,22 @@
       </el-alert>
 
       <!-- 小组赛阶段 -->
-      <el-card v-if="clauchBracket.status !== 'not_started'" class="stage-card">
-        <template #header>
-          <div class="card-header">
-            <span>📊 小组赛阶段</span>
-            <el-tag v-if="isGroupStageComplete" type="success">已完成</el-tag>
-            <el-tag v-else type="warning">进行中</el-tag>
-          </div>
-        </template>
+      <div v-if="clauchBracket.status !== 'not_started'" class="table-section">
+        <div class="section-header">
+          <span class="section-title">小组赛阶段</span>
+          <span v-if="isGroupStageComplete" class="status-badge success">已完成</span>
+          <span v-else class="status-badge warning">进行中</span>
+        </div>
 
         <!-- 小组赛积分榜 -->
-        <div class="group-standings">
-          <el-tabs v-model="activeGroup" type="card">
-            <el-tab-pane
-              v-for="group in clauchBracket.groups"
-              :key="group.groupName"
-              :label="`${group.groupName}组`"
-              :name="group.groupName"
-            >
-              <ClauchGroupStanding
-                :group="group"
-                @simulate-match="handleSimulateMatch"
-                @view-detail="handleViewMatchDetail"
-              />
-            </el-tab-pane>
-          </el-tabs>
+        <div class="groups-grid">
+          <ClauchGroupStanding
+            v-for="group in clauchBracket.groups"
+            :key="group.groupName"
+            :group="group"
+            @simulate-match="handleSimulateMatch"
+            @view-detail="handleViewMatchDetail"
+          />
         </div>
 
         <!-- 生成淘汰赛按钮 -->
@@ -135,79 +124,59 @@
             show-icon
             class="mb-4"
           />
-          <el-button
-            type="primary"
-            size="large"
-            @click="handleGenerateKnockout"
-            :loading="generatingKnockout"
-          >
-            <el-icon><Plus /></el-icon>
-            生成淘汰赛对阵
-          </el-button>
+          <button class="action-btn primary-btn" @click="handleGenerateKnockout" :disabled="generatingKnockout">
+            {{ generatingKnockout ? '生成中...' : '生成淘汰赛对阵' }}
+          </button>
         </div>
-      </el-card>
+      </div>
 
       <!-- 淘汰赛阶段 -->
-      <el-card v-if="clauchBracket.status === 'knockout_stage' || clauchBracket.status === 'completed'" class="stage-card">
-        <template #header>
-          <div class="card-header">
-            <span>🏅 淘汰赛阶段</span>
-            <el-tag v-if="clauchBracket.status === 'completed'" type="success">已完成</el-tag>
-            <el-tag v-else type="warning">进行中</el-tag>
-          </div>
-        </template>
+      <div v-if="clauchBracket.status === 'knockout_stage' || clauchBracket.status === 'completed'" class="table-section">
+        <div class="section-header">
+          <span class="section-title">淘汰赛阶段</span>
+          <span v-if="clauchBracket.status === 'completed'" class="status-badge success">已完成</span>
+          <span v-else class="status-badge warning">进行中</span>
+        </div>
 
         <!-- 淘汰赛对阵图 -->
-        <div class="knockout-brackets">
-          <div class="bracket-section">
-            <h3>东半区</h3>
-            <ClauchKnockoutBracket
-              v-if="clauchBracket.knockoutEast"
-              :knockout="clauchBracket.knockoutEast"
-              bracket="east"
-              @simulate-match="handleSimulateMatch"
-              @view-detail="handleViewMatchDetail"
-            />
-          </div>
-
-          <div class="bracket-section">
-            <h3>西半区</h3>
-            <ClauchKnockoutBracket
-              v-if="clauchBracket.knockoutWest"
-              :knockout="clauchBracket.knockoutWest"
-              bracket="west"
-              @simulate-match="handleSimulateMatch"
-              @view-detail="handleViewMatchDetail"
-            />
-          </div>
-        </div>
-
-        <!-- 决赛区域 -->
-        <div v-if="showFinals" class="finals-section">
-          <h3>🏆 决赛阶段</h3>
-          <div class="finals-matches">
-            <!-- 季军赛 -->
-            <div v-if="clauchBracket.thirdPlaceMatch" class="final-match third-place">
-              <h4>🥉 季军赛</h4>
-              <ClauchMatchCard
-                :match="clauchBracket.thirdPlaceMatch"
-                @simulate="handleSimulateMatch"
+        <div class="knockout-content">
+          <div class="knockout-brackets">
+            <div class="bracket-half">
+              <div class="section-label">东半区</div>
+              <ClauchKnockoutBracket
+                v-if="clauchBracket.knockoutEast"
+                :knockout="clauchBracket.knockoutEast"
+                bracket="east"
+                @simulate-match="handleSimulateMatch"
                 @view-detail="handleViewMatchDetail"
               />
             </div>
-
-            <!-- 总决赛 -->
-            <div v-if="clauchBracket.grandFinal" class="final-match grand-final">
-              <h4>🏆 总决赛</h4>
-              <ClauchMatchCard
-                :match="clauchBracket.grandFinal"
-                @simulate="handleSimulateMatch"
+            <div class="bracket-half">
+              <div class="section-label">西半区</div>
+              <ClauchKnockoutBracket
+                v-if="clauchBracket.knockoutWest"
+                :knockout="clauchBracket.knockoutWest"
+                bracket="west"
+                @simulate-match="handleSimulateMatch"
                 @view-detail="handleViewMatchDetail"
               />
             </div>
           </div>
+          <div v-if="showFinals" class="finals-content">
+            <div class="section-label finals">决赛阶段</div>
+            <div class="finals-matches">
+              <div v-if="clauchBracket.thirdPlaceMatch" class="final-match-block">
+                <div class="match-label">季军赛</div>
+                <ClauchMatchCard :match="clauchBracket.thirdPlaceMatch" @simulate="handleSimulateMatch" @view-detail="handleViewMatchDetail" />
+              </div>
+              <div v-if="clauchBracket.grandFinal" class="final-match-block">
+                <div class="match-label">总决赛</div>
+                <ClauchMatchCard :match="clauchBracket.grandFinal" @simulate="handleSimulateMatch" @view-detail="handleViewMatchDetail" />
+              </div>
+            </div>
+          </div>
         </div>
-      </el-card>
+      </div>
 
       <TournamentCompletionSection
         v-if="clauchBracket.status === 'completed'"
@@ -232,12 +201,6 @@
 import { ref, computed, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import {
-  Trophy,
-  ArrowLeft,
-  DArrowRight,
-  Plus
-} from '@element-plus/icons-vue'
 import ClauchGroupStanding from '@/components/clauch/ClauchGroupStanding.vue'
 import ClauchKnockoutBracket from '@/components/clauch/ClauchKnockoutBracket.vue'
 import ClauchMatchCard from '@/components/clauch/ClauchMatchCard.vue'
@@ -303,7 +266,6 @@ const loading = ref(false)
 const generatingKnockout = ref(false)
 const simulatingKnockout = ref(false)
 const simulationProgress = ref(0)
-const activeGroup = ref('A')
 
 const { simulationProgress: groupSimProgress, isSimulating: simulatingGroupStage, batchSimulate } = useBatchSimulation()
 
@@ -986,277 +948,269 @@ onMounted(async () => {
 })
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .clauch-management {
   padding: 24px;
-
-  .phase-warning-alert {
-    margin-bottom: 24px;
-
-    .phase-warning-content {
-      p {
-        margin: 4px 0;
-        line-height: 1.6;
-
-        strong {
-          color: var(--el-color-warning);
-        }
-      }
-    }
-  }
-
-  .data-error-alert {
-    margin-bottom: 24px;
-
-    .error-content {
-      p {
-        margin: 8px 0;
-        line-height: 1.6;
-      }
-
-      ul {
-        margin: 8px 0;
-        padding-left: 20px;
-
-        li {
-          margin: 4px 0;
-        }
-      }
-
-      strong {
-        color: var(--el-color-danger);
-      }
-    }
-  }
-
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 24px;
-
-    .header-content {
-      .header-left {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        align-items: flex-start;
-      }
-
-      .page-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 28px;
-        font-weight: 700;
-        margin: 0;
-        color: #1f2937;
-      }
-
-      .page-description {
-        margin: 0;
-        color: #6b7280;
-        font-size: 14px;
-      }
-    }
-
-    .header-actions {
-      display: flex;
-      gap: 12px;
-    }
-  }
-
-  .clauch-status-card {
-    background: white;
-    border-radius: 12px;
-    padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-
-    .status-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid #e5e7eb;
-
-      .status-info {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-
-        h2 {
-          margin: 0;
-          font-size: 20px;
-          font-weight: 600;
-          color: #1f2937;
-        }
-      }
-    }
-
-    .teams-stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 20px;
-      margin-bottom: 32px;
-      padding: 20px;
-      background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-      border-radius: 12px;
-    }
-
-    .stage-card {
-      margin-bottom: 24px;
-
-      .card-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-    }
-
-    .generate-knockout-section {
-      margin-top: 24px;
-      text-align: center;
-
-      .el-button {
-        margin-top: 16px;
-      }
-    }
-
-    .knockout-brackets {
-      display: flex;
-      flex-direction: column;
-      gap: 32px;
-      margin-top: 24px;
-
-      .bracket-section {
-        border: 2px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 20px;
-        background: white;
-
-        h3 {
-          margin: 0 0 16px 0;
-          font-size: 18px;
-          font-weight: 600;
-          color: #1f2937;
-          text-align: center;
-        }
-
-        overflow-x: auto;
-        overflow-y: hidden;
-
-        &::-webkit-scrollbar {
-          height: 8px;
-        }
-
-        &::-webkit-scrollbar-track {
-          background: #f3f4f6;
-          border-radius: 4px;
-        }
-
-        &::-webkit-scrollbar-thumb {
-          background: #d1d5db;
-          border-radius: 4px;
-
-          &:hover {
-            background: #9ca3af;
-          }
-        }
-      }
-    }
-
-    .finals-section {
-      margin-top: 32px;
-      padding: 24px;
-      background: linear-gradient(135deg, #fef3c7 0%, #fde047 100%);
-      border-radius: 12px;
-
-      h3 {
-        margin: 0 0 24px 0;
-        font-size: 20px;
-        font-weight: 700;
-        text-align: center;
-        color: #92400e;
-      }
-
-      .finals-matches {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 24px;
-
-        .final-match {
-          h4 {
-            margin: 0 0 12px 0;
-            font-size: 16px;
-            font-weight: 600;
-            text-align: center;
-          }
-
-          &.third-place {
-            border: 2px solid #d97706;
-            padding: 16px;
-            border-radius: 8px;
-            background: white;
-          }
-
-          &.grand-final {
-            border: 2px solid #f59e0b;
-            padding: 16px;
-            border-radius: 8px;
-            background: white;
-          }
-        }
-      }
-    }
-
-  }
-
-  .mb-4 {
-    margin-bottom: 16px;
-  }
 }
 
-// 冠军庆祝动画
-@keyframes champion-bounce {
-  0% {
-    transform: scale(0.3) rotate(-10deg);
-    opacity: 0;
-  }
-  50% {
-    transform: scale(1.05) rotate(5deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-    opacity: 1;
-  }
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
 }
 
-:deep(.champion-celebration-box) {
-  animation: champion-bounce 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-  background: linear-gradient(135deg, #fef3c7 0%, #fde047 100%);
-  border: 3px solid #fbbf24;
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 
-  .el-message-box__title {
-    font-size: 28px;
-    font-weight: 900;
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
+.back-btn {
+  background: none;
+  border: none;
+  color: #6366f1;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
 
-  .el-message-box__content {
-    font-size: 18px;
-    color: #92400e;
-  }
+.back-btn:hover {
+  color: #4f46e5;
+}
 
-  .el-button--primary {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    border: none;
+.page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+}
 
-    &:hover {
-      background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-    }
-  }
+.page-desc {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.action-btn {
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s;
+}
+
+.primary-btn {
+  background: #6366f1;
+  color: #ffffff;
+}
+
+.primary-btn:hover {
+  background: #4f46e5;
+}
+
+.primary-btn:disabled {
+  background: #c7d2fe;
+  cursor: not-allowed;
+}
+
+.warning-btn {
+  background: #f59e0b;
+  color: #ffffff;
+}
+
+.warning-btn:hover {
+  background: #d97706;
+}
+
+.warning-btn:disabled {
+  background: #fde68a;
+  cursor: not-allowed;
+}
+
+.phase-warning-alert {
+  margin-bottom: 24px;
+}
+
+.data-error-alert {
+  margin-bottom: 24px;
+}
+
+.clauch-status-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 24px;
+}
+
+.status-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.status-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 10px;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.status-badge.success {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.status-badge.warning {
+  background: #fffbeb;
+  color: #d97706;
+}
+
+.status-badge.info {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.stats-bar {
+  display: flex;
+  gap: 0;
+  margin-bottom: 24px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.stat-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 12px;
+  border-right: 1px solid #e2e8f0;
+}
+
+.stat-item:last-child {
+  border-right: none;
+}
+
+.stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.table-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.groups-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 16px;
+}
+
+.generate-knockout-section {
+  padding: 16px;
+  text-align: center;
+}
+
+.mb-4 {
+  margin-bottom: 16px;
+}
+
+.knockout-content {
+  padding: 16px;
+}
+
+.section-label {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #0f172a;
+}
+
+.section-label.finals {
+  text-align: center;
+  font-size: 14px;
+}
+
+.knockout-brackets {
+  display: flex;
+  gap: 16px;
+}
+
+.bracket-half {
+  flex: 1;
+  overflow-x: auto;
+}
+
+.finals-content {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.finals-matches {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+}
+
+.final-match-block {
+  text-align: center;
+}
+
+.match-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 8px;
 }
 </style>

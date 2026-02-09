@@ -4,12 +4,8 @@
     <div class="page-header">
       <div class="header-content">
         <div class="header-left">
-          <el-button text @click="goBack">
-            <el-icon><ArrowLeft /></el-icon>
-            返回赛事列表
-          </el-button>
+          <button class="back-btn" @click="goBack">&larr; 返回赛事列表</button>
           <h1 class="page-title">
-            <el-icon><Trophy /></el-icon>
             S 世界赛 (World Championship)
           </h1>
           <p class="page-description">
@@ -18,24 +14,22 @@
         </div>
       </div>
       <div class="header-actions">
-        <el-button
+        <button
           v-if="worldsBracket.status === 'group_stage' && !isGroupStageComplete"
-          type="primary"
+          class="action-btn primary-btn"
           @click="batchSimulateSwissRound"
-          :loading="simulatingSwiss"
+          :disabled="simulatingSwiss"
         >
-          <el-icon><DArrowRight /></el-icon>
           {{ simulatingSwiss ? `模拟中 (${swissSimProgress}%)` : '模拟瑞士轮' }}
-        </el-button>
-        <el-button
+        </button>
+        <button
           v-if="worldsBracket.status === 'knockout_stage'"
-          type="warning"
+          class="action-btn warning-btn"
           @click="batchSimulateKnockout"
-          :loading="simulatingKnockout"
+          :disabled="simulatingKnockout"
         >
-          <el-icon><DArrowRight /></el-icon>
           {{ simulatingKnockout ? `模拟中 (${koSimProgress}%)` : '模拟淘汰赛' }}
-        </el-button>
+        </button>
       </div>
     </div>
 
@@ -44,33 +38,30 @@
       <div class="status-header">
         <div class="status-info">
           <h2>S{{ viewingSeason }} 世界赛</h2>
-          <el-tag :type="getStatusType(worldsBracket.status)" size="large">
+          <span class="status-badge" :class="getStatusType(worldsBracket.status)">
             {{ getStatusText(worldsBracket.status) }}
-          </el-tag>
+          </span>
         </div>
       </div>
 
       <!-- 参赛队伍统计 -->
-      <div class="teams-stats">
-        <el-statistic title="参赛队伍总数" :value="12" />
-        <el-statistic title="直通淘汰赛" :value="4" suffix="队" />
-        <el-statistic title="瑞士轮小组赛" :value="8" suffix="队" />
-        <el-statistic title="淘汰赛名额" :value="8" suffix="队" />
+      <div class="stats-bar">
+        <div class="stat-item"><span class="stat-value">12</span><span class="stat-label">参赛队伍总数</span></div>
+        <div class="stat-item"><span class="stat-value">4</span><span class="stat-label">直通淘汰赛</span></div>
+        <div class="stat-item"><span class="stat-value">8</span><span class="stat-label">瑞士轮小组赛</span></div>
+        <div class="stat-item"><span class="stat-value">8</span><span class="stat-label">淘汰赛名额</span></div>
       </div>
 
       <!-- 参赛队伍分组 -->
-      <el-card v-if="worldsBracket.status !== 'not_started'" class="stage-card">
-        <template #header>
-          <div class="card-header">
-            <span>🎯 参赛队伍分组</span>
-          </div>
-        </template>
+      <div v-if="worldsBracket.status !== 'not_started'" class="table-section">
+        <div class="section-header">
+          <h3 class="section-title">参赛队伍分组</h3>
+        </div>
 
         <div class="teams-groups">
           <!-- 传奇组（直通淘汰赛） -->
           <div class="team-group legendary">
             <h3>
-              <el-icon><Star /></el-icon>
               传奇组（夏季赛冠军）
             </h3>
             <div class="team-group-desc">直接晋级淘汰赛，保留半区种子位</div>
@@ -78,12 +69,12 @@
               <div v-for="team in directTeams" :key="team.teamId" class="team-item">
                 <span class="team-name">{{ team.teamName }}</span>
                 <div class="team-badges">
-                  <el-tag :type="getRegionTagType(team.regionId)" size="small">
+                  <span class="status-badge" :class="getRegionTagType(team.regionId)">
                     {{ team.regionName }}
-                  </el-tag>
-                  <el-tag v-if="team.quarterSlot" size="small" type="warning">
+                  </span>
+                  <span v-if="team.quarterSlot" class="status-badge warning">
                     种子{{ team.quarterSlot }}
-                  </el-tag>
+                  </span>
                 </div>
               </div>
             </div>
@@ -92,7 +83,6 @@
           <!-- 挑战者组（参加瑞士轮） -->
           <div class="team-group challenger">
             <h3>
-              <el-icon><Medal /></el-icon>
               挑战者组（夏季赛亚军+季军）
             </h3>
             <div class="team-group-desc">参加瑞士轮小组赛，争夺4个淘汰赛席位</div>
@@ -100,43 +90,38 @@
               <div v-for="team in groupStageTeams" :key="team.teamId" class="team-item">
                 <span class="team-name">{{ team.teamName }}</span>
                 <div class="team-badges">
-                  <el-tag :type="getRegionTagType(team.regionId)" size="small">
+                  <span class="status-badge" :class="getRegionTagType(team.regionId)">
                     {{ team.regionName }}
-                  </el-tag>
-                  <el-tag size="small" type="info">
+                  </span>
+                  <span class="status-badge info">
                     {{ team.seed === 2 ? '亚军' : '季军' }}
-                  </el-tag>
+                  </span>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </el-card>
+      </div>
 
       <!-- 小组赛（瑞士轮）阶段 -->
-      <el-card v-if="worldsBracket.status !== 'not_started'" class="stage-card">
-        <template #header>
-          <div class="card-header">
-            <span>🇨🇭 小组赛 - 瑞士轮</span>
-            <el-tag v-if="isGroupStageComplete" type="success">已完成</el-tag>
-            <el-tag v-else type="warning">进行中</el-tag>
-          </div>
-        </template>
+      <div v-if="worldsBracket.status !== 'not_started'" class="table-section">
+        <div class="section-header">
+          <h3 class="section-title">小组赛 - 瑞士轮</h3>
+          <span v-if="isGroupStageComplete" class="status-badge success">已完成</span>
+          <span v-else class="status-badge warning">进行中</span>
+        </div>
 
         <!-- 瑞士轮规则说明 -->
-        <el-alert
-          title="瑞士轮规则"
-          type="info"
-          :closable="false"
-          show-icon
-          class="swiss-info"
-        >
-          <ul>
-            <li>2胜晋级淘汰赛，2败淘汰，最多3轮</li>
-            <li>相同战绩队伍配对，已对战过的不再相遇</li>
-            <li>BO3赛制</li>
-          </ul>
-        </el-alert>
+        <div class="swiss-rules">
+          <div class="swiss-rules-title">瑞士轮规则</div>
+          <div class="swiss-rules-items">
+            <span class="rule-item">2胜晋级淘汰赛，2败淘汰，最多3轮</span>
+            <span class="rule-divider">|</span>
+            <span class="rule-item">相同战绩队伍配对，已对战过的不再相遇</span>
+            <span class="rule-divider">|</span>
+            <span class="rule-item">BO3赛制</span>
+          </div>
+        </div>
 
         <!-- 瑞士轮积分榜 -->
         <div class="swiss-standings" v-if="swissStandings.length > 0">
@@ -151,9 +136,9 @@
               <template #default="{ row }">
                 <div class="team-cell">
                   <span class="team-name">{{ row.teamName }}</span>
-                  <el-tag :type="getRegionTagType(row.regionId)" size="small">
+                  <span class="status-badge" :class="getRegionTagType(row.regionId)">
                     {{ row.regionName }}
-                  </el-tag>
+                  </span>
                 </div>
               </template>
             </el-table-column>
@@ -164,9 +149,9 @@
             </el-table-column>
             <el-table-column label="状态" width="100" align="center">
               <template #default="{ row }">
-                <el-tag v-if="row.wins >= 2" type="success" size="small">已晋级</el-tag>
-                <el-tag v-else-if="row.losses >= 2" type="danger" size="small">已淘汰</el-tag>
-                <el-tag v-else type="info" size="small">进行中</el-tag>
+                <span v-if="row.wins >= 2" class="status-badge success">已晋级</span>
+                <span v-else-if="row.losses >= 2" class="status-badge danger">已淘汰</span>
+                <span v-else class="status-badge info">进行中</span>
               </template>
             </el-table-column>
           </el-table>
@@ -193,35 +178,30 @@
 
         <!-- 生成淘汰赛按钮 -->
         <div v-if="isGroupStageComplete && worldsBracket.status === 'group_stage'" class="generate-knockout-section">
-          <el-alert
-            title="瑞士轮已完成！"
-            description="4支队伍以2胜晋级，4支队伍以2败淘汰。现在可以生成淘汰赛对阵。"
-            type="success"
-            :closable="false"
-            show-icon
-            class="mb-4"
-          />
-          <el-button
-            type="primary"
-            size="large"
+          <div class="swiss-complete-banner">
+            <span class="swiss-complete-icon">&#10003;</span>
+            <div class="swiss-complete-body">
+              <div class="swiss-complete-title">瑞士轮已完成！</div>
+              <div class="swiss-complete-desc">4支队伍以2胜晋级，4支队伍以2败淘汰。现在可以生成淘汰赛对阵。</div>
+            </div>
+          </div>
+          <button
+            class="action-btn primary-btn"
             @click="handleGenerateKnockout"
-            :loading="generatingKnockout"
+            :disabled="generatingKnockout"
           >
-            <el-icon><Plus /></el-icon>
             生成淘汰赛对阵
-          </el-button>
+          </button>
         </div>
-      </el-card>
+      </div>
 
       <!-- 淘汰赛阶段 -->
-      <el-card v-if="worldsBracket.status === 'knockout_stage' || worldsBracket.status === 'completed'" class="stage-card">
-        <template #header>
-          <div class="card-header">
-            <span>🏅 淘汰赛</span>
-            <el-tag v-if="worldsBracket.status === 'completed'" type="success">已完成</el-tag>
-            <el-tag v-else type="warning">进行中</el-tag>
-          </div>
-        </template>
+      <div v-if="worldsBracket.status === 'knockout_stage' || worldsBracket.status === 'completed'" class="table-section">
+        <div class="section-header">
+          <h3 class="section-title">淘汰赛</h3>
+          <span v-if="worldsBracket.status === 'completed'" class="status-badge success">已完成</span>
+          <span v-else class="status-badge warning">进行中</span>
+        </div>
 
         <!-- 淘汰赛规则说明 -->
         <el-alert
@@ -250,7 +230,7 @@
             @view-match="viewMatchDetails"
           />
         </div>
-      </el-card>
+      </div>
 
       <!-- 最终排名 -->
       <TournamentCompletionSection
@@ -291,14 +271,6 @@
 import { ref, computed, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import {
-  Trophy,
-  ArrowLeft,
-  DArrowRight,
-  Plus,
-  Star,
-  Medal
-} from '@element-plus/icons-vue'
 import WorldsSwissRound from '@/components/worlds/WorldsSwissRound.vue'
 import WorldsKnockoutBracket from '@/components/worlds/WorldsKnockoutBracket.vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
@@ -1655,347 +1627,102 @@ onMounted(() => {
 })
 </script>
 
-<style scoped lang="scss">
-.worlds-management {
-  padding: 24px;
+<style scoped>
+.worlds-management { padding: 24px; }
 
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 24px;
+.worlds-management .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+.worlds-management .header-left { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.worlds-management .page-title { display: flex; align-items: center; gap: 8px; font-size: 28px; font-weight: 700; margin: 0; color: #0f172a; }
+.worlds-management .page-description { margin: 0; color: #64748b; font-size: 14px; }
+.worlds-management .header-actions { display: flex; align-items: center; gap: 12px; }
 
-    .header-content {
-      .header-left {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        align-items: flex-start;
-      }
+.worlds-management .worlds-status-card { background: #ffffff; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0; }
 
-      .page-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 28px;
-        font-weight: 700;
-        margin: 0;
-        color: #1f2937;
-      }
+.worlds-management .status-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0; }
+.worlds-management .status-header .status-info { display: flex; align-items: center; gap: 16px; }
+.worlds-management .status-header .status-info h2 { margin: 0; font-size: 20px; font-weight: 600; color: #0f172a; }
 
-      .page-description {
-        margin: 0;
-        color: #6b7280;
-        font-size: 14px;
-      }
-    }
+.worlds-management .teams-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 32px; padding: 20px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; }
 
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-  }
+.worlds-management .stage-card { margin-bottom: 24px; }
+.worlds-management .stage-card .card-header { display: flex; justify-content: space-between; align-items: center; }
 
-  .worlds-status-card {
-    background: white;
-    border-radius: 12px;
-    padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+.worlds-management .teams-groups { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 12px 0; }
 
-    .status-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid #e5e7eb;
+.worlds-management .team-group { padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; }
+.worlds-management .team-group h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 4px 0; font-size: 14px; font-weight: 600; }
+.worlds-management .team-group .team-group-desc { font-size: 11px; margin-bottom: 8px; color: #94a3b8; }
 
-      .status-info {
-        display: flex;
-        align-items: center;
-        gap: 16px;
+.worlds-management .team-list { display: flex; flex-direction: column; gap: 4px; }
+.worlds-management .team-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #ffffff; border-radius: 6px; }
+.worlds-management .team-item .team-name { font-weight: 500; font-size: 13px; color: #0f172a; }
+.worlds-management .team-badges { display: flex; gap: 4px; align-items: center; }
 
-        h2 {
-          margin: 0;
-          font-size: 20px;
-          font-weight: 600;
-          color: #1f2937;
-        }
-      }
-    }
+.worlds-management .team-group.legendary { border-color: #fcd34d; background: #fffef5; }
+.worlds-management .team-group.legendary h3 { color: #d97706; }
+.worlds-management .team-group.legendary .team-group-desc { color: #92400e; }
 
-    .teams-stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 20px;
-      margin-bottom: 32px;
-      padding: 20px;
-      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-      border-radius: 12px;
-    }
+.worlds-management .team-group.challenger { border-color: #c7d2fe; background: #f8f9ff; }
+.worlds-management .team-group.challenger h3 { color: #6366f1; }
+.worlds-management .team-group.challenger .team-group-desc { color: #6366f1; }
 
-    .stage-card {
-      margin-bottom: 24px;
+.worlds-management .swiss-rules { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px; }
+.worlds-management .swiss-rules-title { font-size: 13px; font-weight: 600; color: #0f172a; white-space: nowrap; }
+.worlds-management .swiss-rules-items { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: #64748b; }
+.worlds-management .rule-divider { color: #cbd5e1; }
 
-      .card-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-    }
+.worlds-management .swiss-standings { margin: 16px 0; }
+.worlds-management .swiss-standings h4 { margin: 0 0 10px 0; font-size: 14px; font-weight: 600; color: #0f172a; }
+.worlds-management .standings-table .team-cell { display: flex; align-items: center; gap: 8px; }
+.worlds-management .standings-table .team-cell .team-name { font-weight: 600; color: #0f172a; }
+.worlds-management .standings-table .rank-number { font-weight: 600; }
+.worlds-management .standings-table .record { font-weight: 600; color: #0f172a; }
 
-    .teams-groups {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 16px;
-      margin: 20px 0;
+.worlds-management .swiss-matches { margin-top: 16px; }
 
-      .team-group {
-        padding: 20px;
-        border-radius: 12px;
-        border: 2px solid;
-        transition: all 0.3s ease;
+.worlds-management .generate-knockout-section { margin-top: 20px; text-align: center; }
+.worlds-management .swiss-complete-banner { display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; margin-bottom: 12px; text-align: left; }
+.worlds-management .swiss-complete-icon { flex-shrink: 0; width: 22px; height: 22px; line-height: 22px; text-align: center; font-size: 13px; font-weight: 700; color: #ffffff; background: #22c55e; border-radius: 50%; }
+.worlds-management .swiss-complete-title { font-size: 14px; font-weight: 600; color: #166534; margin-bottom: 2px; }
+.worlds-management .swiss-complete-desc { font-size: 12px; color: #16a34a; line-height: 1.5; }
 
-        &:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
+.worlds-management .knockout-info { margin-bottom: 20px; }
+.worlds-management .knockout-info ul { margin: 10px 0 0 0; padding-left: 20px; }
+.worlds-management .knockout-info li { margin: 5px 0; }
 
-        h3 {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin: 0 0 8px 0;
-          font-size: 18px;
-          font-weight: 700;
-        }
+.worlds-management .knockout-brackets { margin-top: 24px; }
 
-        .team-group-desc {
-          font-size: 13px;
-          margin-bottom: 16px;
-          opacity: 0.8;
-        }
+.worlds-management .other-rankings { margin-bottom: 24px; }
+.worlds-management .other-rankings h4 { font-size: 16px; font-weight: 600; color: #0f172a; margin: 20px 0 12px 0; }
+.worlds-management .teams-list { display: flex; flex-wrap: wrap; gap: 12px; }
+.worlds-management .team-chip { padding: 8px 16px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 20px; font-size: 14px; color: #0f172a; }
+.worlds-management .team-chip.eliminated { opacity: 0.7; }
 
-        .team-list {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
+.worlds-management .mb-4 { margin-bottom: 16px; }
 
-          .team-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 16px;
-            background: white;
-            border-radius: 8px;
-            transition: all 0.2s ease;
-
-            &:hover {
-              transform: translateX(4px);
-              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-            }
-
-            .team-name {
-              font-weight: 600;
-              font-size: 15px;
-              color: #374151;
-            }
-
-            .team-badges {
-              display: flex;
-              gap: 6px;
-              align-items: center;
-            }
-          }
-        }
-
-        &.legendary {
-          border-color: #f59e0b;
-          background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-
-          h3 {
-            color: #d97706;
-          }
-
-          .team-group-desc {
-            color: #92400e;
-          }
-        }
-
-        &.challenger {
-          border-color: #3b82f6;
-          background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-
-          h3 {
-            color: #2563eb;
-          }
-
-          .team-group-desc {
-            color: #1e40af;
-          }
-        }
-      }
-    }
-
-    .swiss-info {
-      margin-bottom: 20px;
-
-      ul {
-        margin: 10px 0 0 0;
-        padding-left: 20px;
-      }
-
-      li {
-        margin: 5px 0;
-      }
-    }
-
-    .swiss-standings {
-      margin: 20px 0;
-
-      h4 {
-        margin: 0 0 12px 0;
-        font-size: 16px;
-        font-weight: 600;
-        color: #374151;
-      }
-
-      .standings-table {
-        .team-cell {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-
-          .team-name {
-            font-weight: 600;
-            color: #1f2937;
-          }
-        }
-
-        .rank-number {
-          font-weight: 600;
-        }
-
-        .record {
-          font-weight: 600;
-          color: #374151;
-        }
-      }
-    }
-
-    .swiss-matches {
-      margin-top: 20px;
-    }
-
-    .generate-knockout-section {
-      margin-top: 24px;
-      text-align: center;
-
-      .el-button {
-        margin-top: 16px;
-      }
-    }
-
-    .knockout-info {
-      margin-bottom: 20px;
-
-      ul {
-        margin: 10px 0 0 0;
-        padding-left: 20px;
-      }
-
-      li {
-        margin: 5px 0;
-      }
-    }
-
-    .knockout-brackets {
-      margin-top: 24px;
-    }
-
-    .other-rankings {
-      margin-bottom: 24px;
-
-      h4 {
-        font-size: 16px;
-        font-weight: 600;
-        color: #374151;
-        margin: 20px 0 12px 0;
-      }
-
-      .teams-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-
-        .team-chip {
-          padding: 8px 16px;
-          background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
-          border: 1px solid #d1d5db;
-          border-radius: 20px;
-          font-size: 14px;
-          color: #374151;
-          transition: all 0.2s;
-
-          &:hover {
-            background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%);
-            transform: translateY(-2px);
-          }
-
-          &.eliminated {
-            opacity: 0.7;
-          }
-        }
-      }
-    }
-  }
-
-  .mb-4 {
-    margin-bottom: 16px;
-  }
-}
-
-// 冠军庆祝动画
-@keyframes champion-bounce {
-  0% {
-    transform: scale(0.3) rotate(-10deg);
-    opacity: 0;
-  }
-  50% {
-    transform: scale(1.05) rotate(5deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-    opacity: 1;
-  }
-}
-
-:deep(.champion-celebration-box) {
-  animation: champion-bounce 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-  background: linear-gradient(135deg, #fef3c7 0%, #fde047 100%);
-  border: 3px solid #fbbf24;
-
-  .el-message-box__title {
-    font-size: 28px;
-    font-weight: 900;
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .el-message-box__content {
-    font-size: 18px;
-    color: #92400e;
-  }
-
-  .el-button--primary {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    border: none;
-
-    &:hover {
-      background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-    }
-  }
-}
+/* Design system utility classes */
+.back-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; font-size: 13px; font-weight: 500; color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; }
+.back-btn:hover { background: #e2e8f0; }
+.action-btn { padding: 6px 16px; font-size: 13px; font-weight: 500; border-radius: 6px; cursor: pointer; border: 1px solid #e2e8f0; background: #ffffff; color: #0f172a; }
+.action-btn:hover { background: #f8fafc; }
+.action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.primary-btn { background: #6366f1; color: #ffffff; border-color: #6366f1; }
+.primary-btn:hover { background: #4f46e5; }
+.warning-btn { background: #f59e0b; color: #ffffff; border-color: #f59e0b; }
+.warning-btn:hover { background: #d97706; }
+.success-btn { background: #22c55e; color: #ffffff; border-color: #22c55e; }
+.success-btn:hover { background: #16a34a; }
+.status-badge { display: inline-block; padding: 2px 8px; font-size: 12px; font-weight: 500; border-radius: 8px; background: #f1f5f9; color: #64748b; }
+.status-badge.success { background: #f0fdf4; color: #16a34a; }
+.status-badge.warning { background: #fffbeb; color: #d97706; }
+.status-badge.danger { background: #fef2f2; color: #ef4444; }
+.status-badge.info { background: #f1f5f9; color: #64748b; }
+.stats-bar { display: flex; gap: 24px; padding: 16px 20px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+.stat-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.stat-value { font-size: 20px; font-weight: 700; color: #0f172a; }
+.stat-label { font-size: 12px; color: #94a3b8; }
+.table-section { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px; }
+.section-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid #e2e8f0; }
+.section-title { margin: 0; font-size: 15px; font-weight: 600; color: #0f172a; }
+.section-content { padding: 16px; }
 </style>

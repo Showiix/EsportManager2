@@ -8,12 +8,12 @@
   >
     <!-- 比赛信息头部 -->
     <div class="match-header">
-      <el-tag size="small" :type="getMatchTypeBadgeType()">
+      <span class="status-badge" :class="getMatchTypeBadgeClass()">
         {{ getMatchTypeLabel() }}
-      </el-tag>
-      <el-tag v-if="match.bestOf" size="small" type="info">
+      </span>
+      <span v-if="match.bestOf" class="status-badge badge-info">
         BO{{ match.bestOf }}
-      </el-tag>
+      </span>
     </div>
 
     <!-- 队伍对阵 -->
@@ -51,23 +51,22 @@
 
     <!-- 操作按钮 -->
     <div class="match-actions">
-      <el-button
+      <button
         v-if="canSimulate"
-        type="primary"
-        size="small"
+        class="simulate-btn"
         @click="handleSimulate"
       >
         模拟比赛
-      </el-button>
+      </button>
       <div v-else-if="match.status === 'completed'" class="completed-actions">
-        <el-tag type="success" size="small">已完成</el-tag>
-        <el-button type="info" size="small" text @click="handleViewDetail">
+        <span class="status-badge badge-success">已完成</span>
+        <button class="detail-btn" @click="handleViewDetail">
           查看详情
-        </el-button>
+        </button>
       </div>
-      <el-tag v-else type="info" size="small">
+      <span v-else class="status-badge badge-info">
         待确定对阵
-      </el-tag>
+      </span>
     </div>
   </div>
 </template>
@@ -112,14 +111,14 @@ const isWinner = (teamId: string | number | undefined): boolean => {
 }
 
 /**
- * 获取比赛类型标签
+ * 获取比赛类型标签样式类
  */
-const getMatchTypeBadgeType = (): string => {
-  if (props.isFinal) return 'danger'
-  if (props.isThirdPlace) return 'warning'
-  if (props.match.round === 'QUARTER_FINAL') return 'primary'
-  if (props.match.round === 'SEMI_FINAL') return 'success'
-  return 'info'
+const getMatchTypeBadgeClass = (): string => {
+  if (props.isFinal) return 'badge-danger'
+  if (props.isThirdPlace) return 'badge-warning'
+  if (props.match.round === 'QUARTER_FINAL') return 'badge-primary'
+  if (props.match.round === 'SEMI_FINAL') return 'badge-success'
+  return 'badge-info'
 }
 
 /**
@@ -150,135 +149,174 @@ const handleViewDetail = () => {
 }
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .worlds-match-card {
-  background: white;
-  border: 2px solid #d1d5db;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #6366f1;
   border-radius: 8px;
   padding: 12px;
-  transition: all 0.3s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   min-width: 180px;
+}
 
-  &:hover {
-    border-color: #409eff;
-    box-shadow: 0 4px 12px rgba(64, 158, 255, 0.2);
-    transform: translateY(-2px);
-  }
+.worlds-match-card.is-completed {
+  border-left-color: #22c55e;
+}
 
-  &.is-completed {
-    background: #f5f7fa;
-  }
+.worlds-match-card.is-final {
+  border-left-color: #6366f1;
+  background: #f8fafc;
+}
 
-  &.is-final {
-    border-color: #f59e0b;
-    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+.worlds-match-card.is-third-place {
+  border-left-color: #94a3b8;
+  background: #f8fafc;
+}
 
-    &:hover {
-      border-color: #d97706;
-      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
-    }
-  }
+.match-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
 
-  &.is-third-place {
-    border-color: #d97706;
-    background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
-  }
+.status-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  line-height: 1.4;
+}
 
-  .match-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 8px;
-  }
+.badge-primary {
+  background: #eef2ff;
+  color: #6366f1;
+}
 
-  .teams-container {
-    margin: 8px 0;
-  }
+.badge-success {
+  background: #f0fdf4;
+  color: #22c55e;
+}
 
-  .team-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 10px;
-    border-radius: 4px;
-    margin: 4px 0;
-    transition: all 0.2s;
-    background: #f5f7fa;
-    border: 1px solid #e5e7eb;
+.badge-warning {
+  background: #fefce8;
+  color: #ca8a04;
+}
 
-    &:hover {
-      background: #e4e7ed;
-    }
+.badge-danger {
+  background: #fef2f2;
+  color: #ef4444;
+}
 
-    &.winner {
-      background: linear-gradient(to right, #ecf5ff, #e1f3d8);
-      border: 2px solid #67c23a;
+.badge-info {
+  background: #f1f5f9;
+  color: #64748b;
+}
 
-      .team-name {
-        color: #67c23a;
-        font-weight: 700;
-      }
+.teams-container {
+  margin: 8px 0;
+}
 
-      .team-score {
-        color: #67c23a;
-      }
-    }
-  }
+.team-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 4px;
+  margin: 4px 0;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
 
-  .team-info {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex: 1;
-  }
+.team-row.winner {
+  background: #f0fdf4;
+  border-color: #22c55e;
+}
 
-  .team-name {
-    font-size: 13px;
-    font-weight: 500;
-    color: #303133;
-  }
+.team-row.winner .team-name {
+  color: #16a34a;
+  font-weight: 700;
+}
 
-  .team-score {
-    font-size: 16px;
-    font-weight: bold;
-    color: #606266;
-    min-width: 24px;
-    text-align: center;
-  }
+.team-row.winner .team-score {
+  color: #16a34a;
+}
 
-  .vs-divider {
-    text-align: center;
-    color: #909399;
-    font-size: 10px;
-    font-weight: bold;
-    margin: 2px 0;
-  }
+.team-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
 
-  .match-actions {
-    display: flex;
-    justify-content: center;
-    margin-top: 8px;
+.team-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0f172a;
+}
 
-    .completed-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-  }
+.team-score {
+  font-size: 16px;
+  font-weight: bold;
+  color: #64748b;
+  min-width: 24px;
+  text-align: center;
+}
+
+.vs-divider {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: bold;
+  margin: 2px 0;
+}
+
+.match-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.completed-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.simulate-btn {
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  background: #6366f1;
+  border: 1px solid #6366f1;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.detail-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
 }
 
 /* 状态样式 */
 .status-scheduled {
-  border-color: #e4e7ed;
+  border-color: #e2e8f0;
 }
 
 .status-in_progress {
-  border-color: #e6a23c;
-  background: #fdf6ec;
+  border-color: #ca8a04;
+  background: #fefce8;
 }
 
 .status-completed {
-  border-color: #67c23a;
+  border-left-color: #22c55e;
 }
 </style>

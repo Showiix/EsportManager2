@@ -5,9 +5,9 @@
       <div class="bracket-round">
         <div class="round-header">
           <h4>八强赛</h4>
-          <el-tag :type="getRoundStatusType(quarterFinalMatches)" size="small">
+          <span class="status-badge" :class="getRoundStatusClass(quarterFinalMatches)">
             {{ getRoundStatusText(quarterFinalMatches) }}
-          </el-tag>
+          </span>
         </div>
         <div class="matches-column quarter">
           <WorldsMatchCard
@@ -21,25 +21,15 @@
       </div>
 
       <!-- 连接线 八强->半决赛 -->
-      <div class="bracket-connector">
-        <svg class="connector-svg">
-          <line x1="0%" y1="12.5%" x2="50%" y2="25%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="0%" y1="37.5%" x2="50%" y2="25%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="50%" y1="25%" x2="100%" y2="25%" stroke="#e4e7ed" stroke-width="2" />
-
-          <line x1="0%" y1="62.5%" x2="50%" y2="75%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="0%" y1="87.5%" x2="50%" y2="75%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="50%" y1="75%" x2="100%" y2="75%" stroke="#e4e7ed" stroke-width="2" />
-        </svg>
-      </div>
+      <div class="bracket-connector connector-merge"></div>
 
       <!-- 半决赛 -->
       <div class="bracket-round">
         <div class="round-header">
           <h4>半决赛</h4>
-          <el-tag :type="getRoundStatusType(semiFinalMatches)" size="small">
+          <span class="status-badge" :class="getRoundStatusClass(semiFinalMatches)">
             {{ getRoundStatusText(semiFinalMatches) }}
-          </el-tag>
+          </span>
         </div>
         <div class="matches-column semi">
           <WorldsMatchCard
@@ -53,18 +43,12 @@
       </div>
 
       <!-- 连接线 半决赛->决赛 -->
-      <div class="bracket-connector">
-        <svg class="connector-svg">
-          <line x1="0%" y1="25%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="0%" y1="75%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="50%" y1="50%" x2="100%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-        </svg>
-      </div>
+      <div class="bracket-connector connector-merge"></div>
 
       <!-- 决赛区域 -->
       <div class="bracket-round finals-round">
         <div class="round-header final-header">
-          <h4>🏆 决赛</h4>
+          <h4>决赛</h4>
         </div>
         <div class="matches-column final">
           <WorldsMatchCard
@@ -81,7 +65,7 @@
     <!-- 季军赛单独显示 -->
     <div v-if="thirdPlaceMatch" class="third-place-section">
       <div class="third-place-header">
-        <h4>🥉 季军赛</h4>
+        <h4>季军赛</h4>
         <span class="third-place-desc">半决赛败者争夺第三名</span>
       </div>
       <div class="third-place-match">
@@ -122,13 +106,13 @@ const semiFinalMatches = computed(() =>
   props.knockoutMatches.filter(m => m.round === 'SEMI_FINAL')
 )
 
-const getRoundStatusType = (matches: WorldsKnockoutMatch[]) => {
-  if (matches.length === 0) return 'info'
+const getRoundStatusClass = (matches: WorldsKnockoutMatch[]) => {
+  if (matches.length === 0) return 'badge-info'
   const allCompleted = matches.every(m => m.status === 'completed')
-  if (allCompleted) return 'success'
+  if (allCompleted) return 'badge-success'
   const anyInProgress = matches.some(m => m.status === 'in_progress')
-  if (anyInProgress) return 'warning'
-  return 'info'
+  if (anyInProgress) return 'badge-warning'
+  return 'badge-info'
 }
 
 const getRoundStatusText = (matches: WorldsKnockoutMatch[]) => {
@@ -148,115 +132,165 @@ const handleViewMatch = (match: WorldsKnockoutMatch) => {
 }
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .worlds-knockout-bracket {
-  .bracket-container {
-    display: flex;
-    gap: 0;
-    min-width: max-content;
-    padding: 20px 0;
-    overflow-x: auto;
-  }
+  /* root container */
+}
 
-  .bracket-round {
-    display: flex;
-    flex-direction: column;
-    min-width: 220px;
-  }
+.bracket-container {
+  display: flex;
+  gap: 0;
+  min-width: max-content;
+  padding: 20px 0;
+  overflow-x: auto;
+}
 
-  .round-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 16px;
-    padding: 8px 12px;
-    background: #f5f7fa;
-    border-radius: 6px;
+.bracket-round {
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+}
 
-    h4 {
-      margin: 0;
-      font-size: 14px;
-      font-weight: 600;
-      color: #606266;
-    }
+.round-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
 
-    &.final-header {
-      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+.round-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
 
-      h4 {
-        color: #92400e;
-        font-size: 16px;
-      }
-    }
-  }
+.round-header.final-header {
+  background: #f8fafc;
+  border-left: 3px solid #6366f1;
+}
 
-  .matches-column {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    flex: 1;
-    justify-content: space-around;
+.round-header.final-header h4 {
+  color: #6366f1;
+  font-size: 16px;
+}
 
-    &.quarter {
-      gap: 8px;
-    }
+.status-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  line-height: 1.4;
+}
 
-    &.semi {
-      justify-content: space-around;
-      padding: 40px 0;
-    }
+.badge-primary {
+  background: #eef2ff;
+  color: #6366f1;
+}
 
-    &.final {
-      justify-content: center;
-      padding: 80px 0;
-    }
-  }
+.badge-success {
+  background: #f0fdf4;
+  color: #22c55e;
+}
 
-  .finals-round {
-    min-width: 240px;
-  }
+.badge-warning {
+  background: #fefce8;
+  color: #ca8a04;
+}
 
-  .bracket-connector {
-    width: 60px;
-    min-width: 60px;
-    align-self: stretch;
-  }
+.badge-info {
+  background: #f1f5f9;
+  color: #64748b;
+}
 
-  .connector-svg {
-    width: 100%;
-    height: 100%;
-  }
+.matches-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  justify-content: space-around;
+}
 
-  .third-place-section {
-    margin-top: 32px;
-    padding: 20px;
-    background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
-    border-radius: 12px;
-    border: 2px solid #d97706;
+.matches-column.quarter {
+  gap: 8px;
+}
 
-    .third-place-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 16px;
+.matches-column.semi {
+  justify-content: space-around;
+  padding: 40px 0;
+}
 
-      h4 {
-        margin: 0;
-        font-size: 18px;
-        font-weight: 600;
-        color: #92400e;
-      }
+.matches-column.final {
+  justify-content: center;
+  padding: 80px 0;
+}
 
-      .third-place-desc {
-        font-size: 13px;
-        color: #b45309;
-      }
-    }
+.finals-round {
+  min-width: 240px;
+}
 
-    .third-place-match {
-      max-width: 300px;
-    }
-  }
+.bracket-connector {
+  width: 60px;
+  min-width: 60px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bracket-connector::before {
+  content: '';
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.bracket-connector::after {
+  content: '';
+  flex: 1;
+}
+
+.connector-merge::after {
+  background:
+    linear-gradient(#cbd5e1, #cbd5e1) 0 25% / 50% 2px no-repeat,
+    linear-gradient(#cbd5e1, #cbd5e1) 0 75% / 50% 2px no-repeat,
+    linear-gradient(#cbd5e1, #cbd5e1) calc(50% - 1px) 50% / 2px 50% no-repeat,
+    linear-gradient(#cbd5e1, #cbd5e1) 100% 50% / 50% 2px no-repeat;
+}
+
+.third-place-section {
+  margin-top: 32px;
+  padding: 20px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #94a3b8;
+}
+
+.third-place-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.third-place-header h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.third-place-desc {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.third-place-match {
+  max-width: 300px;
 }
 </style>

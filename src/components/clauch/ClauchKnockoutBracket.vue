@@ -1,22 +1,20 @@
 <template>
   <div class="clauch-knockout-bracket">
     <div class="bracket-header">
-      <h3 class="bracket-title">
-        {{ bracketName }}
-      </h3>
-      <el-tag :type="getBracketStatusType()" size="large">
+      <h3 class="bracket-title">{{ bracketName }}</h3>
+      <span class="status-badge" :class="getBracketStatusType()">
         {{ getBracketStatusText() }}
-      </el-tag>
+      </span>
     </div>
 
     <div class="bracket-container">
       <!-- 第一轮 -->
       <div v-if="filteredRound1.length > 0" class="bracket-round">
         <div class="round-header">
-          <h4>第一轮</h4>
-          <el-tag :type="getRoundStatusType(filteredRound1)" size="small">
+          <span class="round-name">第一轮</span>
+          <span class="round-status" :class="getRoundStatusType(filteredRound1)">
             {{ getRoundStatusText(filteredRound1) }}
-          </el-tag>
+          </span>
         </div>
         <div class="matches-column">
           <ClauchMatchCard
@@ -30,26 +28,17 @@
         </div>
       </div>
 
-      <!-- 连接线 -->
-      <div class="bracket-connector">
-        <svg class="connector-svg">
-          <line x1="0%" y1="12.5%" x2="50%" y2="25%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="0%" y1="37.5%" x2="50%" y2="25%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="50%" y1="25%" x2="100%" y2="25%" stroke="#e4e7ed" stroke-width="2" />
-
-          <line x1="0%" y1="62.5%" x2="50%" y2="75%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="0%" y1="87.5%" x2="50%" y2="75%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="50%" y1="75%" x2="100%" y2="75%" stroke="#e4e7ed" stroke-width="2" />
-        </svg>
+      <!-- 连接线: 第一轮 → 半决赛 -->
+      <div class="bracket-connector connector-double-merge">
       </div>
 
       <!-- 半决赛 -->
       <div v-if="filteredSemiFinals.length > 0" class="bracket-round">
         <div class="round-header">
-          <h4>半决赛</h4>
-          <el-tag :type="getRoundStatusType(filteredSemiFinals)" size="small">
+          <span class="round-name">半决赛</span>
+          <span class="round-status" :class="getRoundStatusType(filteredSemiFinals)">
             {{ getRoundStatusText(filteredSemiFinals) }}
-          </el-tag>
+          </span>
         </div>
         <div class="matches-column semi-finals">
           <ClauchMatchCard
@@ -63,22 +52,17 @@
         </div>
       </div>
 
-      <!-- 连接线 -->
-      <div class="bracket-connector">
-        <svg class="connector-svg">
-          <line x1="0%" y1="25%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="0%" y1="75%" x2="50%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-          <line x1="50%" y1="50%" x2="100%" y2="50%" stroke="#e4e7ed" stroke-width="2" />
-        </svg>
+      <!-- 连接线: 半决赛 → 决赛 -->
+      <div class="bracket-connector connector-merge">
       </div>
 
       <!-- 决赛 -->
       <div v-if="filteredFinal.length > 0" class="bracket-round">
         <div class="round-header">
-          <h4>决赛</h4>
-          <el-tag :type="getRoundStatusType(filteredFinal)" size="small">
+          <span class="round-name">决赛</span>
+          <span class="round-status" :class="getRoundStatusType(filteredFinal)">
             {{ getRoundStatusText(filteredFinal) }}
-          </el-tag>
+          </span>
         </div>
         <div class="matches-column final">
           <ClauchMatchCard
@@ -91,13 +75,6 @@
           />
         </div>
       </div>
-    </div>
-
-    <!-- 决赛胜者信息 -->
-    <div v-if="finalWinner" class="winner-section">
-      <el-tag type="success" size="large" effect="dark">
-        {{ bracket === 'east' ? '东半区' : '西半区' }}冠军: {{ finalWinner.teamName }}
-      </el-tag>
     </div>
   </div>
 </template>
@@ -232,21 +209,6 @@ const getRoundStatusText = (matches: (ClauchMatch | undefined)[]) => {
 }
 
 /**
- * 决赛胜者
- */
-const finalWinner = computed(() => {
-  const finalMatch = props.knockout.finalMatch
-  if (!finalMatch || finalMatch.status !== 'completed' || !finalMatch.winnerId) return null
-
-  return {
-    teamId: finalMatch.winnerId,
-    teamName: finalMatch.winnerId === finalMatch.teamAId
-      ? finalMatch.teamAName
-      : finalMatch.teamBName
-  }
-})
-
-/**
  * 处理模拟比赛
  */
 const handleSimulateMatch = (match: ClauchMatch) => {
@@ -270,28 +232,54 @@ const handleViewDetail = (matchId: string | number) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 2px solid #e4e7ed;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .bracket-title {
   margin: 0;
-  font-size: 20px;
-  font-weight: bold;
-  color: #303133;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 10px;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.status-badge.success {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.status-badge.warning {
+  background: #fffbeb;
+  color: #d97706;
+}
+
+.status-badge.info {
+  background: #f1f5f9;
+  color: #64748b;
 }
 
 .bracket-container {
   display: flex;
-  gap: 20px;
-  min-width: max-content;
-  padding: 20px 0;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  padding: 12px 0;
 }
 
 .bracket-round {
-  flex: 1;
-  min-width: 300px;
+  min-width: 200px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
 }
@@ -301,81 +289,115 @@ const handleViewDetail = (matchId: string | number) => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 16px;
-  padding: 8px 12px;
-  background: #f5f7fa;
-  border-radius: 4px;
+  margin-bottom: 12px;
+  padding: 6px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+  height: 28px;
 }
 
-.round-header h4 {
-  margin: 0;
-  font-size: 14px;
+.round-name {
+  font-size: 13px;
   font-weight: 600;
-  color: #606266;
+  color: #64748b;
+}
+
+.round-status {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.round-status.success {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.round-status.warning {
+  background: #fffbeb;
+  color: #d97706;
+}
+
+.round-status.info {
+  background: #f1f5f9;
+  color: #64748b;
 }
 
 .matches-column {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   flex: 1;
   justify-content: space-around;
+  min-height: 400px;
 }
 
 .matches-column.semi-finals {
   justify-content: space-around;
-  padding: 50px 0;
+  min-height: 400px;
 }
 
 .matches-column.final {
   justify-content: center;
-  padding: 100px 0;
+  min-height: 200px;
 }
 
+/* CSS bracket connectors */
 .bracket-connector {
-  width: 100px;
-  min-width: 100px;
-  align-self: stretch;
-  padding: 0 10px;
+  width: 60px;
+  min-width: 60px;
+  flex-shrink: 0;
+  position: relative;
 }
 
-.connector-svg {
-  width: 100%;
-  height: 100%;
-}
-
-.winner-section {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 2px solid #e4e7ed;
+/* Double merge: 4 matches → 2 (two separate merge patterns stacked) */
+.bracket-connector.connector-double-merge {
   display: flex;
-  justify-content: center;
-  align-items: center;
+  flex-direction: column;
 }
 
-/* 响应式设计 */
-@media (max-width: 1200px) {
-  .bracket-container {
-    flex-direction: column;
-  }
+.bracket-connector.connector-double-merge::before {
+  content: '';
+  flex: 1;
+  background:
+    linear-gradient(#cbd5e1, #cbd5e1) 0 25% / 50% 2px no-repeat,
+    linear-gradient(#cbd5e1, #cbd5e1) 0 75% / 50% 2px no-repeat,
+    linear-gradient(#cbd5e1, #cbd5e1) calc(50% - 1px) 25% / 2px 50% no-repeat,
+    linear-gradient(#cbd5e1, #cbd5e1) 50% 50% / 50% 2px no-repeat;
+}
 
-  .bracket-round {
-    min-width: auto;
-  }
+.bracket-connector.connector-double-merge::after {
+  content: '';
+  flex: 1;
+  background:
+    linear-gradient(#cbd5e1, #cbd5e1) 0 25% / 50% 2px no-repeat,
+    linear-gradient(#cbd5e1, #cbd5e1) 0 75% / 50% 2px no-repeat,
+    linear-gradient(#cbd5e1, #cbd5e1) calc(50% - 1px) 25% / 2px 50% no-repeat,
+    linear-gradient(#cbd5e1, #cbd5e1) 50% 50% / 50% 2px no-repeat;
+}
 
-  .bracket-connector {
-    width: 100%;
-    height: 60px;
-    min-width: auto;
-  }
+/* Standard merge: 2 → 1 */
+.bracket-connector.connector-merge {
+  display: flex;
+  flex-direction: column;
+}
 
-  .connector-svg {
-    transform: rotate(90deg);
-  }
+.bracket-connector.connector-merge::before {
+  content: '';
+  height: 28px;
+  flex-shrink: 0;
+}
 
-  .matches-column.semi-finals,
-  .matches-column.final {
-    padding: 0;
-  }
+.bracket-connector.connector-merge::after {
+  content: '';
+  flex: 1;
+  background:
+    linear-gradient(#cbd5e1, #cbd5e1) 0 25% / 50% 2px no-repeat,
+    linear-gradient(#cbd5e1, #cbd5e1) 0 75% / 50% 2px no-repeat,
+    linear-gradient(#cbd5e1, #cbd5e1) calc(50% - 1px) 50% / 2px 50% no-repeat,
+    linear-gradient(#cbd5e1, #cbd5e1) 100% 50% / 50% 2px no-repeat;
 }
 </style>

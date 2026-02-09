@@ -4,7 +4,7 @@
     <div class="battle-header">
       <div class="region-side region-a">
         <div class="region-flag" :class="battle.regionA.toLowerCase()">
-          {{ getRegionFlag(battle.regionA) }}
+          {{ battle.regionA }}
         </div>
         <div class="region-name">{{ battle.regionAName }}</div>
         <div class="region-wins">{{ battle.regionAWins }} 胜</div>
@@ -24,7 +24,7 @@
 
       <div class="region-side region-b">
         <div class="region-flag" :class="battle.regionB.toLowerCase()">
-          {{ getRegionFlag(battle.regionB) }}
+          {{ battle.regionB }}
         </div>
         <div class="region-name">{{ battle.regionBName }}</div>
         <div class="region-wins">{{ battle.regionBWins }} 胜</div>
@@ -44,34 +44,33 @@
         <div class="match-content">
           <div class="team team-a" :class="{ winner: match.winnerId === match.teamAId }">
             <span class="team-name">{{ match.teamAName }}</span>
-            <el-tag :type="getRegionTagType(match.teamARegion)" size="small">
+            <span class="region-tag" :class="match.teamARegion?.toLowerCase()">
               {{ match.teamARegion }}
-            </el-tag>
+            </span>
           </div>
 
           <div class="match-score">
             <template v-if="match.status === 'completed'">
               <span class="score">{{ match.scoreA }} - {{ match.scoreB }}</span>
-              <el-button type="info" size="small" text @click="$emit('view-match', match)">
+              <button class="btn btn-text" @click="$emit('view-match', match)">
                 详情
-              </el-button>
+              </button>
             </template>
             <template v-else>
-              <el-button
-                type="primary"
-                size="small"
+              <button
+                class="btn btn-primary"
                 @click="$emit('simulate-match', battle, match)"
               >
                 模拟
-              </el-button>
+              </button>
             </template>
           </div>
 
           <div class="team team-b" :class="{ winner: match.winnerId === match.teamBId }">
             <span class="team-name">{{ match.teamBName }}</span>
-            <el-tag :type="getRegionTagType(match.teamBRegion)" size="small">
+            <span class="region-tag" :class="match.teamBRegion?.toLowerCase()">
               {{ match.teamBRegion }}
-            </el-tag>
+            </span>
           </div>
         </div>
       </div>
@@ -142,190 +141,295 @@ const getRegionTagType = (region?: string) => {
 }
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .icp-region-battle-card {
-  background: white;
-  border-radius: 12px;
+  background: #ffffff;
+  border-radius: 10px;
   padding: 24px;
-  border: 2px solid #e5e7eb;
+  border: 1px solid #e2e8f0;
+}
 
-  .battle-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 24px;
-    padding-bottom: 20px;
-    border-bottom: 2px solid #f3f4f6;
+.battle-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e2e8f0;
+}
 
-    .region-side {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      flex: 1;
+.region-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
 
-      .region-flag {
-        font-size: 48px;
-      }
+.region-flag {
+  font-size: 20px;
+  font-weight: 700;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
 
-      .region-name {
-        font-size: 16px;
-        font-weight: 700;
-        color: #1f2937;
-      }
+.region-flag.lpl {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fecaca;
+}
 
-      .region-wins {
-        font-size: 20px;
-        font-weight: 700;
-        padding: 4px 16px;
-        border-radius: 20px;
-      }
+.region-flag.lck {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
 
-      &.region-a .region-wins {
-        background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
-        color: #dc2626;
-      }
+.region-flag.lec {
+  background: #f0fdf4;
+  color: #16a34a;
+  border-color: #bbf7d0;
+}
 
-      &.region-b .region-wins {
-        background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-        color: #2563eb;
-      }
-    }
+.region-flag.lcs {
+  background: #fefce8;
+  color: #ca8a04;
+  border-color: #fde68a;
+}
 
-    .battle-vs {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      padding: 0 24px;
+.region-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
 
-      .vs-text {
-        font-size: 24px;
-        font-weight: 900;
-        color: #9ca3af;
-      }
+.region-wins {
+  font-size: 20px;
+  font-weight: 700;
+  padding: 4px 16px;
+  border-radius: 20px;
+}
 
-      .battle-result {
-        .winner-badge {
-          padding: 6px 16px;
-          background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-          color: #92400e;
-          border-radius: 20px;
-          font-size: 14px;
-          font-weight: 700;
-        }
-      }
-    }
-  }
+.region-a .region-wins {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
 
-  .battles-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    margin-bottom: 24px;
+.region-b .region-wins {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
 
-    .battle-match {
-      padding: 16px;
-      background: #f9fafb;
-      border-radius: 8px;
-      border: 1px solid #e5e7eb;
+.battle-vs {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0 24px;
+}
 
-      &.completed {
-        background: #f0fdf4;
-        border-color: #86efac;
-      }
+.vs-text {
+  font-size: 24px;
+  font-weight: 900;
+  color: #94a3b8;
+}
 
-      .seed-label {
-        text-align: center;
-        font-size: 12px;
-        font-weight: 600;
-        color: #f59e0b;
-        margin-bottom: 12px;
-        padding: 4px 12px;
-        background: #fffbeb;
-        border-radius: 4px;
-        display: inline-block;
-        margin-left: 50%;
-        transform: translateX(-50%);
-      }
+.winner-badge {
+  display: inline-block;
+  padding: 6px 16px;
+  background: #fefce8;
+  color: #ca8a04;
+  border: 1px solid #fde68a;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 700;
+}
 
-      .match-content {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+.battles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
 
-        .team {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          flex: 1;
+.battle-match {
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
 
-          .team-name {
-            font-weight: 600;
-            font-size: 14px;
-            color: #374151;
-          }
+.battle-match.completed {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
 
-          &.winner .team-name {
-            color: #10b981;
-            font-weight: 700;
-          }
+.seed-label {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6366f1;
+  margin-bottom: 12px;
+  padding: 4px 12px;
+  background: #eef2ff;
+  border: 1px solid #e0e7ff;
+  border-radius: 4px;
+  display: inline-block;
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
 
-          &.team-b {
-            justify-content: flex-end;
-          }
-        }
+.match-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
 
-        .match-score {
-          padding: 0 20px;
+.match-content .team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
 
-          .score {
-            font-size: 18px;
-            font-weight: 700;
-            color: #1f2937;
-          }
-        }
-      }
-    }
-  }
+.match-content .team .team-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #0f172a;
+}
 
-  .battle-progress {
-    .progress-bar {
-      height: 12px;
-      background: #e5e7eb;
-      border-radius: 6px;
-      display: flex;
-      overflow: hidden;
-      margin-bottom: 8px;
+.match-content .team.winner .team-name {
+  color: #22c55e;
+  font-weight: 700;
+}
 
-      .progress-a {
-        height: 100%;
-        background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
-        transition: width 0.3s ease;
-      }
+.match-content .team.team-b {
+  justify-content: flex-end;
+}
 
-      .progress-b {
-        height: 100%;
-        background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
-        transition: width 0.3s ease;
-        margin-left: auto;
-      }
-    }
+.match-score {
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
-    .progress-labels {
-      display: flex;
-      justify-content: space-between;
-      font-size: 12px;
-      font-weight: 600;
+.match-score .score {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+}
 
-      .label-a {
-        color: #dc2626;
-      }
+.region-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
 
-      .label-b {
-        color: #2563eb;
-      }
-    }
-  }
+.region-tag.lpl {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+.region-tag.lck {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+.region-tag.lec {
+  background: #f0fdf4;
+  color: #16a34a;
+  border-color: #bbf7d0;
+}
+
+.region-tag.lcs {
+  background: #fefce8;
+  color: #ca8a04;
+  border-color: #fde68a;
+}
+
+.battle-progress .progress-bar {
+  height: 12px;
+  background: #e2e8f0;
+  border-radius: 6px;
+  display: flex;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-a {
+  height: 100%;
+  background: #dc2626;
+  transition: width 0.3s ease;
+}
+
+.progress-b {
+  height: 100%;
+  background: #2563eb;
+  transition: width 0.3s ease;
+  margin-left: auto;
+}
+
+.progress-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.label-a {
+  color: #dc2626;
+}
+
+.label-b {
+  color: #2563eb;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.2s;
+}
+
+.btn:hover {
+  opacity: 0.85;
+}
+
+.btn-primary {
+  background: #6366f1;
+  color: #ffffff;
+}
+
+.btn-text {
+  background: transparent;
+  color: #64748b;
+  padding: 6px 8px;
+}
+
+.btn-text:hover {
+  color: #0f172a;
 }
 </style>

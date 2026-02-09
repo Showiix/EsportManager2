@@ -8,12 +8,8 @@
   >
     <!-- 比赛信息头部 -->
     <div class="match-header">
-      <el-tag size="small" :type="getMatchTypeBadgeType()">
-        {{ getMatchTypeLabel() }}
-      </el-tag>
-      <el-tag v-if="match.bestOf" size="small" type="info">
-        BO{{ match.bestOf }}
-      </el-tag>
+      <span class="match-type-badge">{{ getMatchTypeLabel() }}</span>
+      <span v-if="match.bestOf" class="bo-badge">BO{{ match.bestOf }}</span>
     </div>
 
     <!-- 队伍对阵 -->
@@ -22,14 +18,8 @@
         class="team-row"
         :class="{ winner: isWinner(match.teamAId) }"
       >
-        <div class="team-info">
-          <span class="team-name">
-            {{ match.teamAName || '待定' }}
-          </span>
-        </div>
-        <div v-if="match.status === 'completed'" class="team-score">
-          {{ match.scoreA }}
-        </div>
+        <span class="team-name">{{ match.teamAName || '待定' }}</span>
+        <span v-if="match.status === 'completed'" class="team-score">{{ match.scoreA }}</span>
       </div>
 
       <div class="vs-divider">VS</div>
@@ -38,48 +28,29 @@
         class="team-row"
         :class="{ winner: isWinner(match.teamBId) }"
       >
-        <div class="team-info">
-          <span class="team-name">
-            {{ match.teamBName || '待定' }}
-          </span>
-        </div>
-        <div v-if="match.status === 'completed'" class="team-score">
-          {{ match.scoreB }}
-        </div>
+        <span class="team-name">{{ match.teamBName || '待定' }}</span>
+        <span v-if="match.status === 'completed'" class="team-score">{{ match.scoreB }}</span>
       </div>
     </div>
 
     <!-- 操作按钮 -->
     <div class="match-actions">
-      <el-button
+      <button
         v-if="canSimulate"
-        type="primary"
-        size="small"
-        :loading="simulating"
+        class="action-btn simulate-btn"
+        :disabled="simulating"
         @click="handleSimulate"
       >
-        模拟比赛
-      </el-button>
-      <template v-else-if="match.status === 'completed'">
-        <el-button
-          type="info"
-          size="small"
-          plain
-          @click="handleViewDetail"
-        >
-          查看详情
-        </el-button>
-      </template>
-      <el-tag v-else type="info" size="small">
-        待确定对阵
-      </el-tag>
-    </div>
-
-    <!-- 完成时间 -->
-    <div v-if="match.status === 'completed' && match.completedAt" class="match-footer">
-      <span class="completed-time">
-        完成时间: {{ formatDate(match.completedAt) }}
-      </span>
+        {{ simulating ? '模拟中...' : '模拟比赛' }}
+      </button>
+      <button
+        v-else-if="match.status === 'completed'"
+        class="action-btn detail-btn"
+        @click="handleViewDetail"
+      >
+        查看详情
+      </button>
+      <span v-else class="pending-label">待确定对阵</span>
     </div>
   </div>
 </template>
@@ -122,16 +93,6 @@ const isWinner = (teamId: string | number | undefined): boolean => {
 }
 
 /**
- * 获取比赛类型标签
- */
-const getMatchTypeBadgeType = (): string => {
-  if (props.match.stage === 'group') return 'primary'
-  if (props.match.matchType === 'grand_final') return 'danger'
-  if (props.match.matchType === 'third_place') return 'warning'
-  return 'success'
-}
-
-/**
  * 获取比赛类型标签文字
  */
 const getMatchTypeLabel = (): string => {
@@ -153,18 +114,7 @@ const getMatchTypeLabel = (): string => {
   return roundLabels[props.match.matchType || ''] || '淘汰赛'
 }
 
-/**
- * 格式化日期
- */
-const formatDate = (date: Date | string): string => {
-  const d = typeof date === 'string' ? new Date(date) : date
-  return d.toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
+
 
 /**
  * 处理模拟比赛
@@ -183,129 +133,141 @@ const handleViewDetail = () => {
 
 <style scoped>
 .clauch-match-card {
-  background: white;
-  border: 2px solid #d1d5db;
-  border-radius: 12px;
-  padding: 20px;
-  transition: all 0.3s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-.clauch-match-card:hover {
-  border-color: #409eff;
-  box-shadow: 0 4px 16px 0 rgba(64, 158, 255, 0.25);
-  transform: translateY(-2px);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #6366f1;
+  border-radius: 8px;
+  padding: 12px 14px;
 }
 
 .clauch-match-card.is-completed {
-  background: #f5f7fa;
+  border-left-color: #22c55e;
+  background: #fafffe;
+}
+
+.clauch-match-card.status-scheduled {
+  border-left-color: #94a3b8;
+}
+
+.clauch-match-card.status-in_progress {
+  border-left-color: #f59e0b;
 }
 
 .match-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.match-type-badge {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 1px 8px;
+  border-radius: 8px;
+}
+
+.bo-badge {
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+  background: #f8fafc;
+  padding: 1px 6px;
+  border-radius: 6px;
 }
 
 .teams-container {
-  margin: 12px 0;
+  margin: 8px 0;
 }
 
 .team-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  border-radius: 6px;
-  margin: 6px 0;
-  transition: all 0.2s;
-  background: #f5f7fa;
-  border: 1px solid #dcdfe6;
-}
-
-.team-row:hover {
-  background: #e4e7ed;
-  border-color: #b3b8c0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin: 4px 0;
+  background: #f8fafc;
 }
 
 .team-row.winner {
-  background: linear-gradient(to right, #ecf5ff, #e1f3d8);
-  border: 2px solid #67c23a;
-  font-weight: bold;
-}
-
-.team-row.winner:hover {
-  background: linear-gradient(to right, #d9ecff, #c0e6b7);
-  border-color: #67c23a;
-}
-
-.team-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
+  background: #f0fdf4;
 }
 
 .team-name {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 500;
-  color: #303133;
+  color: #0f172a;
 }
 
 .team-row.winner .team-name {
-  color: #67c23a;
+  color: #16a34a;
+  font-weight: 600;
 }
 
 .team-score {
-  font-size: 20px;
-  font-weight: bold;
-  color: #606266;
-  min-width: 30px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  min-width: 20px;
   text-align: center;
 }
 
 .team-row.winner .team-score {
-  color: #67c23a;
+  color: #16a34a;
 }
 
 .vs-divider {
   text-align: center;
-  color: #909399;
-  font-size: 12px;
-  font-weight: bold;
-  margin: 4px 0;
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 600;
+  margin: 2px 0;
 }
 
 .match-actions {
   display: flex;
   justify-content: center;
-  margin-top: 12px;
-}
-
-.match-footer {
   margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #e4e7ed;
-  text-align: center;
 }
 
-.completed-time {
+.action-btn {
+  padding: 4px 14px;
   font-size: 12px;
-  color: #909399;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s;
 }
 
-/* 状态样式 */
-.status-scheduled {
-  border-color: #e4e7ed;
+.simulate-btn {
+  background: #6366f1;
+  color: #ffffff;
 }
 
-.status-in_progress {
-  border-color: #e6a23c;
-  background: #fdf6ec;
+.simulate-btn:hover {
+  background: #4f46e5;
 }
 
-.status-completed {
-  border-color: #67c23a;
+.simulate-btn:disabled {
+  background: #c7d2fe;
+  cursor: not-allowed;
+}
+
+.detail-btn {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.detail-btn:hover {
+  background: #e2e8f0;
+}
+
+.pending-label {
+  font-size: 11px;
+  color: #94a3b8;
 }
 </style>

@@ -4,12 +4,8 @@
     <div class="page-header">
       <div class="header-content">
         <div class="header-left">
-          <el-button text @click="goBack">
-            <el-icon><ArrowLeft /></el-icon>
-            返回赛事列表
-          </el-button>
+          <button class="back-btn" @click="goBack">&larr; 返回赛事列表</button>
           <h1 class="page-title">
-            <el-icon><Trophy /></el-icon>
             Super洲际年度邀请赛 (Intercontinental Super Cup)
           </h1>
           <p class="page-description">
@@ -18,122 +14,109 @@
         </div>
       </div>
       <div class="header-actions">
-        <el-button
+        <button
           v-if="superBracket.status === 'not_started'"
-          type="primary"
+          class="action-btn primary-btn"
           @click="handleStartTournament"
-          :loading="starting"
+          :disabled="starting"
         >
-          <el-icon><VideoPlay /></el-icon>
           开始Super洲际赛
-        </el-button>
-        <el-button
+        </button>
+        <button
           v-if="superBracket.status === 'fighter_stage' && !isFighterStageComplete"
-          type="primary"
+          class="action-btn primary-btn"
           @click="batchSimulateFighterStage"
-          :loading="simulatingFighter"
+          :disabled="simulatingFighter"
         >
-          <el-icon><DArrowRight /></el-icon>
           {{ simulatingFighter ? `模拟中 (${fighterSimProgress}%)` : '模拟Fighter组预选赛' }}
-        </el-button>
-        <el-button
+        </button>
+        <button
           v-if="canGenerateChallenger"
-          type="success"
+          class="action-btn success-btn"
           @click="handleGenerateChallengerStage"
-          :loading="generatingChallenger"
+          :disabled="generatingChallenger"
         >
-          <el-icon><Plus /></el-icon>
           生成第二阶段
-        </el-button>
-        <el-button
+        </button>
+        <button
           v-if="superBracket.status === 'challenger_stage' && !isChallengerStageComplete"
-          type="primary"
+          class="action-btn primary-btn"
           @click="batchSimulateChallengerStage"
-          :loading="simulatingChallenger"
+          :disabled="simulatingChallenger"
         >
-          <el-icon><DArrowRight /></el-icon>
           模拟挑战者组
-        </el-button>
-        <el-button
+        </button>
+        <button
           v-if="canGenerateChampionPrep"
-          type="success"
+          class="action-btn success-btn"
           @click="handleGenerateChampionPrepStage"
-          :loading="generatingChampionPrep"
+          :disabled="generatingChampionPrep"
         >
-          <el-icon><Plus /></el-icon>
           生成第三阶段
-        </el-button>
-        <el-button
+        </button>
+        <button
           v-if="superBracket.status === 'champion_prep_stage' && !isChampionPrepComplete"
-          type="primary"
+          class="action-btn primary-btn"
           @click="batchSimulateChampionPrepStage"
-          :loading="simulatingChampionPrep"
+          :disabled="simulatingChampionPrep"
         >
-          <el-icon><DArrowRight /></el-icon>
           模拟冠军预备战
-        </el-button>
-        <el-button
+        </button>
+        <button
           v-if="canGenerateFinalStage"
-          type="success"
+          class="action-btn success-btn"
           @click="handleGenerateFinalStage"
-          :loading="generatingFinal"
+          :disabled="generatingFinal"
         >
-          <el-icon><Plus /></el-icon>
           生成终极冠军赛
-        </el-button>
-        <el-button
+        </button>
+        <button
           v-if="superBracket.status === 'final_stage'"
-          type="warning"
+          class="action-btn warning-btn"
           @click="batchSimulateFinalStage"
-          :loading="simulatingFinal"
+          :disabled="simulatingFinal"
         >
-          <el-icon><DArrowRight /></el-icon>
           模拟终极冠军赛
-        </el-button>
+        </button>
       </div>
     </div>
 
     <!-- 阶段未到提示 -->
-    <el-alert
-      v-if="phaseNotReached"
-      title="赛事尚未开始"
-      type="warning"
-      :closable="false"
-      show-icon
-      class="phase-warning-alert"
-    >
-      <template #default>
+    <div v-if="phaseNotReached" class="phase-warning-alert">
+      <div class="phase-warning-icon">!</div>
+      <div class="phase-warning-body">
+        <div class="phase-warning-title">赛事尚未开始</div>
         <div class="phase-warning-content">
           <p>当前赛季阶段：<strong>{{ currentPhaseDisplay }}</strong></p>
           <p>Super洲际年度邀请赛需要在 <strong>ICP洲际对抗赛</strong> 结束后才会开始。</p>
           <p>请先完成之前的赛事阶段，然后在时间控制面板推进到Super洲际赛阶段。</p>
         </div>
-      </template>
-    </el-alert>
+      </div>
+    </div>
 
     <!-- Super洲际赛状态卡片 -->
     <div class="super-status-card">
       <div class="status-header">
         <div class="status-info">
           <h2>S{{ viewingSeason }} Super洲际年度邀请赛</h2>
-          <el-tag :type="getStatusType(superBracket.status)" size="large">
+          <span class="status-badge" :class="getStatusType(superBracket.status)">
             {{ getStatusText(superBracket.status) }}
-          </el-tag>
+          </span>
         </div>
       </div>
 
       <!-- 参赛队伍统计 -->
-      <div class="teams-stats">
-        <el-statistic title="参赛队伍总数" :value="16" />
-        <el-statistic title="传奇组 (1-4名)" :value="4" suffix="支" />
-        <el-statistic title="挑战者组 (5-8名)" :value="4" suffix="支" />
-        <el-statistic title="Fighter组 (9-16名)" :value="8" suffix="支" />
+      <div class="stats-bar">
+        <div class="stat-item"><span class="stat-value">16</span><span class="stat-label">参赛队伍总数</span></div>
+        <div class="stat-item"><span class="stat-value">4</span><span class="stat-label">传奇组 (1-4名)</span></div>
+        <div class="stat-item"><span class="stat-value">4</span><span class="stat-label">挑战者组 (5-8名)</span></div>
+        <div class="stat-item"><span class="stat-value">8</span><span class="stat-label">Fighter组 (9-16名)</span></div>
       </div>
 
       <!-- 参赛队伍分组 -->
       <div v-if="superBracket.status !== 'not_started'" class="teams-groups">
         <div class="team-group legendary">
-          <h3><el-icon><Star /></el-icon> 传奇组 (年度积分 1-4名)</h3>
+          <h3>传奇组 (年度积分 1-4名)</h3>
           <div class="team-list">
             <div
               v-for="team in superBracket.qualifiedTeams.legendGroup"
@@ -142,14 +125,14 @@
             >
               <span class="team-rank">#{{ team.globalRank }}</span>
               <span class="team-name">{{ team.teamName }}</span>
-              <el-tag size="small">{{ team.regionName }}</el-tag>
+              <span class="status-badge">{{ team.regionName }}</span>
               <span class="team-points">{{ team.annualPoints }}分</span>
             </div>
           </div>
         </div>
 
         <div class="team-group challenger">
-          <h3><el-icon><Medal /></el-icon> 挑战者组 (年度积分 5-8名)</h3>
+          <h3>挑战者组 (年度积分 5-8名)</h3>
           <div class="team-list">
             <div
               v-for="team in superBracket.qualifiedTeams.challengerGroup"
@@ -158,14 +141,14 @@
             >
               <span class="team-rank">#{{ team.globalRank }}</span>
               <span class="team-name">{{ team.teamName }}</span>
-              <el-tag size="small">{{ team.regionName }}</el-tag>
+              <span class="status-badge">{{ team.regionName }}</span>
               <span class="team-points">{{ team.annualPoints }}分</span>
             </div>
           </div>
         </div>
 
         <div class="team-group fighter">
-          <h3><el-icon><Flag /></el-icon> Fighter组 (年度积分 9-16名)</h3>
+          <h3>Fighter组 (年度积分 9-16名)</h3>
           <div class="team-list">
             <div
               v-for="team in superBracket.qualifiedTeams.fighterGroup"
@@ -174,7 +157,7 @@
             >
               <span class="team-rank">#{{ team.globalRank }}</span>
               <span class="team-name">{{ team.teamName }}</span>
-              <el-tag size="small">{{ team.regionName }}</el-tag>
+              <span class="status-badge">{{ team.regionName }}</span>
               <span class="team-points">{{ team.annualPoints }}分</span>
             </div>
           </div>
@@ -182,14 +165,12 @@
       </div>
 
       <!-- 第一阶段：Fighter组预选赛 -->
-      <el-card v-if="superBracket.status !== 'not_started'" class="stage-card">
-        <template #header>
-          <div class="card-header">
-            <span>🥊 第一阶段：Fighter组预选赛</span>
-            <el-tag v-if="isFighterStageComplete" type="success">已完成</el-tag>
-            <el-tag v-else type="warning">进行中</el-tag>
-          </div>
-        </template>
+      <div v-if="superBracket.status !== 'not_started'" class="table-section stage-card">
+        <div class="section-header card-header">
+          <h3 class="section-title">第一阶段：Fighter组预选赛</h3>
+          <span v-if="isFighterStageComplete" class="status-badge success">已完成</span>
+          <span v-else class="status-badge warning">进行中</span>
+        </div>
 
         <p class="stage-description">
           8支Fighter组战队（第9-16名）随机分为A、B两组，组内BO3单循环，每组第1名晋级第二阶段
@@ -211,17 +192,15 @@
             </el-tab-pane>
           </el-tabs>
         </div>
-      </el-card>
+      </div>
 
       <!-- 第二阶段：挑战者组 -->
-      <el-card v-if="superBracket.challengerStage" class="stage-card">
-        <template #header>
-          <div class="card-header">
-            <span>⚔️ 第二阶段：挑战者组定位赛与晋级赛</span>
-            <el-tag v-if="isChallengerStageComplete" type="success">已完成</el-tag>
-            <el-tag v-else type="warning">进行中</el-tag>
-          </div>
-        </template>
+      <div v-if="superBracket.challengerStage" class="table-section stage-card">
+        <div class="section-header card-header">
+          <h3 class="section-title">第二阶段：挑战者组定位赛与晋级赛</h3>
+          <span v-if="isChallengerStageComplete" class="status-badge success">已完成</span>
+          <span v-else class="status-badge warning">进行中</span>
+        </div>
 
         <SuperKnockoutBracket
           stage="challenger"
@@ -229,17 +208,15 @@
           @simulate-match="handleSimulateMatch"
           @view-match="viewMatchDetails"
         />
-      </el-card>
+      </div>
 
       <!-- 第三阶段：冠军赛预备战 -->
-      <el-card v-if="superBracket.championPrepStage" class="stage-card">
-        <template #header>
-          <div class="card-header">
-            <span>🎯 第三阶段：冠军赛预备战</span>
-            <el-tag v-if="isChampionPrepComplete" type="success">已完成</el-tag>
-            <el-tag v-else type="warning">进行中</el-tag>
-          </div>
-        </template>
+      <div v-if="superBracket.championPrepStage" class="table-section stage-card">
+        <div class="section-header card-header">
+          <h3 class="section-title">第三阶段：冠军赛预备战</h3>
+          <span v-if="isChampionPrepComplete" class="status-badge success">已完成</span>
+          <span v-else class="status-badge warning">进行中</span>
+        </div>
 
         <SuperKnockoutBracket
           stage="champion_prep"
@@ -247,17 +224,15 @@
           @simulate-match="handleSimulateMatch"
           @view-match="viewMatchDetails"
         />
-      </el-card>
+      </div>
 
       <!-- 第四阶段：终极冠军赛 -->
-      <el-card v-if="superBracket.finalStage" class="stage-card">
-        <template #header>
-          <div class="card-header">
-            <span>🏆 第四阶段：终极冠军赛</span>
-            <el-tag v-if="superBracket.status === 'completed'" type="success">已完成</el-tag>
-            <el-tag v-else type="warning">进行中</el-tag>
-          </div>
-        </template>
+      <div v-if="superBracket.finalStage" class="table-section stage-card">
+        <div class="section-header card-header">
+          <h3 class="section-title">第四阶段：终极冠军赛</h3>
+          <span v-if="superBracket.status === 'completed'" class="status-badge success">已完成</span>
+          <span v-else class="status-badge warning">进行中</span>
+        </div>
 
         <SuperKnockoutBracket
           stage="final"
@@ -265,7 +240,7 @@
           @simulate-match="handleSimulateMatch"
           @view-match="viewMatchDetails"
         />
-      </el-card>
+      </div>
 
       <TournamentCompletionSection
         v-if="superBracket.status === 'completed'"
@@ -290,16 +265,6 @@
 import { ref, computed, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import {
-  Trophy,
-  ArrowLeft,
-  DArrowRight,
-  Plus,
-  VideoPlay,
-  Star,
-  Medal,
-  Flag
-} from '@element-plus/icons-vue'
 import SuperGroupStanding from '@/components/super/SuperGroupStanding.vue'
 import SuperKnockoutBracket from '@/components/super/SuperKnockoutBracket.vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
@@ -1460,324 +1425,332 @@ onMounted(() => {
 })
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .super-management {
   padding: 24px;
-
-  .phase-warning-alert {
-    margin-bottom: 24px;
-
-    .phase-warning-content {
-      p {
-        margin: 4px 0;
-        line-height: 1.6;
-
-        strong {
-          color: var(--el-color-warning);
-        }
-      }
-    }
-  }
-
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 24px;
-
-    .header-content {
-      .header-left {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        align-items: flex-start;
-      }
-
-      .page-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 28px;
-        font-weight: 700;
-        margin: 0;
-        color: #1f2937;
-      }
-
-      .page-description {
-        margin: 0;
-        color: #6b7280;
-        font-size: 14px;
-      }
-    }
-
-    .header-actions {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-  }
-
-  .super-status-card {
-    background: white;
-    border-radius: 12px;
-    padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-
-    .status-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid #e5e7eb;
-
-      .status-info {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-
-        h2 {
-          margin: 0;
-          font-size: 20px;
-          font-weight: 600;
-          color: #1f2937;
-        }
-      }
-    }
-
-    .teams-stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 20px;
-      margin-bottom: 32px;
-      padding: 20px;
-      background: linear-gradient(135deg, #f3e8ff 0%, #ddd6fe 100%);
-      border-radius: 12px;
-    }
-
-    .teams-groups {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-      margin-bottom: 32px;
-
-      .team-group {
-        padding: 20px;
-        border-radius: 12px;
-        border: 2px solid;
-
-        h3 {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin: 0 0 16px 0;
-          font-size: 16px;
-          font-weight: 600;
-        }
-
-        &.legendary {
-          border-color: #f59e0b;
-          background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-
-          h3 {
-            color: #92400e;
-          }
-        }
-
-        &.challenger {
-          border-color: #3b82f6;
-          background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-
-          h3 {
-            color: #1e40af;
-          }
-        }
-
-        &.fighter {
-          border-color: #6b7280;
-          background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
-
-          h3 {
-            color: #374151;
-          }
-        }
-
-        .team-list {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-
-          .team-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 14px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-            transition: all 0.2s ease;
-
-            &:hover {
-              transform: translateX(4px);
-              box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            }
-
-            .team-rank {
-              font-size: 14px;
-              font-weight: 700;
-              color: #8b5cf6;
-              min-width: 32px;
-            }
-
-            .team-name {
-              flex: 1;
-              font-size: 15px;
-              font-weight: 600;
-              color: #1f2937;
-            }
-
-            .team-points {
-              font-size: 13px;
-              font-weight: 500;
-              color: #10b981;
-            }
-          }
-        }
-      }
-    }
-
-    .stage-card {
-      margin-bottom: 24px;
-
-      .card-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-
-      .stage-description {
-        margin: 0 0 16px 0;
-        color: #6b7280;
-        font-size: 14px;
-      }
-    }
-
-    .qualified-teams-card {
-      .qualified-teams-container {
-        display: flex;
-        flex-direction: column;
-        gap: 24px;
-      }
-
-      .team-group {
-        .group-label {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          margin: 0 0 12px 0;
-
-          .rank-range {
-            font-size: 14px;
-            color: #6b7280;
-          }
-        }
-
-        .team-cards {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-          gap: 12px;
-        }
-
-        .qualified-team-card {
-          padding: 16px;
-          border-radius: 8px;
-          text-align: center;
-          border: 2px solid;
-
-          .rank-badge {
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 8px;
-          }
-
-          .team-name {
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #1f2937;
-          }
-
-          .annual-points {
-            margin-top: 8px;
-            font-size: 14px;
-            font-weight: 500;
-            color: #10b981;
-          }
-
-          &.legend {
-            border-color: #ef4444;
-            background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
-          }
-
-          &.challenger {
-            border-color: #f59e0b;
-            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-          }
-
-          &.fighter {
-            border-color: #6b7280;
-            background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
-          }
-        }
-      }
-    }
-  }
-
-  .mb-4 {
-    margin-bottom: 16px;
-  }
 }
 
-// 冠军庆祝动画
-@keyframes champion-bounce {
-  0% {
-    transform: scale(0.3) rotate(-10deg);
-    opacity: 0;
-  }
-  50% {
-    transform: scale(1.05) rotate(5deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-    opacity: 1;
-  }
+.super-management .phase-warning-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
 }
 
-:deep(.champion-celebration-box) {
-  animation: champion-bounce 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-  background: linear-gradient(135deg, #f3e8ff 0%, #ddd6fe 100%);
-  border: 3px solid #8b5cf6;
-
-  .el-message-box__title {
-    font-size: 28px;
-    font-weight: 900;
-    background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .el-message-box__content {
-    font-size: 18px;
-    color: #6b21a8;
-  }
-
-  .el-button--primary {
-    background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
-    border: none;
-
-    &:hover {
-      background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
-    }
-  }
+.super-management .phase-warning-icon {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  line-height: 22px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  background: #f59e0b;
+  border-radius: 50%;
 }
+
+.super-management .phase-warning-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #92400e;
+  margin-bottom: 4px;
+}
+
+.super-management .phase-warning-content p {
+  margin: 2px 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #a16207;
+}
+
+.super-management .phase-warning-content p strong {
+  color: #92400e;
+  font-weight: 600;
+}
+
+.super-management .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
+.super-management .page-header .header-content .header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.super-management .page-header .header-content .page-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0;
+  color: #0f172a;
+}
+
+.super-management .page-header .header-content .page-description {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.super-management .page-header .header-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.super-management .super-status-card {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 24px;
+  border: 1px solid #e2e8f0;
+}
+
+.super-management .super-status-card .status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.super-management .super-status-card .status-header .status-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.super-management .super-status-card .status-header .status-info h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.super-management .super-status-card .teams-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-bottom: 32px;
+  padding: 20px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.super-management .super-status-card .teams-groups {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 32px;
+}
+
+.super-management .super-status-card .teams-groups .team-group {
+  padding: 20px;
+  border-radius: 8px;
+  border: 2px solid;
+}
+
+.super-management .super-status-card .teams-groups .team-group h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.super-management .super-status-card .teams-groups .team-group.legendary {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.super-management .super-status-card .teams-groups .team-group.legendary h3 {
+  color: #92400e;
+}
+
+.super-management .super-status-card .teams-groups .team-group.challenger {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.super-management .super-status-card .teams-groups .team-group.challenger h3 {
+  color: #1e40af;
+}
+
+.super-management .super-status-card .teams-groups .team-group.fighter {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.super-management .super-status-card .teams-groups .team-group.fighter h3 {
+  color: #0f172a;
+}
+
+.super-management .super-status-card .teams-groups .team-group .team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.super-management .super-status-card .teams-groups .team-group .team-list .team-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.super-management .super-status-card .teams-groups .team-group .team-list .team-item .team-rank {
+  font-size: 14px;
+  font-weight: 700;
+  color: #6366f1;
+  min-width: 32px;
+}
+
+.super-management .super-status-card .teams-groups .team-group .team-list .team-item .team-name {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.super-management .super-status-card .teams-groups .team-group .team-list .team-item .team-points {
+  font-size: 13px;
+  font-weight: 500;
+  color: #10b981;
+}
+
+.super-management .super-status-card .stage-card {
+  margin-bottom: 24px;
+}
+
+.super-management .super-status-card .stage-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.super-management .super-status-card .stage-card .stage-description {
+  margin: 0 0 16px 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.super-management .super-status-card .qualified-teams-card .qualified-teams-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.super-management .super-status-card .qualified-teams-card .team-group .group-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px 0;
+}
+
+.super-management .super-status-card .qualified-teams-card .team-group .group-label .rank-range {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.super-management .super-status-card .qualified-teams-card .team-group .team-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.super-management .super-status-card .qualified-teams-card .team-group .qualified-team-card {
+  padding: 16px;
+  border-radius: 8px;
+  text-align: center;
+  border: 2px solid;
+}
+
+.super-management .super-status-card .qualified-teams-card .team-group .qualified-team-card .rank-badge {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.super-management .super-status-card .qualified-teams-card .team-group .qualified-team-card .team-name {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #0f172a;
+}
+
+.super-management .super-status-card .qualified-teams-card .team-group .qualified-team-card .annual-points {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #10b981;
+}
+
+.super-management .super-status-card .qualified-teams-card .team-group .qualified-team-card.legend {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+.super-management .super-status-card .qualified-teams-card .team-group .qualified-team-card.challenger {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.super-management .super-status-card .qualified-teams-card .team-group .qualified-team-card.fighter {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.super-management .mb-4 {
+  margin-bottom: 16px;
+}
+
+/* Design system utility classes */
+
+.back-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; font-size: 13px; font-weight: 500; color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; }
+.back-btn:hover { background: #e2e8f0; }
+
+.action-btn { padding: 6px 16px; font-size: 13px; font-weight: 500; border-radius: 6px; cursor: pointer; border: 1px solid #e2e8f0; background: #ffffff; color: #0f172a; }
+.action-btn:hover { background: #f8fafc; }
+.action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.primary-btn { background: #6366f1; color: #ffffff; border-color: #6366f1; }
+.primary-btn:hover { background: #4f46e5; }
+
+.warning-btn { background: #f59e0b; color: #ffffff; border-color: #f59e0b; }
+.warning-btn:hover { background: #d97706; }
+
+.success-btn { background: #22c55e; color: #ffffff; border-color: #22c55e; }
+.success-btn:hover { background: #16a34a; }
+
+.status-badge { display: inline-block; padding: 2px 8px; font-size: 12px; font-weight: 500; border-radius: 8px; background: #f1f5f9; color: #64748b; }
+.status-badge.success { background: #f0fdf4; color: #16a34a; }
+.status-badge.warning { background: #fffbeb; color: #d97706; }
+.status-badge.danger { background: #fef2f2; color: #ef4444; }
+.status-badge.info { background: #f1f5f9; color: #64748b; }
+
+.stats-bar { display: flex; gap: 24px; padding: 16px 20px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+.stat-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.stat-value { font-size: 20px; font-weight: 700; color: #0f172a; }
+.stat-label { font-size: 12px; color: #94a3b8; }
+
+.table-section { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px; }
+.section-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid #e2e8f0; }
+.section-title { margin: 0; font-size: 15px; font-weight: 600; color: #0f172a; }
+.section-content { padding: 16px; }
 </style>

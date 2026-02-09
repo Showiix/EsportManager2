@@ -6,8 +6,8 @@
         <span class="seed-badge">{{ getSeedLabel(group.seedNumber) }}</span>
         <span class="group-name">{{ group.groupName }}组</span>
       </div>
-      <el-tag v-if="group.isComplete" type="success" size="small">已完成</el-tag>
-      <el-tag v-else type="warning" size="small">进行中</el-tag>
+      <span v-if="group.isComplete" class="status-tag status-success">已完成</span>
+      <span v-else class="status-tag status-warning">进行中</span>
     </div>
 
     <!-- 积分榜 -->
@@ -15,7 +15,6 @@
       <el-table-column label="排名" width="70" align="center">
         <template #default="{ row }">
           <div class="rank-cell" :class="{ 'has-badge': row.hasBadge }">
-            <span v-if="row.hasBadge" class="badge-icon">🏅</span>
             <span class="rank-number">{{ row.position }}</span>
           </div>
         </template>
@@ -25,9 +24,9 @@
         <template #default="{ row }">
           <div class="team-cell">
             <span class="team-name">{{ row.teamName }}</span>
-            <el-tag :type="getRegionTagType(row.region)" size="small">
+            <span class="region-tag" :class="row.region?.toLowerCase()">
               {{ row.region }}
-            </el-tag>
+            </span>
           </div>
         </template>
       </el-table-column>
@@ -67,9 +66,9 @@
           <div class="match-teams">
             <div class="team" :class="{ winner: match.winnerId === match.teamAId }">
               <span class="team-name">{{ match.teamAName }}</span>
-              <el-tag :type="getRegionTagType(match.teamARegion)" size="small">
+              <span class="region-tag" :class="match.teamARegion?.toLowerCase()">
                 {{ match.teamARegion }}
-              </el-tag>
+              </span>
             </div>
             <div class="vs-score">
               <template v-if="match.status === 'completed'">
@@ -81,26 +80,25 @@
             </div>
             <div class="team" :class="{ winner: match.winnerId === match.teamBId }">
               <span class="team-name">{{ match.teamBName }}</span>
-              <el-tag :type="getRegionTagType(match.teamBRegion)" size="small">
+              <span class="region-tag" :class="match.teamBRegion?.toLowerCase()">
                 {{ match.teamBRegion }}
-              </el-tag>
+              </span>
             </div>
           </div>
 
           <div class="match-actions">
-            <el-button
+            <button
               v-if="match.status === 'scheduled'"
-              type="primary"
-              size="small"
+              class="btn btn-primary"
               @click="$emit('simulate-match', match)"
             >
               模拟比赛
-            </el-button>
+            </button>
             <div v-else class="completed-actions">
-              <el-tag type="success" size="small">已完成</el-tag>
-              <el-button type="info" size="small" text @click="$emit('view-match', match)">
+              <span class="status-tag status-success">已完成</span>
+              <button class="btn btn-text" @click="$emit('view-match', match)">
                 查看详情
-              </el-button>
+              </button>
             </div>
           </div>
         </div>
@@ -144,167 +142,252 @@ const getRegionTagType = (region?: string) => {
 }
 </script>
 
-<style scoped lang="scss">
+<style scoped>
 .icp-seed-group-standing {
-  .group-info {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #e5e7eb;
+  background: #f8fafc;
+  border-radius: 10px;
+}
 
-    .group-title {
-      display: flex;
-      align-items: center;
-      gap: 12px;
+.group-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
 
-      .seed-badge {
-        padding: 4px 12px;
-        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-        color: white;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-      }
+.group-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 
-      .group-name {
-        font-size: 16px;
-        font-weight: 600;
-        color: #1f2937;
-      }
-    }
-  }
+.seed-badge {
+  padding: 4px 12px;
+  background: #f1f5f9;
+  color: #64748b;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #e2e8f0;
+}
 
-  .standings-table {
-    margin-bottom: 24px;
+.group-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
 
-    .rank-cell {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
+.status-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+}
 
-      &.has-badge {
-        .rank-number {
-          color: #f59e0b;
-          font-weight: 700;
-        }
-      }
+.status-success {
+  background: #f0fdf4;
+  color: #22c55e;
+  border: 1px solid #bbf7d0;
+}
 
-      .badge-icon {
-        font-size: 14px;
-      }
+.status-warning {
+  background: #fefce8;
+  color: #ca8a04;
+  border: 1px solid #fde68a;
+}
 
-      .rank-number {
-        font-weight: 600;
-      }
-    }
+.standings-table {
+  margin-bottom: 24px;
+}
 
-    .team-cell {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+.rank-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
 
-      .team-name {
-        font-weight: 600;
-        color: #1f2937;
-      }
-    }
+.rank-cell.has-badge .rank-number {
+  color: #6366f1;
+  font-weight: 700;
+}
 
-    .points-cell {
-      font-weight: 700;
-      color: #10b981;
-    }
+.rank-number {
+  font-weight: 600;
+  color: #0f172a;
+}
 
-    .positive {
-      color: #10b981;
-      font-weight: 600;
-    }
+.team-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
-    .negative {
-      color: #ef4444;
-      font-weight: 600;
-    }
-  }
+.team-cell .team-name {
+  font-weight: 600;
+  color: #0f172a;
+}
 
-  .matches-section {
-    h4 {
-      margin: 0 0 16px 0;
-      font-size: 14px;
-      font-weight: 600;
-      color: #6b7280;
-    }
+.region-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
 
-    .matches-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
+.region-tag.lpl {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fecaca;
+}
 
-      .match-card {
-        padding: 16px;
-        background: #f9fafb;
-        border-radius: 8px;
-        border: 1px solid #e5e7eb;
+.region-tag.lck {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
 
-        &.completed {
-          background: #f0fdf4;
-          border-color: #86efac;
-        }
+.region-tag.lec {
+  background: #f0fdf4;
+  color: #16a34a;
+  border-color: #bbf7d0;
+}
 
-        .match-teams {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 12px;
+.region-tag.lcs {
+  background: #fefce8;
+  color: #ca8a04;
+  border-color: #fde68a;
+}
 
-          .team {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 4px;
-            flex: 1;
+.points-cell {
+  font-weight: 700;
+  color: #22c55e;
+}
 
-            .team-name {
-              font-weight: 600;
-              font-size: 14px;
-              color: #374151;
-            }
+.positive {
+  color: #22c55e;
+  font-weight: 600;
+}
 
-            &.winner .team-name {
-              color: #10b981;
-            }
-          }
+.negative {
+  color: #ef4444;
+  font-weight: 600;
+}
 
-          .vs-score {
-            padding: 0 16px;
+.matches-section h4 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+}
 
-            .vs {
-              font-size: 12px;
-              color: #9ca3af;
-              font-weight: 600;
-            }
+.matches-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
 
-            .score {
-              font-size: 16px;
-              font-weight: 700;
-              color: #1f2937;
-            }
-          }
-        }
+.match-card {
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
 
-        .match-actions {
-          display: flex;
-          justify-content: center;
+.match-card.completed {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
 
-          .completed-actions {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-          }
-        }
-      }
-    }
-  }
+.match-teams {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.match-teams .team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.match-teams .team .team-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.match-teams .team.winner .team-name {
+  color: #22c55e;
+}
+
+.vs-score {
+  padding: 0 16px;
+}
+
+.vs-score .vs {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.vs-score .score {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.match-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.completed-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.2s;
+}
+
+.btn:hover {
+  opacity: 0.85;
+}
+
+.btn-primary {
+  background: #6366f1;
+  color: #ffffff;
+}
+
+.btn-text {
+  background: transparent;
+  color: #64748b;
+  padding: 6px 8px;
+}
+
+.btn-text:hover {
+  color: #0f172a;
 }
 </style>

@@ -1,10 +1,10 @@
 <template>
   <div class="super-group-standing">
     <div class="group-header">
-      <h3 class="group-title">{{ groupName }}组</h3>
-      <el-tag :type="getGroupStatusType()" size="large">
+      <span class="group-title">{{ groupName }}组</span>
+      <span class="status-badge" :class="'status-' + getGroupStatusType()">
         {{ getGroupStatusText() }}
-      </el-tag>
+      </span>
     </div>
 
     <!-- 小组积分榜 -->
@@ -23,13 +23,7 @@
           align="center"
         >
           <template #default="{ row }">
-            <el-tag
-              v-if="row.position === 1"
-              type="success"
-              size="small"
-            >
-              {{ row.position }}
-            </el-tag>
+            <span v-if="row.position === 1" class="rank-qualified">{{ row.position }}</span>
             <span v-else>{{ row.position }}</span>
           </template>
         </el-table-column>
@@ -41,10 +35,8 @@
         >
           <template #default="{ row }">
             <div class="team-cell">
-              <span class="team-name">{{ row.teamName }}</span>
-              <el-icon v-if="row.qualified" class="qualified-icon" color="#67c23a">
-                <Select />
-              </el-icon>
+              <span class="team-name" :class="{ qualified: row.qualified }">{{ row.teamName }}</span>
+              <span v-if="row.qualified" class="qualified-mark">&#10003;</span>
             </div>
           </template>
         </el-table-column>
@@ -56,7 +48,7 @@
           align="center"
         >
           <template #default="{ row }">
-            <el-tag size="small" :type="getRegionTagType(row.regionName)">{{ row.regionName }}</el-tag>
+            <span class="region-tag" :class="'region-' + (row.regionName || '').toLowerCase()">{{ row.regionName }}</span>
           </template>
         </el-table-column>
 
@@ -131,16 +123,18 @@
 
       <!-- 积分规则说明 -->
       <div class="scoring-rules">
-        <el-text size="small" type="info">
-          积分规则: 2:0胜=3分 | 2:1胜=2分 | 1:2负=1分 | 0:2负=0分 | 小组第1名晋级第二阶段
-        </el-text>
+        <span>积分规则: 2:0胜=3分 | 2:1胜=2分 | 1:2负=1分 | 0:2负=0分 | 小组第1名晋级第二阶段</span>
       </div>
     </div>
 
-    <!-- 小组赛程 -->
-    <div class="group-matches">
-      <h4 class="matches-title">小组赛程</h4>
+    <!-- 赛程折叠区 -->
+    <div class="matches-toggle" @click="showMatches = !showMatches">
+      <span>{{ showMatches ? '收起赛程' : '展开赛程' }}</span>
+      <span class="toggle-arrow" :class="{ expanded: showMatches }">&#9662;</span>
+    </div>
 
+    <!-- 小组赛程 -->
+    <div v-show="showMatches" class="group-matches">
       <!-- 按轮次分组显示 -->
       <div
         v-for="round in groupedMatches"
@@ -149,12 +143,9 @@
       >
         <div class="round-header">
           <h5>第{{ round.roundNumber }}轮</h5>
-          <el-tag
-            :type="getRoundProgressType(round)"
-            size="small"
-          >
+          <span class="round-badge" :class="'round-' + getRoundProgressType(round)">
             {{ getRoundProgressText(round) }}
-          </el-tag>
+          </span>
         </div>
 
         <div class="matches-grid">
@@ -171,25 +162,22 @@
     </div>
 
     <!-- 批量操作 -->
-    <div class="group-actions">
-      <el-button
+    <div v-show="showMatches" class="group-actions">
+      <button
         v-if="hasUncompletedMatches"
-        type="primary"
-        :loading="batchSimulating"
+        class="batch-btn"
+        :disabled="batchSimulating"
         @click="handleBatchSimulate"
       >
-        一键模拟全部比赛
-      </el-button>
-      <el-tag v-else type="success" size="large">
-        小组赛已全部完成
-      </el-tag>
+        {{ batchSimulating ? '模拟中...' : '一键模拟全部比赛' }}
+      </button>
+      <span v-else class="all-done-label">小组赛已全部完成</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Select } from '@element-plus/icons-vue'
+import { computed, ref } from 'vue'
 import type { SuperMatch, SuperGroup, SuperGroupStanding } from '@/types/super'
 import SuperMatchCard from './SuperMatchCard.vue'
 
@@ -203,6 +191,8 @@ const props = withDefaults(defineProps<Props>(), {
   simulatingMatchId: null,
   batchSimulating: false
 })
+
+const showMatches = ref(false)
 
 const emit = defineEmits<{
   (e: 'simulate-match', match: SuperMatch): void
@@ -356,124 +346,244 @@ const handleBatchSimulate = () => {
 
 <style scoped>
 .super-group-standing {
-  background: white;
-  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
   padding: 20px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
 }
 
 .group-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 2px solid #e4e7ed;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .group-title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: bold;
-  color: #303133;
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.status-info {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.status-success {
+  background: #f0fdf4;
+  color: #22c55e;
+}
+
+.status-warning {
+  background: #fffbeb;
+  color: #d97706;
 }
 
 .standings-table {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 .team-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .team-name {
   font-weight: 500;
+  color: #0f172a;
 }
 
-.qualified-icon {
-  font-size: 16px;
+.team-name.qualified {
+  color: #22c55e;
+  font-weight: 600;
 }
+
+.qualified-mark {
+  color: #22c55e;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.rank-qualified {
+  color: #22c55e;
+  font-weight: 600;
+}
+
+.region-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.region-lpl { background: #fef2f2; color: #ef4444; }
+.region-lck { background: #eef2ff; color: #6366f1; }
+.region-lec { background: #f0fdf4; color: #22c55e; }
+.region-lcs { background: #fffbeb; color: #d97706; }
 
 .win-count {
-  color: #67c23a;
+  color: #22c55e;
   font-weight: 500;
 }
 
 .loss-count {
-  color: #f56c6c;
+  color: #ef4444;
   font-weight: 500;
 }
 
 .points-value {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: bold;
-  color: #409eff;
+  color: #6366f1;
 }
 
 .positive-diff {
-  color: #67c23a;
+  color: #22c55e;
   font-weight: 500;
 }
 
 .negative-diff {
-  color: #f56c6c;
+  color: #ef4444;
   font-weight: 500;
 }
 
 .scoring-rules {
-  margin-top: 12px;
-  padding: 12px;
-  background: #f5f7fa;
+  margin-top: 10px;
+  padding: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
   border-radius: 4px;
   text-align: center;
+  font-size: 12px;
+  color: #64748b;
 }
 
 :deep(.qualified-row) {
-  background-color: #f0f9ff !important;
+  background-color: #f0fdf4 !important;
+}
+
+/* 赛程折叠区 */
+.matches-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  margin: 16px 0 0 0;
+  cursor: pointer;
+  color: #64748b;
+  font-size: 13px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #f8fafc;
+}
+
+.toggle-arrow {
+  display: inline-block;
+  transition: transform 0.2s;
+  font-size: 12px;
+}
+
+.toggle-arrow.expanded {
+  transform: rotate(180deg);
 }
 
 .group-matches {
-  margin-top: 24px;
-}
-
-.matches-title {
-  margin: 0 0 16px 0;
-  font-size: 16px;
-  font-weight: bold;
-  color: #303133;
+  margin-top: 16px;
 }
 
 .round-section {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .round-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .round-header h5 {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #606266;
+  color: #0f172a;
+}
+
+.round-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.round-info {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.round-success {
+  background: #f0fdf4;
+  color: #22c55e;
+}
+
+.round-warning {
+  background: #fffbeb;
+  color: #d97706;
 }
 
 .matches-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 12px;
 }
 
 .group-actions {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid #e4e7ed;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
   display: flex;
   justify-content: center;
+}
+
+.batch-btn {
+  padding: 8px 20px;
+  background: #6366f1;
+  color: #ffffff;
+  border: 1px solid #6366f1;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.batch-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.all-done-label {
+  display: inline-block;
+  padding: 6px 16px;
+  background: #f0fdf4;
+  color: #22c55e;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
 }
 </style>
