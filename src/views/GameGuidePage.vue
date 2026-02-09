@@ -48,7 +48,7 @@
         <div class="phase-group" v-for="group in phaseGroups" :key="group.title">
           <div class="phase-group-title">{{ group.title }}</div>
           <div class="phase-group-items">
-            <div v-for="(phase, i) in group.items" :key="phase.name"
+            <div v-for="phase in group.items" :key="phase.name"
               class="phase-card" :class="phase.type">
               <div class="phase-num">{{ phase.num }}</div>
               <div class="phase-name">{{ phase.name }}</div>

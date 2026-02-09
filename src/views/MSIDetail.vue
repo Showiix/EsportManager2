@@ -119,81 +119,34 @@
       </div>
 
       <!-- 最终排名 -->
-      <div v-if="currentMSIBracket.status === 'completed'" class="final-standings">
-        <h3>最终排名与积分</h3>
-        <div class="standings-grid">
-          <div class="standing-item champion">
-            <div class="rank-badge"><span class="rank-number">1</span><span class="badge-text">冠军</span></div>
-            <div class="team-name">{{ currentMSIBracket.champion?.teamName }}</div>
-            <div class="points">+{{ currentMSIBracket.pointsDistribution.champion }}分</div>
-          </div>
-
-          <div class="standing-item runner-up">
-            <div class="rank-badge"><span class="rank-number">2</span><span class="badge-text">亚军</span></div>
-            <div class="team-name">{{ currentMSIBracket.runnerUp?.teamName }}</div>
-            <div class="points">+{{ currentMSIBracket.pointsDistribution.runnerUp }}分</div>
-          </div>
-
-          <div class="standing-item third">
-            <div class="rank-badge"><span class="rank-number">3</span><span class="badge-text">季军</span></div>
-            <div class="team-name">{{ currentMSIBracket.thirdPlace?.teamName }}</div>
-            <div class="points">+{{ currentMSIBracket.pointsDistribution.thirdPlace }}分</div>
-          </div>
-
-          <div class="standing-item fourth">
-            <div class="rank-badge"><span class="rank-number">4</span><span class="badge-text">殿军</span></div>
-            <div class="team-name">{{ currentMSIBracket.fourthPlace?.teamName }}</div>
-            <div class="points">+{{ currentMSIBracket.pointsDistribution.fourthPlace }}分</div>
-          </div>
-        </div>
-
-        <!-- 败者组第二轮 (5-6名) -->
+      <TournamentCompletionSection
+        v-if="currentMSIBracket.status === 'completed'"
+        :standings="msiStandings"
+        banner-title="MSI季中邀请赛已完成！"
+        :banner-champion="currentMSIBracket.champion?.teamName || ''"
+        banner-description="获得MSI冠军！"
+      >
         <div v-if="currentMSIBracket.loserRound2?.length > 0" class="loser-standings">
           <h4>败者组第二轮 (5-6名)</h4>
           <div class="loser-grid">
-            <div
-              v-for="(team, index) in currentMSIBracket.loserRound2"
-              :key="team.teamId"
-              class="loser-item loser-r2"
-            >
+            <div v-for="(team, index) in currentMSIBracket.loserRound2" :key="team.teamId" class="loser-item loser-r2">
               <div class="rank-badge"><span class="rank-number">{{ 5 + Number(index) }}</span></div>
               <div class="team-name">{{ team.teamName }}</div>
               <div class="points">+{{ currentMSIBracket.pointsDistribution.loserRound2 }}分</div>
             </div>
           </div>
         </div>
-
-        <!-- 败者组第一轮 (7-8名) -->
         <div v-if="currentMSIBracket.loserRound1?.length > 0" class="loser-standings">
           <h4>败者组第一轮 (7-8名)</h4>
           <div class="loser-grid">
-            <div
-              v-for="(team, index) in currentMSIBracket.loserRound1"
-              :key="team.teamId"
-              class="loser-item loser-r1"
-            >
+            <div v-for="(team, index) in currentMSIBracket.loserRound1" :key="team.teamId" class="loser-item loser-r1">
               <div class="rank-badge"><span class="rank-number">{{ 7 + Number(index) }}</span></div>
               <div class="team-name">{{ team.teamName }}</div>
               <div class="points">+{{ currentMSIBracket.pointsDistribution.loserRound1 }}分</div>
             </div>
           </div>
         </div>
-
-        <!-- MSI完成后的提示 -->
-        <div class="msi-completed-actions">
-          <el-alert
-            title="MSI季中邀请赛已完成！"
-            type="success"
-            :closable="false"
-            show-icon
-            class="completion-alert"
-          >
-            <template #default>
-              <p>恭喜 <strong>{{ currentMSIBracket.champion?.teamName }}</strong> 获得MSI冠军！</p>
-            </template>
-          </el-alert>
-        </div>
-      </div>
+      </TournamentCompletionSection>
     </div>
 
     <!-- 比赛详情对话框 -->
@@ -294,6 +247,8 @@ import {
 } from '@element-plus/icons-vue'
 import MSIBracketView from '@/components/msi/MSIBracketView.vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
+import TournamentCompletionSection from '@/components/common/TournamentCompletionSection.vue'
+import type { StandingItem } from '@/types/tournament'
 import { PowerEngine } from '@/engines/PowerEngine'
 import { useMatchDetailStore } from '@/stores/useMatchDetailStore'
 import { usePlayerStore } from '@/stores/usePlayerStore'
@@ -379,11 +334,11 @@ const mockMSIBracket = reactive({
       status: 'pending',
       matches: [
         // 资格赛组 (季军组) - 4队两两BO5单淘汰
-        { id: 'qual1', matchType: 'qualifier', match_order: 1, teamAId: '9', teamBId: '12', status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },  // TES vs 100T
-        { id: 'qual2', matchType: 'qualifier', match_order: 2, teamAId: '10', teamBId: '11', status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 }, // DK vs MAD
+        { id: 'qual1', matchType: 'qualifier', match_order: 1, teamAId: '9', teamBId: '12', status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },  // TES vs 100T
+        { id: 'qual2', matchType: 'qualifier', match_order: 2, teamAId: '10', teamBId: '11', status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null }, // DK vs MAD
         // 挑战者组 (亚军组) - 4队PK
-        { id: 'chal1', matchType: 'challenger', match_order: 1, teamAId: '5', teamBId: '8', status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },  // BLG vs TL
-        { id: 'chal2', matchType: 'challenger', match_order: 2, teamAId: '6', teamBId: '7', status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },  // GEN vs FNC
+        { id: 'chal1', matchType: 'challenger', match_order: 1, teamAId: '5', teamBId: '8', status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },  // BLG vs TL
+        { id: 'chal2', matchType: 'challenger', match_order: 2, teamAId: '6', teamBId: '7', status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },  // GEN vs FNC
       ]
     },
     // 败者组
@@ -393,18 +348,18 @@ const mockMSIBracket = reactive({
       status: 'pending',
       matches: [
         // 败者组R1: 资格赛胜者 vs 挑战者败者
-        { id: 'lr1_1', matchType: 'loser_r1', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },
-        { id: 'lr1_2', matchType: 'loser_r1', match_order: 2, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },
+        { id: 'lr1_1', matchType: 'loser_r1', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },
+        { id: 'lr1_2', matchType: 'loser_r1', match_order: 2, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },
         // 败者组R2: 挑战者胜者 vs R1胜者
-        { id: 'lr2_1', matchType: 'loser_r2', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },
-        { id: 'lr2_2', matchType: 'loser_r2', match_order: 2, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },
+        { id: 'lr2_1', matchType: 'loser_r2', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },
+        { id: 'lr2_2', matchType: 'loser_r2', match_order: 2, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },
         // 败者组R3: R2胜者 vs 胜者组R1败者
-        { id: 'lr3_1', matchType: 'loser_r3', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },
-        { id: 'lr3_2', matchType: 'loser_r3', match_order: 2, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },
+        { id: 'lr3_1', matchType: 'loser_r3', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },
+        { id: 'lr3_2', matchType: 'loser_r3', match_order: 2, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },
         // 败者组R4: 2名R3胜者对决
-        { id: 'lr4', matchType: 'loser_r4', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },
+        { id: 'lr4', matchType: 'loser_r4', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },
         // 败者组决赛: 胜者组R2败者 vs R4胜者
-        { id: 'lf', matchType: 'loser_final', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },
+        { id: 'lf', matchType: 'loser_final', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },
       ]
     },
     // 胜者组 (传奇组)
@@ -414,10 +369,10 @@ const mockMSIBracket = reactive({
       status: 'pending',
       matches: [
         // 胜者组R1: 4传奇组对决
-        { id: 'wr1_1', matchType: 'winner_r1', match_order: 1, teamAId: '1', teamBId: '4', status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },  // JDG vs C9
-        { id: 'wr1_2', matchType: 'winner_r1', match_order: 2, teamAId: '2', teamBId: '3', status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },  // T1 vs G2
+        { id: 'wr1_1', matchType: 'winner_r1', match_order: 1, teamAId: '1', teamBId: '4', status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },  // JDG vs C9
+        { id: 'wr1_2', matchType: 'winner_r1', match_order: 2, teamAId: '2', teamBId: '3', status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },  // T1 vs G2
         // 胜者组决赛
-        { id: 'wf', matchType: 'winner_final', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },
+        { id: 'wf', matchType: 'winner_final', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },
       ]
     },
     // 总决赛
@@ -426,7 +381,7 @@ const mockMSIBracket = reactive({
       roundName: '总决赛',
       status: 'pending',
       matches: [
-        { id: 'gf', matchType: 'grand_final', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0 },
+        { id: 'gf', matchType: 'grand_final', match_order: 1, teamAId: null as string | null, teamBId: null as string | null, status: 'scheduled', bestOf: 5, winnerId: null as string | null, scoreA: 0, scoreB: 0, backendMatchId: null as number | null },
       ]
     }
   ],
@@ -449,7 +404,7 @@ const mockMSIBracket = reactive({
 })
 
 // 批量模拟 composable
-const { simulationProgress, isSimulating: batchSimulating, batchSimulate } = useBatchSimulation()
+const { simulationProgress, isSimulating: batchSimulating } = useBatchSimulation()
 
 // 响应式状态
 const showMatchDetails = ref(false)
@@ -458,6 +413,13 @@ const simulating = ref(false)
 
 // 计算属性 - 使用 mock 数据
 const currentMSIBracket = computed(() => mockMSIBracket as any)
+
+const msiStandings = computed<StandingItem[]>(() => [
+  { rank: 1, label: '冠军', name: currentMSIBracket.value.champion?.teamName || '', points: `+${currentMSIBracket.value.pointsDistribution.champion}分` },
+  { rank: 2, label: '亚军', name: currentMSIBracket.value.runnerUp?.teamName || '', points: `+${currentMSIBracket.value.pointsDistribution.runnerUp}分` },
+  { rank: 3, label: '季军', name: currentMSIBracket.value.thirdPlace?.teamName || '', points: `+${currentMSIBracket.value.pointsDistribution.thirdPlace}分` },
+  { rank: 4, label: '殿军', name: currentMSIBracket.value.fourthPlace?.teamName || '', points: `+${currentMSIBracket.value.pointsDistribution.fourthPlace}分` },
+])
 
 // 是否有真实队伍数据（从后端加载）
 const hasRealTeamData = computed(() => {
@@ -1143,7 +1105,7 @@ const batchSimulateMSI = async () => {
 
       for (const match of available) {
         try {
-          const result = await matchApi.simulateMatchDetailed(match.backendMatchId)
+          const result = await matchApi.simulateMatchDetailed(match.backendMatchId!)
 
           // 保存比赛详情
           const teamAName = getTeamName(match.teamAId) || ''
@@ -1170,7 +1132,7 @@ const batchSimulateMSI = async () => {
 
           // 推进对阵
           if (currentTournamentId.value) {
-            await internationalApi.advanceBracket(currentTournamentId.value, match.backendMatchId, result.winner_id)
+            await internationalApi.advanceBracket(currentTournamentId.value, match.backendMatchId!, result.winner_id)
           }
 
           // 重新加载数据，使下一轮比赛的队伍信息被填充
@@ -1668,184 +1630,66 @@ onMounted(() => {
       }
     }
 
-    .final-standings {
-      h3 {
-        margin: 0 0 16px 0;
-        font-size: 18px;
+    .loser-standings {
+      margin-top: 24px;
+      margin-bottom: 16px;
+
+      h4 {
+        margin: 0 0 12px 0;
+        font-size: 16px;
         font-weight: 600;
-        color: #1f2937;
+        color: #6b7280;
       }
 
-      .standings-grid {
+      .loser-grid {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 16px;
-        margin-bottom: 24px;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
 
-        .standing-item {
-          padding: 20px;
+        .loser-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 16px;
           border-radius: 8px;
-          text-align: center;
-          border: 2px solid;
+          border: 1px solid;
 
           .rank-badge {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            margin-bottom: 12px;
-
             .rank-number {
               display: flex;
               align-items: center;
               justify-content: center;
-              width: 32px;
-              height: 32px;
+              width: 28px;
+              height: 28px;
               border-radius: 50%;
-              background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+              background: #9ca3af;
               color: white;
-              font-size: 16px;
-              font-weight: 700;
-            }
-
-            .badge-text {
-              font-size: 18px;
-              font-weight: 700;
+              font-size: 14px;
+              font-weight: 600;
             }
           }
 
           .team-name {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #1f2937;
+            flex: 1;
+            font-size: 15px;
+            font-weight: 500;
+            color: #374151;
           }
 
           .points {
-            font-size: 16px;
-            font-weight: 700;
+            font-size: 14px;
+            font-weight: 600;
             color: #10b981;
           }
 
-          &.champion {
-            border-color: #f59e0b;
-            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-
-            .rank-badge .badge-text {
-              color: #d97706;
-            }
+          &.loser-r2 {
+            border-color: #a78bfa;
+            background: #f5f3ff;
           }
 
-          &.runner-up {
-            border-color: #9ca3af;
-            background: linear-gradient(135deg, #f9fafb 0%, #e5e7eb 100%);
-
-            .rank-badge .badge-text {
-              color: #6b7280;
-            }
-          }
-
-          &.third {
-            border-color: #d97706;
-            background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
-
-            .rank-badge .badge-text {
-              color: #9a3412;
-            }
-          }
-
-          &.fourth {
-            border-color: #60a5fa;
-            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-
-            .rank-badge .badge-text {
-              color: #2563eb;
-            }
-          }
-        }
-      }
-
-      // 败者组排名样式
-      .loser-standings {
-        margin-top: 24px;
-
-        h4 {
-          margin: 0 0 12px 0;
-          font-size: 16px;
-          font-weight: 600;
-          color: #6b7280;
-        }
-
-        .loser-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 12px;
-
-          .loser-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            border-radius: 8px;
-            border: 1px solid;
-
-            .rank-badge {
-              .rank-number {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                width: 28px;
-                height: 28px;
-                border-radius: 50%;
-                background: #9ca3af;
-                color: white;
-                font-size: 14px;
-                font-weight: 600;
-              }
-            }
-
-            .team-name {
-              flex: 1;
-              font-size: 15px;
-              font-weight: 500;
-              color: #374151;
-            }
-
-            .points {
-              font-size: 14px;
-              font-weight: 600;
-              color: #10b981;
-            }
-
-            &.loser-r2 {
-              border-color: #a78bfa;
-              background: #f5f3ff;
-            }
-
-            &.loser-r1 {
-              border-color: #f9a8d4;
-              background: #fdf2f8;
-            }
-          }
-        }
-      }
-
-      // MSI完成后的操作区样式
-      .msi-completed-actions {
-        margin-top: 32px;
-
-        .completion-alert {
-          border-radius: 8px;
-
-          p {
-            margin: 8px 0;
-            font-size: 14px;
-            line-height: 1.6;
-
-            strong {
-              color: #f59e0b;
-              font-weight: 700;
-            }
+          &.loser-r1 {
+            border-color: #f9a8d4;
+            background: #fdf2f8;
           }
         }
       }
