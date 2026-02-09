@@ -893,24 +893,22 @@ impl GameFlowService {
     ) -> Result<PhaseCompleteResult, String> {
         log::debug!("开始处理阶段: {:?}, season_id={}", phase, season_id);
 
-        // 幂等性保护：检查该阶段是否已经完成过
-        if let Some(t_type) = phase.to_tournament_type() {
+        // 检查该阶段是否已经完成过（详情页可能已提前处理荣誉和积分）
+        // 即使已完成，仍然继续执行：读取已有荣誉、补发奖金和统计等
+        let phase_already_completed = if let Some(t_type) = phase.to_tournament_type() {
             let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
             if !tournaments.is_empty() {
                 let all_completed = tournaments.iter().all(|t| t.status == TournamentStatus::Completed);
                 if all_completed {
-                    log::warn!("阶段 {:?} 已经完成过，跳过重复执行", phase);
-                    let next_phase = phase.next();
-                    return Ok(PhaseCompleteResult {
-                        phase: format!("{:?}", phase),
-                        honors_awarded: vec![],
-                        can_advance: next_phase.is_some(),
-                        next_phase: next_phase.map(|p| format!("{:?}", p)),
-                        message: format!("阶段 {:?} 已完成，无需重复处理", phase),
-                    });
+                    log::info!("阶段 {:?} 赛事已标记为完成，将读取已有荣誉并补发奖金/统计", phase);
                 }
+                all_completed
+            } else {
+                false
             }
-        }
+        } else {
+            false
+        };
 
         let mut honors_awarded = Vec::new();
 
@@ -2030,6 +2028,21 @@ impl GameFlowService {
         tournament_id: u64,
         tournament_type: TournamentType,
     ) -> Result<Vec<(u64, u64)>, String> {
+        // 幂等检查：如果该赛事奖金已发放过，跳过
+        let existing: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM financial_transactions WHERE save_id = ? AND related_tournament_id = ?"
+        )
+        .bind(save_id)
+        .bind(tournament_id as i64)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("Failed to check existing prizes: {}", e))?;
+
+        if existing.0 > 0 {
+            log::debug!("奖金已发放过，跳过: tournament_id={}", tournament_id);
+            return Ok(vec![]);
+        }
+
         let financial_engine = FinancialEngine::new();
         let mut distributed: Vec<(u64, u64)> = Vec::new();
 
@@ -2048,12 +2061,12 @@ impl GameFlowService {
 
                 let description = format!("{:?} - {} 奖金", tournament_type, position);
 
-                // 记录财务交易
+                // 记录财务交易（含 related_tournament_id 用于幂等检查）
                 sqlx::query(
                     r#"
                     INSERT INTO financial_transactions (
-                        save_id, team_id, season_id, transaction_type, amount, description
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                        save_id, team_id, season_id, transaction_type, amount, description, related_tournament_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     "#
                 )
                 .bind(save_id)
@@ -2062,6 +2075,7 @@ impl GameFlowService {
                 .bind(transaction_type)
                 .bind(prize as i64)
                 .bind(&description)
+                .bind(tournament_id as i64)
                 .execute(pool)
                 .await
                 .map_err(|e| format!("Failed to record prize transaction: {}", e))?;

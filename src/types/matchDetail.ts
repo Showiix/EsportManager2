@@ -35,6 +35,7 @@ export interface GameDetail {
   teamAName: string
   teamAPower: number           // A队战力（基于选手实际能力）
   teamAPerformance: number     // A队发挥值（正态分布后）
+  teamAMetaPower?: number      // A队Meta加权战力
   teamAPlayers: PlayerPerformance[]
 
   // 队伍B数据
@@ -42,6 +43,7 @@ export interface GameDetail {
   teamBName: string
   teamBPower: number           // B队战力
   teamBPerformance: number     // B队发挥值
+  teamBMetaPower?: number      // B队Meta加权战力
   teamBPlayers: PlayerPerformance[]
 
   // 结果
@@ -49,6 +51,7 @@ export interface GameDetail {
   winnerName: string
   powerDifference: number      // 战力差值（A - B）
   performanceDifference: number // 发挥差值（A - B）
+  metaPowerDifference?: number // Meta加权战力差值（A - B）
 
   // 是否爆冷（战力低的队伍赢了）
   isUpset: boolean

@@ -40,15 +40,15 @@
 
         <!-- MVP + 关键人物 -->
         <div class="scoreboard-meta">
-          <div v-if="matchDetail.mvpPlayerId" class="meta-item">
-            <span class="meta-badge mvp-badge">MVP</span>
-            <span class="meta-name">{{ matchDetail.mvpPlayerName }}</span>
-            <span class="meta-detail">累计影响力: {{ formatNumber(matchDetail.mvpTotalImpact) }}</span>
+          <div v-if="matchDetail.mvpPlayerId" class="mvp-card-dark">
+            <span class="mvp-trophy-dark">MVP</span>
+            <span class="mvp-name-dark">{{ matchDetail.mvpPlayerName }}</span>
+            <span class="mvp-detail-dark">累计影响力: {{ formatNumber(matchDetail.mvpTotalImpact) }}</span>
           </div>
-          <div v-if="matchDetail.keyPlayer" class="meta-item">
-            <span class="meta-badge key-badge" :class="matchDetail.keyPlayer.reason === '高发挥' ? 'positive' : 'negative'">关键人物</span>
-            <span class="meta-name">{{ matchDetail.keyPlayer.playerName }}</span>
-            <span class="meta-detail">
+          <div v-if="matchDetail.keyPlayer" class="key-card-dark" :class="matchDetail.keyPlayer.reason === '高发挥' ? 'key-positive' : 'key-negative'">
+            <span class="key-trophy-dark">关键人物</span>
+            <span class="mvp-name-dark">{{ matchDetail.keyPlayer.playerName }}</span>
+            <span class="mvp-detail-dark">
               第{{ matchDetail.keyPlayer.gameNumber }}局{{ matchDetail.keyPlayer.reason }}
               ({{ formatBonus(matchDetail.keyPlayer.impactScore) }})
             </span>
@@ -350,54 +350,82 @@ const handleExport = () => {
 .scoreboard-meta {
   display: flex;
   justify-content: center;
-  gap: 24px;
+  gap: 12px;
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   flex-wrap: wrap;
 }
 
-.meta-item {
+.mvp-card-dark {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 10px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.15) 0%, rgba(245, 158, 11, 0.08) 100%);
 }
 
-.meta-badge {
+.mvp-trophy-dark {
+  font-size: 10px;
+  font-weight: 800;
+  color: #92400e;
+  background: linear-gradient(135deg, #fde68a, #fbbf24);
   padding: 2px 10px;
   border-radius: 20px;
-  font-weight: 800;
-  font-size: 10px;
   letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 
-.mvp-badge {
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
-  color: #1a1a2e;
-}
-
-.key-badge {
-  border: 1px solid rgba(255, 255, 255, 0.3);
+.mvp-name-dark {
+  font-weight: 800;
+  font-size: 14px;
   color: white;
 }
 
-.key-badge.positive {
-  background: rgba(16, 185, 129, 0.3);
-}
-
-.key-badge.negative {
-  background: rgba(239, 68, 68, 0.3);
-}
-
-.meta-name {
-  font-weight: 700;
-  font-size: 13px;
-}
-
-.meta-detail {
-  opacity: 0.7;
+.mvp-detail-dark {
   font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.key-card-dark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.key-card-dark.key-positive {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.06) 100%);
+}
+
+.key-card-dark.key-negative {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.06) 100%);
+}
+
+.key-trophy-dark {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.key-positive .key-trophy-dark {
+  background: rgba(16, 185, 129, 0.4);
+}
+
+.key-negative .key-trophy-dark {
+  background: rgba(239, 68, 68, 0.4);
 }
 
 /* 局数选择器 */

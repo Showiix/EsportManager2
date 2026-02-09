@@ -26,10 +26,20 @@
           :loading="playoffsSimulating"
         >
           <el-icon><DArrowRight /></el-icon>
-          {{ playoffsSimulating ? '模拟中...' : '一键模拟季后赛' }}
+          {{ playoffsSimulating ? `模拟中 (${playoffsProgress}%)` : '一键模拟季后赛' }}
         </el-button>
       </div>
     </div>
+
+    <!-- 模拟进度条 -->
+    <el-progress
+      v-if="playoffsSimulating"
+      :percentage="playoffsProgress"
+      :stroke-width="8"
+      :show-text="false"
+      status="warning"
+      style="margin-bottom: 12px;"
+    />
 
     <!-- 状态卡片 -->
     <div class="playoffs-status-card">
@@ -573,6 +583,7 @@ const currentMatchDetail = ref<MatchDetail | null>(null)
 // 状态
 const selectedRegion = ref(1)
 const playoffsSimulating = ref(false)
+const playoffsProgress = ref(0)
 const simulatingMatchId = ref<string | null>(null)
 const loading = ref(false)
 
@@ -1337,53 +1348,35 @@ const simulatePlayoffs = async () => {
   })
 
   playoffsSimulating.value = true
+  playoffsProgress.value = 0
 
-  // 按顺序模拟所有比赛
-  const matchOrder = [
-    { match: winnersRounds.value[0].matches[0], id: 'w1-1' },
-    { match: winnersRounds.value[0].matches[1], id: 'w1-2' },
-    { match: losersRounds.value[0].matches[0], id: 'l1-1' },
-    { match: losersRounds.value[0].matches[1], id: 'l1-2' },
+  // 收集所有需要模拟的比赛
+  const allPlayoffMatches = [
+    { match: winnersRounds.value[0].matches[0], id: 'w1-1', phase: 'first' },
+    { match: winnersRounds.value[0].matches[1], id: 'w1-2', phase: 'first' },
+    { match: losersRounds.value[0].matches[0], id: 'l1-1', phase: 'first' },
+    { match: losersRounds.value[0].matches[1], id: 'l1-2', phase: 'first' },
+    { match: winnersRounds.value[1].matches[0], id: 'wf', phase: 'second' },
+    ...losersRounds.value[1].matches.map((m: any, i: number) => ({ match: m, id: `l2-${i+1}`, phase: 'second' })),
+    { match: losersRounds.value[2].matches[0], id: 'l3', phase: 'third' },
+    { match: losersRounds.value[3].matches[0], id: 'lf', phase: 'fourth' },
+    { match: finalMatch.value, id: 'final', phase: 'final' },
   ]
 
-  for (const { match, id } of matchOrder) {
+  const totalMatches = allPlayoffMatches.filter(m => m.match.status !== 'completed').length
+  let completed = 0
+
+  // 按顺序模拟所有比赛
+  for (const { match, id } of allPlayoffMatches) {
     if (match.status !== 'completed' && canSimulate(match)) {
       await simulateSingleMatch(match, id)
+      completed++
+      playoffsProgress.value = Math.floor((completed / totalMatches) * 100)
       await new Promise(resolve => setTimeout(resolve, 200))
     }
   }
 
-  // 胜者组决赛 + 败者组第二轮
-  if (winnersRounds.value[1].matches[0].status !== 'completed' && canSimulate(winnersRounds.value[1].matches[0])) {
-    await simulateSingleMatch(winnersRounds.value[1].matches[0], 'wf')
-    await new Promise(resolve => setTimeout(resolve, 200))
-  }
-
-  for (let i = 0; i < losersRounds.value[1].matches.length; i++) {
-    const match = losersRounds.value[1].matches[i]
-    if (match.status !== 'completed' && canSimulate(match)) {
-      await simulateSingleMatch(match, `l2-${i+1}`)
-      await new Promise(resolve => setTimeout(resolve, 200))
-    }
-  }
-
-  // 败者组第三轮
-  if (losersRounds.value[2].matches[0].status !== 'completed' && canSimulate(losersRounds.value[2].matches[0])) {
-    await simulateSingleMatch(losersRounds.value[2].matches[0], 'l3')
-    await new Promise(resolve => setTimeout(resolve, 200))
-  }
-
-  // 败者组决赛
-  if (losersRounds.value[3].matches[0].status !== 'completed' && canSimulate(losersRounds.value[3].matches[0])) {
-    await simulateSingleMatch(losersRounds.value[3].matches[0], 'lf')
-    await new Promise(resolve => setTimeout(resolve, 200))
-  }
-
-  // 总决赛
-  if (finalMatch.value.status !== 'completed' && canSimulate(finalMatch.value)) {
-    await simulateSingleMatch(finalMatch.value, 'final')
-  }
-
+  playoffsProgress.value = 100
   playoffsSimulating.value = false
 }
 

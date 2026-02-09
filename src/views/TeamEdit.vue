@@ -326,9 +326,11 @@ const handleSubmit = async () => {
 
   submitting.value = true
   try {
-    // TODO: 后端暂无更新战队基本信息的 API
-    // 这里暂时模拟成功
-    await new Promise(resolve => setTimeout(resolve, 500))
+    await teamApi.updateTeam({
+      team_id: teamId.value,
+      name: team.value.name,
+      short_name: team.value.short_name ?? undefined,
+    })
 
     ElMessage.success('战队信息保存成功')
     router.push(`/teams/${teamId.value}`)

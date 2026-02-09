@@ -3,7 +3,7 @@ use crate::db::{PlayerRepository, TeamRepository};
 use crate::engines::{MarketValueEngine, PlayerHonorRecord, PlayerFormFactors, ConditionEngine, TraitType};
 use crate::models::{Player, Team};
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use sqlx::{Pool, Sqlite, Row};
 use tauri::State;
 
 /// 队伍信息响应
@@ -96,6 +96,46 @@ impl From<Player> for PlayerInfo {
     }
 }
 
+/// 从 league_standings 聚合战队比赛数据
+async fn populate_team_stats(pool: &Pool<Sqlite>, save_id: &str, teams: &mut Vec<TeamInfo>) {
+    let rows = sqlx::query(
+        r#"
+        SELECT s.team_id,
+               COALESCE(SUM(s.matches_played), 0) as total_matches,
+               COALESCE(SUM(s.wins), 0) as total_wins
+        FROM league_standings s
+        WHERE s.save_id = ?
+        GROUP BY s.team_id
+        "#,
+    )
+    .bind(save_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let stats: std::collections::HashMap<u64, (u32, u32)> = rows
+        .iter()
+        .map(|row| {
+            let team_id = row.get::<i64, _>("team_id") as u64;
+            let total = row.get::<i64, _>("total_matches") as u32;
+            let wins = row.get::<i64, _>("total_wins") as u32;
+            (team_id, (total, wins))
+        })
+        .collect();
+
+    for team in teams.iter_mut() {
+        if let Some(&(total, wins)) = stats.get(&team.id) {
+            team.total_matches = total;
+            team.wins = wins;
+            team.win_rate = if total > 0 {
+                wins as f64 / total as f64
+            } else {
+                0.0
+            };
+        }
+    }
+}
+
 /// 获取赛区队伍列表
 #[tauri::command]
 pub async fn get_teams_by_region(
@@ -124,7 +164,8 @@ pub async fn get_teams_by_region(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get teams: {}", e))),
     };
 
-    let infos: Vec<TeamInfo> = teams.into_iter().map(|t| t.into()).collect();
+    let mut infos: Vec<TeamInfo> = teams.into_iter().map(|t| t.into()).collect();
+    populate_team_stats(&pool, &save_id, &mut infos).await;
     Ok(CommandResult::ok(infos))
 }
 
@@ -155,7 +196,8 @@ pub async fn get_all_teams(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get teams: {}", e))),
     };
 
-    let infos: Vec<TeamInfo> = teams.into_iter().map(|t| t.into()).collect();
+    let mut infos: Vec<TeamInfo> = teams.into_iter().map(|t| t.into()).collect();
+    populate_team_stats(&pool, &save_id, &mut infos).await;
     Ok(CommandResult::ok(infos))
 }
 
@@ -203,6 +245,12 @@ pub async fn get_team(
         None => return Ok(CommandResult::err("Database not initialized")),
     };
 
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
     let pool = match db.get_pool().await {
         Ok(p) => p,
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
@@ -213,7 +261,9 @@ pub async fn get_team(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get team: {}", e))),
     };
 
-    Ok(CommandResult::ok(team.into()))
+    let mut infos = vec![TeamInfo::from(team)];
+    populate_team_stats(&pool, &save_id, &mut infos).await;
+    Ok(CommandResult::ok(infos.into_iter().next().unwrap()))
 }
 
 /// 获取队伍阵容（首发+替补）
@@ -228,6 +278,12 @@ pub async fn get_team_roster(
         None => return Ok(CommandResult::err("Database not initialized")),
     };
 
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
     let pool = match db.get_pool().await {
         Ok(p) => p,
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
@@ -238,6 +294,11 @@ pub async fn get_team_roster(
         Ok(t) => t,
         Err(e) => return Ok(CommandResult::err(format!("Failed to get team: {}", e))),
     };
+
+    let mut team_info = TeamInfo::from(team);
+    let mut infos = vec![team_info];
+    populate_team_stats(&pool, &save_id, &mut infos).await;
+    team_info = infos.into_iter().next().unwrap();
 
     // 获取所有选手
     let players = match PlayerRepository::get_by_team(&pool, team_id).await {
@@ -251,7 +312,7 @@ pub async fn get_team_roster(
         .partition(|p| p.is_starter);
 
     Ok(CommandResult::ok(TeamRoster {
-        team: team.into(),
+        team: team_info,
         starters: starters.into_iter().map(|p| p.into()).collect(),
         substitutes: substitutes.into_iter().map(|p| p.into()).collect(),
     }))
@@ -339,6 +400,67 @@ pub async fn set_starter(
     }
 
     Ok(CommandResult::ok(()))
+}
+
+/// 更新战队基本信息请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateTeamRequest {
+    pub team_id: u64,
+    pub name: Option<String>,
+    pub short_name: Option<String>,
+}
+
+/// 更新战队基本信息
+#[tauri::command]
+pub async fn update_team(
+    state: State<'_, AppState>,
+    request: UpdateTeamRequest,
+) -> Result<CommandResult<TeamInfo>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let mut team = match TeamRepository::get_by_id(&pool, request.team_id).await {
+        Ok(t) => t,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get team: {}", e))),
+    };
+
+    if let Some(name) = request.name {
+        if !name.trim().is_empty() {
+            team.name = name.trim().to_string();
+        }
+    }
+    if let Some(short_name) = request.short_name {
+        team.short_name = if short_name.trim().is_empty() {
+            None
+        } else {
+            Some(short_name.trim().to_string())
+        };
+    }
+
+    if let Err(e) = TeamRepository::update(&pool, &team).await {
+        return Ok(CommandResult::err(format!("Failed to update team: {}", e)));
+    }
+
+    log::debug!("战队 {} 信息已更新: name={}, short_name={:?}",
+        team.id, team.name, team.short_name);
+
+    let mut infos = vec![TeamInfo::from(team)];
+    populate_team_stats(&pool, &save_id, &mut infos).await;
+    Ok(CommandResult::ok(infos.into_iter().next().unwrap()))
 }
 
 /// 身价更新结果

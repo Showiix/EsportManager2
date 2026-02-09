@@ -63,7 +63,7 @@
               <el-divider />
               <div class="detail-total">
                 <span class="total-label">总收入</span>
-                <span class="total-value income">+{{ formatMoney(team.total_income) }}</span>
+                <span class="total-value income">+{{ formatMoney(report?.total_income ?? team.total_income) }}</span>
               </div>
             </div>
           </div>
@@ -90,7 +90,7 @@
               <el-divider />
               <div class="detail-total">
                 <span class="total-label">总支出</span>
-                <span class="total-value expense">-{{ formatMoney(team.total_expense) }}</span>
+                <span class="total-value expense">-{{ formatMoney(report?.total_expense ?? team.total_expense) }}</span>
               </div>
             </div>
           </div>

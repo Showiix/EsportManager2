@@ -34,10 +34,20 @@
           :loading="batchSimulating"
         >
           <el-icon><DArrowRight /></el-icon>
-          一键模拟全部
+          {{ batchSimulating ? `模拟中 (${simulationProgress}%)` : '一键模拟全部' }}
         </el-button>
       </div>
     </div>
+
+    <!-- 模拟进度条 -->
+    <el-progress
+      v-if="batchSimulating"
+      :percentage="simulationProgress"
+      :stroke-width="8"
+      :show-text="false"
+      status="warning"
+      style="margin-bottom: 12px;"
+    />
 
     <!-- 赛区选择器 (仅联赛显示) -->
     <el-card v-if="tournament.type === 'league'" class="region-selector-card">
@@ -321,7 +331,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   ArrowLeft,
   VideoPlay,
@@ -340,6 +350,7 @@ import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
 import { queryApi, teamApi, tournamentApi, matchApi, statsApi, type Team, type PlayerTournamentStats } from '@/api/tauri'
 import type { MatchDetail, GameDetail } from '@/types/matchDetail'
+import { useBatchSimulation } from '@/composables/useBatchSimulation'
 import { createLogger } from '@/utils/logger'
 
 const logger = createLogger('SpringDetail')
@@ -363,7 +374,8 @@ const currentMatchDetail = ref<MatchDetail | null>(null)
 const selectedRegion = ref(1) // 默认 LPL region_id = 1
 const matchFilter = ref('all')
 const simulating = ref(false)
-const batchSimulating = ref(false)
+// 批量模拟 composable
+const { simulationProgress, isSimulating: batchSimulating, batchSimulate } = useBatchSimulation()
 const loading = ref(false)
 const refreshing = ref(false)
 
@@ -762,6 +774,7 @@ const convertToMatchDetail = (result: any, match: any): MatchDetail => {
       teamAName: result.home_team_name || match.homeTeam,
       teamAPower: homeAvgPerf,
       teamAPerformance: homeAvgPerf,
+      teamAMetaPower: g.home_performance,
       teamAPlayers: (g.home_players || []).map((p: any) => {
         // 直接使用后端返回的真实数据
         return {
@@ -788,6 +801,7 @@ const convertToMatchDetail = (result: any, match: any): MatchDetail => {
       teamBName: result.away_team_name || match.awayTeam,
       teamBPower: awayAvgPerf,
       teamBPerformance: awayAvgPerf,
+      teamBMetaPower: g.away_performance,
       teamBPlayers: (g.away_players || []).map((p: any) => {
         // 直接使用后端返回的真实数据
         return {
@@ -814,6 +828,7 @@ const convertToMatchDetail = (result: any, match: any): MatchDetail => {
       winnerName: g.winner_id === result.home_team_id ? (result.home_team_name || match.homeTeam) : (result.away_team_name || match.awayTeam),
       powerDifference: homeAvgPerf - awayAvgPerf,
       performanceDifference: homeAvgPerf - awayAvgPerf,
+      metaPowerDifference: g.home_performance - g.away_performance,
       isUpset: false,
     }
   })
@@ -881,30 +896,39 @@ const simulateAll = async () => {
     return
   }
 
-  await ElMessageBox.confirm('将自动模拟所有剩余比赛，是否继续？', '一键模拟', {
-    confirmButtonText: '开始',
-    cancelButtonText: '取消',
-    type: 'warning'
-  })
-
-  batchSimulating.value = true
-
-  try {
-    // 使用后端 API 模拟所有比赛
-    await tournamentApi.simulateAllMatches(currentTournamentId.value)
-
-    // 重新加载比赛列表和积分榜
-    await loadMatches()
-    await updateStandings()
-
-    // 开启季后赛
-    ElMessage.success('常规赛模拟完成！请前往赛事管理页面进入季后赛')
-  } catch (error) {
-    logger.error('Failed to simulate all matches:', error)
-    ElMessage.error('模拟比赛失败')
-  } finally {
-    batchSimulating.value = false
+  // 收集未完成的比赛
+  const pendingMatches = matches.value.filter(m => m.status !== 'completed')
+  if (pendingMatches.length === 0) {
+    ElMessage.info('没有待模拟的比赛')
+    return
   }
+
+  await batchSimulate({
+    confirmMessage: `将自动模拟剩余 ${pendingMatches.length} 场比赛，是否继续？`,
+    confirmTitle: '一键模拟',
+    confirmType: 'warning',
+    successMessage: '常规赛模拟完成！请前往赛事管理页面进入季后赛',
+    errorPrefix: '模拟比赛失败',
+    tournamentType: 'spring',
+    seasonId: String(viewingSeason.value),
+    competitionType: 'LEAGUE',
+    delayMs: 10,
+    tournamentId: currentTournamentId.value ?? undefined,
+    matches: pendingMatches.map(m => ({
+      matchId: m.id,
+      teamAId: String(m.homeTeamId),
+      teamAName: m.homeTeam,
+      teamBId: String(m.awayTeamId),
+      teamBName: m.awayTeam,
+      bestOf: 3,
+      backendMatchId: m.id,
+      frontendMatchId: `spring-${m.id}`,
+    })),
+    onComplete: async () => {
+      await loadMatches()
+      await updateStandings()
+    }
+  })
 }
 
 const updateStandings = async () => {

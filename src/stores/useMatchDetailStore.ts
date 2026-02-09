@@ -109,11 +109,11 @@ function convertFromDbFormat(matchId: number, dbData: MatchFullDetails): MatchDe
         activatedTraits: parseActivatedTraitsJson(p.activated_traits_json)
       }))
 
-    // 计算队伍表现和战力
+    // 计算队伍表现和战力（使用 actualAbility 以匹配 buildMatchDetail 的 calcTeamPower 逻辑）
     const teamAPerfAvg = teamAPlayers.reduce((sum, p) => sum + p.impactScore, 0) / (teamAPlayers.length || 1)
     const teamBPerfAvg = teamBPlayers.reduce((sum, p) => sum + p.impactScore, 0) / (teamBPlayers.length || 1)
-    const teamAPower = teamAPlayers.reduce((sum, p) => sum + p.baseAbility, 0) / (teamAPlayers.length || 1)
-    const teamBPower = teamBPlayers.reduce((sum, p) => sum + p.baseAbility, 0) / (teamBPlayers.length || 1)
+    const teamAPower = teamAPlayers.reduce((sum, p) => sum + (p.actualAbility || p.baseAbility), 0) / (teamAPlayers.length || 1)
+    const teamBPower = teamBPlayers.reduce((sum, p) => sum + (p.actualAbility || p.baseAbility), 0) / (teamBPlayers.length || 1)
 
     return {
       gameNumber: game.game_number,

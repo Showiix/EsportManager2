@@ -52,6 +52,43 @@
       </div>
     </div>
 
+    <!-- Meta加权战力对比 -->
+    <div v-if="game.teamAMetaPower != null && game.teamBMetaPower != null" class="comparison-row meta-row">
+      <div class="comparison-block meta-block">
+        <div class="comparison-label">
+          <span class="team-label">{{ game.teamAName }}</span>
+          <span class="vs-label meta-label">META 加权</span>
+          <span class="team-label">{{ game.teamBName }}</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-value team-a">{{ formatPower(game.teamAMetaPower) }}</span>
+          <div class="progress-container">
+            <div class="progress-bar team-a" :style="{ width: metaAPowerPercent + '%' }" :class="{ winner: game.winnerId === game.teamAId }"></div>
+            <div class="progress-bar team-b" :style="{ width: metaBPowerPercent + '%' }" :class="{ winner: game.winnerId === game.teamBId }"></div>
+          </div>
+          <span class="bar-value team-b">{{ formatPower(game.teamBMetaPower) }}</span>
+        </div>
+        <div class="bar-diff" :class="metaDiffClass">{{ formatDiff(game.metaPowerDifference) }}</div>
+        <div class="meta-hint">基于版本权重的位置加权战力（Mid/Adc 权重更高时，中路/下路选手影响更大）</div>
+      </div>
+    </div>
+
+    <!-- 单局最佳 -->
+    <div v-if="gameMvp" class="mvp-card">
+      <span class="mvp-trophy">本局最佳</span>
+      <span class="mvp-player-name">{{ gameMvp.playerName }}</span>
+      <span class="mvp-team">{{ gameMvp.teamName }}</span>
+      <span class="mvp-position">{{ getPositionName(gameMvp.position) }}</span>
+      <span class="mvp-stat">
+        <span class="mvp-stat-label">发挥</span>
+        <span class="mvp-stat-value">{{ gameMvp.actualAbility }}</span>
+      </span>
+      <span class="mvp-stat">
+        <span class="mvp-stat-label">影响力</span>
+        <span class="mvp-stat-value" :class="getImpactClass(gameMvp.impactScore)">{{ formatImpact(gameMvp.impactScore) }}</span>
+      </span>
+    </div>
+
     <!-- 选手表现表格 -->
     <div class="players-table">
       <div class="table-header">
@@ -284,6 +321,60 @@
       </div>
     </div>
 
+    <!-- 对位差折叠面板 -->
+    <div class="breakdown-panel matchup-panel">
+      <button class="breakdown-toggle" @click="matchupOpen = !matchupOpen">
+        <span class="toggle-arrow" :class="{ open: matchupOpen }">&#9654;</span>
+        <span>对位差</span>
+      </button>
+      <div v-if="matchupOpen" class="breakdown-content">
+        <div class="matchup-header">
+          <span class="matchup-team-name team-a-accent">{{ game.teamAName }}</span>
+          <span class="matchup-vs">VS</span>
+          <span class="matchup-team-name team-b-accent">{{ game.teamBName }}</span>
+        </div>
+        <div v-for="mp in matchedPlayers" :key="'mu-' + mp.positionKey" class="matchup-row" :class="{ 'mu-key-row': mp.positionKey === keyMatchupPos }">
+          <span class="mu-position">
+            {{ getPositionName(mp.positionKey as PlayerPosition) }}
+            <span v-if="mp.positionKey === keyMatchupPos" class="mu-key-badge">KEY</span>
+          </span>
+          <div class="mu-player-a">
+            <span class="mu-name">{{ mp.playerA?.playerName || '-' }}</span>
+            <span class="mu-value" :class="{ 'mu-winner': getMuDiff(mp) > 0 }">{{ mp.playerA?.actualAbility || '-' }}</span>
+          </div>
+          <div class="mu-bar-container">
+            <div class="mu-bar-side mu-bar-a" :style="{ width: getMuBarWidth(mp, 'a') + '%' }">
+              <div class="mu-bar-fill mu-fill-a" :class="{ 'mu-bar-winner': getMuDiff(mp) > 0 }"></div>
+            </div>
+            <span class="mu-diff-label" :class="getMuDiffClass(mp)">{{ formatMuDiff(mp) }}</span>
+            <div class="mu-bar-side mu-bar-b" :style="{ width: getMuBarWidth(mp, 'b') + '%' }">
+              <div class="mu-bar-fill mu-fill-b" :class="{ 'mu-bar-winner': getMuDiff(mp) < 0 }"></div>
+            </div>
+          </div>
+          <div class="mu-player-b">
+            <span class="mu-value" :class="{ 'mu-winner': getMuDiff(mp) < 0 }">{{ mp.playerB?.actualAbility || '-' }}</span>
+            <span class="mu-name">{{ mp.playerB?.playerName || '-' }}</span>
+          </div>
+        </div>
+        <div class="matchup-summary">
+          <span class="mu-summary-item">
+            <span class="mu-summary-label">A队优势位:</span>
+            <span class="mu-summary-value team-a-accent">{{ matchupSummary.aWins }}</span>
+          </span>
+          <span class="mu-summary-item">
+            <span class="mu-summary-label">B队优势位:</span>
+            <span class="mu-summary-value team-b-accent">{{ matchupSummary.bWins }}</span>
+          </span>
+          <span class="mu-summary-item">
+            <span class="mu-summary-label">总对位差:</span>
+            <span class="mu-summary-value" :class="matchupSummary.totalDiff > 0 ? 'team-a-accent' : matchupSummary.totalDiff < 0 ? 'team-b-accent' : ''">
+              {{ matchupSummary.totalDiff > 0 ? '+' : '' }}{{ matchupSummary.totalDiff.toFixed(1) }}
+            </span>
+          </span>
+        </div>
+      </div>
+    </div>
+
     <!-- 图例说明 -->
     <div class="legend">
       <div class="legend-item">
@@ -323,6 +414,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const breakdownOpen = ref(false)
+const matchupOpen = ref(false)
 
 // 位置排序顺序
 const POSITION_ORDER: Record<string, number> = { TOP: 0, JUG: 1, MID: 2, ADC: 3, SUP: 4 }
@@ -367,6 +459,15 @@ const teamBPerfPercent = computed(() =>
   totalPerf.value > 0 ? (props.game.teamBPerformance / totalPerf.value) * 100 : 50
 )
 
+// 计算Meta加权战力百分比
+const totalMetaPower = computed(() => (props.game.teamAMetaPower || 0) + (props.game.teamBMetaPower || 0))
+const metaAPowerPercent = computed(() =>
+  totalMetaPower.value > 0 ? ((props.game.teamAMetaPower || 0) / totalMetaPower.value) * 100 : 50
+)
+const metaBPowerPercent = computed(() =>
+  totalMetaPower.value > 0 ? ((props.game.teamBMetaPower || 0) / totalMetaPower.value) * 100 : 50
+)
+
 // 战力差样式
 const powerDiffClass = computed(() => {
   if (props.game.powerDifference > 0) return 'positive'
@@ -378,6 +479,14 @@ const powerDiffClass = computed(() => {
 const perfDiffClass = computed(() => {
   if (props.game.performanceDifference > 0) return 'positive'
   if (props.game.performanceDifference < 0) return 'negative'
+  return ''
+})
+
+// Meta加权差样式
+const metaDiffClass = computed(() => {
+  const diff = props.game.metaPowerDifference || 0
+  if (diff > 0) return 'positive'
+  if (diff < 0) return 'negative'
   return ''
 })
 
@@ -445,6 +554,74 @@ const getActualClass = (actual: number, base: number): string => {
   if (actual < base) return 'actual-below'
   return ''
 }
+
+// --- 单局 MVP ---
+
+const gameMvp = computed(() => {
+  const allPlayers = [
+    ...(props.game.teamAPlayers || []).map(p => ({ ...p, teamName: props.game.teamAName, teamSide: 'a' as const })),
+    ...(props.game.teamBPlayers || []).map(p => ({ ...p, teamName: props.game.teamBName, teamSide: 'b' as const })),
+  ]
+  if (allPlayers.length === 0) return null
+  return allPlayers.reduce((best, p) => (p.impactScore > best.impactScore ? p : best), allPlayers[0])
+})
+
+// --- 对位差相关 ---
+
+type MatchedPlayer = { positionKey: string; playerA: any; playerB: any }
+
+const getMuDiff = (mp: MatchedPlayer): number => {
+  const a = mp.playerA?.actualAbility || 0
+  const b = mp.playerB?.actualAbility || 0
+  return a - b
+}
+
+const getMuBarWidth = (mp: MatchedPlayer, side: 'a' | 'b'): number => {
+  const diff = Math.abs(getMuDiff(mp))
+  const maxDiff = 30
+  const pct = Math.min(diff / maxDiff, 1) * 100
+  if (side === 'a') return getMuDiff(mp) > 0 ? pct : 0
+  return getMuDiff(mp) < 0 ? pct : 0
+}
+
+const formatMuDiff = (mp: MatchedPlayer): string => {
+  const diff = getMuDiff(mp)
+  if (diff === 0) return '0'
+  return diff > 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1)
+}
+
+const getMuDiffClass = (mp: MatchedPlayer): string => {
+  const diff = getMuDiff(mp)
+  if (diff > 0) return 'mu-diff-a'
+  if (diff < 0) return 'mu-diff-b'
+  return ''
+}
+
+const matchupSummary = computed(() => {
+  let aWins = 0
+  let bWins = 0
+  let totalDiff = 0
+  for (const mp of matchedPlayers.value) {
+    const diff = getMuDiff(mp)
+    totalDiff += diff
+    if (diff > 0) aWins++
+    else if (diff < 0) bWins++
+  }
+  return { aWins, bWins, totalDiff }
+})
+
+const keyMatchupPos = computed(() => {
+  let maxAbsDiff = 0
+  let keyPos = ''
+  for (const mp of matchedPlayers.value) {
+    const absDiff = Math.abs(getMuDiff(mp))
+    if (absDiff > maxAbsDiff) {
+      maxAbsDiff = absDiff
+      keyPos = mp.positionKey
+    }
+  }
+  return keyPos
+})
 </script>
 
 <style scoped>
@@ -569,6 +746,28 @@ const getActualClass = (actual: number, base: number): string => {
 
 .bar-diff.positive { color: #3b82f6; }
 .bar-diff.negative { color: #f59e0b; }
+
+/* Meta加权战力区块 */
+.meta-row {
+  grid-template-columns: 1fr;
+}
+
+.meta-block {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(59, 130, 246, 0.05) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.15);
+}
+
+.meta-label {
+  color: #8b5cf6;
+  font-weight: 700;
+}
+
+.meta-hint {
+  text-align: center;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #a0aec0;
+}
 
 /* 选手数据表格 */
 .players-table {
@@ -881,6 +1080,263 @@ const getActualClass = (actual: number, base: number): string => {
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: #1d2129;
+}
+
+/* MVP 卡片（通用样式，GameDetailView 和 MatchDetailDialog 共用） */
+.mvp-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(245, 158, 11, 0.04) 100%);
+}
+
+.mvp-trophy {
+  font-size: 10px;
+  font-weight: 800;
+  color: #92400e;
+  background: linear-gradient(135deg, #fde68a, #fbbf24);
+  padding: 2px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.mvp-player-name {
+  font-size: 14px;
+  font-weight: 800;
+  color: #1d2129;
+}
+
+.mvp-team {
+  font-size: 11px;
+  color: #86909c;
+}
+
+.mvp-position {
+  font-size: 11px;
+  color: #86909c;
+  padding: 1px 6px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
+}
+
+.mvp-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.mvp-stat:last-child {
+  margin-left: 0;
+}
+
+.mvp-stat-label {
+  font-size: 10px;
+  color: #a0aec0;
+  text-transform: uppercase;
+}
+
+.mvp-stat-value {
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #1d2129;
+}
+
+/* 对位差折叠面板 */
+.matchup-panel {
+  margin-top: 8px;
+}
+
+.matchup-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f1f3;
+}
+
+.matchup-team-name {
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.matchup-vs {
+  color: #c0c4cc;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.matchup-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid #f7f8fa;
+}
+
+.matchup-row:last-of-type {
+  border-bottom: none;
+}
+
+.matchup-row.mu-key-row {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.04) 0%, rgba(239, 68, 68, 0.08) 50%, rgba(239, 68, 68, 0.04) 100%);
+  border-radius: 6px;
+  padding: 6px 4px;
+}
+
+.mu-position {
+  font-size: 11px;
+  font-weight: 600;
+  color: #86909c;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.mu-key-badge {
+  font-size: 8px;
+  font-weight: 800;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  padding: 0 4px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+
+.mu-player-a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.mu-player-b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-start;
+}
+
+.mu-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #4e5969;
+}
+
+.mu-value {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #86909c;
+  min-width: 28px;
+  text-align: center;
+}
+
+.mu-value.mu-winner {
+  color: #1d2129;
+  font-weight: 800;
+}
+
+.mu-bar-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+}
+
+.mu-bar-side {
+  flex: 1;
+  height: 8px;
+  position: relative;
+}
+
+.mu-bar-a {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mu-bar-b {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.mu-bar-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.mu-fill-a {
+  background: rgba(59, 130, 246, 0.25);
+  border-radius: 4px 0 0 4px;
+}
+
+.mu-fill-a.mu-bar-winner {
+  background: linear-gradient(to left, #3b82f6, #60a5fa);
+}
+
+.mu-fill-b {
+  background: rgba(245, 158, 11, 0.25);
+  border-radius: 0 4px 4px 0;
+}
+
+.mu-fill-b.mu-bar-winner {
+  background: linear-gradient(to right, #f59e0b, #fbbf24);
+}
+
+.mu-diff-label {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+  text-align: center;
+  color: #86909c;
+  flex-shrink: 0;
+}
+
+.mu-diff-label.mu-diff-a {
+  color: #3b82f6;
+}
+
+.mu-diff-label.mu-diff-b {
+  color: #f59e0b;
+}
+
+.matchup-summary {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #f0f1f3;
+}
+
+.mu-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.mu-summary-label {
+  color: #86909c;
+}
+
+.mu-summary-value {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 图例 */

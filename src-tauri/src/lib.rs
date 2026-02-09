@@ -12,7 +12,7 @@ use commands::{
     get_default_game_config, create_save_with_config,
     // 队伍命令
     get_teams_by_region, get_all_teams, get_all_players, get_team, get_team_roster, get_team_starters, get_player, set_starter,
-    update_player_market_value, update_all_market_values, update_player,
+    update_player_market_value, update_all_market_values, update_player, update_team,
     // 游戏命令
     get_game_state, advance_phase, get_tournament_matches, get_standings,
     simulate_next_match, simulate_all_matches,
@@ -58,7 +58,7 @@ use commands::{
     cleanup_duplicate_tournaments, get_shanghai_qualified_teams, regenerate_shanghai_bracket,
     regenerate_icp_bracket, generate_champion_prep_stage, generate_final_stage,
     // 比赛模拟命令
-    simulate_match_detailed, get_player_season_stats, get_match_prediction,
+    simulate_match_detailed, simulate_all_matches_detailed, get_player_season_stats, get_match_prediction,
     update_match_result, update_match_teams, cancel_match,
     // 事件系统命令
     preview_season_settlement, execute_season_settlement, get_season_events,
@@ -150,6 +150,7 @@ pub fn run() {
             update_player_market_value,
             update_all_market_values,
             update_player,
+            update_team,
             // 游戏命令
             get_game_state,
             advance_phase,
@@ -254,6 +255,7 @@ pub fn run() {
             generate_final_stage,
             // 比赛模拟命令
             simulate_match_detailed,
+            simulate_all_matches_detailed,
             get_player_season_stats,
             get_match_prediction,
             update_match_result,

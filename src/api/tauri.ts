@@ -224,6 +224,9 @@ export const teamApi = {
 
   setStarter: (teamId: number, playerId: number, isStarter: boolean) =>
     invokeCommand<void>('set_starter', { teamId, playerId, isStarter }),
+
+  updateTeam: (request: { team_id: number; name?: string; short_name?: string }) =>
+    invokeCommand<Team>('update_team', { request }),
 }
 
 // ========================================
@@ -1620,6 +1623,13 @@ export interface TeamMatchStats {
   total_damage: number
 }
 
+export interface BatchDetailedResult {
+  results: DetailedMatchResult[]
+  total: number
+  success: number
+  failed: number
+}
+
 export interface PlayerSeasonStats {
   player_id: number
   player_name: string
@@ -1658,6 +1668,9 @@ export interface MatchPrediction {
 export const matchApi = {
   simulateMatchDetailed: (matchId: number) =>
     invokeCommand<DetailedMatchResult>('simulate_match_detailed', { matchId }),
+
+  simulateAllMatchesDetailed: (tournamentId: number) =>
+    invokeCommand<BatchDetailedResult>('simulate_all_matches_detailed', { tournamentId }),
 
   getPlayerSeasonStats: (playerId: number, seasonId?: number) =>
     invokeCommand<PlayerSeasonStats>('get_player_season_stats', { playerId, seasonId }),

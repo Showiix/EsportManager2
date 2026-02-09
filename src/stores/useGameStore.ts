@@ -218,12 +218,15 @@ export const useGameStore = defineStore('game', () => {
       const matchDetailStore = useMatchDetailStore()
       const transferWindowStore = useTransferWindowStore()
       playerStore.clearAll()
-      matchDetailStore.clearAll()
+      matchDetailStore.clearCache()
       transferWindowStore.clearState()
       logger.debug('已清除旧存档缓存')
 
       currentSave.value = await logger.timed('加载存档', () => saveApi.loadSave(saveId))
       logger.info('存档加载成功', { name: currentSave.value.name })
+
+      // 加载新存档的比赛详情缓存
+      matchDetailStore.loadFromStorage()
 
       // 获取游戏状态
       await refreshGameState()

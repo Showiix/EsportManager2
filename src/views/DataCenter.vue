@@ -391,7 +391,7 @@ const positionComparisonOption = computed(() => {
     },
     grid: {
       left: '3%',
-      right: '4%',
+      right: '5%',
       bottom: '3%',
       top: '36px',
       containLabel: true
@@ -402,15 +402,27 @@ const positionComparisonOption = computed(() => {
       axisLabel: { color: '#6b7280' },
       axisLine: { lineStyle: { color: '#e5e7eb' } }
     },
-    yAxis: {
-      type: 'value',
-      axisLabel: { color: '#9ca3af' },
-      splitLine: { lineStyle: { color: '#f3f4f6' } }
-    },
+    yAxis: [
+      {
+        type: 'value',
+        name: '影响力',
+        nameTextStyle: { color: '#3b82f6', fontSize: 11 },
+        axisLabel: { color: '#3b82f6', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#f3f4f6' } }
+      },
+      {
+        type: 'value',
+        name: '得分',
+        nameTextStyle: { color: '#8b5cf6', fontSize: 11 },
+        axisLabel: { color: '#8b5cf6', fontSize: 11 },
+        splitLine: { show: false }
+      }
+    ],
     series: [
       {
         name: '平均影响力',
         type: 'bar',
+        yAxisIndex: 0,
         data: avgImpacts,
         itemStyle: { color: '#3b82f6', borderRadius: [4, 4, 0, 0] },
         barGap: '20%'
@@ -418,6 +430,7 @@ const positionComparisonOption = computed(() => {
       {
         name: '平均得分',
         type: 'bar',
+        yAxisIndex: 1,
         data: avgScores,
         itemStyle: { color: '#8b5cf6', borderRadius: [4, 4, 0, 0] }
       }

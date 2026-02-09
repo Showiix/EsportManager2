@@ -110,6 +110,24 @@ pub struct GameEvent {
     pub team_id: u64,
 }
 
+/// 批量模拟结果
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BatchDetailedResult {
+    pub results: Vec<DetailedMatchResult>,
+    pub total: u32,
+    pub success: u32,
+    pub failed: u32,
+}
+
+/// 预获取的共享数据（赛季、赛事类型、Meta权重）
+struct SharedSimulationContext {
+    save_id: String,
+    current_season: i64,
+    _tournament_id: u64,
+    tournament_type: String,
+    meta_weights: MetaWeights,
+}
+
 /// 球员赛季统计
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PlayerSeasonStats {
@@ -128,29 +146,12 @@ pub struct PlayerSeasonStats {
     pub win_rate: f64,
 }
 
-/// 模拟比赛并返回详细结果
-#[tauri::command]
-pub async fn simulate_match_detailed(
-    state: State<'_, AppState>,
+/// 内部函数：模拟单场比赛（使用预获取的共享数据）
+async fn simulate_single_match_internal(
+    pool: &sqlx::SqlitePool,
+    ctx: &SharedSimulationContext,
     match_id: u64,
-) -> Result<CommandResult<DetailedMatchResult>, String> {
-    let guard = state.db.read().await;
-    let db = match guard.as_ref() {
-        Some(db) => db,
-        None => return Ok(CommandResult::err("Database not initialized")),
-    };
-
-    let current_save = state.current_save_id.read().await;
-    let save_id = match current_save.as_ref() {
-        Some(id) => id.clone(),
-        None => return Ok(CommandResult::err("No save loaded")),
-    };
-
-    let pool = match db.get_pool().await {
-        Ok(p) => p,
-        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
-    };
-
+) -> Result<DetailedMatchResult, String> {
     // 获取比赛信息
     let match_row = sqlx::query(
         r#"
@@ -165,13 +166,13 @@ pub async fn simulate_match_detailed(
         "#,
     )
     .bind(match_id as i64)
-    .fetch_optional(&pool)
+    .fetch_optional(pool)
     .await
     .map_err(|e| e.to_string())?;
 
     let match_row = match match_row {
         Some(r) => r,
-        None => return Ok(CommandResult::err("Match not found")),
+        None => return Err("Match not found".to_string()),
     };
 
     let tournament_id: i64 = match_row.get("tournament_id");
@@ -186,26 +187,6 @@ pub async fn simulate_match_detailed(
     let _home_region_id: Option<i64> = match_row.get("home_region_id");
     let _away_region_id: Option<i64> = match_row.get("away_region_id");
 
-    // 获取当前赛季
-    let current_season: i64 = sqlx::query_scalar(
-        "SELECT current_season FROM saves WHERE id = ?"
-    )
-    .bind(&save_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| e.to_string())?
-    .unwrap_or(1);
-
-    // 获取赛事类型用于特性判断
-    let tournament_type: String = sqlx::query_scalar(
-        "SELECT tournament_type FROM tournaments WHERE id = ?"
-    )
-    .bind(tournament_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| e.to_string())?
-    .unwrap_or_else(|| "league".to_string());
-
     let format = match format_str.as_str() {
         "Bo1" => MatchFormat::Bo1,
         "Bo3" => MatchFormat::Bo3,
@@ -214,8 +195,8 @@ pub async fn simulate_match_detailed(
     };
 
     // 获取双方首发球员
-    let home_players = get_starting_players(&pool, &save_id, home_team_id as u64, current_season).await?;
-    let away_players = get_starting_players(&pool, &save_id, away_team_id as u64, current_season).await?;
+    let home_players = get_starting_players(pool, &ctx.save_id, home_team_id as u64, ctx.current_season).await?;
+    let away_players = get_starting_players(pool, &ctx.save_id, away_team_id as u64, ctx.current_season).await?;
 
     // 模拟比赛 - 核心逻辑：基于选手真实属性决定胜负
     let mut rng = StdRng::from_entropy();
@@ -229,26 +210,21 @@ pub async fn simulate_match_detailed(
     let mut total_home_stats = TeamMatchStats::default(home_team_id as u64);
     let mut total_away_stats = TeamMatchStats::default(away_team_id as u64);
 
-    // 获取当前 Meta 权重
-    let meta_weights = MetaEngine::get_current_weights(&pool, &save_id, current_season as i64)
-        .await
-        .unwrap_or_else(|_| MetaWeights::balanced());
-
     while home_score < wins_needed && away_score < wins_needed {
         let duration = 25 + rng.gen_range(0..25); // 25-50分钟
 
         // 构建特性上下文
         let is_international = matches!(
-            tournament_type.as_str(),
+            ctx.tournament_type.as_str(),
             "msi" | "Msi" | "worlds" | "WorldChampionship" | "masters" | "MadridMasters"
             | "shanghai" | "ShanghaiMasters" | "clauch" | "ClaudeIntercontinental"
             | "icp" | "Icp" | "IcpIntercontinental" | "super" | "SuperIntercontinental"
         );
-        let is_playoff = tournament_type.contains("playoff") ||
-                         tournament_type == "knockout";
+        let is_playoff = ctx.tournament_type.contains("playoff") ||
+                         ctx.tournament_type == "knockout";
 
         let trait_ctx = TraitContext {
-            tournament_type: tournament_type.clone(),
+            tournament_type: ctx.tournament_type.clone(),
             is_playoff,
             is_international,
             game_number,
@@ -263,7 +239,7 @@ pub async fn simulate_match_detailed(
             &home_players, &away_players,
             duration,
             &trait_ctx,
-            &meta_weights,
+            &ctx.meta_weights,
             &mut rng,
         );
 
@@ -347,7 +323,7 @@ pub async fn simulate_match_detailed(
     .bind(away_score as i64)
     .bind(winner_id as i64)
     .bind(match_id as i64)
-    .execute(&pool)
+    .execute(pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -390,14 +366,14 @@ pub async fn simulate_match_detailed(
             game_diff = game_diff + excluded.game_diff
         "#
     )
-    .bind(&save_id)
+    .bind(&ctx.save_id)
     .bind(tournament_id)
     .bind(winner_id as i64)
     .bind(winner_points as i64)
     .bind(winner_games_won as i64)
     .bind(winner_games_lost as i64)
     .bind((winner_games_won - winner_games_lost) as i64)
-    .execute(&pool)
+    .execute(pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -415,14 +391,14 @@ pub async fn simulate_match_detailed(
             game_diff = game_diff + excluded.game_diff
         "#
     )
-    .bind(&save_id)
+    .bind(&ctx.save_id)
     .bind(tournament_id)
     .bind(loser_id as i64)
     .bind(loser_points as i64)
     .bind(loser_games_won as i64)
     .bind(loser_games_lost as i64)
     .bind((loser_games_won - loser_games_lost) as i64)
-    .execute(&pool)
+    .execute(pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -442,7 +418,7 @@ pub async fn simulate_match_detailed(
     )
     .bind(tournament_id)
     .bind(tournament_id)
-    .execute(&pool)
+    .execute(pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -478,7 +454,7 @@ pub async fn simulate_match_detailed(
             "#,
         )
         .bind(&game_id)
-        .bind(&save_id)
+        .bind(&ctx.save_id)
         .bind(match_id as i64)
         .bind(game.game_number as i64)
         .bind(game.winner_id as i64)
@@ -516,7 +492,7 @@ pub async fn simulate_match_detailed(
                 "#,
             )
             .bind(&perf_id)
-            .bind(&save_id)
+            .bind(&ctx.save_id)
             .bind(&game_id)
             .bind(player.player_id as i64)
             .bind(&player.player_name)
@@ -560,16 +536,16 @@ pub async fn simulate_match_detailed(
         0.0
     };
 
-    update_player_form_factors(&pool, &save_id, &home_players, home_won, home_avg_perf).await.ok();
-    update_player_form_factors(&pool, &save_id, &away_players, !home_won, away_avg_perf).await.ok();
+    update_player_form_factors(pool, &ctx.save_id, &home_players, home_won, home_avg_perf).await.ok();
+    update_player_form_factors(pool, &ctx.save_id, &away_players, !home_won, away_avg_perf).await.ok();
 
     // 保存选手赛事统计（用于MVP计算）
     save_player_tournament_stats(
-        &pool,
-        &save_id,
-        current_season as u64,
+        pool,
+        &ctx.save_id,
+        ctx.current_season as u64,
         tournament_id as u64,
-        &tournament_type,
+        &ctx.tournament_type,
         home_team_id as u64,
         &home_team_name,
         away_team_id as u64,
@@ -586,7 +562,7 @@ pub async fn simulate_match_detailed(
     if is_playoff {
         log::debug!("检测到季后赛比赛完成: stage={}", stage);
 
-        let all_matches = MatchRepository::get_by_tournament(&pool, tournament_id as u64)
+        let all_matches = MatchRepository::get_by_tournament(pool, tournament_id as u64)
             .await
             .unwrap_or_default();
 
@@ -600,7 +576,7 @@ pub async fn simulate_match_detailed(
             for nm in &new_matches {
                 log::debug!("新比赛: stage={}, home={}, away={}", nm.stage, nm.home_team_id, nm.away_team_id);
             }
-            match MatchRepository::create_batch(&pool, &save_id, &new_matches).await {
+            match MatchRepository::create_batch(pool, &ctx.save_id, &new_matches).await {
                 Ok(_) => log::debug!("比赛保存成功"),
                 Err(e) => log::debug!("比赛保存失败: {:?}", e),
             }
@@ -609,7 +585,7 @@ pub async fn simulate_match_detailed(
         }
     }
 
-    Ok(CommandResult::ok(DetailedMatchResult {
+    Ok(DetailedMatchResult {
         match_id,
         tournament_id: tournament_id as u64,
         home_team_id: home_team_id as u64,
@@ -623,6 +599,168 @@ pub async fn simulate_match_detailed(
         match_mvp,
         home_team_stats: total_home_stats,
         away_team_stats: total_away_stats,
+    })
+}
+
+/// 模拟比赛并返回详细结果
+#[tauri::command]
+pub async fn simulate_match_detailed(
+    state: State<'_, AppState>,
+    match_id: u64,
+) -> Result<CommandResult<DetailedMatchResult>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取比赛的 tournament_id
+    let tournament_id: i64 = sqlx::query_scalar(
+        "SELECT tournament_id FROM matches WHERE id = ?"
+    )
+    .bind(match_id as i64)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "Match not found".to_string())?;
+
+    // 获取当前赛季
+    let current_season: i64 = sqlx::query_scalar(
+        "SELECT current_season FROM saves WHERE id = ?"
+    )
+    .bind(&save_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .unwrap_or(1);
+
+    // 获取赛事类型
+    let tournament_type: String = sqlx::query_scalar(
+        "SELECT tournament_type FROM tournaments WHERE id = ?"
+    )
+    .bind(tournament_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .unwrap_or_else(|| "league".to_string());
+
+    // 获取 Meta 权重
+    let meta_weights = MetaEngine::get_current_weights(&pool, &save_id, current_season)
+        .await
+        .unwrap_or_else(|_| MetaWeights::balanced());
+
+    let ctx = SharedSimulationContext {
+        save_id,
+        current_season,
+        _tournament_id: tournament_id as u64,
+        tournament_type,
+        meta_weights,
+    };
+
+    match simulate_single_match_internal(&pool, &ctx, match_id).await {
+        Ok(result) => Ok(CommandResult::ok(result)),
+        Err(e) => Ok(CommandResult::err(e)),
+    }
+}
+
+/// 批量模拟赛事所有待模拟比赛并返回详细结果
+#[tauri::command]
+pub async fn simulate_all_matches_detailed(
+    state: State<'_, AppState>,
+    tournament_id: u64,
+) -> Result<CommandResult<BatchDetailedResult>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 一次性查询共享数据
+    let current_season: i64 = sqlx::query_scalar(
+        "SELECT current_season FROM saves WHERE id = ?"
+    )
+    .bind(&save_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .unwrap_or(1);
+
+    let tournament_type: String = sqlx::query_scalar(
+        "SELECT tournament_type FROM tournaments WHERE id = ?"
+    )
+    .bind(tournament_id as i64)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .unwrap_or_else(|| "league".to_string());
+
+    let meta_weights = MetaEngine::get_current_weights(&pool, &save_id, current_season)
+        .await
+        .unwrap_or_else(|_| MetaWeights::balanced());
+
+    let ctx = SharedSimulationContext {
+        save_id,
+        current_season,
+        _tournament_id: tournament_id,
+        tournament_type,
+        meta_weights,
+    };
+
+    // 查询所有待模拟比赛
+    let pending_rows = sqlx::query(
+        "SELECT id FROM matches WHERE tournament_id = ? AND status = 'Scheduled' ORDER BY id"
+    )
+    .bind(tournament_id as i64)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let total = pending_rows.len() as u32;
+    let mut results = Vec::with_capacity(total as usize);
+    let mut success: u32 = 0;
+    let mut failed: u32 = 0;
+
+    for row in &pending_rows {
+        let match_id: i64 = row.get("id");
+        match simulate_single_match_internal(&pool, &ctx, match_id as u64).await {
+            Ok(result) => {
+                results.push(result);
+                success += 1;
+            }
+            Err(e) => {
+                log::error!("批量模拟比赛 {} 失败: {}", match_id, e);
+                failed += 1;
+            }
+        }
+    }
+
+    Ok(CommandResult::ok(BatchDetailedResult {
+        results,
+        total,
+        success,
+        failed,
     }))
 }
 

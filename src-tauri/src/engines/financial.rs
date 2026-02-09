@@ -355,9 +355,15 @@ impl FinancialEngine {
     pub fn suggest_transfer_budget(&self, team: &Team) -> i64 {
         if self.is_in_financial_crisis(team) {
             0
+        } else if team.balance > 10_000_000 {
+            // 富裕队伍：余额的75%
+            (team.balance as f64 * 0.75) as i64
+        } else if team.balance > 5_000_000 {
+            // 健康队伍：余额的70%
+            (team.balance as f64 * 0.70) as i64
         } else {
-            // 建议使用余额的30%用于转会
-            (team.balance as f64 * 0.3) as i64
+            // 紧张队伍：余额的65%
+            (team.balance as f64 * 0.65) as i64
         }
     }
 

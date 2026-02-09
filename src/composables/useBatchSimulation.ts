@@ -96,17 +96,20 @@ export function buildMatchDetail(opts: {
         teamAId,
         teamAName,
         teamAPower,
-        teamAPerformance: game.home_performance,
+        teamAPerformance: teamAPower,
+        teamAMetaPower: game.home_performance,
         teamAPlayers: game.home_players.map((p: any) => convertPlayerPerformance(p, teamAId)),
         teamBId,
         teamBName,
         teamBPower,
-        teamBPerformance: game.away_performance,
+        teamBPerformance: teamBPower,
+        teamBMetaPower: game.away_performance,
         teamBPlayers: game.away_players.map((p: any) => convertPlayerPerformance(p, teamBId)),
         winnerId: String(game.winner_id),
         winnerName: game.winner_id === result.home_team_id ? teamAName : teamBName,
         powerDifference: teamAPower - teamBPower,
-        performanceDifference: game.home_performance - game.away_performance,
+        performanceDifference: teamAPower - teamBPower,
+        metaPowerDifference: game.home_performance - game.away_performance,
         isUpset: (teamAPower > teamBPower && game.winner_id !== result.home_team_id) ||
                  (teamBPower > teamAPower && game.winner_id === result.home_team_id)
       }
@@ -167,6 +170,8 @@ export interface BatchSimulateOptions {
   seasonId: string
   competitionType?: string
   delayMs?: number
+  /** 赛事 ID — 如果提供，使用后端批量命令一次模拟全部 */
+  tournamentId?: number
   /** 每场比赛模拟后的回调（如 advanceBracket） */
   onMatchSimulated?: (matchId: number, result: any, matchDetail: MatchDetail) => Promise<void>
   /** 全部完成后的回调（如 loadTournamentData） */
@@ -206,10 +211,14 @@ export function useBatchSimulation() {
         return
       }
 
-      for (let i = 0; i < matches.length; i++) {
-        const match = matches[i]
-        try {
-          const result = await matchApi.simulateMatchDetailed(match.matchId)
+      if (options.tournamentId) {
+        // 快速路径：一次 IPC 调用批量模拟
+        const batchResult = await matchApi.simulateAllMatchesDetailed(options.tournamentId)
+
+        for (let i = 0; i < batchResult.results.length; i++) {
+          const result = batchResult.results[i]
+          const match = matches.find(m => m.matchId === result.match_id)
+          if (!match) continue
 
           const saveId = match.frontendMatchId ?? String(match.matchId)
           const matchDetail = buildMatchDetail({
@@ -241,12 +250,53 @@ export function useBatchSimulation() {
           if (options.onMatchSimulated) {
             await options.onMatchSimulated(match.matchId, result, matchDetail)
           }
-        } catch (e) {
-          logger.error(`模拟比赛 ${match.matchId} 失败:`, e)
-        }
 
-        simulationProgress.value = Math.floor(((i + 1) / matches.length) * 100)
-        await new Promise(resolve => setTimeout(resolve, options.delayMs ?? 50))
+          simulationProgress.value = Math.floor(((i + 1) / batchResult.results.length) * 100)
+        }
+      } else {
+        // 原有逐场模拟路径
+        for (let i = 0; i < matches.length; i++) {
+          const match = matches[i]
+          try {
+            const result = await matchApi.simulateMatchDetailed(match.matchId)
+
+            const saveId = match.frontendMatchId ?? String(match.matchId)
+            const matchDetail = buildMatchDetail({
+              matchId: saveId,
+              tournamentType: options.tournamentType,
+              seasonId: options.seasonId,
+              teamAId: match.teamAId,
+              teamAName: match.teamAName,
+              teamBId: match.teamBId,
+              teamBName: match.teamBName,
+              bestOf: match.bestOf,
+              result
+            })
+
+            await matchDetailStore.saveMatchDetail(saveId, matchDetail)
+
+            if (match.backendMatchId) {
+              const dbDetail = { ...matchDetail, matchId: String(match.backendMatchId) }
+              await matchDetailStore.saveMatchDetail(match.backendMatchId, dbDetail)
+            }
+
+            recordMatchPerformances(
+              matchDetail,
+              options.seasonId,
+              options.competitionType || 'INTL',
+              playerStore
+            )
+
+            if (options.onMatchSimulated) {
+              await options.onMatchSimulated(match.matchId, result, matchDetail)
+            }
+          } catch (e) {
+            logger.error(`模拟比赛 ${match.matchId} 失败:`, e)
+          }
+
+          simulationProgress.value = Math.floor(((i + 1) / matches.length) * 100)
+          await new Promise(resolve => setTimeout(resolve, options.delayMs ?? 50))
+        }
       }
 
       playerStore.saveToStorage()

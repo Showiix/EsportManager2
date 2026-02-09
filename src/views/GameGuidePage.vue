@@ -131,33 +131,33 @@
         </div>
       </div>
 
-      <div class="event-detail-card" v-for="evt in tournaments" :key="evt.key" v-show="activeEvent === evt.key">
+      <div class="event-detail-card" v-if="activeTournament" :key="activeTournament.key">
         <div class="event-top">
           <div>
-            <div class="event-name">{{ evt.fullName }}</div>
-            <div class="event-timing">{{ evt.timing }}</div>
+            <div class="event-name">{{ activeTournament.fullName }}</div>
+            <div class="event-timing">{{ activeTournament.timing }}</div>
           </div>
           <div class="event-badges">
-            <span class="badge teams">{{ evt.teams }}</span>
-            <span class="badge format">{{ evt.format }}</span>
-            <span v-if="evt.highlight" class="badge highlight">{{ evt.highlight }}</span>
+            <span class="badge teams">{{ activeTournament.teams }}</span>
+            <span class="badge format">{{ activeTournament.format }}</span>
+            <span v-if="activeTournament.highlight" class="badge highlight">{{ activeTournament.highlight }}</span>
           </div>
         </div>
 
         <div class="event-grid">
           <div class="event-block">
             <div class="block-title">参赛资格</div>
-            <p>{{ evt.qualification }}</p>
+            <p>{{ activeTournament.qualification }}</p>
           </div>
           <div class="event-block">
             <div class="block-title">赛制规则</div>
             <ul>
-              <li v-for="r in evt.rules" :key="r">{{ r }}</li>
+              <li v-for="r in activeTournament.rules" :key="r">{{ r }}</li>
             </ul>
           </div>
           <div class="event-block">
             <div class="block-title">积分 / 奖金</div>
-            <div class="points-row" v-for="p in evt.rewards" :key="p.rank">
+            <div class="points-row" v-for="p in activeTournament.rewards" :key="p.rank">
               <span class="reward-rank" :class="p.cls">{{ p.rank }}</span>
               <span class="reward-pts">{{ p.pts }}分</span>
               <span class="reward-prize">{{ p.prize }}</span>
@@ -546,9 +546,9 @@
       <div class="section-header lavender">
         <el-icon><UserFilled /></el-icon>
         <h2>选秀系统</h2>
-        <span class="section-badge">每 4 赛季一次</span>
+        <span class="section-badge">每赛季进行</span>
       </div>
-      <p class="section-desc">选秀在 S2、S6、S10... 举行（公式：(season - 2) % 4 == 0）</p>
+      <p class="section-desc">每个赛季的转会期结束后都会进行选秀，为各战队注入新鲜血液</p>
 
       <div class="two-col">
         <div class="info-card">
@@ -564,11 +564,12 @@
         <div class="info-card">
           <h3>新秀合同</h3>
           <div class="draft-stats">
-            <div class="ds-item"><span>合同年限</span><strong>2 年</strong></div>
-            <div class="ds-item"><span>年薪</span><strong>20 万</strong></div>
-            <div class="ds-item"><span>身价</span><strong>50 万</strong></div>
+            <div class="ds-item"><span>合同年限</span><strong>3 年</strong></div>
+            <div class="ds-item"><span>年薪</span><strong>8-60 万</strong></div>
             <div class="ds-item"><span>年龄范围</span><strong>16-19 岁</strong></div>
+            <div class="ds-item"><span>忠诚/满意</span><strong>50 / 50</strong></div>
           </div>
+          <p class="draft-salary-note">薪资按能力分档（8/15/25/40万）+ 潜力加成（+10或+20万）</p>
         </div>
       </div>
     </section>
@@ -576,7 +577,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import {
   Calendar, Trophy, Aim, List, DataAnalysis, User, StarFilled, Cpu,
   Switch, Wallet, Medal, TrendCharts, Money, Coin, DataLine, SetUp,
@@ -658,7 +659,7 @@ const phaseGroups = [
     items: [
       { num: 12, name: '年度颁奖', sub: 'MVP/Top20/最佳阵容', type: 'offseason' },
       { num: 13, name: '转会期', sub: '8 轮转会流程', type: 'offseason' },
-      { num: 14, name: '选秀', sub: '每 4 赛季一次', type: 'offseason' },
+      { num: 14, name: '选秀', sub: '每赛季进行', type: 'offseason' },
       { num: 15, name: '赛季结束', sub: '进入下赛季', type: 'end' },
     ],
   },
@@ -761,6 +762,8 @@ const tournaments = [
   },
 ]
 
+const activeTournament = computed(() => tournaments.find(t => t.key === activeEvent.value))
+
 const leaguePointsData = [
   { rank: '冠军', points: 12 }, { rank: '亚军', points: 10 },
   { rank: '季军', points: 8 }, { rank: '殿军', points: 6 }, { rank: '5-8名', points: 3 },
@@ -846,7 +849,7 @@ const transferRounds = [
   { step: 'R5', name: '合同选手转会', desc: '支付转会费交易' },
   { step: 'R6', name: '财务调整', desc: '困难队伍瘦身' },
   { step: 'R7', name: '最终补救', desc: '补足阵容名单' },
-  { step: 'R8', name: '选秀权拍卖', desc: '选秀年启用' },
+  { step: 'R8', name: '选秀权拍卖', desc: '每赛季启用' },
 ]
 
 const gmPersonalities = [
@@ -1523,6 +1526,15 @@ const honorBonuses = [
 }
 .ds-item span { color: var(--el-text-color-secondary); }
 .ds-item strong { color: var(--el-text-color-primary); }
+.draft-salary-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  padding: 6px 10px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+  line-height: 1.5;
+}
 
 /* ==================== 响应式 ==================== */
 @media (max-width: 1100px) {

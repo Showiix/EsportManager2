@@ -153,7 +153,7 @@
             <span>性能监测</span>
           </el-menu-item>
 
-          <el-menu-item index="/guide">
+          <el-menu-item index="/guide" :disabled="isMenuDisabled('/guide')">
             <el-icon><Reading /></el-icon>
             <span>游戏指南</span>
           </el-menu-item>
@@ -232,7 +232,7 @@ const activeMenu = computed(() => route.path)
 
 // 检查菜单项是否应该禁用
 const isMenuDisabled = (path: string) => {
-  if (path === '/settings') return false
+  if (path === '/settings' || path === '/guide') return false
   return !gameStore.hasSaveLoaded
 }
 
