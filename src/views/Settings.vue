@@ -101,76 +101,6 @@
       </el-upload>
     </el-card>
 
-    <!-- 游戏设置 -->
-    <el-card class="settings-card">
-      <template #header>
-        <div class="card-header">
-          <div class="card-title">
-            <el-icon class="title-icon settings"><Setting /></el-icon>
-            <span>游戏设置</span>
-          </div>
-        </div>
-      </template>
-
-      <div class="settings-list">
-        <div class="setting-item">
-          <div class="setting-info">
-            <div class="setting-label">自动保存</div>
-            <div class="setting-desc">每完成一个阶段自动保存游戏进度</div>
-          </div>
-          <el-switch v-model="gameSettings.autoSave" />
-        </div>
-
-        <el-divider />
-
-        <div class="setting-item">
-          <div class="setting-info">
-            <div class="setting-label">比赛动画</div>
-            <div class="setting-desc">显示比赛模拟的动画效果</div>
-          </div>
-          <el-switch v-model="gameSettings.matchAnimation" />
-        </div>
-
-        <el-divider />
-
-        <div class="setting-item">
-          <div class="setting-info">
-            <div class="setting-label">音效</div>
-            <div class="setting-desc">开启游戏音效</div>
-          </div>
-          <el-switch v-model="gameSettings.soundEffect" />
-        </div>
-
-        <el-divider />
-
-        <div class="setting-item">
-          <div class="setting-info">
-            <div class="setting-label">模拟速度</div>
-            <div class="setting-desc">调整比赛模拟的速度</div>
-          </div>
-          <el-select v-model="gameSettings.simulationSpeed" style="width: 120px;">
-            <el-option label="慢速" value="slow" />
-            <el-option label="正常" value="normal" />
-            <el-option label="快速" value="fast" />
-            <el-option label="极速" value="instant" />
-          </el-select>
-        </div>
-
-        <el-divider />
-
-        <div class="setting-item">
-          <div class="setting-info">
-            <div class="setting-label">语言</div>
-            <div class="setting-desc">选择界面语言</div>
-          </div>
-          <el-select v-model="gameSettings.language" style="width: 120px;">
-            <el-option label="简体中文" value="zh-CN" />
-            <el-option label="English" value="en" />
-          </el-select>
-        </div>
-      </div>
-    </el-card>
-
     <!-- 数据管理 -->
     <el-card class="settings-card">
       <template #header>
@@ -222,33 +152,36 @@
           <el-icon :size="48"><Trophy /></el-icon>
         </div>
         <div class="about-title">电竞经理模拟器 2</div>
-        <div class="about-version">版本 0.1.0</div>
-        <div class="about-tech">基于 Tauri + Vue3 + Rust 构建</div>
-        <div class="about-links">
-          <el-button link type="primary">
-            <el-icon><Link /></el-icon>
-            官方网站
-          </el-button>
-          <el-button link type="primary">
-            <el-icon><ChatDotRound /></el-icon>
-            反馈建议
-          </el-button>
-        </div>
-      </div>
-    </el-card>
+        <div class="about-subtitle">Esport Manager Simulator 2</div>
+        <div class="about-version">v0.1.0</div>
 
-    <!-- 游戏指南 -->
-    <el-card class="settings-card">
-      <template #header>
-        <div class="card-header">
-          <div class="card-title">
-            <el-icon class="title-icon guide"><Reading /></el-icon>
-            <span>游戏指南</span>
+        <div class="about-divider"></div>
+
+        <div class="about-info-grid">
+          <div class="about-info-item">
+            <div class="about-info-label">开发者</div>
+            <div class="about-info-value">Showiix</div>
+          </div>
+          <div class="about-info-item">
+            <div class="about-info-label">技术栈</div>
+            <div class="about-info-value">Tauri + Vue 3 + Rust</div>
+          </div>
+          <div class="about-info-item">
+            <div class="about-info-label">数据库</div>
+            <div class="about-info-value">SQLite</div>
+          </div>
+          <div class="about-info-item">
+            <div class="about-info-label">UI 框架</div>
+            <div class="about-info-value">Element Plus</div>
           </div>
         </div>
-      </template>
 
-      <GameGuide />
+        <div class="about-divider"></div>
+
+        <div class="about-copyright">
+          &copy; 2024 Showiix. All rights reserved.
+        </div>
+      </div>
     </el-card>
 
     <!-- 新建存档对话框 -->
@@ -287,15 +220,10 @@ import {
   Delete,
   Upload,
   UploadFilled,
-  Setting,
   Coin,
   Trophy,
-  Link,
-  ChatDotRound,
-  Reading,
   Connection,
 } from '@element-plus/icons-vue'
-import GameGuide from '@/components/settings/GameGuide.vue'
 import { useGameStore } from '@/stores/useGameStore'
 import type { SaveInfo } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
@@ -314,15 +242,6 @@ const newSaveForm = reactive({
 
 // 删除数据库状态
 const isDeletingDb = ref(false)
-
-// 游戏设置
-const gameSettings = reactive({
-  autoSave: true,
-  matchAnimation: true,
-  soundEffect: true,
-  simulationSpeed: 'normal',
-  language: 'zh-CN',
-})
 
 // 初始化加载
 onMounted(async () => {
@@ -577,9 +496,7 @@ const resetGame = async () => {
 
 .title-icon.save { color: #f59e0b; }
 .title-icon.import { color: #3b82f6; }
-.title-icon.settings { color: #8b5cf6; }
 .title-icon.data { color: #22c55e; }
-.title-icon.guide { color: #ec4899; }
 
 /* 存档列表 */
 .save-list {
@@ -693,34 +610,6 @@ const resetGame = async () => {
   color: var(--text-tertiary, #909399);
 }
 
-/* 设置列表 */
-.settings-list {
-  padding: 8px 0;
-}
-
-.setting-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 0;
-}
-
-.setting-info {
-  flex: 1;
-}
-
-.setting-label {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary, #303133);
-  margin-bottom: 4px;
-}
-
-.setting-desc {
-  font-size: 13px;
-  color: var(--text-tertiary, #909399);
-}
-
 /* 数据管理 */
 .data-actions {
   padding: 8px 0;
@@ -756,47 +645,94 @@ const resetGame = async () => {
 /* 关于卡片 */
 .about-card {
   text-align: center;
+  background: linear-gradient(135deg, #eff6ff 0%, #f5f3ff 50%, #fdf2f8 100%);
 }
 
 .about-content {
-  padding: 24px 0;
+  padding: 32px 0 24px;
 }
 
 .about-logo {
-  width: 80px;
-  height: 80px;
-  margin: 0 auto 16px;
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  border-radius: 20px;
+  width: 88px;
+  height: 88px;
+  margin: 0 auto 20px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  border-radius: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.3);
 }
 
 .about-title {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
-  color: var(--text-primary, #303133);
-  margin-bottom: 8px;
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+  background: linear-gradient(135deg, #1e40af, #7c3aed);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.about-subtitle {
+  font-size: 13px;
+  color: var(--text-tertiary, #909399);
+  margin-bottom: 4px;
+  font-style: italic;
 }
 
 .about-version {
-  font-size: 14px;
-  color: var(--text-secondary, #606266);
+  display: inline-block;
+  font-size: 12px;
+  color: #8b5cf6;
+  background: #f3f0ff;
+  padding: 2px 12px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.about-divider {
+  width: 60px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #dcdfe6, transparent);
+  margin: 20px auto;
+}
+
+.about-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  max-width: 360px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.about-info-item {
+  padding: 12px;
+  background: white;
+  border-radius: 10px;
+  border: 1px solid #f0f0f0;
+}
+
+.about-info-label {
+  font-size: 11px;
+  color: var(--text-tertiary, #909399);
+  text-transform: uppercase;
+  letter-spacing: 1px;
   margin-bottom: 4px;
 }
 
-.about-tech {
-  font-size: 12px;
-  color: var(--text-tertiary, #909399);
-  margin-bottom: 16px;
+.about-info-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #303133);
 }
 
-.about-links {
-  display: flex;
-  justify-content: center;
-  gap: 24px;
+.about-copyright {
+  font-size: 12px;
+  color: var(--text-tertiary, #909399);
 }
 
 /* 空状态 */

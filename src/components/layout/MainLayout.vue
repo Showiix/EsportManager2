@@ -8,7 +8,7 @@
             <el-icon :size="20" color="white"><Monitor /></el-icon>
           </div>
           <div class="logo-text">
-            <h1>电竞比赛模拟器 2</h1>
+            <h1>电竞经理模拟器 2</h1>
             <span class="version">EsportManager v2.0</span>
           </div>
         </div>
@@ -298,10 +298,11 @@ const breadcrumbs = computed(() => {
 }
 
 .app-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #eff6ff 0%, #f5f3ff 50%, #fdf2f8 100%);
   padding: 0;
   height: 64px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
   z-index: 100;
 }
 
@@ -322,7 +323,7 @@ const breadcrumbs = computed(() => {
 .logo-icon {
   width: 40px;
   height: 40px;
-  background: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -334,12 +335,15 @@ const breadcrumbs = computed(() => {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  color: white;
+  background: linear-gradient(135deg, #1e40af, #7c3aed);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .logo-text .version {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.7);
+  color: #94a3b8;
 }
 
 .header-center {
@@ -367,6 +371,23 @@ const breadcrumbs = computed(() => {
   background: linear-gradient(180deg, #f8f9fa 0%, #ffffff 100%);
   border-right: 1px solid #e4e7ed;
   overflow-y: auto;
+}
+
+.app-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.app-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-sidebar::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.app-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
 }
 
 .sidebar-menu {

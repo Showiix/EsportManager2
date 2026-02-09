@@ -13,25 +13,43 @@
       </div>
     </div>
 
-    <!-- 赛季状态栏 -->
-    <div v-else class="season-status-bar">
-      <div class="season-info">
-        <div class="season-badge">
-          <span class="season-label">赛季</span>
-          <span class="season-value">S{{ currentSeason }}</span>
-        </div>
-        <div class="current-phase">
-          <el-icon><Clock /></el-icon>
-          <span>当前阶段：{{ currentPhaseDisplay }}</span>
-        </div>
-      </div>
+    <!-- 赛季状态浮框 -->
+    <div v-if="hasSaveLoaded" class="season-float">
+      <span class="sf-season">S{{ currentSeason }}</span>
+      <span class="sf-divider"></span>
+      <span class="sf-phase">{{ currentPhaseDisplay }}</span>
     </div>
 
     <!-- 欢迎区域 -->
     <div class="welcome-section">
       <div class="welcome-content">
-        <h1 class="welcome-title fade-in">电竞赛事管理系统</h1>
-        <p class="welcome-subtitle fade-in-delay">Esports Tournament Management System v2.0</p>
+        <div class="welcome-badge fade-in">
+          <el-icon><Trophy /></el-icon>
+          <span>EsportManager 2</span>
+        </div>
+        <h1 class="welcome-title fade-in">电竞经理模拟器</h1>
+        <p class="welcome-subtitle fade-in-delay">打造你的冠军战队，征服四大赛区，问鼎世界总决赛</p>
+        <div class="welcome-stats fade-in-delay-2">
+          <div class="welcome-stat">
+            <span class="ws-num">4</span>
+            <span class="ws-label">大赛区</span>
+          </div>
+          <div class="ws-divider"></div>
+          <div class="welcome-stat">
+            <span class="ws-num">56</span>
+            <span class="ws-label">支战队</span>
+          </div>
+          <div class="ws-divider"></div>
+          <div class="welcome-stat">
+            <span class="ws-num">280</span>
+            <span class="ws-label">名选手</span>
+          </div>
+          <div class="ws-divider"></div>
+          <div class="welcome-stat">
+            <span class="ws-num">15</span>
+            <span class="ws-label">个赛季阶段</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -139,7 +157,7 @@ import { onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import {
-  Trophy, Medal, Sort, Stamp, Clock,
+  Trophy, Medal, Sort, Stamp,
   FolderRemove, Setting
 } from '@element-plus/icons-vue'
 import { useGameStore } from '@/stores/useGameStore'
@@ -255,67 +273,48 @@ onMounted(async () => {
   margin: 0 0 24px 0;
 }
 
-/* 赛季状态栏 */
-.season-status-bar {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 16px 24px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border-radius: 16px;
-  margin-bottom: 20px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-  position: relative;
+/* 赛季状态浮框 */
+.season-float {
+  position: absolute;
+  top: 16px;
+  right: 16px;
   z-index: 10;
-}
-
-.season-info {
   display: flex;
   align-items: center;
-  gap: 24px;
-}
-
-.season-badge {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 8px 16px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  border-radius: 20px;
-  color: white;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
 }
 
-.season-label {
-  font-size: 12px;
-  opacity: 0.9;
+.sf-season {
+  font-size: 15px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
-.season-value {
-  font-size: 18px;
-  font-weight: 700;
+.sf-divider {
+  width: 1px;
+  height: 16px;
+  background: #cbd5e1;
 }
 
-.current-phase {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-  border-radius: 20px;
-  color: white;
-  font-size: 14px;
+.sf-phase {
+  font-size: 13px;
+  color: #64748b;
   font-weight: 500;
-}
-
-.current-phase .el-icon {
-  font-size: 16px;
 }
 
 /* 基础布局 */
 .home-view {
   min-height: calc(100vh - 180px);
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(160deg, #eff6ff 0%, #f5f3ff 40%, #fdf2f8 70%, #fff7ed 100%);
   position: relative;
   overflow: hidden;
   padding: 40px 20px;
@@ -326,7 +325,7 @@ onMounted(async () => {
 /* 欢迎区域 */
 .welcome-section {
   text-align: center;
-  padding: 40px 20px 60px;
+  padding: 48px 20px 56px;
   position: relative;
   z-index: 2;
 }
@@ -336,21 +335,81 @@ onMounted(async () => {
   margin: 0 auto;
 }
 
-.welcome-title {
-  font-size: 2.8rem;
-  font-weight: 800;
+.welcome-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-radius: 99px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
   color: white;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
+}
+
+.welcome-badge .el-icon {
+  font-size: 14px;
+}
+
+.welcome-title {
+  font-size: 3rem;
+  font-weight: 900;
   margin: 0 0 16px 0;
-  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  letter-spacing: 2px;
+  letter-spacing: 4px;
+  background: linear-gradient(135deg, #1e40af, #7c3aed, #db2777);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .welcome-subtitle {
   font-size: 1.1rem;
-  color: rgba(255, 255, 255, 0.9);
-  font-weight: 300;
-  letter-spacing: 3px;
-  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 400;
+  letter-spacing: 2px;
+  margin: 0 0 32px 0;
+}
+
+.welcome-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 32px;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+}
+
+.welcome-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.ws-num {
+  font-size: 24px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.ws-label {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.ws-divider {
+  width: 1px;
+  height: 28px;
+  background: linear-gradient(180deg, transparent, #cbd5e1, transparent);
 }
 
 /* 动画 */
@@ -366,11 +425,15 @@ onMounted(async () => {
 }
 
 .fade-in {
-  animation: fadeInUp 1s ease-out;
+  animation: fadeInUp 0.8s ease-out;
 }
 
 .fade-in-delay {
-  animation: fadeInUp 1s ease-out 0.3s both;
+  animation: fadeInUp 0.8s ease-out 0.2s both;
+}
+
+.fade-in-delay-2 {
+  animation: fadeInUp 0.8s ease-out 0.4s both;
 }
 
 /* 赛区展示 */
@@ -396,12 +459,13 @@ onMounted(async () => {
   overflow: hidden;
   cursor: pointer;
   transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.12);
 }
 
 .region-card:hover {
   transform: translateY(-12px) scale(1.02);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.12);
 }
 
 .region-card:hover .card-glow {
@@ -542,7 +606,8 @@ onMounted(async () => {
   cursor: pointer;
   transition: all 0.3s ease;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.12);
 }
 
 .action-card:hover {
@@ -598,7 +663,7 @@ onMounted(async () => {
 .floating-circle {
   position: absolute;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.06), rgba(139, 92, 246, 0.06));
   animation: float 20s ease-in-out infinite;
 }
 
