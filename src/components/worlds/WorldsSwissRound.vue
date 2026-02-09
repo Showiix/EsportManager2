@@ -12,7 +12,7 @@
         :class="{ completed: match.status === 'completed' }"
       >
         <div class="match-header">
-          <span class="match-label">BO1</span>
+          <span class="match-label">BO3</span>
           <span v-if="match.status === 'completed'" class="status-badge badge-success">已完成</span>
           <span v-else class="status-badge badge-info">待进行</span>
         </div>
@@ -20,17 +20,19 @@
         <div class="match-teams">
           <div class="team team-a" :class="{ winner: match.winnerId === match.teamAId }">
             <span class="team-name">{{ match.teamAName }}</span>
-            <span v-if="match.status === 'completed'" class="team-score">{{ match.scoreA }}</span>
           </div>
 
-          <div class="vs-divider">
-            <span v-if="match.status === 'completed'" class="score-divider">-</span>
+          <div class="score-center">
+            <template v-if="match.status === 'completed'">
+              <span class="team-score" :class="{ 'score-winner': match.winnerId === match.teamAId }">{{ match.scoreA }}</span>
+              <span class="score-divider">:</span>
+              <span class="team-score" :class="{ 'score-winner': match.winnerId === match.teamBId }">{{ match.scoreB }}</span>
+            </template>
             <span v-else class="vs-text">VS</span>
           </div>
 
           <div class="team team-b" :class="{ winner: match.winnerId === match.teamBId }">
             <span class="team-name">{{ match.teamBName }}</span>
-            <span v-if="match.status === 'completed'" class="team-score">{{ match.scoreB }}</span>
           </div>
         </div>
 
@@ -43,10 +45,6 @@
             模拟比赛
           </button>
           <div v-else class="completed-actions">
-            <div class="winner-info">
-              <span class="winner-label">胜者:</span>
-              <span class="winner-name">{{ match.winnerId === match.teamAId ? match.teamAName : match.teamBName }}</span>
-            </div>
             <button
               class="detail-btn"
               @click="$emit('view-match', match)"
@@ -82,62 +80,62 @@ defineEmits<{
 }
 
 .empty-state {
-  padding: 40px 0;
+  padding: 30px 0;
   text-align: center;
 }
 
 .empty-text {
-  font-size: 14px;
+  font-size: 13px;
   color: #94a3b8;
 }
 
 .matches-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+  gap: 10px;
 }
 
 .match-card {
-  padding: 16px;
+  padding: 12px 14px;
   background: #ffffff;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid #e2e8f0;
   border-left: 3px solid #6366f1;
 }
 
 .match-card.completed {
   border-left-color: #22c55e;
-  background: #f8fafc;
+  background: #fafffe;
 }
 
 .match-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .match-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: #64748b;
-  padding: 2px 8px;
+  padding: 1px 8px;
   background: #f1f5f9;
-  border-radius: 4px;
+  border-radius: 8px;
 }
 
 .status-badge {
   display: inline-block;
   font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 8px;
   line-height: 1.4;
 }
 
 .badge-success {
   background: #f0fdf4;
-  color: #22c55e;
+  color: #16a34a;
 }
 
 .badge-info {
@@ -149,97 +147,85 @@ defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .team {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   flex: 1;
 }
 
 .team-name {
-  font-weight: 600;
-  font-size: 15px;
-  color: #0f172a;
-}
-
-.team-score {
-  font-size: 20px;
-  font-weight: 700;
+  font-weight: 500;
+  font-size: 13px;
   color: #0f172a;
 }
 
 .team.winner .team-name {
   color: #16a34a;
-}
-
-.team.winner .team-score {
-  color: #16a34a;
+  font-weight: 600;
 }
 
 .team.team-b {
-  justify-content: flex-end;
   text-align: right;
 }
 
-.vs-divider {
-  padding: 0 16px;
+.score-center {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+}
+
+.team-score {
+  font-size: 16px;
+  font-weight: 700;
+  color: #94a3b8;
+  min-width: 16px;
+  text-align: center;
+}
+
+.team-score.score-winner {
+  color: #16a34a;
 }
 
 .vs-text {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: #94a3b8;
+  color: #cbd5e1;
 }
 
 .score-divider {
-  font-size: 20px;
-  font-weight: 700;
-  color: #64748b;
+  font-size: 14px;
+  font-weight: 600;
+  color: #cbd5e1;
 }
 
 .match-actions {
   display: flex;
   justify-content: center;
   padding-top: 8px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid #f1f5f9;
 }
 
 .completed-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  width: 100%;
-}
-
-.winner-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.winner-label {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.winner-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #16a34a;
+  justify-content: center;
 }
 
 .simulate-btn {
   padding: 4px 14px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   color: #ffffff;
   background: #6366f1;
-  border: 1px solid #6366f1;
+  border: none;
   border-radius: 6px;
   cursor: pointer;
+}
+
+.simulate-btn:hover {
+  background: #4f46e5;
 }
 
 .detail-btn {
@@ -247,9 +233,13 @@ defineEmits<{
   font-size: 12px;
   font-weight: 500;
   color: #64748b;
-  background: transparent;
-  border: 1px solid #e2e8f0;
+  background: #f1f5f9;
+  border: none;
   border-radius: 6px;
   cursor: pointer;
+}
+
+.detail-btn:hover {
+  background: #e2e8f0;
 }
 </style>
