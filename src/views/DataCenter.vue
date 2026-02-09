@@ -104,6 +104,92 @@
       </el-card>
     </div>
 
+    <!-- 四象限散点图 -->
+    <div class="scatter-chart-section" v-if="rankings.length > 0">
+      <el-card shadow="hover">
+        <template #header>
+          <div class="card-header clickable" @click="scatterExpanded = !scatterExpanded">
+            <div class="card-header-left">
+              <el-icon class="collapse-arrow" :class="{ collapsed: !scatterExpanded }">
+                <ArrowDown />
+              </el-icon>
+              <span class="card-title">选手四象限分析</span>
+            </div>
+            <div class="scatter-controls" v-show="scatterExpanded" @click.stop>
+              <el-button-group size="small">
+                <el-button :type="scatterColorMode === 'position' ? 'primary' : ''" @click="scatterColorMode = 'position'">按位置</el-button>
+                <el-button :type="scatterColorMode === 'region' ? 'primary' : ''" @click="scatterColorMode = 'region'">按赛区</el-button>
+              </el-button-group>
+            </div>
+          </div>
+        </template>
+        <el-collapse-transition>
+          <div v-show="scatterExpanded">
+            <!-- 散点图独立筛选 -->
+            <div class="scatter-filter-bar">
+              <div class="scatter-filter-group">
+                <span class="filter-label">位置</span>
+                <el-button
+                  v-for="pos in positionFilters"
+                  :key="'sc-' + pos.value"
+                  :type="scatterPosition === pos.value ? 'primary' : 'default'"
+                  @click="scatterPosition = pos.value"
+                  size="small"
+                  round
+                >
+                  {{ pos.label }}
+                </el-button>
+              </div>
+              <div class="scatter-filter-group">
+                <span class="filter-label">赛区</span>
+                <el-button
+                  v-for="r in regionFilters"
+                  :key="'sr-' + r.value"
+                  :type="scatterRegion === r.value ? 'primary' : 'default'"
+                  @click="scatterRegion = r.value"
+                  size="small"
+                  round
+                >
+                  {{ r.label }}
+                </el-button>
+              </div>
+              <div class="scatter-filter-group">
+                <span class="filter-label">X 轴</span>
+                <el-select v-model="scatterXAxis" size="small" style="width: 110px">
+                  <el-option v-for="d in axisDimensions" :key="'x-' + d.value" :label="d.label" :value="d.value" />
+                </el-select>
+                <span class="filter-label" style="margin-left: 12px">Y 轴</span>
+                <el-select v-model="scatterYAxis" size="small" style="width: 110px">
+                  <el-option v-for="d in axisDimensions" :key="'y-' + d.value" :label="d.label" :value="d.value" />
+                </el-select>
+              </div>
+            </div>
+            <div class="scatter-chart-wrapper">
+              <v-chart class="scatter-chart" :option="scatterOption" autoresize @click="onScatterClick" />
+            </div>
+            <!-- 颜色图例 -->
+            <div class="scatter-legend">
+              <span
+                v-for="item in scatterLegendItems"
+                :key="item.label"
+                class="legend-item"
+              >
+                <span class="legend-dot" :style="{ backgroundColor: item.color }"></span>
+                {{ item.label }}
+              </span>
+            </div>
+            <!-- 四象限标签 -->
+            <div class="quadrant-legend">
+              <span class="q q1">核心基石（高{{ yAxisLabel }}+高{{ xAxisLabel }}）</span>
+              <span class="q q2">波动明星（高{{ yAxisLabel }}+低{{ xAxisLabel }}）</span>
+              <span class="q q3">稳定绿叶（低{{ yAxisLabel }}+高{{ xAxisLabel }}）</span>
+              <span class="q q4">待培养（低{{ yAxisLabel }}+低{{ xAxisLabel }}）</span>
+            </div>
+          </div>
+        </el-collapse-transition>
+      </el-card>
+    </div>
+
     <!-- 筛选栏 -->
     <div class="filter-bar">
       <div class="position-filters">
@@ -143,53 +229,6 @@
           style="width: 200px"
         />
       </div>
-    </div>
-
-    <!-- 四象限散点图 -->
-    <div class="scatter-chart-section" v-if="rankings.length > 0">
-      <el-card shadow="hover">
-        <template #header>
-          <div class="card-header clickable" @click="scatterExpanded = !scatterExpanded">
-            <div class="card-header-left">
-              <el-icon class="collapse-arrow" :class="{ collapsed: !scatterExpanded }">
-                <ArrowDown />
-              </el-icon>
-              <span class="card-title">选手四象限分析</span>
-            </div>
-            <div class="scatter-controls" v-show="scatterExpanded" @click.stop>
-              <el-button-group size="small">
-                <el-button :type="scatterColorMode === 'position' ? 'primary' : ''" @click="scatterColorMode = 'position'">按位置</el-button>
-                <el-button :type="scatterColorMode === 'region' ? 'primary' : ''" @click="scatterColorMode = 'region'">按赛区</el-button>
-              </el-button-group>
-            </div>
-          </div>
-        </template>
-        <el-collapse-transition>
-          <div v-show="scatterExpanded">
-            <div class="scatter-chart-wrapper">
-              <v-chart class="scatter-chart" :option="scatterOption" autoresize @click="onScatterClick" />
-            </div>
-            <!-- 颜色图例 -->
-            <div class="scatter-legend">
-              <span
-                v-for="item in scatterLegendItems"
-                :key="item.label"
-                class="legend-item"
-              >
-                <span class="legend-dot" :style="{ backgroundColor: item.color }"></span>
-                {{ item.label }}
-              </span>
-            </div>
-            <!-- 四象限标签 -->
-            <div class="quadrant-legend">
-              <span class="q q1">核心基石（高影响力+高稳定性）</span>
-              <span class="q q2">波动明星（高影响力+低稳定性）</span>
-              <span class="q q3">稳定绿叶（低影响力+高稳定性）</span>
-              <span class="q q4">待培养（低影响力+低稳定性）</span>
-            </div>
-          </div>
-        </el-collapse-transition>
-      </el-card>
     </div>
 
     <!-- 排行榜表格 -->
@@ -523,7 +562,7 @@ const regionNameMap: Record<number, string> = {
 // 获取选手赛区ID
 const getPlayerRegionId = (teamId: string | number | null): number => {
   if (!teamId) return 0
-  return teamsRegionMap.value.get(Number(teamId)) || 0
+  return teamsRegionMap.value[String(teamId)] || 0
 }
 
 // 散点图四象限配置
@@ -805,17 +844,17 @@ const handleSizeChange = (size: number) => {
 const refreshData = async () => {
   // 加载战队数据（用于显示战队名称）
   try {
-    if (teamsMap.value.size === 0 || teamsRegionMap.value.size === 0) {
+    if (teamsMap.value.size === 0 || Object.keys(teamsRegionMap.value).length === 0) {
       const teams = await teamApi.getAllTeams()
       const newTeamsMap = new Map<number, string>()
-      const newRegionMap = new Map<number, number>()
+      const newRegionMap: Record<string, number> = {}
       teams.forEach(t => {
         newTeamsMap.set(t.id, t.short_name || t.name)
-        newRegionMap.set(t.id, t.region_id)
+        newRegionMap[String(t.id)] = t.region_id
       })
       teamsMap.value = newTeamsMap
       teamsRegionMap.value = newRegionMap
-      logger.debug('[DataCenter] 加载战队数据:', teamsMap.value.size, '支队伍')
+      logger.debug('[DataCenter] 加载战队数据:', teamsMap.value.size, '支队伍, 赛区映射:', JSON.stringify(newRegionMap))
     }
   } catch (e) {
     logger.warn('加载战队数据失败:', e)

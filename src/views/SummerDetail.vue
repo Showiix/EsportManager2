@@ -1,26 +1,16 @@
 <template>
   <div class="tournament-detail-view">
-    <!-- 返回按钮和标题 -->
+    <!-- 页面标题 -->
     <div class="page-header">
-      <div class="header-left">
-        <el-button text @click="goBack">
-          <el-icon><ArrowLeft /></el-icon>
-          返回赛事列表
-        </el-button>
-        <div class="title-section">
-          <h1>{{ tournament.name }}</h1>
-          <div class="title-tags">
-            <el-tag :type="getStatusTagType(tournament.status)" size="large">
-              {{ getStatusText(tournament.status) }}
-            </el-tag>
-            <el-tag type="info">{{ tournament.type === 'league' ? '联赛' : '国际赛' }}</el-tag>
-          </div>
-        </div>
+      <div>
+        <h1>{{ tournament.name }}</h1>
+        <p>{{ getStatusText(tournament.status) }}</p>
       </div>
       <div class="header-actions">
         <el-button
           v-if="tournament.status === 'active'"
           type="primary"
+          size="small"
           @click="simulateNextMatch"
           :loading="simulating"
         >
@@ -29,13 +19,14 @@
         </el-button>
         <el-button
           v-if="tournament.status === 'active'"
-          type="warning"
+          size="small"
           @click="simulateAll"
           :loading="batchSimulating"
         >
           <el-icon><DArrowRight /></el-icon>
-          {{ batchSimulating ? `模拟中 (${simulationProgress}%)` : '一键模拟全部' }}
+          {{ batchSimulating ? `模拟中 (${simulationProgress}%)` : '一键模拟' }}
         </el-button>
+        <button class="back-btn" @click="goBack">← 返回赛事列表</button>
       </div>
     </div>
 
@@ -43,237 +34,137 @@
     <el-progress
       v-if="batchSimulating"
       :percentage="simulationProgress"
-      :stroke-width="8"
+      :stroke-width="6"
       :show-text="false"
-      status="warning"
       style="margin-bottom: 12px;"
     />
 
-    <!-- 赛区选择器 (仅联赛显示) -->
-    <el-card v-if="tournament.type === 'league'" class="region-selector-card">
-      <div class="region-selector">
-        <div class="selector-left">
-          <span class="selector-label">选择赛区:</span>
-          <el-radio-group v-model="selectedRegion" @change="handleRegionChange">
+    <!-- 赛区选择器 -->
+    <div v-if="tournament.type === 'league'" class="filter-section">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label>赛区</label>
+          <el-radio-group v-model="selectedRegion" @change="handleRegionChange" size="small">
             <el-radio-button v-for="region in regions" :key="region.id" :value="region.id">
               {{ region.name }}
             </el-radio-button>
           </el-radio-group>
         </div>
-        <el-button @click="refreshData" :icon="Refresh" :loading="refreshing">
-          刷新数据
-        </el-button>
+        <el-tooltip content="刷新数据" placement="bottom">
+          <el-button circle size="small" @click="refreshData" :loading="refreshing">
+            <el-icon><Refresh /></el-icon>
+          </el-button>
+        </el-tooltip>
       </div>
-    </el-card>
+    </div>
 
+    <!-- 统计栏 -->
+    <div class="stats-bar">
+      <div class="stat-item">
+        <span class="stat-value">{{ completedMatches }}/{{ totalMatches }}</span>
+        <span class="stat-label">已完成比赛</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">{{ standings.length }}</span>
+        <span class="stat-label">参赛队伍</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value">第{{ currentWeek }}周</span>
+        <span class="stat-label">当前进度</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value highlight">{{ Math.round(progress) }}%</span>
+        <span class="stat-label">赛程进度</span>
+      </div>
+    </div>
 
     <!-- 常规赛内容 -->
-    <div class="regular-season-content">
-      <!-- 统计概览 -->
-      <el-row :gutter="16" class="stats-row">
-        <el-col :span="6">
-          <el-card class="stat-card">
-            <div class="stat-content">
-              <div class="stat-icon small blue">
-                <el-icon :size="24"><VideoPlay /></el-icon>
-              </div>
-              <div class="stat-info">
-                <div class="stat-number">{{ completedMatches }}/{{ totalMatches }}</div>
-                <div class="stat-label">已完成比赛</div>
-              </div>
+    <div class="content-layout">
+      <!-- 左侧：积分榜 + MVP -->
+      <div class="left-panel">
+        <!-- 积分榜 -->
+        <div class="table-section">
+          <div class="section-header">
+            <span class="section-title">积分榜</span>
+            <span class="section-tag">{{ getRegionName(selectedRegion) }}</span>
+          </div>
+          <div class="standings-list">
+            <div class="standings-head">
+              <span class="s-rank">#</span>
+              <span class="s-team">战队</span>
+              <span class="s-num">胜</span>
+              <span class="s-num">负</span>
+              <span class="s-num">胜率</span>
+              <span class="s-num">积分</span>
             </div>
-          </el-card>
-        </el-col>
-        <el-col :span="6">
-          <el-card class="stat-card">
-            <div class="stat-content">
-              <div class="stat-icon small green">
-                <el-icon :size="24"><UserFilled /></el-icon>
-              </div>
-              <div class="stat-info">
-                <div class="stat-number">{{ standings.length }}</div>
-                <div class="stat-label">参赛队伍</div>
-              </div>
+            <div
+              v-for="(team, idx) in standings"
+              :key="team.id"
+              class="standings-row"
+            >
+              <span class="s-rank">
+                <span class="rank-num" :class="getRankClass(idx + 1)">{{ idx + 1 }}</span>
+              </span>
+              <span class="s-team">{{ team.short }}</span>
+              <span class="s-num win">{{ team.wins }}</span>
+              <span class="s-num loss">{{ team.losses }}</span>
+              <span class="s-num rate">{{ getWinRate(team) }}%</span>
+              <span class="s-num pts">{{ team.points }}</span>
             </div>
-          </el-card>
-        </el-col>
-        <el-col :span="6">
-          <el-card class="stat-card">
-            <div class="stat-content">
-              <div class="stat-icon small orange">
-                <el-icon :size="24"><Calendar /></el-icon>
+          </div>
+          <div class="playoff-line">前8名晋级季后赛</div>
+        </div>
+
+        <!-- MVP 排行 -->
+        <div class="table-section" v-if="mvpRanking.length > 0 || mvpLoading">
+          <div class="section-header">
+            <span class="section-title">MVP 排行</span>
+          </div>
+          <div v-if="mvpLoading" style="padding: 16px;">
+            <el-skeleton :rows="3" animated />
+          </div>
+          <div v-else class="mvp-list">
+            <div v-for="(player, idx) in mvpRanking" :key="player.player_id" class="mvp-row">
+              <span class="mvp-rank" :class="getMvpRankClass(idx + 1)">{{ idx + 1 }}</span>
+              <div class="mvp-info">
+                <span class="mvp-name">{{ player.player_name }}</span>
+                <span class="mvp-meta">{{ teamMap.get(player.team_id)?.short_name || player.team_name }} · {{ player.position }}</span>
               </div>
-              <div class="stat-info">
-                <div class="stat-number">第 {{ currentWeek }} 周</div>
-                <div class="stat-label">当前进度</div>
-              </div>
+              <span class="mvp-count">{{ player.game_mvp_count }}</span>
+              <span class="mvp-impact">{{ player.avg_impact?.toFixed(1) || '0.0' }}</span>
             </div>
-          </el-card>
-        </el-col>
-        <el-col :span="6">
-          <el-card class="stat-card">
-            <div class="stat-content">
-              <div class="stat-icon small purple">
-                <el-icon :size="24"><TrendCharts /></el-icon>
+          </div>
+          <el-empty v-if="mvpRanking.length === 0 && !mvpLoading" description="暂无MVP数据" :image-size="40" />
+        </div>
+      </div>
+
+      <!-- 右侧：比赛列表 -->
+      <div class="right-panel">
+        <div class="table-section">
+          <div class="section-header">
+            <span class="section-title">比赛列表</span>
+            <el-select v-model="matchFilter" size="small" style="width: 100px;">
+              <el-option label="全部" value="all" />
+              <el-option label="已完成" value="completed" />
+              <el-option label="进行中" value="active" />
+              <el-option label="未开始" value="upcoming" />
+            </el-select>
+          </div>
+          <div class="matches-scroll">
+            <div v-for="group in groupedMatches" :key="group.week" class="match-week-group">
+              <div class="week-header">
+                <span class="week-label">第{{ group.week }}周</span>
+                <span class="week-count">{{ group.matches.length }}场</span>
               </div>
-              <div class="stat-info">
-                <div class="stat-number">{{ Math.round(progress) }}%</div>
-                <div class="stat-label">赛程进度</div>
-              </div>
-            </div>
-          </el-card>
-        </el-col>
-      </el-row>
-
-      <el-row :gutter="20">
-        <!-- 左侧：积分榜 -->
-        <el-col :span="10">
-          <el-card class="standings-card">
-            <template #header>
-              <div class="card-header">
-                <h3>
-                  <el-icon><Medal /></el-icon>
-                  积分榜
-                </h3>
-                <el-tag v-if="selectedRegion" type="primary">{{ getRegionName(selectedRegion) }}</el-tag>
-              </div>
-            </template>
-
-            <el-table :data="standings" stripe class="standings-table">
-              <el-table-column label="排名" width="70" align="center">
-                <template #default="{ $index }">
-                  <div class="rank-badge" :class="getRankClass($index + 1)">
-                    {{ $index + 1 }}
-                  </div>
-                </template>
-              </el-table-column>
-
-              <el-table-column label="战队" min-width="120">
-                <template #default="{ row }">
-                  <div class="team-cell">
-                    <div class="team-avatar small" :class="row.region?.toLowerCase()">
-                      {{ row.short }}
-                    </div>
-                    <span class="team-name">{{ row.short }}</span>
-                  </div>
-                </template>
-              </el-table-column>
-
-              <el-table-column label="胜" width="60" align="center">
-                <template #default="{ row }">
-                  <span class="win-count">{{ row.wins }}</span>
-                </template>
-              </el-table-column>
-
-              <el-table-column label="负" width="60" align="center">
-                <template #default="{ row }">
-                  <span class="loss-count">{{ row.losses }}</span>
-                </template>
-              </el-table-column>
-
-              <el-table-column label="胜率" width="80" align="center">
-                <template #default="{ row }">
-                  <span class="win-rate">{{ getWinRate(row) }}%</span>
-                </template>
-              </el-table-column>
-
-              <el-table-column label="积分" width="70" align="center">
-                <template #default="{ row }">
-                  <span class="points">{{ row.points }}</span>
-                </template>
-              </el-table-column>
-            </el-table>
-
-            <div class="playoffs-line">
-              <el-divider>
-                <el-tag type="success" size="small">前8名晋级季后赛</el-tag>
-              </el-divider>
-            </div>
-          </el-card>
-
-          <!-- MVP 排行榜 -->
-          <el-card class="mvp-ranking-card">
-            <template #header>
-              <div class="card-header">
-                <h3>
-                  <el-icon><Star /></el-icon>
-                  常规赛MVP排行榜
-                </h3>
-                <el-tag type="warning">MVP次数</el-tag>
-              </div>
-            </template>
-
-            <el-table :data="mvpRanking" stripe class="mvp-table" v-loading="mvpLoading">
-              <el-table-column label="排名" width="60" align="center">
-                <template #default="{ $index }">
-                  <div class="rank-badge" :class="getMvpRankClass($index + 1)">
-                    {{ $index + 1 }}
-                  </div>
-                </template>
-              </el-table-column>
-
-              <el-table-column label="选手" min-width="100">
-                <template #default="{ row }">
-                  <div class="player-cell">
-                    <span class="player-name">{{ row.player_name }}</span>
-                    <el-tag size="small" type="info">{{ row.position }}</el-tag>
-                  </div>
-                </template>
-              </el-table-column>
-
-              <el-table-column label="战队" width="80" align="center">
-                <template #default="{ row }">
-                  <span class="team-name">{{ teamMap.get(row.team_id)?.short_name || row.team_name }}</span>
-                </template>
-              </el-table-column>
-
-              <el-table-column label="MVP次数" width="90" align="center">
-                <template #default="{ row }">
-                  <span class="mvp-count">{{ row.game_mvp_count }}</span>
-                </template>
-              </el-table-column>
-
-              <el-table-column label="场均发挥" width="90" align="center">
-                <template #default="{ row }">
-                  <span class="avg-impact">{{ row.avg_impact?.toFixed(1) || '0.0' }}</span>
-                </template>
-              </el-table-column>
-            </el-table>
-
-            <el-empty v-if="mvpRanking.length === 0 && !mvpLoading" description="暂无MVP数据" />
-          </el-card>
-        </el-col>
-
-        <!-- 右侧：比赛列表 -->
-        <el-col :span="14">
-          <el-card class="matches-card">
-            <template #header>
-              <div class="card-header">
-                <h3>
-                  <el-icon><List /></el-icon>
-                  比赛列表
-                </h3>
-                <el-select v-model="matchFilter" placeholder="筛选状态" style="width: 120px;">
-                  <el-option label="全部" value="all" />
-                  <el-option label="已完成" value="completed" />
-                  <el-option label="进行中" value="active" />
-                  <el-option label="未开始" value="upcoming" />
-                </el-select>
-              </div>
-            </template>
-
-            <div class="matches-list">
-              <div v-for="group in groupedMatches" :key="group.week" class="match-week-group">
-                <div class="week-header">
-                  <span class="week-label">第{{ group.week }}周</span>
-                  <span class="week-count">{{ group.matches.length }}场</span>
-                </div>
-                <div
-                  v-for="match in group.matches"
-                  :key="match.id"
-                  class="match-item"
-                  :class="match.status"
-                >
+              <div
+                v-for="match in group.matches"
+                :key="match.id"
+                class="match-row"
+                :class="match.status"
+              >
                 <div class="match-teams">
                   <div class="team home" :class="{ winner: match.winnerId === match.homeTeamId }">
                     <span class="team-name">{{ match.homeTeam }}</span>
@@ -287,35 +178,22 @@
                 </div>
                 <div class="match-actions">
                   <template v-if="match.status === 'completed'">
-                    <el-tag type="success" size="small">已结束</el-tag>
-                    <el-button
-                      type="info"
-                      size="small"
-                      text
-                      @click="viewMatchDetails(`summer-${match.id}`)"
-                    >
-                      查看详情
+                    <el-button size="small" type="primary" text @click="viewMatchDetails(`summer-${match.id}`)">
+                      详情
                     </el-button>
                   </template>
                   <template v-else>
-                    <el-button
-                      type="primary"
-                      size="small"
-                      @click="simulateSingleMatch(match)"
-                      :loading="match.simulating"
-                    >
+                    <el-button type="primary" size="small" @click="simulateSingleMatch(match)" :loading="match.simulating">
                       模拟
                     </el-button>
                   </template>
                 </div>
-                </div>
               </div>
-
-              <el-empty v-if="filteredMatches.length === 0" description="暂无比赛数据" />
             </div>
-          </el-card>
-        </el-col>
-      </el-row>
+            <el-empty v-if="filteredMatches.length === 0" description="暂无比赛数据" :image-size="40" />
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 比赛详情弹窗 -->
@@ -334,15 +212,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import {
-  ArrowLeft,
   VideoPlay,
   DArrowRight,
-  List,
-  Medal,
-  UserFilled,
-  Calendar,
-  TrendCharts,
-  Star,
   Refresh,
 } from '@element-plus/icons-vue'
 import MatchDetailDialog from '@/components/match/MatchDetailDialog.vue'
@@ -648,14 +519,6 @@ const getWinRate = (team: any) => {
   return Math.round((team.wins / total) * 100)
 }
 
-const getStatusTagType = (status: string) => {
-  switch (status) {
-    case 'active': return 'success'
-    case 'upcoming': return 'info'
-    case 'completed': return 'primary'
-    default: return 'info'
-  }
-}
 
 const getStatusText = (status: string) => {
   switch (status) {
@@ -1002,246 +865,326 @@ watch(
   padding: 0;
 }
 
-/* 页面头部 */
 .page-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-start;
   margin-bottom: 20px;
 }
 
-.header-left {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.title-section {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.title-section h1 {
-  font-size: 28px;
+.page-header h1 {
+  font-size: 20px;
   font-weight: 700;
-  color: var(--text-primary, #303133);
-  margin: 0;
+  color: #0f172a;
+  margin: 0 0 4px 0;
 }
 
-.title-tags {
-  display: flex;
-  gap: 8px;
+.page-header p {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
 }
 
 .header-actions {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
 }
 
-/* 赛区选择器 */
-.region-selector-card {
-  margin-bottom: 20px;
-  border-radius: 12px;
+.back-btn {
+  padding: 5px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
 }
 
-.region-selector {
+.back-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: #f5f3ff;
+}
+
+.filter-section {
+  margin-bottom: 16px;
+}
+
+.filter-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
 }
 
-.selector-left {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.selector-label {
-  font-weight: 600;
-  color: var(--text-primary, #303133);
-}
-
-/* 统计图标 */
-.stat-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  flex-shrink: 0;
-}
-
-.stat-icon.small {
-  width: 48px;
-  height: 48px;
-}
-
-.stat-icon.blue {
-  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
-  color: #3b82f6;
-}
-
-.stat-icon.green {
-  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
-  color: #22c55e;
-}
-
-.stat-icon.orange {
-  background: linear-gradient(135deg, #ffedd5, #fed7aa);
-  color: #f97316;
-}
-
-.stat-icon.purple {
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-  color: #8b5cf6;
-}
-
-/* 统计卡片 */
-.stats-row {
-  margin-bottom: 20px;
-}
-
-.stat-card {
-  border-radius: 12px;
-}
-
-.stat-content {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.stat-number {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text-primary, #303133);
-}
-
-.stat-label {
-  font-size: 13px;
-  color: var(--text-tertiary, #909399);
-}
-
-/* 卡片头部 */
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card-header h3 {
+.filter-group {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0;
-  color: var(--text-primary, #303133);
 }
 
-/* 积分榜 */
-.standings-card {
-  border-radius: 12px;
-  height: fit-content;
-}
-
-.team-cell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.team-name {
+.filter-group label {
+  font-size: 13px;
+  color: #64748b;
   font-weight: 500;
 }
 
-.rank-badge {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+.stats-bar {
   display: flex;
   align-items: center;
-  justify-content: center;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px 24px;
+  margin-bottom: 16px;
+  gap: 24px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.stat-value {
+  font-size: 18px;
   font-weight: 700;
+  color: #0f172a;
+}
+
+.stat-value.highlight {
+  color: #6366f1;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 28px;
+  background: #e2e8f0;
+}
+
+.content-layout {
+  display: flex;
+  gap: 16px;
+}
+
+.left-panel {
+  width: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.right-panel {
+  flex: 1;
+  min-width: 0;
+}
+
+.table-section {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.section-tag {
+  font-size: 11px;
+  color: #6366f1;
+  font-weight: 500;
+  padding: 2px 8px;
+  background: #f5f3ff;
+  border-radius: 4px;
+}
+
+.standings-head {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  background: #f8fafc;
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.standings-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-bottom: 1px solid #f8fafc;
+  transition: background 0.15s;
   font-size: 13px;
-  background: #f0f2f5;
-  color: #606266;
 }
 
-.rank-badge.gold { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: white; }
-.rank-badge.silver { background: linear-gradient(135deg, #9ca3af, #6b7280); color: white; }
-.rank-badge.bronze { background: linear-gradient(135deg, #f97316, #ea580c); color: white; }
-.rank-badge.playoffs { background: linear-gradient(135deg, #22c55e, #16a34a); color: white; }
-
-.win-count { color: #22c55e; font-weight: 600; }
-.loss-count { color: #ef4444; font-weight: 600; }
-.win-rate { color: #3b82f6; font-weight: 600; }
-.points { font-weight: 700; color: #8b5cf6; }
-
-.playoffs-line {
-  margin-top: 16px;
+.standings-row:last-child {
+  border-bottom: none;
 }
 
-/* 比赛列表 */
-.matches-card {
-  border-radius: 12px;
+.standings-row:hover {
+  background: #f8fafc;
 }
 
-.matches-list {
-  max-height: 600px;
+.s-rank { width: 40px; text-align: center; }
+.s-team { flex: 1; font-weight: 500; color: #0f172a; }
+.s-num { width: 50px; text-align: center; color: #64748b; }
+.s-num.win { color: #22c55e; font-weight: 600; }
+.s-num.loss { color: #ef4444; font-weight: 600; }
+.s-num.rate { color: #3b82f6; font-weight: 500; }
+.s-num.pts { color: #6366f1; font-weight: 700; }
+
+.rank-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.rank-num.gold { background: #fef3c7; color: #d97706; }
+.rank-num.silver { background: #f1f5f9; color: #64748b; }
+.rank-num.bronze { background: #ffedd5; color: #ea580c; }
+.rank-num.playoffs { background: #dcfce7; color: #16a34a; }
+
+.playoff-line {
+  padding: 8px 16px;
+  font-size: 11px;
+  color: #94a3b8;
+  text-align: center;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.mvp-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-bottom: 1px solid #f8fafc;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.mvp-row:last-child {
+  border-bottom: none;
+}
+
+.mvp-rank {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.mvp-rank.mvp-gold { background: #fef3c7; color: #d97706; }
+.mvp-rank.mvp-silver { background: #f1f5f9; color: #64748b; }
+.mvp-rank.mvp-bronze { background: #ffedd5; color: #ea580c; }
+
+.mvp-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mvp-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.mvp-meta {
+  font-size: 11px;
+  color: #94a3b8;
+  display: block;
+}
+
+.mvp-count {
+  font-weight: 700;
+  color: #f59e0b;
+  font-size: 14px;
+  min-width: 24px;
+  text-align: center;
+}
+
+.mvp-impact {
+  font-weight: 500;
+  color: #64748b;
+  font-size: 12px;
+  min-width: 32px;
+  text-align: right;
+}
+
+.matches-scroll {
+  max-height: 700px;
   overflow-y: auto;
-}
-
-.match-week-group {
-  margin-bottom: 4px;
 }
 
 .week-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
-  background: #edf2f7;
-  border-radius: 8px 8px 0 0;
+  padding: 6px 16px;
+  background: #f8fafc;
   position: sticky;
   top: 0;
   z-index: 1;
 }
 
 .week-label {
-  font-size: 13px;
-  font-weight: 700;
-  color: #4a5568;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
 }
 
 .week-count {
   font-size: 11px;
-  color: #a0aec0;
+  color: #94a3b8;
 }
 
-.match-item {
+.match-row {
   display: flex;
   align-items: center;
-  padding: 12px 16px;
-  border-radius: 8px;
-  margin-bottom: 8px;
-  background: #f5f7fa;
-  transition: all 0.3s ease;
+  padding: 10px 16px;
+  border-bottom: 1px solid #f8fafc;
+  transition: background 0.15s;
 }
 
-.match-item:hover {
-  background: #ebeef5;
+.match-row:hover {
+  background: #f8fafc;
 }
 
-.match-item.completed {
-  background: #f0fdf4;
-}
-
-.match-item.active {
-  background: #fef3c7;
-  border: 1px solid #f59e0b;
+.match-row.active {
+  background: #fffbeb;
+  border-left: 2px solid #f59e0b;
 }
 
 .match-teams {
@@ -1249,14 +1192,14 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 12px;
 }
 
 .match-teams .team {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 100px;
+  gap: 6px;
+  min-width: 90px;
 }
 
 .match-teams .team.home {
@@ -1272,92 +1215,29 @@ watch(
   color: #22c55e;
 }
 
+.match-teams .team-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0f172a;
+}
+
 .match-teams .team-score {
   font-weight: 700;
-  font-size: 18px;
-  color: var(--text-primary, #303133);
+  font-size: 16px;
+  color: #0f172a;
 }
 
 .match-teams .vs {
-  font-size: 12px;
-  color: var(--text-tertiary, #909399);
+  font-size: 11px;
+  color: #cbd5e1;
   font-weight: 600;
 }
 
 .match-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 120px;
+  gap: 6px;
+  min-width: 70px;
   justify-content: flex-end;
-}
-
-/* 响应式 */
-@media (max-width: 768px) {
-  .page-header {
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .title-section {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .match-teams {
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .match-teams .team {
-    justify-content: center !important;
-  }
-}
-
-/* MVP 排行榜 */
-.mvp-ranking-card {
-  border-radius: 12px;
-  margin-top: 20px;
-}
-
-.mvp-table {
-  width: 100%;
-}
-
-.player-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.player-name {
-  font-weight: 500;
-  color: var(--text-primary, #303133);
-}
-
-.mvp-count {
-  font-weight: 700;
-  font-size: 16px;
-  color: #f59e0b;
-}
-
-.avg-impact {
-  font-weight: 600;
-  color: #3b82f6;
-}
-
-.rank-badge.mvp-gold {
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
-  color: white;
-}
-
-.rank-badge.mvp-silver {
-  background: linear-gradient(135deg, #9ca3af, #6b7280);
-  color: white;
-}
-
-.rank-badge.mvp-bronze {
-  background: linear-gradient(135deg, #f97316, #ea580c);
-  color: white;
 }
 </style>
