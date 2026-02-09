@@ -3587,9 +3587,19 @@ impl GameFlowService {
                     self.initialize_phase(pool, save_id, time_state.current_season as u64, current_phase).await?;
                 }
                 PhaseStatus::InProgress => {
-                    // 模拟所有比赛
-                    let matches_simulated = self.simulate_all_phase_matches(pool, save_id, current_phase).await?;
-                    total_matches_simulated += matches_simulated;
+                    // 年度颁奖典礼没有比赛可模拟，直接完成并推进
+                    if current_phase == SeasonPhase::AnnualAwards {
+                        let _result = self.complete_and_advance(pool, save_id).await?;
+                        phases_advanced += 1;
+                        let save = SaveRepository::get_by_id(pool, save_id)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        current_phase = save.current_phase;
+                    } else {
+                        // 模拟所有比赛
+                        let matches_simulated = self.simulate_all_phase_matches(pool, save_id, current_phase).await?;
+                        total_matches_simulated += matches_simulated;
+                    }
                 }
                 PhaseStatus::Completed => {
                     // 完成并推进

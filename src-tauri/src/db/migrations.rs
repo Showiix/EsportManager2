@@ -24,6 +24,8 @@ impl MigrationManager {
         let migrations = vec![
             ("001_initial", include_str!("../../migrations/001_initial.sql")),
             ("010_transfer_system", include_str!("../../migrations/010_transfer_system.sql")),
+            ("011_fix_transfer_events", include_str!("../../migrations/011_fix_transfer_events.sql")),
+            ("012_add_satisfaction", include_str!("../../migrations/012_add_satisfaction.sql")),
         ];
 
         for (name, sql) in migrations {
@@ -40,10 +42,21 @@ impl MigrationManager {
                 for statement in sql.split(';') {
                     let trimmed = statement.trim();
                     if !trimmed.is_empty() {
-                        sqlx::query(trimmed)
+                        let result = sqlx::query(trimmed)
                             .execute(pool)
-                            .await
-                            .map_err(|e| format!("Migration {} failed: {}", name, e))?;
+                            .await;
+
+                        // 处理错误：忽略 "duplicate column name" 错误（列已存在）
+                        if let Err(e) = result {
+                            let err_msg = e.to_string();
+                            if err_msg.contains("duplicate column name") {
+                                // 列已存在，跳过这条语句
+                                continue;
+                            } else {
+                                // 其他错误，中断迁移
+                                return Err(format!("Migration {} failed: {}", name, err_msg));
+                            }
+                        }
                     }
                 }
 

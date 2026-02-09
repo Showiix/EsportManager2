@@ -6,7 +6,8 @@
         <span class="season-badge">S{{ selectedSeason }}</span>
         <h1 class="ceremony-title">年度颁奖典礼</h1>
         <p class="ceremony-subtitle">表彰本赛季最出色的选手们</p>
-        <div class="season-selector-wrapper" v-if="!isAwardsPhase || ceremonyComplete">
+        <!-- 赛季选择器：始终可见，方便查看历史数据 -->
+        <div class="season-selector-wrapper">
           <SeasonSelector v-model="selectedSeason" />
         </div>
       </div>
@@ -17,8 +18,8 @@
       <el-skeleton :rows="8" animated />
     </div>
 
-    <!-- 空状态：非颁奖阶段且无已颁发数据 -->
-    <div v-else-if="!isAwardsPhase && !awardsData?.already_awarded" class="empty-state">
+    <!-- 空状态：非颁奖阶段且无已颁发数据（仅当前赛季显示此提示） -->
+    <div v-else-if="isCurrentSeason && !isAwardsPhase && !awardsData?.already_awarded" class="empty-state">
       <div class="empty-icon-wrap">
         <el-icon :size="48"><Trophy /></el-icon>
       </div>
@@ -26,8 +27,17 @@
       <p>请推进赛季至年度颁奖阶段</p>
     </div>
 
-    <!-- 颁奖阶段：开始按钮 -->
-    <div v-else-if="isAwardsPhase && !ceremonyStarted && !awardsData?.already_awarded" class="start-state">
+    <!-- 历史赛季无数据（仅在统计数据也不存在时才显示） -->
+    <div v-else-if="!isCurrentSeason && !awardsData?.already_awarded && (!awardsData || awardsData.top20.length === 0)" class="empty-state">
+      <div class="empty-icon-wrap">
+        <el-icon :size="48"><Trophy /></el-icon>
+      </div>
+      <h2>暂无颁奖数据</h2>
+      <p>S{{ selectedSeason }} 赛季尚未进行颁奖典礼</p>
+    </div>
+
+    <!-- 颁奖阶段：开始按钮（仅当前赛季） -->
+    <div v-else-if="isCurrentSeason && isAwardsPhase && !ceremonyStarted && !awardsData?.already_awarded" class="start-state">
       <div class="start-icon-wrap">
         <el-icon :size="56"><Trophy /></el-icon>
       </div>
@@ -321,6 +331,7 @@ const revealedTier = ref(0)
 const revealedSpecial = ref(0)
 
 const isAwardsPhase = computed(() => timeStore.isAnnualAwardsPhase)
+const isCurrentSeason = computed(() => selectedSeason.value === seasonStore.currentSeason)
 const mvpPlayer = computed(() => awardsData.value?.top20[0] || null)
 
 const visibleTop20 = computed(() => {
@@ -363,6 +374,10 @@ const fetchAwardsData = async (seasonId?: number) => {
   try {
     awardsData.value = await awardsApi.getAnnualAwardsData(seasonId)
     if (awardsData.value?.already_awarded) {
+      ceremonyComplete.value = true
+      ceremonyStarted.value = true
+    } else if (!isCurrentSeason.value && awardsData.value && awardsData.value.top20.length > 0) {
+      // 历史赛季：虽然颁奖典礼未正式完成，但有统计数据，直接展示
       ceremonyComplete.value = true
       ceremonyStarted.value = true
     }

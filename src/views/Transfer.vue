@@ -476,6 +476,8 @@ async function loadData() {
 
 onMounted(async () => {
   selectedSeason.value = seasonStore.currentSeason
+  // 先加载时间状态，确保 phaseDisplayName 和 isInTransferWindow 正确
+  await timeStore.fetchTimeState()
   await loadData()
   // 初始化转会期状态（检查是否有进行中的转会期）
   await transferStore.initTransferWindow()

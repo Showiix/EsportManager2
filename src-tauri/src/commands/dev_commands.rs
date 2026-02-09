@@ -1413,3 +1413,248 @@ pub struct TeamFixInfo {
     pub team_name: String,
     pub fixes: Vec<String>,
 }
+
+/// 从 game_player_performances 重建 player_season_stats 数据
+/// 用于修复早期赛季没有正确记录统计数据的问题
+#[tauri::command(rename_all = "camelCase")]
+pub async fn dev_rebuild_player_season_stats(
+    state: State<'_, AppState>,
+    season_id: i64,
+) -> Result<DevCommandResult<RebuildStatsResult>, String> {
+    use crate::models::PlayerSeasonStatistics;
+
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(DevCommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(DevCommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(DevCommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 1. 从 game_player_performances 聚合数据
+    let aggregated_stats: Vec<(i64, String, i64, String, String, i64, f64, f64, f64, f64)> = sqlx::query_as(
+        r#"
+        SELECT
+            gpp.player_id,
+            gpp.player_name,
+            gpp.team_id,
+            COALESCE(r.short_name, 'LPL') as region_code,
+            gpp.position,
+            COUNT(DISTINCT gpp.game_id) as games_played,
+            SUM(gpp.impact_score) as total_impact,
+            AVG(gpp.impact_score) as avg_impact,
+            AVG(gpp.actual_ability) as avg_performance,
+            MAX(gpp.actual_ability) as best_performance
+        FROM game_player_performances gpp
+        JOIN match_games mg ON gpp.game_id = mg.id AND gpp.save_id = mg.save_id
+        JOIN matches m ON mg.match_id = m.id
+        JOIN tournaments t ON m.tournament_id = t.id
+        LEFT JOIN teams tm ON gpp.team_id = tm.id
+        LEFT JOIN regions r ON tm.region_id = r.id
+        WHERE gpp.save_id = ? AND t.season_id = ?
+        GROUP BY gpp.player_id, gpp.player_name, gpp.team_id, gpp.position
+        "#
+    )
+    .bind(&save_id)
+    .bind(season_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("Failed to aggregate stats: {}", e))?;
+
+    if aggregated_stats.is_empty() {
+        return Ok(DevCommandResult::ok(
+            RebuildStatsResult {
+                created_count: 0,
+                updated_count: 0,
+                players: vec![],
+            },
+            format!("S{} 没有找到比赛数据，无法重建统计", season_id),
+        ));
+    }
+
+    let mut created_count = 0;
+    let mut updated_count = 0;
+    let mut players = Vec::new();
+
+    for (player_id, player_name, team_id, region_code, position, games_played, total_impact, avg_impact, avg_performance, best_performance) in aggregated_stats {
+        // 获取最差表现和稳定性（需要单独查询）
+        let extra_stats: Option<(f64, f64)> = sqlx::query_as(
+            r#"
+            SELECT
+                MIN(gpp.actual_ability) as worst_performance,
+                CASE
+                    WHEN COUNT(*) > 1 THEN 100.0 - (
+                        SQRT(SUM((gpp.actual_ability - sub.avg_perf) * (gpp.actual_ability - sub.avg_perf)) / (COUNT(*) - 1))
+                    )
+                    ELSE 100.0
+                END as consistency_score
+            FROM game_player_performances gpp
+            JOIN match_games mg ON gpp.game_id = mg.id AND gpp.save_id = mg.save_id
+            JOIN matches m ON mg.match_id = m.id
+            JOIN tournaments t ON m.tournament_id = t.id
+            CROSS JOIN (SELECT AVG(gpp2.actual_ability) as avg_perf
+                        FROM game_player_performances gpp2
+                        JOIN match_games mg2 ON gpp2.game_id = mg2.id AND gpp2.save_id = mg2.save_id
+                        JOIN matches m2 ON mg2.match_id = m2.id
+                        JOIN tournaments t2 ON m2.tournament_id = t2.id
+                        WHERE gpp2.save_id = ? AND t2.season_id = ? AND gpp2.player_id = ?) sub
+            WHERE gpp.save_id = ? AND t.season_id = ? AND gpp.player_id = ?
+            "#
+        )
+        .bind(&save_id)
+        .bind(season_id)
+        .bind(player_id)
+        .bind(&save_id)
+        .bind(season_id)
+        .bind(player_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap_or(None);
+
+        let (worst_performance, consistency_score) = extra_stats.unwrap_or((100.0, 100.0));
+        let consistency_score = consistency_score.max(0.0).min(100.0);
+
+        // 检查是否已存在记录
+        let existing: Option<(i64,)> = sqlx::query_as(
+            "SELECT id FROM player_season_stats WHERE save_id = ? AND player_id = ? AND season_id = ?"
+        )
+        .bind(&save_id)
+        .bind(player_id)
+        .bind(season_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap_or(None);
+
+        // 计算冠军加成（从 honors 表）
+        let titles: (i64, i64) = sqlx::query_as(
+            r#"
+            SELECT
+                COALESCE(SUM(CASE WHEN tournament_type IN ('Worlds', 'MSI', 'Super', 'ICP', 'Claude', 'ShanghaiMasters', 'MadridMasters') AND honor_type = 'CHAMPION_MEMBER' THEN 1 ELSE 0 END), 0) as international,
+                COALESCE(SUM(CASE WHEN tournament_type LIKE '%Playoff%' AND honor_type = 'CHAMPION_MEMBER' THEN 1 ELSE 0 END), 0) as regional
+            FROM honors
+            WHERE save_id = ? AND player_id = ? AND season_id = ?
+            "#
+        )
+        .bind(&save_id)
+        .bind(player_id)
+        .bind(season_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or((0, 0));
+
+        let champion_bonus = (titles.0 * 3 + titles.1) as f64;
+        let yearly_top_score = PlayerSeasonStatistics::calculate_yearly_top_score(
+            avg_impact,
+            avg_performance,
+            consistency_score,
+            games_played as i32,
+            champion_bonus,
+        );
+        let dominance_score = PlayerSeasonStatistics::calculate_dominance_score(
+            best_performance,
+            avg_impact,
+            avg_performance,
+        );
+
+        if existing.is_some() {
+            // 更新现有记录
+            sqlx::query(
+                r#"
+                UPDATE player_season_stats SET
+                    team_id = ?, region_id = ?, games_played = ?,
+                    total_impact = ?, avg_impact = ?, avg_performance = ?,
+                    best_performance = ?, worst_performance = ?, consistency_score = ?,
+                    international_titles = ?, regional_titles = ?,
+                    champion_bonus = ?, yearly_top_score = ?, dominance_score = ?,
+                    updated_at = datetime('now')
+                WHERE save_id = ? AND player_id = ? AND season_id = ?
+                "#
+            )
+            .bind(team_id)
+            .bind(&region_code)
+            .bind(games_played)
+            .bind(total_impact)
+            .bind(avg_impact)
+            .bind(avg_performance)
+            .bind(best_performance)
+            .bind(worst_performance)
+            .bind(consistency_score)
+            .bind(titles.0)
+            .bind(titles.1)
+            .bind(champion_bonus)
+            .bind(yearly_top_score)
+            .bind(dominance_score)
+            .bind(&save_id)
+            .bind(player_id)
+            .bind(season_id)
+            .execute(&pool)
+            .await
+            .ok();
+
+            updated_count += 1;
+        } else {
+            // 创建新记录
+            sqlx::query(
+                r#"
+                INSERT INTO player_season_stats
+                (save_id, player_id, player_name, season_id, team_id, region_id, position,
+                 matches_played, games_played, total_impact, avg_impact, avg_performance,
+                 best_performance, worst_performance, consistency_score,
+                 international_titles, regional_titles, champion_bonus, yearly_top_score, dominance_score)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#
+            )
+            .bind(&save_id)
+            .bind(player_id)
+            .bind(&player_name)
+            .bind(season_id)
+            .bind(team_id)
+            .bind(&region_code)
+            .bind(&position)
+            .bind(games_played)
+            .bind(total_impact)
+            .bind(avg_impact)
+            .bind(avg_performance)
+            .bind(best_performance)
+            .bind(worst_performance)
+            .bind(consistency_score)
+            .bind(titles.0)
+            .bind(titles.1)
+            .bind(champion_bonus)
+            .bind(yearly_top_score)
+            .bind(dominance_score)
+            .execute(&pool)
+            .await
+            .ok();
+
+            created_count += 1;
+        }
+
+        players.push(format!("{} (场次:{}, 得分:{:.1})", player_name, games_played, yearly_top_score));
+    }
+
+    Ok(DevCommandResult::ok(
+        RebuildStatsResult {
+            created_count,
+            updated_count,
+            players,
+        },
+        format!("S{} 统计数据重建完成：新建 {} 条，更新 {} 条", season_id, created_count, updated_count),
+    ))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RebuildStatsResult {
+    pub created_count: i32,
+    pub updated_count: i32,
+    pub players: Vec<String>,
+}

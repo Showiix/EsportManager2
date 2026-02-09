@@ -850,7 +850,7 @@ impl TransferEngine {
         // 获取合同即将到期的选手（contract_end_season = 当前赛季）
         let expiring_players: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
             r#"SELECT p.id, p.game_id, p.ability, p.salary, p.loyalty, p.satisfaction,
-                      p.team_id, p.age, p.potential, p.tag, t.name as team_name
+                      p.team_id, p.age, p.potential, p.tag, p.calculated_market_value, t.name as team_name
                FROM players p
                LEFT JOIN teams t ON p.team_id = t.id
                WHERE p.save_id = ? AND p.status = 'Active'
@@ -874,6 +874,7 @@ impl TransferEngine {
             let team_id: i64 = player.get("team_id");
             let team_name: String = player.get("team_name");
             let age: i64 = player.get("age");
+            let calculated_market_value: i64 = player.try_get("calculated_market_value").unwrap_or(0);
 
             // 续约谈判逻辑
             let loyalty_bonus = loyalty as f64 / 100.0;
@@ -882,7 +883,13 @@ impl TransferEngine {
 
             // 最多3轮谈判
             let mut renewed = false;
-            let expected_salary = MarketValueEngine::estimate_salary(MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", "MID"), ability as u8, age as u8) as i64;
+            // 使用完整身价（含荣誉系数）计算期望薪资
+            let market_value = if calculated_market_value > 0 {
+                calculated_market_value as u64
+            } else {
+                MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", "MID")
+            };
+            let expected_salary = MarketValueEngine::estimate_salary(market_value, ability as u8, age as u8) as i64;
 
             for _negotiation_round in 0..self.config.negotiation_max_rounds {
                 let roll: f64 = rng.gen();
@@ -1661,7 +1668,7 @@ impl TransferEngine {
         // 获取所有自由球员（不在任何队伍中的选手，需从数据库查询，因为缓存只存有队伍的选手）
         let free_agents: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
             r#"SELECT id, game_id, ability, salary, age, position, loyalty, potential, tag,
-                      home_region_id, region_loyalty, stability
+                      home_region_id, region_loyalty, stability, calculated_market_value
                FROM players
                WHERE save_id = ? AND status = 'Active' AND team_id IS NULL
                ORDER BY ability DESC"#
@@ -1687,8 +1694,15 @@ impl TransferEngine {
             let potential: i64 = free_agent.try_get("potential").unwrap_or(0);
             let tag: String = free_agent.try_get("tag").unwrap_or_else(|_| "NORMAL".to_string());
             let stability: i64 = free_agent.try_get("stability").unwrap_or(60);
+            let calculated_market_value: i64 = free_agent.try_get("calculated_market_value").unwrap_or(0);
 
-            let expected_salary = MarketValueEngine::estimate_salary(MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, potential as u8, &tag, &position), ability as u8, age as u8) as i64;
+            // 使用完整身价（含荣誉系数）计算期望薪资
+            let market_value = if calculated_market_value > 0 {
+                calculated_market_value as u64
+            } else {
+                MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, potential as u8, &tag, &position)
+            };
+            let expected_salary = MarketValueEngine::estimate_salary(market_value, ability as u8, age as u8) as i64;
 
             // 收集所有球队的报价
             let mut offers: Vec<TransferOffer> = Vec::new();
@@ -1968,7 +1982,7 @@ impl TransferEngine {
         let listings: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
             r#"SELECT pl.id as listing_id, pl.player_id, pl.listed_by_team_id, pl.listing_price, pl.min_accept_price,
                       p.game_id, p.ability, p.age, p.position, p.salary, p.loyalty,
-                      p.home_region_id, p.region_loyalty, p.potential, p.tag, p.stability,
+                      p.home_region_id, p.region_loyalty, p.potential, p.tag, p.stability, p.calculated_market_value,
                       t.name as from_team_name
                FROM player_listings pl
                JOIN players p ON pl.player_id = p.id
@@ -2002,6 +2016,7 @@ impl TransferEngine {
             let potential: i64 = listing.try_get("potential").unwrap_or(0);
             let tag: String = listing.try_get("tag").unwrap_or_else(|_| "NORMAL".to_string());
             let stability: i64 = listing.try_get("stability").unwrap_or(60);
+            let calculated_market_value: i64 = listing.try_get("calculated_market_value").unwrap_or(0);
 
             let mut all_bids: Vec<(i64, String, i64, i64, i64, Option<i64>, f64)> = Vec::new();
             // (team_id, team_name, bid_price, expected_salary, contract_years, target_region_id, match_score)
@@ -2052,7 +2067,13 @@ impl TransferEngine {
                 }
 
                 let team_name = cache.get_team_name(team_id);
-                let base_salary = MarketValueEngine::estimate_salary(listing_price as u64, ability as u8, age as u8) as i64;
+                // 使用完整身价（含荣誉系数）计算期望薪资，而不是转会标价
+                let market_value = if calculated_market_value > 0 {
+                    calculated_market_value as u64
+                } else {
+                    MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, potential as u8, &tag, &position)
+                };
+                let base_salary = MarketValueEngine::estimate_salary(market_value, ability as u8, age as u8) as i64;
                 // 根据球队AI性格和随机波动调整报价薪资
                 let salary_multiplier = {
                     let base_mult = if weights.star_chasing > 0.7 { 1.15 }
@@ -2983,13 +3004,26 @@ impl TransferEngine {
         contract_years: i64,
         reason: &str,
     ) -> Result<TransferEvent, String> {
+        // 从 transfer_windows 获取 save_id 和 season_id
+        let window_row = sqlx::query(
+            "SELECT save_id, season_id FROM transfer_windows WHERE id = ?"
+        )
+        .bind(window_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("查询转会窗口失败: {}", e))?;
+        let save_id: String = window_row.get("save_id");
+        let season_id: i64 = window_row.get("season_id");
+
         let result = sqlx::query(
             r#"INSERT INTO transfer_events
-               (window_id, round, event_type, level, player_id, player_name, player_ability,
+               (save_id, season_id, window_id, round, event_type, level, player_id, player_name, player_ability,
                 from_team_id, from_team_name, to_team_id, to_team_name,
                 transfer_fee, salary, contract_years, reason)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#
         )
+        .bind(&save_id)
+        .bind(season_id)
         .bind(window_id)
         .bind(round)
         .bind(event_type.as_str())

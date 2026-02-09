@@ -2,6 +2,7 @@ use sqlx::{Pool, Sqlite, SqlitePool};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use super::migrations::MigrationManager;
 
 /// 数据库连接管理器
 pub struct DatabaseManager {
@@ -62,6 +63,11 @@ impl DatabaseManager {
 
     /// 运行数据库迁移
     async fn run_migrations(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
+        // 首先运行 SQL 文件迁移系统（处理表结构变更）
+        MigrationManager::run_pending_migrations(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e))?;
+
         // 修补旧表缺失列（必须在 SCHEMA_SQL 之前，否则索引创建会失败）
         self.patch_legacy_tables(pool).await?;
 
@@ -268,6 +274,10 @@ impl DatabaseManager {
 
         // 迁移13: 修复 Super 赛事已完成的定位赛/晋级赛胜败者未填入下一轮的问题
         self.repair_super_winner_routing(pool).await?;
+
+        // 迁移14-15: 已移至 migrations.rs (使用 SQL 文件系统)
+        // - 011_fix_transfer_events.sql: 重建 transfer_events 表
+        // - 012_add_satisfaction.sql: 添加 players.satisfaction 字段
 
         Ok(())
     }
@@ -1952,6 +1962,7 @@ CREATE TABLE IF NOT EXISTS players (
     join_season INTEGER,
     retire_season INTEGER,
     is_starter INTEGER NOT NULL DEFAULT 0,
+    satisfaction INTEGER NOT NULL DEFAULT 50,
     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
     FOREIGN KEY (team_id) REFERENCES teams(id)
 );
@@ -2377,34 +2388,25 @@ CREATE TABLE IF NOT EXISTS transfer_windows (
 -- 转会事件表
 CREATE TABLE IF NOT EXISTS transfer_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    save_id TEXT NOT NULL,
-    season_id INTEGER NOT NULL,
+    save_id TEXT NOT NULL DEFAULT '',
+    season_id INTEGER NOT NULL DEFAULT 0,
+    window_id INTEGER,
     round INTEGER NOT NULL,
     event_type TEXT NOT NULL,
-    status TEXT NOT NULL,
+    level TEXT NOT NULL DEFAULT 'NORMAL',
     player_id INTEGER NOT NULL,
     player_name TEXT NOT NULL,
-    position TEXT,
-    age INTEGER NOT NULL,
-    ability INTEGER NOT NULL,
-    potential INTEGER NOT NULL,
-    market_value INTEGER NOT NULL,
+    player_ability INTEGER NOT NULL DEFAULT 0,
     from_team_id INTEGER,
     from_team_name TEXT,
     to_team_id INTEGER,
     to_team_name TEXT,
     transfer_fee INTEGER NOT NULL DEFAULT 0,
-    new_salary INTEGER,
+    salary INTEGER NOT NULL DEFAULT 0,
     contract_years INTEGER,
-    contract_type TEXT NOT NULL DEFAULT 'RENEWAL',
-    price_ratio REAL,
-    headline TEXT NOT NULL,
-    description TEXT NOT NULL,
-    importance TEXT NOT NULL DEFAULT 'NORMAL',
-    competing_teams TEXT,
-    was_bidding_war INTEGER NOT NULL DEFAULT 0,
+    reason TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+    FOREIGN KEY (window_id) REFERENCES transfer_windows(id),
     FOREIGN KEY (player_id) REFERENCES players(id)
 );
 
