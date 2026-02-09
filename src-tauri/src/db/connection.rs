@@ -258,6 +258,14 @@ impl DatabaseManager {
         // 迁移11: 创建选秀池持久化表
         self.run_draft_pool_migration(pool).await?;
 
+        // 迁移12: 修正 Super 赛事定位赛 stage 名称
+        sqlx::query(
+            "UPDATE matches SET stage = 'CHALLENGER_POSITIONING' WHERE stage = 'CHALLENGER_QUALIFIER'"
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
         Ok(())
     }
 
