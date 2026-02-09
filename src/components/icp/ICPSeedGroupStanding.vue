@@ -130,16 +130,6 @@ const getSeedLabel = (seed: number) => {
   }
   return labels[seed] || `${seed}号种子`
 }
-
-const getRegionTagType = (region?: string) => {
-  const typeMap: Record<string, any> = {
-    'LPL': 'danger',
-    'LCK': 'primary',
-    'LEC': 'success',
-    'LCS': 'warning'
-  }
-  return typeMap[region || ''] || 'info'
-}
 </script>
 
 <style scoped>

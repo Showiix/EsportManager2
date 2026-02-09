@@ -572,19 +572,6 @@ const getRegionFlag = (region: string) => {
 }
 
 /**
- * 获取赛区标签类型
- */
-const getRegionTagType = (region?: string) => {
-  const typeMap: Record<string, any> = {
-    'LPL': 'danger',
-    'LCK': 'primary',
-    'LEC': 'success',
-    'LCS': 'warning'
-  }
-  return typeMap[region || ''] || 'info'
-}
-
-/**
  * 按种子号分组的队伍数据
  */
 const seedTeamsGrouped = computed(() => {

@@ -124,19 +124,6 @@ const isWinner = (teamId: string | number | undefined): boolean => {
 }
 
 /**
- * 获取赛区标签颜色
- */
-const getRegionTagType = (region?: string): string => {
-  const typeMap: Record<string, string> = {
-    'LPL': 'danger',
-    'LCK': 'primary',
-    'LEC': 'success',
-    'LCS': 'warning'
-  }
-  return typeMap[region || ''] || 'info'
-}
-
-/**
  * 获取比赛类型标签
  */
 const getMatchTypeBadgeType = (): string => {

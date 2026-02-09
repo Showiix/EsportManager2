@@ -310,19 +310,6 @@ const getRowClassName = ({ row }: { row: SuperGroupStanding }) => {
 }
 
 /**
- * 获取赛区标签颜色
- */
-const getRegionTagType = (region?: string): string => {
-  const typeMap: Record<string, string> = {
-    'LPL': 'danger',
-    'LCK': 'primary',
-    'LEC': 'success',
-    'LCS': 'warning'
-  }
-  return typeMap[region || ''] || 'info'
-}
-
-/**
  * 处理模拟比赛
  */
 const handleSimulateMatch = (match: SuperMatch) => {

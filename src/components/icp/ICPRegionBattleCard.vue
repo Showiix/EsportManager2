@@ -110,16 +110,6 @@ defineEmits<{
   (e: 'view-match', match: ICPMatch): void
 }>()
 
-const getRegionFlag = (region: string) => {
-  const flagMap: Record<string, string> = {
-    'LPL': '🇨🇳',
-    'LCK': '🇰🇷',
-    'LEC': '🇪🇺',
-    'LCS': '🇺🇸'
-  }
-  return flagMap[region] || '🏳️'
-}
-
 const getSeedLabel = (seed: number) => {
   const labels: Record<number, string> = {
     1: '一号种子',
@@ -128,16 +118,6 @@ const getSeedLabel = (seed: number) => {
     4: '四号种子'
   }
   return labels[seed] || `${seed}号种子`
-}
-
-const getRegionTagType = (region?: string) => {
-  const typeMap: Record<string, any> = {
-    'LPL': 'danger',
-    'LCK': 'primary',
-    'LEC': 'success',
-    'LCS': 'warning'
-  }
-  return typeMap[region || ''] || 'info'
 }
 </script>
 
