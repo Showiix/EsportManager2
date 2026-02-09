@@ -459,15 +459,14 @@ const playerStore = usePlayerStore()
 const viewingSeason = computed(() => Number(route.query.season) || gameStore.gameState?.current_season || 1)
 
 // 阶段检查
-const ICP_PHASE = 'ICP_INTERCONTINENTAL'
+const ICP_PHASE = 'IcpIntercontinental'
 const phaseNotReached = computed(() => {
   const currentPhase = timeStore.currentPhase
-  // 后端使用 SCREAMING_SNAKE_CASE 格式序列化阶段名称
   const phaseOrder = [
-    'SPRING_REGULAR', 'SPRING_PLAYOFFS', 'MSI', 'MADRID_MASTERS',
-    'SUMMER_REGULAR', 'SUMMER_PLAYOFFS', 'CLAUDE_INTERCONTINENTAL',
-    'WORLD_CHAMPIONSHIP', 'SHANGHAI_MASTERS', 'ICP_INTERCONTINENTAL',
-    'SUPER_INTERCONTINENTAL', 'TRANSFER_WINDOW', 'DRAFT', 'SEASON_END'
+    'SpringRegular', 'SpringPlayoffs', 'Msi', 'MadridMasters',
+    'SummerRegular', 'SummerPlayoffs', 'ClaudeIntercontinental',
+    'WorldChampionship', 'ShanghaiMasters', 'IcpIntercontinental',
+    'SuperIntercontinental', 'TransferWindow', 'Draft', 'SeasonEnd'
   ]
   const currentIndex = phaseOrder.indexOf(currentPhase)
   const targetIndex = phaseOrder.indexOf(ICP_PHASE)

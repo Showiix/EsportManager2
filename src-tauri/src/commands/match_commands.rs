@@ -440,17 +440,30 @@ async fn simulate_single_match_internal(
             .map(|p| p.player_id as i64)
             .unwrap_or(0);
 
+        // 计算队伍战力（选手实际发挥值平均）
+        let home_power: f64 = if !game.home_players.is_empty() {
+            game.home_players.iter().map(|p| p.actual_ability).sum::<f64>() / game.home_players.len() as f64
+        } else { 0.0 };
+        let away_power: f64 = if !game.away_players.is_empty() {
+            game.away_players.iter().map(|p| p.actual_ability).sum::<f64>() / game.away_players.len() as f64
+        } else { 0.0 };
+
         sqlx::query(
             r#"
             INSERT INTO match_games (
                 id, save_id, match_id, game_number, winner_team_id, loser_team_id,
-                duration_minutes, mvp_player_id, key_player_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                duration_minutes, mvp_player_id, key_player_id,
+                home_power, away_power, home_meta_power, away_meta_power
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 winner_team_id = excluded.winner_team_id,
                 loser_team_id = excluded.loser_team_id,
                 duration_minutes = excluded.duration_minutes,
-                mvp_player_id = excluded.mvp_player_id
+                mvp_player_id = excluded.mvp_player_id,
+                home_power = excluded.home_power,
+                away_power = excluded.away_power,
+                home_meta_power = excluded.home_meta_power,
+                away_meta_power = excluded.away_meta_power
             "#,
         )
         .bind(&game_id)
@@ -462,6 +475,10 @@ async fn simulate_single_match_internal(
         .bind(game.duration_minutes as i64)
         .bind(mvp_player_id)
         .bind(mvp_player_id) // key_player 暂时与 mvp 相同
+        .bind(home_power)
+        .bind(away_power)
+        .bind(game.home_performance)
+        .bind(game.away_performance)
         .execute(&mut *tx)
         .await
         .ok();

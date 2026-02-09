@@ -109,11 +109,13 @@ function convertFromDbFormat(matchId: number, dbData: MatchFullDetails): MatchDe
         activatedTraits: parseActivatedTraitsJson(p.activated_traits_json)
       }))
 
-    // 计算队伍表现和战力（使用 actualAbility 以匹配 buildMatchDetail 的 calcTeamPower 逻辑）
+    // 计算队伍表现和战力（优先使用数据库中存储的值，否则从选手数据重新计算）
     const teamAPerfAvg = teamAPlayers.reduce((sum, p) => sum + p.impactScore, 0) / (teamAPlayers.length || 1)
     const teamBPerfAvg = teamBPlayers.reduce((sum, p) => sum + p.impactScore, 0) / (teamBPlayers.length || 1)
-    const teamAPower = teamAPlayers.reduce((sum, p) => sum + (p.actualAbility || p.baseAbility), 0) / (teamAPlayers.length || 1)
-    const teamBPower = teamBPlayers.reduce((sum, p) => sum + (p.actualAbility || p.baseAbility), 0) / (teamBPlayers.length || 1)
+    const teamAPower = game.home_power ?? teamAPlayers.reduce((sum, p) => sum + (p.actualAbility || p.baseAbility), 0) / (teamAPlayers.length || 1)
+    const teamBPower = game.away_power ?? teamBPlayers.reduce((sum, p) => sum + (p.actualAbility || p.baseAbility), 0) / (teamBPlayers.length || 1)
+    const teamAMetaPower = game.home_meta_power ?? undefined
+    const teamBMetaPower = game.away_meta_power ?? undefined
 
     return {
       gameNumber: game.game_number,
@@ -121,16 +123,19 @@ function convertFromDbFormat(matchId: number, dbData: MatchFullDetails): MatchDe
       teamAName,
       teamAPower,
       teamAPerformance: teamAPerfAvg,
+      teamAMetaPower,
       teamAPlayers,
       teamBId,
       teamBName,
       teamBPower,
       teamBPerformance: teamBPerfAvg,
+      teamBMetaPower,
       teamBPlayers,
       winnerId: teamAId,
       winnerName: teamAName,
       powerDifference: teamAPower - teamBPower,
       performanceDifference: teamAPerfAvg - teamBPerfAvg,
+      metaPowerDifference: teamAMetaPower != null && teamBMetaPower != null ? teamAMetaPower - teamBMetaPower : undefined,
       isUpset: teamBPower > teamAPower // 战力低的队伍获胜
     }
   })
@@ -273,6 +278,10 @@ function convertToSaveInput(matchId: number, detail: MatchDetail): SaveMatchDeta
       duration_minutes: null,
       mvp_player_id: parseInt(mvpPlayer.playerId),
       key_player_id: keyPlayerId,
+      home_power: game.teamAPower ?? null,
+      away_power: game.teamBPower ?? null,
+      home_meta_power: game.teamAMetaPower ?? null,
+      away_meta_power: game.teamBMetaPower ?? null,
       performances
     }
   })

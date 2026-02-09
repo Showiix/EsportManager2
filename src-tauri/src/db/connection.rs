@@ -279,6 +279,35 @@ impl DatabaseManager {
         // - 011_fix_transfer_events.sql: 重建 transfer_events 表
         // - 012_add_satisfaction.sql: 添加 players.satisfaction 字段
 
+        // 迁移16: 为 match_games 表添加战力和META加权字段
+        {
+            let mg_cols: Vec<(String,)> = sqlx::query_as(
+                "SELECT name FROM pragma_table_info('match_games')"
+            )
+            .fetch_all(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            let mg_col_names: Vec<&str> = mg_cols.iter().map(|c| c.0.as_str()).collect();
+
+            if !mg_col_names.contains(&"home_power") {
+                sqlx::query("ALTER TABLE match_games ADD COLUMN home_power REAL")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+            if !mg_col_names.contains(&"away_power") {
+                sqlx::query("ALTER TABLE match_games ADD COLUMN away_power REAL")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+            if !mg_col_names.contains(&"home_meta_power") {
+                sqlx::query("ALTER TABLE match_games ADD COLUMN home_meta_power REAL")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+            if !mg_col_names.contains(&"away_meta_power") {
+                sqlx::query("ALTER TABLE match_games ADD COLUMN away_meta_power REAL")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+        }
+
         Ok(())
     }
 
@@ -2322,6 +2351,10 @@ CREATE TABLE IF NOT EXISTS match_games (
     duration_minutes INTEGER,
     mvp_player_id INTEGER,
     key_player_id INTEGER,
+    home_power REAL,
+    away_power REAL,
+    home_meta_power REAL,
+    away_meta_power REAL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
     FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,

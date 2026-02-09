@@ -2267,6 +2267,10 @@ export interface MatchGameDetail {
   duration_minutes: number | null
   mvp_player_id: number | null
   key_player_id: number | null
+  home_power: number | null
+  away_power: number | null
+  home_meta_power: number | null
+  away_meta_power: number | null
   created_at: string | null
 }
 
@@ -2352,6 +2356,10 @@ export interface SaveGameInput {
   duration_minutes: number | null
   mvp_player_id: number | null
   key_player_id: number | null
+  home_power: number | null
+  away_power: number | null
+  home_meta_power: number | null
+  away_meta_power: number | null
   performances: SavePerformanceInput[]
 }
 

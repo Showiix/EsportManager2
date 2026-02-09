@@ -1341,6 +1341,52 @@ pub async fn generate_knockout_bracket(
             .await
             .map_err(|e| e.to_string())?;
 
+            // 补填定位赛败者到晋级赛的 away_team_id（如果定位赛已完成但 advance_bracket 未正确执行）
+            let positioning_matches = sqlx::query(
+                r#"
+                SELECT match_order, home_team_id, away_team_id, winner_id
+                FROM matches
+                WHERE save_id = ? AND tournament_id = ? AND stage = 'CHALLENGER_POSITIONING'
+                AND (status = 'Completed' OR UPPER(status) = 'COMPLETED')
+                ORDER BY match_order
+                "#
+            )
+            .bind(&save_id)
+            .bind(tournament_id as i64)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            for row in &positioning_matches {
+                let match_order: i64 = row.get::<Option<i64>, _>("match_order").unwrap_or(0);
+                let home_team_id: Option<i64> = row.get("home_team_id");
+                let away_team_id: Option<i64> = row.get("away_team_id");
+                let winner_id: Option<i64> = row.get("winner_id");
+
+                if let (Some(home), Some(away), Some(winner)) = (home_team_id, away_team_id, winner_id) {
+                    let loser_id = if winner == home { away } else { home };
+
+                    // 将定位赛败者填入对应晋级赛的 away_team_id
+                    sqlx::query(
+                        r#"
+                        UPDATE matches
+                        SET away_team_id = ?
+                        WHERE save_id = ? AND tournament_id = ? AND stage = 'CHALLENGER_PROMOTION'
+                        AND match_order = ? AND (away_team_id IS NULL OR away_team_id = 0)
+                        "#
+                    )
+                    .bind(loser_id)
+                    .bind(&save_id)
+                    .bind(tournament_id as i64)
+                    .bind(match_order)
+                    .execute(&pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                    log::debug!("补填晋级赛{} away_team_id={}", match_order, loser_id);
+                }
+            }
+
             return Ok(CommandResult::ok(vec![]));
         }
         "MadridMasters" | "ClaudeIntercontinental" => {

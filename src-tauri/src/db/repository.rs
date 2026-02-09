@@ -2865,15 +2865,20 @@ impl MatchGameDetailRepository {
                 r#"
                 INSERT INTO match_games (
                     id, save_id, match_id, game_number, winner_team_id, loser_team_id,
-                    duration_minutes, mvp_player_id, key_player_id
+                    duration_minutes, mvp_player_id, key_player_id,
+                    home_power, away_power, home_meta_power, away_meta_power
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     winner_team_id = excluded.winner_team_id,
                     loser_team_id = excluded.loser_team_id,
                     duration_minutes = excluded.duration_minutes,
                     mvp_player_id = excluded.mvp_player_id,
-                    key_player_id = excluded.key_player_id
+                    key_player_id = excluded.key_player_id,
+                    home_power = excluded.home_power,
+                    away_power = excluded.away_power,
+                    home_meta_power = excluded.home_meta_power,
+                    away_meta_power = excluded.away_meta_power
                 "#
             )
             .bind(&game_id)
@@ -2885,6 +2890,10 @@ impl MatchGameDetailRepository {
             .bind(game_input.duration_minutes)
             .bind(game_input.mvp_player_id)
             .bind(game_input.key_player_id)
+            .bind(game_input.home_power)
+            .bind(game_input.away_power)
+            .bind(game_input.home_meta_power)
+            .bind(game_input.away_meta_power)
             .execute(pool)
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -3116,6 +3125,10 @@ fn row_to_match_game_detail(row: &sqlx::sqlite::SqliteRow) -> MatchGameDetail {
         duration_minutes: row.get("duration_minutes"),
         mvp_player_id: row.get("mvp_player_id"),
         key_player_id: row.get("key_player_id"),
+        home_power: row.get("home_power"),
+        away_power: row.get("away_power"),
+        home_meta_power: row.get("home_meta_power"),
+        away_meta_power: row.get("away_meta_power"),
         created_at: row.get("created_at"),
     }
 }

@@ -78,6 +78,11 @@
         >
           模拟终极冠军赛
         </button>
+        <el-tooltip content="修复对阵数据（补填缺失队伍）" placement="bottom">
+          <button class="action-btn fix-btn" @click="repairBracket" :disabled="repairing">
+            &#x21bb;
+          </button>
+        </el-tooltip>
       </div>
     </div>
 
@@ -299,15 +304,14 @@ const playerStore = usePlayerStore()
 const viewingSeason = computed(() => Number(route.query.season) || gameStore.gameState?.current_season || 1)
 
 // 阶段检查
-const SUPER_PHASE = 'SUPER_INTERCONTINENTAL'
+const SUPER_PHASE = 'SuperIntercontinental'
 const phaseNotReached = computed(() => {
   const currentPhase = timeStore.currentPhase
-  // 后端使用 SCREAMING_SNAKE_CASE 格式序列化阶段名称
   const phaseOrder = [
-    'SPRING_REGULAR', 'SPRING_PLAYOFFS', 'MSI', 'MADRID_MASTERS',
-    'SUMMER_REGULAR', 'SUMMER_PLAYOFFS', 'CLAUDE_INTERCONTINENTAL',
-    'WORLD_CHAMPIONSHIP', 'SHANGHAI_MASTERS', 'ICP_INTERCONTINENTAL',
-    'SUPER_INTERCONTINENTAL', 'TRANSFER_WINDOW', 'DRAFT', 'SEASON_END'
+    'SpringRegular', 'SpringPlayoffs', 'Msi', 'MadridMasters',
+    'SummerRegular', 'SummerPlayoffs', 'ClaudeIntercontinental',
+    'WorldChampionship', 'ShanghaiMasters', 'IcpIntercontinental',
+    'SuperIntercontinental', 'TransferWindow', 'Draft', 'SeasonEnd'
   ]
   const currentIndex = phaseOrder.indexOf(currentPhase)
   const targetIndex = phaseOrder.indexOf(SUPER_PHASE)
@@ -332,6 +336,7 @@ const generatingChampionPrep = ref(false)
 const generatingFinal = ref(false)
 const simulatingChampionPrep = ref(false)
 const simulatingFinal = ref(false)
+const repairing = ref(false)
 const activeFighterGroup = ref('A')
 
 // 批量模拟 composable 实例
@@ -917,6 +922,27 @@ const batchSimulateFighterStage = async () => {
 }
 
 /**
+ * 修复对阵数据 — 重新调用 generateKnockoutBracket 补填缺失队伍
+ */
+const repairBracket = async () => {
+  if (!tournamentId.value) {
+    ElMessage.warning('赛事ID不存在')
+    return
+  }
+  repairing.value = true
+  try {
+    await internationalApi.generateKnockoutBracket(tournamentId.value)
+    await loadTournamentData()
+    ElMessage.success('对阵数据修复完成')
+  } catch (error: any) {
+    logger.error('修复对阵数据失败:', error)
+    ElMessage.error(error?.message || '修复失败')
+  } finally {
+    repairing.value = false
+  }
+}
+
+/**
  * 生成第二阶段（挑战者组）
  */
 const handleGenerateChallengerStage = async () => {
@@ -954,45 +980,77 @@ const handleGenerateChallengerStage = async () => {
 const batchSimulateChallengerStage = async () => {
   if (!tournamentId.value) return
 
-  // 获取挑战者组阶段的比赛
-  const challengerMatches = bracketData.value?.matches.filter(
-    m => m.stage.startsWith('CHALLENGER') && m.status !== 'Completed'
+  const mapMatches = (matches: any[]) => matches.map(m => ({
+    matchId: m.match_id,
+    teamAId: String(m.home_team?.id || ''),
+    teamAName: m.home_team?.name || '',
+    teamBId: String(m.away_team?.id || ''),
+    teamBName: m.away_team?.name || '',
+    bestOf: m.format === 'BO5' ? 5 : 3,
+    frontendMatchId: String(m.match_id),
+    backendMatchId: m.match_id
+  }))
+
+  const onMatchSimulated = async (matchId: number, result: any) => {
+    if (tournamentId.value && result.winner_id) {
+      try {
+        await internationalApi.advanceBracket(tournamentId.value, matchId, result.winner_id)
+      } catch (e) {
+        // 忽略
+      }
+    }
+  }
+
+  // 第一步：模拟定位赛（CHALLENGER_POSITIONING）
+  const positioningMatches = bracketData.value?.matches.filter(
+    m => m.stage === 'CHALLENGER_POSITIONING' && m.status !== 'Completed'
   ) || []
 
-  await batchSimulateChallengerMatches({
-    confirmMessage: '将自动模拟所有挑战者组比赛。是否继续?',
-    confirmTitle: '模拟挑战者组',
-    confirmType: 'info',
-    successMessage: '挑战者组阶段模拟完成！现在可以生成第三阶段。',
-    errorPrefix: '挑战者组模拟失败',
-    tournamentType: 'super',
-    seasonId: String(superBracket.seasonYear),
-    competitionType: 'INTL',
-    delayMs: 200,
-    matches: challengerMatches.map(m => ({
-      matchId: m.match_id,
-      teamAId: String(m.home_team?.id || ''),
-      teamAName: m.home_team?.name || '',
-      teamBId: String(m.away_team?.id || ''),
-      teamBName: m.away_team?.name || '',
-      bestOf: m.format === 'BO5' ? 5 : 3,
-      frontendMatchId: String(m.match_id),
-      backendMatchId: m.match_id
-    })),
-    onMatchSimulated: async (matchId, result) => {
-      // 推进对阵
-      if (tournamentId.value && result.winner_id) {
-        try {
-          await internationalApi.advanceBracket(tournamentId.value, matchId, result.winner_id)
-        } catch (e) {
-          // 忽略
-        }
+  if (positioningMatches.length > 0) {
+    await batchSimulateChallengerMatches({
+      confirmMessage: '将自动模拟所有挑战者组比赛（定位赛 + 晋级赛）。是否继续?',
+      confirmTitle: '模拟挑战者组',
+      confirmType: 'info',
+      successMessage: '定位赛模拟完成，继续晋级赛...',
+      errorPrefix: '定位赛模拟失败',
+      tournamentType: 'super',
+      seasonId: String(superBracket.seasonYear),
+      competitionType: 'INTL',
+      delayMs: 200,
+      matches: mapMatches(positioningMatches),
+      onMatchSimulated,
+      onComplete: async () => {
+        // 定位赛完成后重新加载数据，让晋级赛获取到定位赛败者
+        await loadTournamentData()
       }
-    },
-    onComplete: async () => {
-      await loadTournamentData()
-    }
-  })
+    })
+  }
+
+  // 第二步：重新读取数据后模拟晋级赛（CHALLENGER_PROMOTION）
+  // 此时定位赛败者已通过 advanceBracket 填入晋级赛的 away_team
+  const promotionMatches = bracketData.value?.matches.filter(
+    m => m.stage === 'CHALLENGER_PROMOTION' && m.status !== 'Completed'
+  ) || []
+
+  if (promotionMatches.length > 0) {
+    await batchSimulateChallengerMatches({
+      skipConfirm: true,
+      confirmMessage: '',
+      confirmTitle: '',
+      confirmType: 'info',
+      successMessage: '挑战者组阶段模拟完成！现在可以生成第三阶段。',
+      errorPrefix: '晋级赛模拟失败',
+      tournamentType: 'super',
+      seasonId: String(superBracket.seasonYear),
+      competitionType: 'INTL',
+      delayMs: 200,
+      matches: mapMatches(promotionMatches),
+      onMatchSimulated,
+      onComplete: async () => {
+        await loadTournamentData()
+      }
+    })
+  }
 }
 
 /**
@@ -1734,6 +1792,9 @@ onMounted(() => {
 
 .warning-btn { background: #f59e0b; color: #ffffff; border-color: #f59e0b; }
 .warning-btn:hover { background: #d97706; }
+
+.fix-btn { width: 32px; height: 32px; min-width: 32px; padding: 0; border-radius: 50%; font-size: 16px; background: #f0f1f3; color: #4e5969; border-color: #e5e7eb; display: inline-flex; align-items: center; justify-content: center; }
+.fix-btn:hover { background: #e5e7eb; color: #1d2129; }
 
 .success-btn { background: #22c55e; color: #ffffff; border-color: #22c55e; }
 .success-btn:hover { background: #16a34a; }

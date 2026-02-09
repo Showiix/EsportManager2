@@ -168,6 +168,8 @@ export interface BatchSimulateOptions {
   tournamentType: string
   seasonId: string
   competitionType?: string
+  /** 跳过确认对话框，直接开始模拟 */
+  skipConfirm?: boolean
   delayMs?: number
   /** 赛事 ID — 如果提供，使用后端批量命令一次模拟全部 */
   tournamentId?: number
@@ -191,15 +193,17 @@ export function useBatchSimulation() {
    */
   async function batchSimulate(options: BatchSimulateOptions) {
     try {
-      await ElMessageBox.confirm(
-        options.confirmMessage,
-        options.confirmTitle,
-        {
-          confirmButtonText: '开始模拟',
-          cancelButtonText: '取消',
-          type: options.confirmType || 'info'
-        }
-      )
+      if (!options.skipConfirm) {
+        await ElMessageBox.confirm(
+          options.confirmMessage,
+          options.confirmTitle,
+          {
+            confirmButtonText: '开始模拟',
+            cancelButtonText: '取消',
+            type: options.confirmType || 'info'
+          }
+        )
+      }
 
       isSimulating.value = true
       simulationProgress.value = 0

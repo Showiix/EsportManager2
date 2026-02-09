@@ -12,6 +12,10 @@ pub struct MatchGameDetail {
     pub duration_minutes: Option<i32>,
     pub mvp_player_id: Option<i64>,
     pub key_player_id: Option<i64>,
+    pub home_power: Option<f64>,
+    pub away_power: Option<f64>,
+    pub home_meta_power: Option<f64>,
+    pub away_meta_power: Option<f64>,
     pub created_at: Option<String>,
 }
 
@@ -79,6 +83,10 @@ pub struct SaveGameInput {
     pub duration_minutes: Option<i32>,
     pub mvp_player_id: Option<i64>,
     pub key_player_id: Option<i64>,
+    pub home_power: Option<f64>,
+    pub away_power: Option<f64>,
+    pub home_meta_power: Option<f64>,
+    pub away_meta_power: Option<f64>,
     pub performances: Vec<SavePerformanceInput>,
 }
 

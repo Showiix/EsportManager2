@@ -1057,6 +1057,14 @@ async fn simulate_match_core(
             });
         }
 
+        // 计算队伍战力（选手实际发挥值平均）
+        let home_power: f64 = if !home_player_stats.is_empty() {
+            home_player_stats.iter().map(|p| p.actual_ability).sum::<f64>() / home_player_stats.len() as f64
+        } else { 0.0 };
+        let away_power: f64 = if !away_player_stats.is_empty() {
+            away_player_stats.iter().map(|p| p.actual_ability).sum::<f64>() / away_player_stats.len() as f64
+        } else { 0.0 };
+
         games_data.push(SaveGameInput {
             game_number: game_number as i32,
             winner_team_id: winner_id,
@@ -1064,6 +1072,10 @@ async fn simulate_match_core(
             duration_minutes: Some(duration as i32),
             mvp_player_id: mvp,
             key_player_id: None,
+            home_power: Some(home_power),
+            away_power: Some(away_power),
+            home_meta_power: Some(home_perf),
+            away_meta_power: Some(away_perf),
             performances,
         });
 
