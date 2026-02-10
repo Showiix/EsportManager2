@@ -1,5 +1,5 @@
 use crate::commands::save_commands::{AppState, CommandResult};
-use crate::engines::{DraftEngine, RookieGenerator};
+use crate::engines::{DraftEngine, MarketValueEngine, RookieGenerator};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::collections::HashSet;
@@ -515,6 +515,18 @@ pub async fn make_draft_pick(
         _ => 60,
     };
 
+    let draft_ability = player_row.get::<i64, _>("ability") as u8;
+    let draft_potential = player_row.get::<i64, _>("potential") as u8;
+    let draft_age = player_row.get::<i64, _>("age") as u8;
+    let draft_tag: String = player_row.get("tag");
+    let draft_position: String = player_row.get("position");
+    let draft_salary = MarketValueEngine::estimate_salary(
+        MarketValueEngine::calculate_base_market_value(draft_ability, draft_age, draft_potential, &draft_tag, &draft_position),
+        draft_ability, draft_age,
+    ) as i64;
+    let draft_market_value = MarketValueEngine::calculate_base_market_value(draft_ability, draft_age, draft_potential, &draft_tag, &draft_position) as i64;
+    let draft_contract_years: i64 = 3;
+
     // 创建正式球员
     let new_player_id: i64 = sqlx::query(
         r#"
@@ -537,9 +549,9 @@ pub async fn make_draft_pick(
     .bind(player_row.get::<String, _>("tag"))
     .bind(player_row.get::<String, _>("position"))
     .bind(team_id as i64)
-    .bind(20i64) // 新秀合同薪资
-    .bind(50i64) // 初始市场价值
-    .bind(current_season + 2) // 2年新秀合同
+    .bind(draft_salary)
+    .bind(draft_market_value)
+    .bind(current_season + draft_contract_years)
     .bind(current_season)
     .bind(region_id)  // home_region_id = 选秀赛区
     .bind(region_loyalty)
@@ -570,15 +582,16 @@ pub async fn make_draft_pick(
     // 记录选秀合同历史
     sqlx::query(
         r#"INSERT INTO player_contracts (save_id, player_id, team_id, contract_type, total_salary, annual_salary, contract_years, start_season, end_season, is_active)
-           VALUES (?, ?, ?, 'DRAFT', ?, ?, 2, ?, ?, 1)"#
+           VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, 1)"#
     )
     .bind(&save_id)
     .bind(new_player_id)
     .bind(team_id as i64)
-    .bind(20i64)   // total_salary = 20
-    .bind(10i64)   // annual_salary = 20 / 2 = 10
+    .bind(draft_salary * draft_contract_years)
+    .bind(draft_salary)
+    .bind(draft_contract_years)
     .bind(current_season)
-    .bind(current_season + 2)
+    .bind(current_season + draft_contract_years)
     .execute(&pool)
     .await
     .map_err(|e| format!("记录选秀合同失败: {}", e))?;

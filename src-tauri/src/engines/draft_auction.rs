@@ -16,22 +16,26 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// 选秀权拍卖引擎
+/// 简化的新秀信息（供拍卖引擎决策用）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DraftRookieInfo {
+    pub ability: u8,
+    pub potential: u8,
+    pub position: String, // "TOP" / "JUG" / "MID" / "ADC" / "SUP"
+    pub draft_rank: u32,
+}
+
 pub struct DraftAuctionEngine {
-    /// 当前拍卖会
     pub auction: DraftPickAuction,
-    /// 所有挂牌
     pub listings: Vec<DraftPickListing>,
-    /// 所有出价
     pub bids: Vec<DraftPickBid>,
-    /// 生成的拍卖事件
     pub events: Vec<DraftPickAuctionEvent>,
-    /// 球队信息
     pub teams: HashMap<u64, TeamAuctionInfo>,
-    /// 选秀顺位（team_id -> draft_position）
+    /// team_id -> draft_position
     pub draft_orders: HashMap<u64, u32>,
-    /// 配置
     pub config: DraftAuctionConfig,
+    /// 本届新秀名单（按 draft_rank 排序），供 AI 卖签/买签决策参考
+    pub draft_rookies: Vec<DraftRookieInfo>,
 }
 
 /// 球队拍卖相关信息
@@ -89,6 +93,7 @@ impl Default for DraftAuctionEngine {
             teams: HashMap::new(),
             draft_orders: HashMap::new(),
             config: DraftAuctionConfig::default(),
+            draft_rookies: Vec::new(),
         }
     }
 }
@@ -250,7 +255,7 @@ impl DraftAuctionEngine {
         new_events
     }
 
-    /// AI 卖签决策（4因素相乘模型）
+    /// AI 卖签决策（5因素模型：财务 × 签位留存 × 阵容 × 实力 × 新秀匹配度）
     fn evaluate_sell_decision(
         &self,
         team_info: &TeamAuctionInfo,
@@ -298,10 +303,88 @@ impl DraftAuctionEngine {
             1.00
         };
 
-        let sell_prob: f64 =
-            (financial_motivation * pick_retention * roster_factor * strength_factor)
-                .clamp(0.0, 0.90);
+        // 5. 新秀匹配度（本届有急需位置的强力新秀且签位内能选到→不卖）
+        let rookie_match_factor = self.calculate_rookie_match_factor(team_info, position);
+
+        let sell_prob: f64 = (financial_motivation
+            * pick_retention
+            * roster_factor
+            * strength_factor
+            * rookie_match_factor)
+            .clamp(0.0, 0.90);
         rng.gen::<f64>() < sell_prob
+    }
+
+    /// 计算新秀匹配度对卖签意愿的影响
+    /// 返回 < 1.0 表示不想卖（新秀匹配好），> 1.0 表示更愿意卖（新秀不匹配）
+    fn calculate_rookie_match_factor(
+        &self,
+        team_info: &TeamAuctionInfo,
+        draft_position: u32,
+    ) -> f64 {
+        if self.draft_rookies.is_empty() {
+            return 1.0;
+        }
+
+        // 该签位能选到的新秀范围：第 position 顺位大约能选到 rank <= position 的新秀
+        // （前面的队伍已经选走了更好的，所以大致能选到 rank 接近 position 的）
+        let reachable_rookies: Vec<&DraftRookieInfo> = self
+            .draft_rookies
+            .iter()
+            .filter(|r| r.draft_rank <= draft_position + 1)
+            .collect();
+
+        if reachable_rookies.is_empty() {
+            return 1.0;
+        }
+
+        // 找到该签位最可能选到的新秀（rank 最接近 position 的）
+        let target_rookie = reachable_rookies
+            .iter()
+            .min_by_key(|r| (r.draft_rank as i32 - draft_position as i32).unsigned_abs())
+            .unwrap();
+
+        // 检查这个新秀的位置是否匹配球队需求
+        let pos_need = team_info
+            .position_needs
+            .get(&target_rookie.position)
+            .copied()
+            .unwrap_or(50);
+
+        // 综合评分 = 能力 × 0.4 + 潜力 × 0.6
+        let rookie_score =
+            target_rookie.ability as f64 * 0.4 + target_rookie.potential as f64 * 0.6;
+
+        // 也看看可达范围内所有新秀的最佳匹配
+        let best_match_score = reachable_rookies
+            .iter()
+            .map(|r| {
+                let need = team_info
+                    .position_needs
+                    .get(&r.position)
+                    .copied()
+                    .unwrap_or(50) as f64;
+                let score = r.ability as f64 * 0.4 + r.potential as f64 * 0.6;
+                need / 100.0 * score
+            })
+            .fold(0.0_f64, f64::max);
+
+        // 高匹配 = 急需位置(need >= 60) + 强力新秀(score >= 65)
+        if pos_need >= 80 && rookie_score >= 70.0 {
+            // 该位置极度空缺且新秀很强 → 强烈不卖
+            0.20
+        } else if pos_need >= 60 && rookie_score >= 60.0 {
+            // 位置有需求且新秀不错 → 倾向不卖
+            0.45
+        } else if best_match_score >= 50.0 {
+            // 可达范围内有一定匹配 → 略微降低卖签意愿
+            0.70
+        } else if pos_need <= 30 && rookie_score < 55.0 {
+            // 位置不需要且新秀能力一般 → 更愿意卖
+            1.30
+        } else {
+            1.0
+        }
     }
 
     /// 执行一轮竞拍
@@ -584,8 +667,12 @@ impl DraftAuctionEngine {
             1.00
         };
 
-        // 5. 基础竞拍概率
-        let mut bid_prob = (pick_value / 100.0) * 0.50 * need_score * strength_desire;
+        // 5. 新秀匹配度（本届有急需位置的新秀→买签动力更强）
+        let rookie_desire = self.calculate_rookie_bid_factor(team_info, draft_position);
+
+        // 6. 基础竞拍概率
+        let mut bid_prob =
+            (pick_value / 100.0) * 0.50 * need_score * strength_desire * rookie_desire;
 
         // 6. 价格敏感度（指数衰减）
         if let Some(pricing) = get_price_for_position(draft_position) {
@@ -628,7 +715,44 @@ impl DraftAuctionEngine {
         Some(rng.gen_range(min_bid..=max_bid))
     }
 
-    /// 完成指定索引的挂牌交易
+    /// 计算新秀匹配度对买签意愿的影响
+    /// 返回 > 1.0 表示更想买（新秀匹配好），< 1.0 表示不想买
+    fn calculate_rookie_bid_factor(&self, team_info: &TeamAuctionInfo, draft_position: u32) -> f64 {
+        if self.draft_rookies.is_empty() {
+            return 1.0;
+        }
+
+        // 该签位大约能选到 rank 接近 draft_position 的新秀
+        let target_rookie = self
+            .draft_rookies
+            .iter()
+            .filter(|r| r.draft_rank <= draft_position + 1)
+            .min_by_key(|r| (r.draft_rank as i32 - draft_position as i32).unsigned_abs());
+
+        let target_rookie = match target_rookie {
+            Some(r) => r,
+            None => return 0.70, // 签位范围内没有可选新秀
+        };
+
+        let pos_need = team_info
+            .position_needs
+            .get(&target_rookie.position)
+            .copied()
+            .unwrap_or(50);
+        let rookie_score =
+            target_rookie.ability as f64 * 0.4 + target_rookie.potential as f64 * 0.6;
+
+        if pos_need >= 80 && rookie_score >= 70.0 {
+            1.60 // 极度匹配 → 强烈想买
+        } else if pos_need >= 60 && rookie_score >= 60.0 {
+            1.30 // 较好匹配
+        } else if pos_need <= 20 {
+            0.50 // 不需要该位置
+        } else {
+            1.0
+        }
+    }
+
     fn finalize_listing_sale(
         &mut self,
         idx: usize,

@@ -3,7 +3,7 @@
 //! 实现前端调用的拍卖相关命令
 
 use crate::commands::save_commands::{AppState, CommandResult};
-use crate::engines::{DraftAuctionEngine, TeamAuctionInfo, AuctionRoundResult};
+use crate::engines::{DraftAuctionEngine, DraftRookieInfo, TeamAuctionInfo, AuctionRoundResult};
 use crate::models::{
     AuctionStatus, DraftPickListing,
     DraftListingStatus, get_draft_pick_pricing,
@@ -177,6 +177,58 @@ pub async fn start_draft_auction(
         roster_counts.insert(team_id as u64, count as u32);
     }
 
+    // 查询各队位置需求（每个位置的球员数量 → 转换为需求度）
+    let mut position_needs: HashMap<u64, HashMap<String, u8>> = HashMap::new();
+    for row in &team_rows {
+        let team_id: i64 = row.get("id");
+        let pos_rows = sqlx::query(
+            "SELECT position, COUNT(*) as cnt FROM players WHERE team_id = ? AND status = 'Active' GROUP BY position"
+        )
+        .bind(team_id)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let mut needs = HashMap::new();
+        for pos_name in &["TOP", "JUG", "MID", "ADC", "SUP"] {
+            let count = pos_rows.iter()
+                .find(|r| {
+                    let p: String = r.get("position");
+                    p.to_uppercase() == *pos_name
+                })
+                .map(|r| r.get::<i64, _>("cnt"))
+                .unwrap_or(0);
+            let need: u8 = match count {
+                0 => 100,
+                1 => 60,
+                2 => 30,
+                _ => 10,
+            };
+            needs.insert(pos_name.to_string(), need);
+        }
+        position_needs.insert(team_id as u64, needs);
+    }
+
+    // 查询本届新秀名单（draft_players），供 AI 卖签/买签决策参考
+    let rookie_rows = sqlx::query(
+        "SELECT ability, potential, position, draft_rank FROM draft_players WHERE save_id = ? AND season_id = ? AND region_id = ? AND is_picked = 0 ORDER BY draft_rank"
+    )
+    .bind(&save_id)
+    .bind(current_season)
+    .bind(region_id as i64)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let draft_rookies: Vec<DraftRookieInfo> = rookie_rows.iter().map(|r| {
+        DraftRookieInfo {
+            ability: r.get::<i64, _>("ability") as u8,
+            potential: r.get::<i64, _>("potential") as u8,
+            position: r.get::<Option<String>, _>("position").unwrap_or_default().to_uppercase(),
+            draft_rank: r.get::<i64, _>("draft_rank") as u32,
+        }
+    }).collect();
+
     // 构建选秀顺位
     let mut draft_orders = Vec::new();
     for row in &order_rows {
@@ -214,11 +266,12 @@ pub async fn start_draft_auction(
 
     // 创建拍卖引擎
     let mut engine = DraftAuctionEngine::new(save_id.clone(), current_season as u64, region_id);
+    engine.draft_rookies = draft_rookies;
     engine.initialize(
         &teams,
         &draft_orders,
         &roster_counts,
-        &HashMap::new(), // position_needs
+        &position_needs,
     );
 
     // 创建拍卖记录
@@ -793,13 +846,39 @@ async fn load_auction_engine(
         .await
         .unwrap_or(0);
 
+        let pos_rows = sqlx::query(
+            "SELECT position, COUNT(*) as cnt FROM players WHERE team_id = ? AND status = 'Active' GROUP BY position"
+        )
+        .bind(team_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let mut needs = HashMap::new();
+        for pos_name in &["TOP", "JUG", "MID", "ADC", "SUP"] {
+            let count = pos_rows.iter()
+                .find(|r| {
+                    let p: String = r.get("position");
+                    p.to_uppercase() == *pos_name
+                })
+                .map(|r| r.get::<i64, _>("cnt"))
+                .unwrap_or(0);
+            let need: u8 = match count {
+                0 => 100,
+                1 => 60,
+                2 => 30,
+                _ => 10,
+            };
+            needs.insert(pos_name.to_string(), need);
+        }
+
         engine.teams.insert(team_id as u64, TeamAuctionInfo {
             team_id: team_id as u64,
             team_name: row.get("name"),
             balance,
             financial_status: crate::models::FinancialStatus::from_balance(balance),
             roster_count: roster_count as u32,
-            position_needs: HashMap::new(),
+            position_needs: needs,
             avg_ability: row.get("power_rating"),
         });
     }
@@ -820,6 +899,26 @@ async fn load_auction_engine(
         let position: i64 = row.get("draft_position");
         engine.draft_orders.insert(team_id as u64, position as u32);
     }
+
+    // 加载本届新秀名单
+    let rookie_rows = sqlx::query(
+        "SELECT ability, potential, position, draft_rank FROM draft_players WHERE save_id = ? AND season_id = ? AND region_id = ? AND is_picked = 0 ORDER BY draft_rank"
+    )
+    .bind(save_id)
+    .bind(current_season)
+    .bind(region_id as i64)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    engine.draft_rookies = rookie_rows.iter().map(|r| {
+        DraftRookieInfo {
+            ability: r.get::<i64, _>("ability") as u8,
+            potential: r.get::<i64, _>("potential") as u8,
+            position: r.get::<Option<String>, _>("position").unwrap_or_default().to_uppercase(),
+            draft_rank: r.get::<i64, _>("draft_rank") as u32,
+        }
+    }).collect();
 
     Ok(engine)
 }
