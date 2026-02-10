@@ -401,26 +401,23 @@ impl InitService {
     }
 
     /// 计算初始薪资（单位：元）
-    /// 缩放后阈值，薪资基数约为原来的一半
+    /// 与 MarketValueEngine::estimate_salary 对齐
     fn calculate_initial_salary(ability: u8, _potential: u8, tag: PlayerTag) -> u64 {
-        // base 单位为万元（基数）
-        let base = match ability {
-            68..=100 => 75,
-            65..=67 => 50,
-            62..=64 => 35,
-            60..=61 => 25,
-            55..=59 => 18,
-            _ => 10,
-        };
+        // 使用 MarketValueEngine 计算基准薪资，保证与评估体系一致
+        let base_market_value = MarketValueEngine::calculate_base_market_value_enum(
+            ability, 23, ability, // 23岁作为初始典型年龄，potential=ability
+            &tag, &Position::Mid, // 用 MID 位置近似
+        );
+        let base_salary = MarketValueEngine::estimate_salary(base_market_value, ability, 23);
 
-        let tag_multiplier = match tag {
-            PlayerTag::Genius => 1.5,
+        // 初始薪资 = 市场薪资 × 0.85（新人折扣）
+        let tag_adj = match tag {
+            PlayerTag::Genius => 1.1,
             PlayerTag::Normal => 1.0,
-            PlayerTag::Ordinary => 0.8,
+            PlayerTag::Ordinary => 0.9,
         };
 
-        // 返回元
-        ((base as f64) * tag_multiplier * 10000.0) as u64
+        ((base_salary as f64 * 0.85 * tag_adj) as u64).max(50_000) // 最低5万
     }
 
     /// 初始化所有数据
