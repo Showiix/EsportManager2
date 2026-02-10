@@ -212,9 +212,8 @@ import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useTimeStore } from '@/stores/useTimeStore'
 import { useGameStore } from '@/stores/useGameStore'
 import { internationalApi, matchApi } from '@/api/tauri'
-import type { BracketInfo, MatchBracketInfo, GroupStandingInfo, DetailedGameResult, PlayerGameStats } from '@/api/tauri'
+import type { BracketInfo, MatchBracketInfo, GroupStandingInfo } from '@/api/tauri'
 import type { MatchDetail } from '@/types/matchDetail'
-import type { PlayerPosition } from '@/types/player'
 import type { ClauchMatch, ClauchGroup, ClauchGroupStanding as ClauchGroupStandingType, ClauchKnockoutBracket as ClauchKnockoutBracketType } from '@/types/clauch'
 import { useBatchSimulation, buildMatchDetail, recordMatchPerformances } from '@/composables/useBatchSimulation'
 import { createLogger } from '@/utils/logger'
@@ -348,29 +347,7 @@ const handleSimulateMatch = async (match: ClauchMatch) => {
     match.status = 'completed'
     match.completedAt = new Date()
 
-    // 将后端结果转换为前端 MatchDetail 格式
-    const convertPlayerPerformance = (p: PlayerGameStats, teamId: string) => ({
-      playerId: String(p.player_id),
-      playerName: p.player_name,
-      position: p.position as PlayerPosition,
-      teamId: teamId,
-      baseAbility: p.base_ability,
-      conditionBonus: p.condition_bonus,
-      stabilityNoise: p.stability_noise,
-      actualAbility: p.actual_ability,
-      impactScore: p.impact_score,
-      traits: p.traits as any[],
-      activatedTraits: p.activated_traits?.map(t => ({
-        type: t.trait_type as any,
-        name: t.name,
-        effect: t.effect,
-        value: t.value,
-        isPositive: t.is_positive
-      }))
-    })
-
-    // 保存比赛详情到 Store (用于展示)
-    const matchDetail: MatchDetail = {
+    const matchDetail = buildMatchDetail({
       matchId: match.id,
       tournamentType: 'clauch',
       seasonId: String(clauchBracket.seasonYear),
@@ -379,62 +356,11 @@ const handleSimulateMatch = async (match: ClauchMatch) => {
       teamBId: String(match.teamBId || ''),
       teamBName: match.teamBName || '',
       bestOf: match.bestOf || 3,
-      finalScoreA: result.home_score,
-      finalScoreB: result.away_score,
-      winnerId: String(result.winner_id),
-      winnerName: result.winner_id === result.home_team_id ? (match.teamAName || '') : (match.teamBName || ''),
-      mvpPlayerId: result.match_mvp ? String(result.match_mvp.player_id) : undefined,
-      mvpPlayerName: result.match_mvp?.player_name,
-      mvpTeamId: result.match_mvp ? String(result.match_mvp.team_id) : undefined,
-      mvpTotalImpact: result.match_mvp?.mvp_score,
-      games: result.games.map((game: DetailedGameResult) => ({
-        gameNumber: game.game_number,
-        teamAId: String(match.teamAId || ''),
-        teamAName: match.teamAName || '',
-        teamAPower: 0,
-        teamAPerformance: game.home_performance,
-        teamAPlayers: game.home_players.map(p => convertPlayerPerformance(p, String(match.teamAId || ''))),
-        teamBId: String(match.teamBId || ''),
-        teamBName: match.teamBName || '',
-        teamBPower: 0,
-        teamBPerformance: game.away_performance,
-        teamBPlayers: game.away_players.map(p => convertPlayerPerformance(p, String(match.teamBId || ''))),
-        winnerId: String(game.winner_id),
-        winnerName: game.winner_id === result.home_team_id ? (match.teamAName || '') : (match.teamBName || ''),
-        powerDifference: 0,
-        performanceDifference: game.home_performance - game.away_performance,
-        isUpset: false
-      }))
-    }
+      result
+    })
     matchDetailStore.saveMatchDetail(match.id, matchDetail)
 
-    // 记录选手表现到统计（国际赛事使用 INTL 标识）
-    matchDetail.games.forEach(game => {
-      game.teamAPlayers.forEach(perf => {
-        playerStore.recordPerformance(
-          perf.playerId,
-          perf.playerName,
-          perf.teamId,
-          perf.position,
-          perf.impactScore,
-          perf.actualAbility,
-          String(clauchBracket.seasonYear),
-          'INTL'
-        )
-      })
-      game.teamBPlayers.forEach(perf => {
-        playerStore.recordPerformance(
-          perf.playerId,
-          perf.playerName,
-          perf.teamId,
-          perf.position,
-          perf.impactScore,
-          perf.actualAbility,
-          String(clauchBracket.seasonYear),
-          'INTL'
-        )
-      })
-    })
+    recordMatchPerformances(matchDetail, String(clauchBracket.seasonYear), 'INTL', playerStore)
     playerStore.saveToStorage()
 
     ElMessage.success(`比赛完成: ${match.teamAName} ${result.home_score} - ${result.away_score} ${match.teamBName}`)
