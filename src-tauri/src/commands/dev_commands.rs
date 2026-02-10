@@ -1538,8 +1538,8 @@ pub async fn dev_rebuild_player_season_stats(
         let titles: (i64, i64) = sqlx::query_as(
             r#"
             SELECT
-                COALESCE(SUM(CASE WHEN tournament_type IN ('Worlds', 'MSI', 'Super', 'ICP', 'Claude', 'ShanghaiMasters', 'MadridMasters') AND honor_type = 'CHAMPION_MEMBER' THEN 1 ELSE 0 END), 0) as international,
-                COALESCE(SUM(CASE WHEN tournament_type LIKE '%Playoff%' AND honor_type = 'CHAMPION_MEMBER' THEN 1 ELSE 0 END), 0) as regional
+                COALESCE(SUM(CASE WHEN tournament_type IN ('Worlds', 'MSI', 'Super', 'ICP', 'Claude', 'ShanghaiMasters', 'MadridMasters') AND honor_type = 'PLAYER_CHAMPION' THEN 1 ELSE 0 END), 0) as international,
+                COALESCE(SUM(CASE WHEN tournament_type LIKE '%Playoff%' AND honor_type = 'PLAYER_CHAMPION' THEN 1 ELSE 0 END), 0) as regional
             FROM honors
             WHERE save_id = ? AND player_id = ? AND season_id = ?
             "#
@@ -1551,7 +1551,27 @@ pub async fn dev_rebuild_player_season_stats(
         .await
         .unwrap_or((0, 0));
 
-        let champion_bonus = (titles.0 * 3 + titles.1) as f64;
+        // 国际冠军+3, 赛区冠军+1, 国际亚军+2, 赛区亚军+0.5, 国际季军+1, 赛区季军+0.25
+        let placement_bonus: (f64, f64, f64, f64) = sqlx::query_as(
+            r#"
+            SELECT
+                COALESCE(SUM(CASE WHEN tournament_type IN ('Worlds', 'MSI', 'Super', 'ICP', 'Claude', 'ShanghaiMasters', 'MadridMasters') AND honor_type = 'PLAYER_RUNNER_UP' THEN 2.0 ELSE 0.0 END), 0.0),
+                COALESCE(SUM(CASE WHEN tournament_type LIKE '%Playoff%' AND honor_type = 'PLAYER_RUNNER_UP' THEN 0.5 ELSE 0.0 END), 0.0),
+                COALESCE(SUM(CASE WHEN tournament_type IN ('Worlds', 'MSI', 'Super', 'ICP', 'Claude', 'ShanghaiMasters', 'MadridMasters') AND honor_type = 'PLAYER_THIRD' THEN 1.0 ELSE 0.0 END), 0.0),
+                COALESCE(SUM(CASE WHEN tournament_type LIKE '%Playoff%' AND honor_type = 'PLAYER_THIRD' THEN 0.25 ELSE 0.0 END), 0.0)
+            FROM honors
+            WHERE save_id = ? AND player_id = ? AND season_id = ?
+            "#
+        )
+        .bind(&save_id)
+        .bind(player_id)
+        .bind(season_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or((0.0, 0.0, 0.0, 0.0));
+
+        let champion_bonus = (titles.0 * 3 + titles.1) as f64
+            + placement_bonus.0 + placement_bonus.1 + placement_bonus.2 + placement_bonus.3;
         let yearly_top_score = PlayerSeasonStatistics::calculate_yearly_top_score(
             avg_impact,
             avg_performance,

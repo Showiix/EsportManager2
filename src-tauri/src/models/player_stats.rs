@@ -91,8 +91,11 @@ impl PlayerSeasonStatistics {
         let appearance_norm = (games_played as f64 * 0.83).clamp(0.0, 100.0);
         let honor_norm = (champion_bonus * 6.67).clamp(0.0, 100.0);
 
-        impact_norm * 0.35 + perf_norm * 0.20 + stability_norm * 0.15
-            + appearance_norm * 0.10 + honor_norm * 0.20
+        impact_norm * 0.45
+            + perf_norm * 0.20
+            + stability_norm * 0.15
+            + appearance_norm * 0.10
+            + honor_norm * 0.10
     }
 
     /// 统治力评分（独立公式）
@@ -127,7 +130,8 @@ impl PlayerSeasonStatistics {
         }
 
         // 计算稳定性评分
-        self.consistency_score = (100.0 - (self.best_performance - self.worst_performance) * 2.0).max(0.0);
+        self.consistency_score =
+            (100.0 - (self.best_performance - self.worst_performance) * 2.0).max(0.0);
 
         // 更新年度Top得分（五维归一化）
         self.yearly_top_score = Self::calculate_yearly_top_score(
@@ -158,9 +162,26 @@ impl PlayerSeasonStatistics {
         } else {
             self.regional_titles += 1;
         }
-        // 更新冠军加成: 国际赛冠军+3, 赛区冠军+1
-        self.champion_bonus = (self.international_titles * 3 + self.regional_titles) as f64;
-        // 更新年度Top得分（五维归一化）
+        // 国际赛冠军+3, 赛区冠军+1
+        let bonus = if is_international { 3.0 } else { 1.0 };
+        self.champion_bonus += bonus;
+        self.recalculate_score();
+    }
+
+    /// placement: "RUNNER_UP" | "THIRD"
+    pub fn record_placement(&mut self, placement: &str, is_international: bool) {
+        let bonus = match (placement, is_international) {
+            ("RUNNER_UP", true) => 2.0,
+            ("RUNNER_UP", false) => 0.5,
+            ("THIRD", true) => 1.0,
+            ("THIRD", false) => 0.25,
+            _ => 0.0,
+        };
+        self.champion_bonus += bonus;
+        self.recalculate_score();
+    }
+
+    fn recalculate_score(&mut self) {
         self.yearly_top_score = Self::calculate_yearly_top_score(
             self.avg_impact,
             self.avg_performance,

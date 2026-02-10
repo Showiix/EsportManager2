@@ -2135,7 +2135,7 @@ impl GameFlowService {
         Ok(distributed)
     }
 
-    /// 更新冠军队伍选手的统计数据（增加冠军次数）
+    /// 更新冠军/亚军/季军队伍选手的统计数据
     async fn update_champion_player_stats(
         &self,
         pool: &Pool<Sqlite>,
@@ -2145,18 +2145,16 @@ impl GameFlowService {
         tournament_type: TournamentType,
         is_international: bool,
     ) -> Result<(), String> {
-        // 获取赛事排名结果
         let results = self.get_tournament_final_results(pool, save_id, tournament_id, tournament_type).await?;
 
-        // 找到冠军队伍
-        let champion_team_id = results.iter()
-            .find(|(_, pos)| pos == "CHAMPION")
-            .map(|(team_id, _)| *team_id);
+        for (team_id, position) in &results {
+            let placement = position.as_str();
+            if !matches!(placement, "CHAMPION" | "RUNNER_UP" | "THIRD") {
+                continue;
+            }
 
-        if let Some(team_id) = champion_team_id {
-            log::debug!("Updating stats for champion team {} in tournament {}", team_id, tournament_id);
+            log::debug!("Updating stats for {} team {} in tournament {}", placement, team_id, tournament_id);
 
-            // 获取队伍的所有选手（从 players 表）
             let players = sqlx::query(
                 r#"
                 SELECT id, game_id, position FROM players
@@ -2164,42 +2162,47 @@ impl GameFlowService {
                 "#
             )
             .bind(save_id)
-            .bind(team_id as i64)
+            .bind(*team_id as i64)
             .fetch_all(pool)
             .await
             .map_err(|e| format!("Failed to get team players: {}", e))?;
 
-            // 更新每个选手的冠军统计
             for player_row in &players {
                 let player_id: i64 = player_row.get("id");
                 let player_name: String = player_row.get("game_id");
-                let position: String = player_row.get("position");
+                let pos: String = player_row.get("position");
 
-                // 获取或创建选手的赛季统计
                 let mut stats = PlayerStatsRepository::get_or_create(
                     pool,
                     save_id,
                     player_id,
                     &player_name,
                     season_id as i64,
-                    Some(team_id as i64),
-                    None,  // region_id
-                    &position
+                    Some(*team_id as i64),
+                    None,
+                    &pos
                 )
                 .await
                 .map_err(|e| e.to_string())?;
 
-                // 更新冠军次数
-                if is_international {
-                    stats.international_titles += 1;
-                    log::debug!("Player {} now has {} international titles", player_id, stats.international_titles);
-                } else {
-                    stats.regional_titles += 1;
-                    log::debug!("Player {} now has {} regional titles", player_id, stats.regional_titles);
+                match placement {
+                    "CHAMPION" => {
+                        if is_international {
+                            stats.international_titles += 1;
+                        } else {
+                            stats.regional_titles += 1;
+                        }
+                        stats.champion_bonus += if is_international { 3.0 } else { 1.0 };
+                    }
+                    "RUNNER_UP" => {
+                        stats.champion_bonus += if is_international { 2.0 } else { 0.5 };
+                    }
+                    "THIRD" => {
+                        stats.champion_bonus += if is_international { 1.0 } else { 0.25 };
+                    }
+                    _ => {}
                 }
 
-                // 重新计算冠军加成和年度Top得分（五维归一化加权）
-                stats.champion_bonus = (stats.international_titles * 3 + stats.regional_titles) as f64;
                 stats.yearly_top_score = PlayerSeasonStatistics::calculate_yearly_top_score(
                     stats.avg_impact,
                     stats.avg_performance,
@@ -2213,15 +2216,12 @@ impl GameFlowService {
                     stats.avg_performance,
                 );
 
-                // 保存更新
                 PlayerStatsRepository::update(pool, &stats)
                     .await
                     .map_err(|e| e.to_string())?;
             }
 
-            log::debug!("Successfully updated champion stats for tournament {}", tournament_id);
-        } else {
-            log::debug!("No champion found for tournament {}", tournament_id);
+            log::debug!("Successfully updated {} stats for tournament {}", placement, tournament_id);
         }
 
         Ok(())
@@ -2865,7 +2865,6 @@ impl GameFlowService {
 
             // Super洲际邀请赛
             TournamentType::SuperIntercontinental => {
-                // Super赛的积分配置更复杂，需要追踪每个队伍的淘汰阶段
                 let all_matches = sqlx::query(
                     r#"
                     SELECT * FROM matches
@@ -2878,10 +2877,9 @@ impl GameFlowService {
                 .await
                 .map_err(|e| e.to_string())?;
 
-                // 决赛
                 for m in &all_matches {
                     let stage: String = m.get("stage");
-                    if stage == "GRAND_FINALS" || stage == "FINALS" {
+                    if stage == "GRAND_FINAL" {
                         let winner_id = m.get::<Option<i64>, _>("winner_id");
                         let home_id = m.get::<i64, _>("home_team_id") as u64;
                         let away_id = m.get::<i64, _>("away_team_id") as u64;
@@ -2896,25 +2894,36 @@ impl GameFlowService {
                     }
                 }
 
-                // 半决赛失败者
-                let mut semi_losers: Vec<u64> = Vec::new();
                 for m in &all_matches {
                     let stage: String = m.get("stage");
-                    if stage == "SEMI_FINALS" {
+                    if stage == "THIRD_PLACE" {
+                        let winner_id = m.get::<Option<i64>, _>("winner_id");
+                        let home_id = m.get::<i64, _>("home_team_id") as u64;
+                        let away_id = m.get::<i64, _>("away_team_id") as u64;
+
+                        if let Some(winner) = winner_id {
+                            let winner = winner as u64;
+                            let loser = if winner == home_id { away_id } else { home_id };
+                            results.push((winner, "THIRD".to_string()));
+                            results.push((loser, "FOURTH".to_string()));
+                        }
+                        break;
+                    }
+                }
+
+                // FINALS_R1 败者（5-6名）
+                for m in &all_matches {
+                    let stage: String = m.get("stage");
+                    if stage == "FINALS_R1" {
                         let winner_id = m.get::<Option<i64>, _>("winner_id");
                         let home_id = m.get::<i64, _>("home_team_id") as u64;
                         let away_id = m.get::<i64, _>("away_team_id") as u64;
 
                         if let Some(winner) = winner_id {
                             let loser = if winner as u64 == home_id { away_id } else { home_id };
-                            semi_losers.push(loser);
+                            results.push((loser, "QUARTER_FINAL".to_string()));
                         }
                     }
-                }
-
-                if semi_losers.len() >= 2 {
-                    results.push((semi_losers[0], "THIRD".to_string()));
-                    results.push((semi_losers[1], "FOURTH".to_string()));
                 }
             }
 
