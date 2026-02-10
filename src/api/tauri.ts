@@ -1820,6 +1820,8 @@ export interface PlayerRankingItem {
   consistency_score: number
   champion_bonus: number
   yearly_top_score: number
+  big_stage_score: number
+  has_international: boolean
 }
 
 export interface PlayerTournamentStats {

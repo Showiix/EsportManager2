@@ -313,7 +313,9 @@ export const usePlayerStore = defineStore('player', () => {
         internationalTitles: 0,
         regionalTitles: 0,
         championBonus: r.champion_bonus,
-        yearlyTopScore: r.yearly_top_score
+        yearlyTopScore: r.yearly_top_score,
+        bigStageScore: r.big_stage_score,
+        hasInternational: r.has_international,
       }))
     } catch (error) {
       logger.warn('从数据库获取排行失败，使用本地缓存', { error })
@@ -376,7 +378,9 @@ export const usePlayerStore = defineStore('player', () => {
         internationalTitles: 0,
         regionalTitles: 0,
         championBonus: r.champion_bonus,
-        yearlyTopScore: r.yearly_top_score
+        yearlyTopScore: r.yearly_top_score,
+        bigStageScore: r.big_stage_score,
+        hasInternational: r.has_international,
       }))
     } catch (error) {
       logger.warn('从数据库获取位置排行失败，使用本地缓存', { error })

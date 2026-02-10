@@ -246,7 +246,7 @@
         </el-card>
       </el-col>
 
-      <!-- 选手状态 - 五维雷达图 -->
+      <!-- 选手状态 - 六维雷达图 -->
       <el-col :span="12">
         <el-card class="condition-card radar-card">
           <template #header>
@@ -287,6 +287,16 @@
               </div>
               <div class="stat-row">
                 <span class="stat-label">
+                  <span class="stat-icon peak">🌍</span>
+                  大赛
+                </span>
+                <div class="stat-bar-wrapper">
+                  <div class="stat-bar peak" :style="{ width: (computeRadarData?.bigStage || 0) + '%' }"></div>
+                </div>
+                <span class="stat-value">{{ computeRadarData?.bigStage || 0 }}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">
                   <span class="stat-icon consistency">🛡️</span>
                   稳定性
                 </span>
@@ -297,13 +307,13 @@
               </div>
               <div class="stat-row">
                 <span class="stat-label">
-                  <span class="stat-icon peak">🔥</span>
-                  巅峰
+                  <span class="stat-icon consistency">📊</span>
+                  出场
                 </span>
                 <div class="stat-bar-wrapper">
-                  <div class="stat-bar peak" :style="{ width: (computeRadarData?.peak || 0) + '%' }"></div>
+                  <div class="stat-bar consistency" :style="{ width: (computeRadarData?.games || 0) + '%' }"></div>
                 </div>
-                <span class="stat-value">{{ computeRadarData?.peak || 0 }}</span>
+                <span class="stat-value">{{ computeRadarData?.games || 0 }}</span>
               </div>
               <div class="stat-row">
                 <span class="stat-label">
@@ -688,7 +698,7 @@ import {
   Monitor,
   ArrowDown,
 } from '@element-plus/icons-vue'
-import { teamApi, playerApi, honorApi, statsApi, formatHonorType, type TraitInfo, type PlayerConditionInfo, type MarketValueChange, type PlayerContractRecord } from '@/api/tauri'
+import { teamApi, playerApi, honorApi, statsApi, formatHonorType, type TraitInfo, type PlayerConditionInfo, type MarketValueChange, type PlayerContractRecord, type PlayerTournamentHistoryItem } from '@/api/tauri'
 import { formatMoney } from '@/utils'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
 import { useTimeStore } from '@/stores/useTimeStore'
@@ -751,6 +761,30 @@ interface PlayerSeasonStats {
   regional_titles: number
 }
 const playerStats = ref<PlayerSeasonStats | null>(null)
+
+const tournamentHistory = ref<PlayerTournamentHistoryItem[]>([])
+
+const INTL_TYPES = new Set([
+  'Msi', 'MadridMasters', 'ClaudeIntercontinental', 'WorldChampionship',
+  'ShanghaiMasters', 'IcpIntercontinental', 'SuperIntercontinental'
+])
+
+const bigStageScore = computed(() => {
+  const history = tournamentHistory.value
+  if (!history || history.length === 0) return 0
+  let sum = 0, games = 0
+  for (const t of history) {
+    if (INTL_TYPES.has(t.tournament_type)) {
+      sum += t.avg_impact * t.games_played
+      games += t.games_played
+    }
+  }
+  return games > 0 ? sum / games : 0
+})
+
+const hasInternational = computed(() => {
+  return tournamentHistory.value.some(t => INTL_TYPES.has(t.tournament_type))
+})
 
 // 雷达图相关
 const radarChartRef = ref<HTMLDivElement | null>(null)
@@ -912,20 +946,29 @@ onMounted(async () => {
           conditionInfo.value = null
         }
 
-        // 加载选手赛季统计数据（用于五维图）
+        // 加载选手赛季统计数据（用于六维图）
         try {
           const statsResult = await statsApi.getPlayerStats(numericId)
           if (statsResult && statsResult.length > 0) {
-            // 取最新赛季的统计
             playerStats.value = statsResult[statsResult.length - 1]
-            // 初始化雷达图
-            await nextTick()
-            initRadarChart()
           }
         } catch (e) {
           logger.error('Failed to load player stats:', e)
           playerStats.value = null
         }
+
+        // 加载赛事表现（用于大赛维度）
+        try {
+          const currentSeason = timeStore.currentSeason || 1
+          const history = await statsApi.getPlayerTournamentHistory(numericId, currentSeason)
+          tournamentHistory.value = history || []
+        } catch (e) {
+          logger.error('Failed to load tournament history:', e)
+          tournamentHistory.value = []
+        }
+
+        await nextTick()
+        initRadarChart()
 
         // 加载赛季历史
         try {
@@ -1488,32 +1531,26 @@ const getHonorDescription = (factor: number, teamCount?: number, individualCount
 
 // ==================== 五维雷达图 ====================
 
-// 计算五维数据（将原始数据转换为0-100的分数）
 const computeRadarData = computed(() => {
   if (!playerStats.value) return null
 
   const stats = playerStats.value
 
-  // 影响力：avg_impact 通常在 -10 到 20 之间，转换为 0-100
-  const impactScore = Math.min(100, Math.max(0, (stats.avg_impact + 10) * 3.33))
-
-  // 发挥：avg_performance 通常在 60-100 之间
+  const impactScore = Math.min(100, Math.max(0, (stats.avg_impact + 5) * 5))
   const performanceScore = Math.min(100, Math.max(0, (stats.avg_performance - 50) * 2))
-
-  // 稳定性：consistency_score 本身就是 0-100
   const consistencyScore = stats.consistency_score
-
-  // 巅峰：best_performance 通常在 70-110
-  const peakScore = Math.min(100, Math.max(0, (stats.best_performance - 60) * 2.5))
-
-  // 荣誉：champion_bonus 国际赛*3+赛区冠军，最高算15分满
   const honorScore = Math.min(100, stats.champion_bonus * 6.67)
+  const gamesScore = Math.min(100, Math.max(0, stats.games_played * 0.83))
+  const bigStageNorm = hasInternational.value
+    ? Math.min(100, Math.max(0, (bigStageScore.value + 5) * 5))
+    : 0
 
   return {
     impact: Math.round(impactScore),
     performance: Math.round(performanceScore),
+    bigStage: Math.round(bigStageNorm),
     consistency: Math.round(consistencyScore),
-    peak: Math.round(peakScore),
+    games: Math.round(gamesScore),
     honor: Math.round(honorScore)
   }
 })
@@ -1537,8 +1574,9 @@ const initRadarChart = () => {
       indicator: [
         { name: '影响力', max: 100 },
         { name: '发挥', max: 100 },
+        { name: '大赛', max: 100 },
         { name: '稳定性', max: 100 },
-        { name: '巅峰', max: 100 },
+        { name: '出场', max: 100 },
         { name: '荣誉', max: 100 }
       ],
       shape: 'polygon',
@@ -1567,7 +1605,7 @@ const initRadarChart = () => {
     series: [{
       type: 'radar',
       data: [{
-        value: [data.impact, data.performance, data.consistency, data.peak, data.honor],
+        value: [data.impact, data.performance, data.bigStage, data.consistency, data.games, data.honor],
         name: player.value.gameId,
         areaStyle: {
           color: {

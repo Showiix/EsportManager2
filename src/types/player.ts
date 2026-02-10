@@ -108,7 +108,9 @@ export interface PlayerSeasonStats {
   championBonus: number        // 冠军加成分数 = 国际赛*3 + 赛区*1
 
   // 年度Top得分
-  yearlyTopScore: number       // 年度Top得分 = 影响力×70% + 冠军加成×30%
+  yearlyTopScore: number
+  bigStageScore?: number
+  hasInternational?: boolean
 }
 
 // 位置名称映射
