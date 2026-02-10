@@ -251,6 +251,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'Players' })
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'

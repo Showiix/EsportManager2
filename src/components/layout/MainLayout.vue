@@ -166,7 +166,7 @@
       </el-aside>
 
       <!-- 主内容区 -->
-      <el-main class="app-main">
+      <el-main ref="mainRef" class="app-main">
         <div class="main-content">
           <!-- 面包屑导航 -->
           <el-breadcrumb class="breadcrumb" separator="/">
@@ -190,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, watch, ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -225,6 +225,50 @@ const route = useRoute()
 const router = useRouter()
 const gameStore = useGameStore()
 const timeStore = useTimeStore()
+
+const mainRef = ref<InstanceType<typeof import('element-plus')['ElMain']> | null>(null)
+const scrollPositions = new Map<string, number>()
+
+const getScrollEl = (): HTMLElement | null => {
+  return (mainRef.value as any)?.$el ?? null
+}
+
+let removeBeforeEach: (() => void) | null = null
+let removeAfterEach: (() => void) | null = null
+
+onMounted(() => {
+  removeBeforeEach = router.beforeEach((_to, from) => {
+    const el = getScrollEl()
+    if (el) {
+      scrollPositions.set(from.fullPath, el.scrollTop)
+    }
+  })
+
+  removeAfterEach = router.afterEach((to) => {
+    const saved = scrollPositions.get(to.fullPath) ?? 0
+
+    const tryRestore = (attempts: number) => {
+      const el = getScrollEl()
+      if (!el) return
+      if (saved === 0) {
+        el.scrollTop = 0
+      } else if (el.scrollHeight > el.clientHeight) {
+        el.scrollTop = saved
+      } else if (attempts > 0) {
+        requestAnimationFrame(() => tryRestore(attempts - 1))
+      }
+    }
+
+    nextTick(() => {
+      requestAnimationFrame(() => tryRestore(20))
+    })
+  })
+})
+
+onUnmounted(() => {
+  removeBeforeEach?.()
+  removeAfterEach?.()
+})
 
 const currentSeason = computed(() => `S${timeStore.currentSeason}`)
 const currentPhase = computed(() => timeStore.phaseDisplayName)

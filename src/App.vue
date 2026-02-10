@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import MainLayout from './components/layout/MainLayout.vue'
 import LogMonitor from './components/dev/LogMonitor.vue'
 import ErrorGuide from './components/common/ErrorGuide.vue'
@@ -7,6 +7,8 @@ import { loggerService, createLogger, LogLevel } from '@/utils/logger'
 
 const logger = createLogger('App')
 const isDev = import.meta.env.DEV
+
+const cachedViews = ref(['Teams', 'Players'])
 
 // 初始化日志系统
 onMounted(() => {
@@ -37,7 +39,11 @@ onMounted(() => {
 
 <template>
   <MainLayout>
-    <router-view />
+    <router-view v-slot="{ Component }">
+      <keep-alive :include="cachedViews">
+        <component :is="Component" />
+      </keep-alive>
+    </router-view>
   </MainLayout>
 
   <!-- 开发工具：日志监控台 (Ctrl+Shift+L 切换显示) -->

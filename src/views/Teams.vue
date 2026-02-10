@@ -214,6 +214,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'Teams' })
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
