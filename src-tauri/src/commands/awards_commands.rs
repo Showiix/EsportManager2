@@ -14,6 +14,7 @@ pub struct ScoreDimensions {
     pub stability_norm: f64,
     pub appearance_norm: f64,
     pub honor_norm: f64,
+    pub big_stage_norm: f64,
 }
 
 /// 选手评语
@@ -38,6 +39,19 @@ pub struct AllProPlayer {
     pub commentary: PlayerCommentary,
 }
 
+/// 选手单赛事表现明细
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TournamentDetail {
+    pub tournament_name: String,
+    pub tournament_type: String,
+    pub games_played: u32,
+    pub avg_impact: f64,
+    pub avg_performance: f64,
+    pub best_performance: f64,
+    pub mvp_count: u32,
+    pub weight: f64,
+}
+
 /// 年度Top20选手信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Top20Player {
@@ -59,6 +73,9 @@ pub struct Top20Player {
     pub regional_titles: i32,
     pub dimensions: ScoreDimensions,
     pub commentary: PlayerCommentary,
+    pub tournament_details: Vec<TournamentDetail>,
+    pub big_stage_score: f64,
+    pub has_international: bool,
 }
 
 /// 特别奖选手信息
@@ -113,21 +130,46 @@ pub struct AnnualAwardsData {
     pub already_awarded: bool,
 }
 
-/// 计算五维归一化维度
+/// 计算六维归一化维度
 fn calculate_dimensions(
     avg_impact: f64,
     avg_performance: f64,
     consistency_score: f64,
     games_played: u32,
     champion_bonus: f64,
+    big_stage_score: f64,
+    has_international: bool,
 ) -> ScoreDimensions {
+    let honor_raw = (champion_bonus * 6.67).clamp(0.0, 100.0);
+    let honor_discount = if avg_impact >= 0.0 {
+        1.0
+    } else {
+        ((avg_impact + 5.0) / 5.0).clamp(0.2, 1.0)
+    };
+    // 没参加国际赛：big_stage_norm 直接归零
+    let big_stage_norm = if has_international {
+        ((big_stage_score + 5.0) * 5.0).clamp(0.0, 100.0)
+    } else {
+        0.0
+    };
     ScoreDimensions {
-        impact_norm: ((avg_impact + 10.0) * 3.33).clamp(0.0, 100.0),
+        impact_norm: ((avg_impact + 5.0) * 5.0).clamp(0.0, 100.0),
         performance_norm: ((avg_performance - 50.0) * 2.0).clamp(0.0, 100.0),
         stability_norm: consistency_score.clamp(0.0, 100.0),
         appearance_norm: (games_played as f64 * 0.83).clamp(0.0, 100.0),
-        honor_norm: (champion_bonus * 6.67).clamp(0.0, 100.0),
+        honor_norm: honor_raw * honor_discount,
+        big_stage_norm,
     }
+}
+
+fn calculate_final_yearly_score(dims: &ScoreDimensions, has_international: bool) -> f64 {
+    let base = dims.impact_norm * 0.40
+        + dims.performance_norm * 0.18
+        + dims.stability_norm * 0.12
+        + dims.appearance_norm * 0.10
+        + dims.honor_norm * 0.05
+        + dims.big_stage_norm * 0.15;
+    if has_international { base } else { base * 0.95 }
 }
 
 /// 基于数据生成评语和标签
@@ -368,7 +410,7 @@ async fn get_top20_players(
         let regional_titles = row.get::<i32, _>("regional_titles");
 
         let dimensions = calculate_dimensions(
-            avg_impact, avg_performance, consistency_score, games_played, champion_bonus,
+            avg_impact, avg_performance, consistency_score, games_played, champion_bonus, 0.0, true,
         );
         let commentary = generate_commentary(
             avg_impact, avg_performance, best_performance, consistency_score,
@@ -394,7 +436,32 @@ async fn get_top20_players(
             regional_titles,
             dimensions,
             commentary,
+            tournament_details: Vec::new(),
+            big_stage_score: 0.0,
+            has_international: true,
         });
+    }
+
+    let all_breakdowns = get_all_tournament_breakdowns(pool, save_id, season_id).await.unwrap_or_default();
+    for player in &mut players {
+        if let Some((details, big_stage, has_intl)) = all_breakdowns.get(&(player.player_id as i64)) {
+            player.tournament_details = details.clone();
+            player.big_stage_score = *big_stage;
+            player.has_international = *has_intl;
+            player.dimensions = calculate_dimensions(
+                player.avg_impact, player.avg_performance, player.consistency_score,
+                player.games_played, player.champion_bonus, *big_stage, *has_intl,
+            );
+            player.yearly_score = calculate_final_yearly_score(&player.dimensions, *has_intl);
+            if !has_intl {
+                player.commentary.tags.push("未参加国际赛".to_string());
+            }
+        }
+    }
+
+    players.sort_by(|a, b| b.yearly_score.partial_cmp(&a.yearly_score).unwrap_or(std::cmp::Ordering::Equal));
+    for (i, player) in players.iter_mut().enumerate() {
+        player.rank = (i + 1) as u32;
     }
 
     Ok(players)
@@ -717,7 +784,7 @@ async fn get_rookie_of_the_year(
         let age = r.get::<i64, _>("age") as u8;
 
         let dimensions = calculate_dimensions(
-            avg_impact, avg_performance, consistency_score, games_played, champion_bonus,
+            avg_impact, avg_performance, consistency_score, games_played, champion_bonus, 0.0, true,
         );
         let mut commentary = generate_commentary(
             avg_impact, avg_performance, best_performance, consistency_score,
@@ -743,4 +810,105 @@ async fn get_rookie_of_the_year(
             commentary,
         }
     }))
+}
+
+fn tournament_type_weight(t_type: &str) -> f64 {
+    match t_type {
+        "WorldChampionship" => 1.5,
+        "SuperIntercontinental" => 1.4,
+        "Msi" => 1.3,
+        "ClaudeIntercontinental" | "IcpIntercontinental" => 1.2,
+        "MadridMasters" | "ShanghaiMasters" => 1.1,
+        "SpringPlayoffs" | "SummerPlayoffs" => 1.05,
+        _ => 0.9,
+    }
+}
+
+#[allow(dead_code)]
+fn tournament_type_display_name(t_type: &str) -> &str {
+    match t_type {
+        "SpringRegular" => "春季赛常规赛",
+        "SpringPlayoffs" => "春季赛季后赛",
+        "SummerRegular" => "夏季赛常规赛",
+        "SummerPlayoffs" => "夏季赛季后赛",
+        "Msi" => "MSI季中赛",
+        "MadridMasters" => "马德里大师赛",
+        "ClaudeIntercontinental" => "Claude洲际赛",
+        "WorldChampionship" => "S世界赛",
+        "ShanghaiMasters" => "上海大师赛",
+        "IcpIntercontinental" => "ICP洲际对抗赛",
+        "SuperIntercontinental" => "Super洲际年度邀请赛",
+        _ => "未知赛事",
+    }
+}
+
+/// 批量查询所有选手的赛事表现明细（1次SQL替代N次）
+async fn get_all_tournament_breakdowns(
+    pool: &sqlx::SqlitePool,
+    save_id: &str,
+    season_id: u64,
+) -> Result<std::collections::HashMap<i64, (Vec<TournamentDetail>, f64, bool)>, String> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            gpp.player_id,
+            t.tournament_type,
+            t.name as tournament_name,
+            COUNT(DISTINCT gpp.game_id) as games_played,
+            AVG(gpp.impact_score) as avg_impact,
+            AVG(gpp.actual_ability) as avg_performance,
+            MAX(gpp.actual_ability) as best_performance,
+            SUM(CASE WHEN gpp.is_mvp = 1 THEN 1 ELSE 0 END) as mvp_count
+        FROM game_player_performances gpp
+        JOIN match_games mg ON gpp.game_id = mg.id AND gpp.save_id = mg.save_id
+        JOIN matches m ON mg.match_id = m.id AND mg.save_id = m.save_id
+        JOIN tournaments t ON m.tournament_id = t.id AND m.save_id = t.save_id
+        WHERE gpp.save_id = ? AND t.season_id = ?
+        GROUP BY gpp.player_id, t.tournament_type, t.name
+        ORDER BY gpp.player_id, t.id ASC
+        "#
+    )
+    .bind(save_id)
+    .bind(season_id as i64)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut result: std::collections::HashMap<i64, (Vec<TournamentDetail>, f64, f64)> =
+        std::collections::HashMap::new();
+
+    for row in &rows {
+        let pid: i64 = row.get("player_id");
+        let t_type: String = row.get("tournament_type");
+        let games = row.get::<i64, _>("games_played") as u32;
+        let avg_impact: f64 = row.get("avg_impact");
+        let weight = tournament_type_weight(&t_type);
+
+        let entry = result.entry(pid).or_insert_with(|| (Vec::new(), 0.0, 0.0));
+
+        entry.0.push(TournamentDetail {
+            tournament_name: row.get::<String, _>("tournament_name"),
+            tournament_type: t_type.clone(),
+            games_played: games,
+            avg_impact,
+            avg_performance: row.get("avg_performance"),
+            best_performance: row.get("best_performance"),
+            mvp_count: row.get::<i64, _>("mvp_count") as u32,
+            weight,
+        });
+
+        let is_intl = !matches!(t_type.as_str(),
+            "SpringRegular" | "SpringPlayoffs" | "SummerRegular" | "SummerPlayoffs"
+        );
+        if is_intl {
+            entry.1 += avg_impact * games as f64;
+            entry.2 += games as f64;
+        }
+    }
+
+    Ok(result.into_iter().map(|(pid, (details, intl_sum, intl_games))| {
+        let has_intl = intl_games > 0.0;
+        let big_stage = if has_intl { intl_sum / intl_games } else { 0.0 };
+        (pid, (details, big_stage, has_intl))
+    }).collect())
 }

@@ -78,6 +78,8 @@ impl PlayerSeasonStatistics {
     }
 
     /// 五维归一化年度Top评分
+    ///
+    /// 改进：影响力曲线更陡峭，负影响力选手冠军加成打折，
     pub fn calculate_yearly_top_score(
         avg_impact: f64,
         avg_performance: f64,
@@ -85,17 +87,24 @@ impl PlayerSeasonStatistics {
         games_played: i32,
         champion_bonus: f64,
     ) -> f64 {
-        let impact_norm = ((avg_impact + 10.0) * 3.33).clamp(0.0, 100.0);
+        let impact_norm = ((avg_impact + 5.0) * 5.0).clamp(0.0, 100.0);
         let perf_norm = ((avg_performance - 50.0) * 2.0).clamp(0.0, 100.0);
         let stability_norm = consistency_score.clamp(0.0, 100.0);
         let appearance_norm = (games_played as f64 * 0.83).clamp(0.0, 100.0);
-        let honor_norm = (champion_bonus * 6.67).clamp(0.0, 100.0);
 
-        impact_norm * 0.45
-            + perf_norm * 0.20
-            + stability_norm * 0.15
-            + appearance_norm * 0.10
-            + honor_norm * 0.10
+        let honor_raw = (champion_bonus * 6.67).clamp(0.0, 100.0);
+        let honor_discount = if avg_impact >= 0.0 {
+            1.0
+        } else {
+            ((avg_impact + 5.0) / 5.0).clamp(0.2, 1.0)
+        };
+        let honor_norm = honor_raw * honor_discount;
+
+        impact_norm * 0.47
+            + perf_norm * 0.21
+            + stability_norm * 0.14
+            + appearance_norm * 0.12
+            + honor_norm * 0.06
     }
 
     /// 统治力评分（独立公式）
@@ -228,6 +237,8 @@ pub struct PlayerRankingItem {
     pub champion_bonus: f64,
     pub yearly_top_score: f64,
     pub dominance_score: f64,
+    pub big_stage_score: f64,
+    pub has_international: bool,
 }
 
 impl From<PlayerSeasonStatistics> for PlayerRankingItem {
@@ -245,6 +256,8 @@ impl From<PlayerSeasonStatistics> for PlayerRankingItem {
             champion_bonus: stats.champion_bonus,
             yearly_top_score: stats.yearly_top_score,
             dominance_score: stats.dominance_score,
+            big_stage_score: 0.0,
+            has_international: false,
         }
     }
 }
