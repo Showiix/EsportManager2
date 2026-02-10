@@ -1,5 +1,5 @@
 use crate::models::{
-    FinancialTransaction, Team, TeamSeasonFinance, TransactionType, TournamentType, FinancialStatus,
+    FinancialStatus, FinancialTransaction, Team, TeamSeasonFinance, TournamentType, TransactionType,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -34,121 +34,148 @@ impl Default for FinancialConfig {
     fn default() -> Self {
         let mut prize_pools = HashMap::new();
 
-        // MSI奖金池 (4000万元)
+        // MSI奖金池 (3000万元)
         let mut msi_dist = HashMap::new();
-        msi_dist.insert("CHAMPION".to_string(), 0.50);      // 2000万
-        msi_dist.insert("RUNNER_UP".to_string(), 0.25);     // 1000万
-        msi_dist.insert("THIRD".to_string(), 0.125);        // 500万
-        msi_dist.insert("FOURTH".to_string(), 0.05);        // 200万
-        msi_dist.insert("LOSERS_R2".to_string(), 0.05);     // 200万 (小组赛/淘汰)
-        msi_dist.insert("LOSERS_R1".to_string(), 0.025);    // 100万
-        prize_pools.insert(TournamentType::Msi, PrizePool {
-            total: 40000000, // 4000万元
-            distribution: msi_dist,
-        });
+        msi_dist.insert("CHAMPION".to_string(), 0.40); // 1200万
+        msi_dist.insert("RUNNER_UP".to_string(), 0.25); // 750万
+        msi_dist.insert("THIRD".to_string(), 0.15); // 450万
+        msi_dist.insert("FOURTH".to_string(), 0.08); // 240万
+        msi_dist.insert("LOSERS_R2".to_string(), 0.06); // 180万
+        msi_dist.insert("LOSERS_R1".to_string(), 0.03); // 90万
+        prize_pools.insert(
+            TournamentType::Msi,
+            PrizePool {
+                total: 30000000, // 3000万元
+                distribution: msi_dist,
+            },
+        );
 
-        // 世界赛奖金池 (12000万元)
+        // 世界赛奖金池 (6000万元)
         let mut worlds_dist = HashMap::new();
-        worlds_dist.insert("CHAMPION".to_string(), 0.4167);     // 5000万
-        worlds_dist.insert("RUNNER_UP".to_string(), 0.2083);    // 2500万
-        worlds_dist.insert("THIRD".to_string(), 0.10);          // 1200万
-        worlds_dist.insert("FOURTH".to_string(), 0.10);         // 1200万
-        worlds_dist.insert("QUARTER_FINAL".to_string(), 0.05);  // 600万
-        worlds_dist.insert("GROUP_STAGE".to_string(), 0.025);   // 300万
-        worlds_dist.insert("PLAY_IN".to_string(), 0.0083);      // 100万
-        prize_pools.insert(TournamentType::WorldChampionship, PrizePool {
-            total: 120000000, // 1.2亿元
-            distribution: worlds_dist,
-        });
+        worlds_dist.insert("CHAMPION".to_string(), 0.35); // 2100万
+        worlds_dist.insert("RUNNER_UP".to_string(), 0.20); // 1200万
+        worlds_dist.insert("THIRD".to_string(), 0.10); // 600万
+        worlds_dist.insert("FOURTH".to_string(), 0.10); // 600万
+        worlds_dist.insert("QUARTER_FINAL".to_string(), 0.05); // 300万
+        worlds_dist.insert("GROUP_STAGE".to_string(), 0.025); // 150万
+        worlds_dist.insert("PLAY_IN".to_string(), 0.0125); // 75万
+        prize_pools.insert(
+            TournamentType::WorldChampionship,
+            PrizePool {
+                total: 60000000, // 6000万元
+                distribution: worlds_dist,
+            },
+        );
 
-        // 马德里大师赛奖金池 (2000万元)
+        // 马德里大师赛奖金池 (1500万元)
         let mut madrid_dist = HashMap::new();
-        madrid_dist.insert("CHAMPION".to_string(), 0.40);       // 800万
-        madrid_dist.insert("RUNNER_UP".to_string(), 0.20);      // 400万
-        madrid_dist.insert("THIRD".to_string(), 0.10);          // 200万
-        madrid_dist.insert("FOURTH".to_string(), 0.10);         // 200万
-        madrid_dist.insert("SEMI_LOSER".to_string(), 0.10);     // 200万
-        madrid_dist.insert("R1_LOSER".to_string(), 0.05);       // 100万
-        prize_pools.insert(TournamentType::MadridMasters, PrizePool {
-            total: 20000000, // 2000万元
-            distribution: madrid_dist,
-        });
+        madrid_dist.insert("CHAMPION".to_string(), 0.40); // 600万
+        madrid_dist.insert("RUNNER_UP".to_string(), 0.20); // 300万
+        madrid_dist.insert("THIRD".to_string(), 0.12); // 180万
+        madrid_dist.insert("FOURTH".to_string(), 0.10); // 150万
+        madrid_dist.insert("SEMI_LOSER".to_string(), 0.08); // 120万
+        madrid_dist.insert("R1_LOSER".to_string(), 0.05); // 75万
+        prize_pools.insert(
+            TournamentType::MadridMasters,
+            PrizePool {
+                total: 15000000, // 1500万元
+                distribution: madrid_dist,
+            },
+        );
 
-        // Claude洲际赛奖金池 (2000万元)
+        // Claude洲际赛奖金池 (1500万元)
         let mut claude_dist = HashMap::new();
-        claude_dist.insert("CHAMPION".to_string(), 0.40);       // 800万
-        claude_dist.insert("RUNNER_UP".to_string(), 0.20);      // 400万
-        claude_dist.insert("THIRD".to_string(), 0.10);          // 200万
-        claude_dist.insert("FOURTH".to_string(), 0.10);         // 200万
-        claude_dist.insert("SEMI_LOSER".to_string(), 0.10);     // 200万
-        claude_dist.insert("R1_LOSER".to_string(), 0.05);       // 100万
-        prize_pools.insert(TournamentType::ClaudeIntercontinental, PrizePool {
-            total: 20000000, // 2000万元
-            distribution: claude_dist,
-        });
+        claude_dist.insert("CHAMPION".to_string(), 0.40); // 600万
+        claude_dist.insert("RUNNER_UP".to_string(), 0.20); // 300万
+        claude_dist.insert("THIRD".to_string(), 0.12); // 180万
+        claude_dist.insert("FOURTH".to_string(), 0.10); // 150万
+        claude_dist.insert("SEMI_LOSER".to_string(), 0.08); // 120万
+        claude_dist.insert("R1_LOSER".to_string(), 0.05); // 75万
+        prize_pools.insert(
+            TournamentType::ClaudeIntercontinental,
+            PrizePool {
+                total: 15000000, // 1500万元
+                distribution: claude_dist,
+            },
+        );
 
-        // 上海大师赛奖金池 (2500万元)
+        // 上海大师赛奖金池 (2000万元)
         let mut shanghai_dist = HashMap::new();
-        shanghai_dist.insert("CHAMPION".to_string(), 0.40);     // 1000万
-        shanghai_dist.insert("RUNNER_UP".to_string(), 0.20);    // 500万
-        shanghai_dist.insert("THIRD".to_string(), 0.10);        // 250万
-        shanghai_dist.insert("FOURTH".to_string(), 0.10);       // 250万
-        shanghai_dist.insert("LOSERS_R2".to_string(), 0.10);    // 250万
-        shanghai_dist.insert("LOSERS_R1".to_string(), 0.048);   // 120万
-        prize_pools.insert(TournamentType::ShanghaiMasters, PrizePool {
-            total: 25000000, // 2500万元
-            distribution: shanghai_dist,
-        });
+        shanghai_dist.insert("CHAMPION".to_string(), 0.35); // 700万
+        shanghai_dist.insert("RUNNER_UP".to_string(), 0.20); // 400万
+        shanghai_dist.insert("THIRD".to_string(), 0.12); // 240万
+        shanghai_dist.insert("FOURTH".to_string(), 0.10); // 200万
+        shanghai_dist.insert("LOSERS_R2".to_string(), 0.08); // 160万
+        shanghai_dist.insert("LOSERS_R1".to_string(), 0.05); // 100万
+        prize_pools.insert(
+            TournamentType::ShanghaiMasters,
+            PrizePool {
+                total: 20000000, // 2000万元
+                distribution: shanghai_dist,
+            },
+        );
 
-        // Super洲际赛奖金池 (15000万元 = 1.5亿元 - 年度最高奖金)
+        // Super洲际赛奖金池 (8000万元 - 年度最高奖金)
         let mut super_dist = HashMap::new();
-        super_dist.insert("CHAMPION".to_string(), 0.40);            // 6000万
-        super_dist.insert("RUNNER_UP".to_string(), 0.20);           // 3000万
-        super_dist.insert("THIRD".to_string(), 0.10);               // 1500万
-        super_dist.insert("FOURTH".to_string(), 0.10);              // 1500万
-        super_dist.insert("QUARTER_FINAL".to_string(), 0.05);       // 750万
-        super_dist.insert("ROUND_OF_16".to_string(), 0.025);        // 375万
-        prize_pools.insert(TournamentType::SuperIntercontinental, PrizePool {
-            total: 150000000, // 1.5亿元
-            distribution: super_dist,
-        });
+        super_dist.insert("CHAMPION".to_string(), 0.35); // 2800万
+        super_dist.insert("RUNNER_UP".to_string(), 0.20); // 1600万
+        super_dist.insert("THIRD".to_string(), 0.12); // 960万
+        super_dist.insert("FOURTH".to_string(), 0.10); // 800万
+        super_dist.insert("QUARTER_FINAL".to_string(), 0.05); // 400万
+        super_dist.insert("ROUND_OF_16".to_string(), 0.025); // 200万
+        prize_pools.insert(
+            TournamentType::SuperIntercontinental,
+            PrizePool {
+                total: 80000000, // 8000万元
+                distribution: super_dist,
+            },
+        );
 
-        // ICP洲际对抗赛奖金池 (3000万元)
+        // ICP洲际对抗赛奖金池 (2000万元)
         let mut icp_dist = HashMap::new();
-        icp_dist.insert("CHAMPION".to_string(), 0.40);              // 1200万
-        icp_dist.insert("RUNNER_UP".to_string(), 0.20);             // 600万
-        icp_dist.insert("THIRD".to_string(), 0.10);                 // 300万
-        icp_dist.insert("FOURTH".to_string(), 0.10);                // 300万
-        icp_dist.insert("QUARTER_FINAL".to_string(), 0.05);         // 150万
-        icp_dist.insert("GROUP_STAGE".to_string(), 0.025);          // 75万
-        prize_pools.insert(TournamentType::IcpIntercontinental, PrizePool {
-            total: 30000000, // 3000万元
-            distribution: icp_dist,
-        });
+        icp_dist.insert("CHAMPION".to_string(), 0.35); // 700万
+        icp_dist.insert("RUNNER_UP".to_string(), 0.20); // 400万
+        icp_dist.insert("THIRD".to_string(), 0.12); // 240万
+        icp_dist.insert("FOURTH".to_string(), 0.10); // 200万
+        icp_dist.insert("QUARTER_FINAL".to_string(), 0.05); // 100万
+        icp_dist.insert("GROUP_STAGE".to_string(), 0.03); // 60万
+        prize_pools.insert(
+            TournamentType::IcpIntercontinental,
+            PrizePool {
+                total: 20000000, // 2000万元
+                distribution: icp_dist,
+            },
+        );
 
-        // 春季季后赛奖金池 (200万元)
+        // 春季季后赛奖金池 (1000万元)
         let mut spring_dist = HashMap::new();
-        spring_dist.insert("CHAMPION".to_string(), 0.35);
-        spring_dist.insert("RUNNER_UP".to_string(), 0.25);
+        spring_dist.insert("CHAMPION".to_string(), 0.30);
+        spring_dist.insert("RUNNER_UP".to_string(), 0.20);
         spring_dist.insert("THIRD".to_string(), 0.15);
-        spring_dist.insert("FOURTH".to_string(), 0.10);
+        spring_dist.insert("FOURTH".to_string(), 0.12);
         spring_dist.insert("5TH_8TH".to_string(), 0.04);
-        prize_pools.insert(TournamentType::SpringPlayoffs, PrizePool {
-            total: 2000000, // 200万元
-            distribution: spring_dist,
-        });
+        prize_pools.insert(
+            TournamentType::SpringPlayoffs,
+            PrizePool {
+                total: 10000000, // 1000万元
+                distribution: spring_dist,
+            },
+        );
 
-        // 夏季季后赛奖金池 (200万元)
+        // 夏季季后赛奖金池 (1000万元)
         let mut summer_dist = HashMap::new();
-        summer_dist.insert("CHAMPION".to_string(), 0.35);
-        summer_dist.insert("RUNNER_UP".to_string(), 0.25);
+        summer_dist.insert("CHAMPION".to_string(), 0.30);
+        summer_dist.insert("RUNNER_UP".to_string(), 0.20);
         summer_dist.insert("THIRD".to_string(), 0.15);
-        summer_dist.insert("FOURTH".to_string(), 0.10);
+        summer_dist.insert("FOURTH".to_string(), 0.12);
         summer_dist.insert("5TH_8TH".to_string(), 0.04);
-        prize_pools.insert(TournamentType::SummerPlayoffs, PrizePool {
-            total: 2000000, // 200万元
-            distribution: summer_dist,
-        });
+        prize_pools.insert(
+            TournamentType::SummerPlayoffs,
+            PrizePool {
+                total: 10000000, // 1000万元
+                distribution: summer_dist,
+            },
+        );
 
         Self {
             base_operating_cost: 3000000, // 每赛季300万基础运营成本（单位：元）
@@ -177,11 +204,7 @@ impl FinancialEngine {
     }
 
     /// 计算赛事奖金
-    pub fn calculate_prize_money(
-        &self,
-        tournament_type: TournamentType,
-        position: &str,
-    ) -> u64 {
+    pub fn calculate_prize_money(&self, tournament_type: TournamentType, position: &str) -> u64 {
         if let Some(pool) = self.config.prize_pools.get(&tournament_type) {
             if let Some(&percentage) = pool.distribution.get(position) {
                 return (pool.total as f64 * percentage) as u64;
@@ -212,9 +235,13 @@ impl FinancialEngine {
         };
 
         // 胜率加成
-        let win_bonus = if team.win_rate > 0.7 { 1.3 }
-                        else if team.win_rate > 0.5 { 1.1 }
-                        else { 1.0 };
+        let win_bonus = if team.win_rate > 0.7 {
+            1.3
+        } else if team.win_rate > 0.5 {
+            1.1
+        } else {
+            1.0
+        };
 
         (base * power_factor * win_bonus) as u64
     }
@@ -222,17 +249,17 @@ impl FinancialEngine {
     /// 计算联赛分成（赛区+排名差异化）
     pub fn calculate_league_share(&self, region_code: &str, rank: Option<u32>) -> u64 {
         let base = match region_code {
-            "CN" => 2_000_000,  // LPL 200万
-            "KR" => 1_750_000,  // LCK 175万
-            "EU" => 1_500_000,  // LEC 150万
-            "NA" => 1_250_000,  // LCS 125万
+            "CN" => 2_000_000, // LPL 200万
+            "KR" => 1_750_000, // LCK 175万
+            "EU" => 1_500_000, // LEC 150万
+            "NA" => 1_250_000, // LCS 125万
             _ => 1_500_000,
         };
         let rank_bonus = match rank {
-            Some(1..=3) => 500_000,   // 前三 +50万
-            Some(4..=7) => 250_000,   // 中上 +25万
-            Some(8..=10) => 100_000,  // 中游 +10万
-            _ => 0,                   // 下游或无排名
+            Some(1..=3) => 500_000,  // 前三 +50万
+            Some(4..=7) => 250_000,  // 中上 +25万
+            Some(8..=10) => 100_000, // 中游 +10万
+            _ => 0,                  // 下游或无排名
         };
         (base + rank_bonus) as u64
     }
@@ -256,7 +283,8 @@ impl FinancialEngine {
 
         // 1. 余额差距补贴：低于联盟平均余额时触发
         let gap = league_avg_balance - team_balance;
-        if gap > 2_000_000 { // 差距超过200万才触发
+        if gap > 2_000_000 {
+            // 差距超过200万才触发
             let balance_subsidy = (gap as f64 * 0.20) as u64; // 差距的20%
             subsidy += balance_subsidy.min(5_000_000); // 上限500万
         }
@@ -265,9 +293,17 @@ impl FinancialEngine {
         if let Some(r) = rank {
             let bottom_threshold = total_teams.saturating_sub(3); // 倒数4名
             if r >= bottom_threshold {
-                subsidy += if r >= total_teams { 1_000_000 } // 末位 +100万
-                           else if r >= total_teams - 1 { 750_000 } // 倒数第2 +75万
-                           else { 500_000 }; // 倒数第3-4 +50万
+                subsidy += if r >= total_teams {
+                    1_000_000
+                }
+                // 末位 +100万
+                else if r >= total_teams - 1 {
+                    750_000
+                }
+                // 倒数第2 +75万
+                else {
+                    500_000
+                }; // 倒数第3-4 +50万
             }
         }
 
@@ -294,10 +330,21 @@ impl FinancialEngine {
         let league_share = self.calculate_league_share(region_code, rank);
         let operating_cost = self.calculate_operating_cost(salary_expense);
 
-        let total_income = sponsorship + league_share + prize_money
-            + if transfer_income > 0 { transfer_income as u64 } else { 0 };
-        let total_expense = salary_expense + operating_cost
-            + if transfer_income < 0 { (-transfer_income) as u64 } else { 0 };
+        let total_income = sponsorship
+            + league_share
+            + prize_money
+            + if transfer_income > 0 {
+                transfer_income as u64
+            } else {
+                0
+            };
+        let total_expense = salary_expense
+            + operating_cost
+            + if transfer_income < 0 {
+                (-transfer_income) as u64
+            } else {
+                0
+            };
 
         let net_change = total_income as i64 - total_expense as i64;
         let closing_balance = team.balance + net_change;
@@ -369,7 +416,8 @@ impl FinancialEngine {
 
     /// 计算最大可承受薪资
     pub fn max_affordable_salary(&self, team: &Team, current_salary_total: u64) -> u64 {
-        let projected_income = self.calculate_sponsorship(team) + self.calculate_league_share("CN", None);
+        let projected_income =
+            self.calculate_sponsorship(team) + self.calculate_league_share("CN", None);
 
         // 薪资支出不应超过预计收入的60%
         let max_salary_budget = (projected_income as f64 * 0.6) as u64;
@@ -437,8 +485,10 @@ impl FinancialEngine {
         team: &Team,
         current_salary_total: u64,
     ) -> FinancialStatusSummary {
-        let projected_income = self.calculate_sponsorship(team) + self.calculate_league_share("CN", None);
-        let projected_expense = current_salary_total + self.calculate_operating_cost(current_salary_total);
+        let projected_income =
+            self.calculate_sponsorship(team) + self.calculate_league_share("CN", None);
+        let projected_expense =
+            current_salary_total + self.calculate_operating_cost(current_salary_total);
         let projected_profit = projected_income as i64 - projected_expense as i64;
 
         FinancialStatusSummary {
@@ -478,13 +528,15 @@ mod tests {
         let engine = FinancialEngine::new();
 
         let msi_champion = engine.calculate_prize_money(TournamentType::Msi, "CHAMPION");
-        assert_eq!(msi_champion, 20_000_000); // 4000万 * 0.50 = 2000万元
+        assert_eq!(msi_champion, 12_000_000); // 3000万 * 0.40 = 1200万元
 
-        let worlds_champion = engine.calculate_prize_money(TournamentType::WorldChampionship, "CHAMPION");
-        assert_eq!(worlds_champion, 50_004_000); // 1.2亿 * 0.4167 = 5000.4万元
+        let worlds_champion =
+            engine.calculate_prize_money(TournamentType::WorldChampionship, "CHAMPION");
+        assert_eq!(worlds_champion, 21_000_000); // 6000万 * 0.35 = 2100万元
 
-        let super_champion = engine.calculate_prize_money(TournamentType::SuperIntercontinental, "CHAMPION");
-        assert_eq!(super_champion, 60_000_000); // 1.5亿 * 0.40 = 6000万元
+        let super_champion =
+            engine.calculate_prize_money(TournamentType::SuperIntercontinental, "CHAMPION");
+        assert_eq!(super_champion, 28_000_000); // 8000万 * 0.35 = 2800万元
     }
 
     #[test]

@@ -56,6 +56,10 @@
                 <span class="item-label">赞助收入</span>
                 <span class="item-value">{{ formatMoney(report?.sponsorship || 0) }}</span>
               </div>
+              <div class="detail-item" v-if="(report?.weak_team_subsidy || 0) > 0">
+                <span class="item-label">弱队补贴</span>
+                <span class="item-value">{{ formatMoney(report?.weak_team_subsidy || 0) }}</span>
+              </div>
               <div class="detail-item" v-if="(report?.transfer_net || 0) > 0">
                 <span class="item-label">转会收入</span>
                 <span class="item-value">{{ formatMoney(report?.transfer_net || 0) }}</span>
@@ -300,10 +304,12 @@ function getTransactionLabel(type: string): string {
     TransferIncome: '转会收入',
     TransferExpense: '转会支出',
     TransferIn: '转会引进',
+    TransferOut: '转会卖出',
     Salary: '薪资支出',
     OperatingCost: '运营成本',
     DraftPickPurchase: '选秀权购买',
     DRAFT_PICK_PU: '选秀权购买',
+    WeakTeamSubsidy: '弱队补贴',
   }
   return labels[type] || type
 }

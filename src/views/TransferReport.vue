@@ -160,38 +160,66 @@
 
         <!-- 列表 -->
         <div class="team-table-body">
-          <div
+          <template
             v-for="(row, idx) in sortedTeamSummaries"
             :key="row.team_id ?? idx"
-            class="team-row"
-            :class="{ 'net-positive': row.net_spend < 0, 'net-negative': row.net_spend > 0 }"
           >
-            <div class="td-team">
-              <div class="team-avatar">{{ (row.team_name || '').slice(0, 2) }}</div>
-              <span class="team-name">{{ row.team_name }}</span>
+            <div
+              class="team-row clickable"
+              :class="{ 'net-positive': row.net_spend < 0, 'net-negative': row.net_spend > 0, 'expanded': expandedTeamId === row.team_id }"
+              @click="toggleTeamDetail(row.team_id)"
+            >
+              <div class="td-team">
+                <div class="team-avatar">{{ (row.team_name || '').slice(0, 2) }}</div>
+                <span class="team-name">{{ row.team_name }}</span>
+                <el-icon class="expand-icon" :class="{ rotated: expandedTeamId === row.team_id }"><ArrowRight /></el-icon>
+              </div>
+              <div class="td-center">
+                <span v-if="row.players_in > 0" class="badge in">+{{ row.players_in }}</span>
+                <span v-else class="badge zero">0</span>
+              </div>
+              <div class="td-center">
+                <span v-if="row.players_out > 0" class="badge out">-{{ row.players_out }}</span>
+                <span v-else class="badge zero">0</span>
+              </div>
+              <div class="td-right">
+                <span class="money spent" v-if="row.money_spent > 0">-{{ formatAmount(row.money_spent) }}</span>
+                <span class="money zero-text" v-else>-</span>
+              </div>
+              <div class="td-right">
+                <span class="money earned" v-if="row.money_earned > 0">+{{ formatAmount(row.money_earned) }}</span>
+                <span class="money zero-text" v-else>-</span>
+              </div>
+              <div class="td-right">
+                <span class="net-value" :class="row.net_spend > 0 ? 'negative' : row.net_spend < 0 ? 'positive' : 'neutral'">
+                  {{ row.net_spend > 0 ? '-' : row.net_spend < 0 ? '+' : '' }}{{ formatAmount(Math.abs(row.net_spend)) }}
+                </span>
+              </div>
             </div>
-            <div class="td-center">
-              <span v-if="row.players_in > 0" class="badge in">+{{ row.players_in }}</span>
-              <span v-else class="badge zero">0</span>
+
+            <!-- 展开的人员变动详情 -->
+            <div v-if="expandedTeamId === row.team_id" class="team-detail-panel">
+              <template v-if="getTeamMovements(row.team_id).length > 0">
+                <div
+                  v-for="mov in getTeamMovements(row.team_id)"
+                  :key="mov.event.id"
+                  class="movement-item"
+                  :class="mov.direction"
+                >
+                  <div class="mov-direction-tag" :class="mov.direction">
+                    {{ mov.direction === 'in' ? '转入' : mov.direction === 'out' ? '转出' : '续约' }}
+                  </div>
+                  <div class="mov-player">
+                    <span class="mov-player-name">{{ mov.event.player_name }}</span>
+                    <span class="mov-ability">{{ mov.event.player_ability }}</span>
+                  </div>
+                  <div class="mov-detail">{{ mov.description }}</div>
+                  <div class="mov-round">R{{ mov.event.round }}</div>
+                </div>
+              </template>
+              <div v-else class="no-movements">无人员变动</div>
             </div>
-            <div class="td-center">
-              <span v-if="row.players_out > 0" class="badge out">-{{ row.players_out }}</span>
-              <span v-else class="badge zero">0</span>
-            </div>
-            <div class="td-right">
-              <span class="money spent" v-if="row.money_spent > 0">-{{ formatAmount(row.money_spent) }}</span>
-              <span class="money zero-text" v-else>-</span>
-            </div>
-            <div class="td-right">
-              <span class="money earned" v-if="row.money_earned > 0">+{{ formatAmount(row.money_earned) }}</span>
-              <span class="money zero-text" v-else>-</span>
-            </div>
-            <div class="td-right">
-              <span class="net-value" :class="row.net_spend > 0 ? 'negative' : row.net_spend < 0 ? 'positive' : 'neutral'">
-                {{ row.net_spend > 0 ? '-' : row.net_spend < 0 ? '+' : '' }}{{ formatAmount(Math.abs(row.net_spend)) }}
-              </span>
-            </div>
-          </div>
+          </template>
         </div>
       </el-card>
 
@@ -253,6 +281,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   ArrowLeft,
+  ArrowRight,
   Loading,
   Document,
   Money,
@@ -276,6 +305,14 @@ const route = useRoute()
 
 const isLoading = ref(true)
 const report = ref<TransferReport | null>(null)
+const allEvents = ref<TransferEvent[]>([])
+const expandedTeamId = ref<number | null>(null)
+
+const MOVEMENT_EVENT_TYPES = new Set([
+  'CONTRACT_TERMINATION', 'FREE_AGENT_SIGNING', 'TRANSFER_PURCHASE',
+  'EMERGENCY_SIGNING', 'PLAYER_RETIREMENT', 'PLAYER_RELEASE',
+  'CONTRACT_RENEWAL',
+])
 
 // 按净支出排序的球队汇总（过滤掉 team_id=0 的系统汇总行）
 const sortedTeamSummaries = computed(() => {
@@ -294,7 +331,12 @@ async function loadReport() {
   }
 
   try {
-    report.value = await transferWindowApi.getTransferReport(windowId)
+    const [reportData, events] = await Promise.all([
+      transferWindowApi.getTransferReport(windowId),
+      transferWindowApi.getTransferEvents(windowId),
+    ])
+    report.value = reportData
+    allEvents.value = events
   } catch (e) {
     logger.error('Failed to load report:', e)
   } finally {
@@ -370,6 +412,84 @@ function getEventHeadline(event: TransferEvent): string {
     default:
       return `${event.player_name} - ${getTypeName(event.event_type)}`
   }
+}
+
+function toggleTeamDetail(teamId: number) {
+  expandedTeamId.value = expandedTeamId.value === teamId ? null : teamId
+}
+
+interface TeamMovement {
+  event: TransferEvent
+  direction: 'in' | 'out' | 'stay'
+  description: string
+}
+
+function getTeamMovements(teamId: number): TeamMovement[] {
+  const movements: TeamMovement[] = []
+
+  for (const event of allEvents.value) {
+    if (!MOVEMENT_EVENT_TYPES.has(event.event_type)) continue
+
+    const isFrom = event.from_team_id === teamId
+    const isTo = event.to_team_id === teamId
+
+    if (!isFrom && !isTo) continue
+
+    if (event.event_type === 'CONTRACT_RENEWAL' && isTo) {
+      movements.push({
+        event,
+        direction: 'stay',
+        description: `续约${event.contract_years}年`,
+      })
+    } else if (event.event_type === 'CONTRACT_TERMINATION' && isFrom) {
+      movements.push({
+        event,
+        direction: 'out',
+        description: '续约破裂，成为自由球员',
+      })
+    } else if (event.event_type === 'PLAYER_RETIREMENT' && isFrom) {
+      movements.push({
+        event,
+        direction: 'out',
+        description: '退役',
+      })
+    } else if (event.event_type === 'PLAYER_RELEASE' && isFrom) {
+      movements.push({
+        event,
+        direction: 'out',
+        description: '被解约',
+      })
+    } else if (event.event_type === 'TRANSFER_PURCHASE') {
+      if (isFrom) {
+        movements.push({
+          event,
+          direction: 'out',
+          description: `转会至 ${event.to_team_name}，转会费 ${formatAmount(event.transfer_fee)}`,
+        })
+      }
+      if (isTo) {
+        movements.push({
+          event,
+          direction: 'in',
+          description: `从 ${event.from_team_name} 转入，转会费 ${formatAmount(event.transfer_fee)}`,
+        })
+      }
+    } else if ((event.event_type === 'FREE_AGENT_SIGNING' || event.event_type === 'EMERGENCY_SIGNING') && isTo) {
+      const label = event.event_type === 'EMERGENCY_SIGNING' ? '紧急签约' : '自由签约'
+      movements.push({
+        event,
+        direction: 'in',
+        description: `${label}，年薪 ${formatAmount(event.salary)}`,
+      })
+    }
+  }
+
+  movements.sort((a, b) => {
+    const order = { out: 0, in: 1, stay: 2 }
+    return order[a.direction] - order[b.direction]
+  })
+
+  return movements
 }
 
 onMounted(() => {
@@ -675,6 +795,25 @@ onMounted(() => {
   background: #f8fafc;
 }
 
+.team-row.clickable {
+  cursor: pointer;
+}
+
+.team-row.expanded {
+  background: #f0f5ff;
+}
+
+.expand-icon {
+  font-size: 12px;
+  color: #9ca3af;
+  transition: transform 0.2s;
+  margin-left: 4px;
+}
+
+.expand-icon.rotated {
+  transform: rotate(90deg);
+}
+
 .team-row.net-positive {
   border-left: 3px solid #22c55e;
 }
@@ -865,5 +1004,92 @@ onMounted(() => {
   display: flex;
   justify-content: center;
   margin-top: 24px;
+}
+
+/* 展开面板 */
+.team-detail-panel {
+  padding: 12px 16px 12px 64px;
+  background: #f8fafc;
+  border-radius: 0 0 10px 10px;
+  margin-top: -4px;
+  margin-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.movement-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: white;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.mov-direction-tag {
+  width: 48px;
+  text-align: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.mov-direction-tag.in {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.mov-direction-tag.out {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.mov-direction-tag.stay {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.mov-player {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 120px;
+  flex-shrink: 0;
+}
+
+.mov-player-name {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.mov-ability {
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+  background: #6b7280;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.mov-detail {
+  flex: 1;
+  color: #6b7280;
+}
+
+.mov-round {
+  font-size: 12px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.no-movements {
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+  padding: 8px;
 }
 </style>

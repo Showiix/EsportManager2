@@ -55,6 +55,7 @@ pub struct SeasonFinanceReport {
     pub league_share: u64,
     pub transfer_net: i64,
     pub operating_cost: u64,
+    pub weak_team_subsidy: u64,
 }
 
 /// 奖金信息
@@ -647,6 +648,12 @@ pub async fn get_season_finance_report(
         .bind(&save_id).bind(team_id as i64).bind(target_season)
         .fetch_one(&pool).await.unwrap_or(0);
 
+        let saved_weak_team_subsidy: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(amount), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND transaction_type = 'WeakTeamSubsidy'"
+        )
+        .bind(&save_id).bind(team_id as i64).bind(target_season)
+        .fetch_one(&pool).await.unwrap_or(0);
+
         return Ok(CommandResult::ok(SeasonFinanceReport {
             team_id,
             season_id: target_season as u64,
@@ -661,6 +668,7 @@ pub async fn get_season_finance_report(
             league_share: saved_league_share as u64,
             transfer_net: saved_transfer_in - saved_transfer_out,
             operating_cost: saved_operating as u64,
+            weak_team_subsidy: saved_weak_team_subsidy as u64,
         }));
     }
 
@@ -749,8 +757,18 @@ pub async fn get_season_finance_report(
     let league_share = engine.calculate_league_share(&region_code, None);
     let operating_cost = engine.calculate_operating_cost(salary_expense as u64);
 
+    let weak_team_subsidy: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(amount), 0) FROM financial_transactions WHERE save_id = ? AND team_id = ? AND season_id = ? AND transaction_type = 'WeakTeamSubsidy'"
+    )
+    .bind(&save_id)
+    .bind(team_id as i64)
+    .bind(target_season)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
     let transfer_net = transfer_income - transfer_expense;
-    let total_income = sponsorship + league_share + prize_money as u64
+    let total_income = sponsorship + league_share + prize_money as u64 + weak_team_subsidy as u64
         + if transfer_net > 0 { transfer_net as u64 } else { 0 };
     let total_expense = salary_expense as u64 + operating_cost
         + if transfer_net < 0 { (-transfer_net) as u64 } else { 0 };
@@ -784,6 +802,7 @@ pub async fn get_season_finance_report(
         league_share,
         transfer_net,
         operating_cost,
+        weak_team_subsidy: weak_team_subsidy as u64,
     }))
 }
 
@@ -997,7 +1016,7 @@ pub async fn distribute_league_share(
                 r#"
                 INSERT INTO financial_transactions (
                     save_id, team_id, season_id, transaction_type, amount, description
-                ) VALUES (?, ?, ?, 'LeagueShare', ?, '联盟弱队补贴金')
+                ) VALUES (?, ?, ?, 'WeakTeamSubsidy', ?, '联盟弱队补贴金')
                 "#,
             )
             .bind(&save_id)

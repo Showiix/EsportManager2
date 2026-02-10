@@ -68,6 +68,7 @@ pub struct TransferCache {
     pub team_personalities: HashMap<i64, TeamPersonalityConfig>,
     pub player_recent_honors: HashSet<i64>,
     pub team_annual_ranks: HashMap<i64, i32>,
+    pub team_last_season_ranks: HashMap<i64, i32>,
     pub team_reputations: HashMap<i64, i64>,
 }
 
@@ -177,6 +178,28 @@ impl TransferCache {
             team_annual_ranks.insert(id, rank);
         }
 
+        // 5.5 上赛季排名（从夏季常规赛积分榜获取）
+        let last_season_rank_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            r#"SELECT ls.team_id, ls.rank
+               FROM league_standings ls
+               JOIN tournaments t ON ls.tournament_id = t.id
+               WHERE t.save_id = ? AND t.season_id = ?
+               AND (t.tournament_type = 'SummerRegular' OR t.tournament_type = 'SpringRegular')
+               ORDER BY t.tournament_type DESC"#
+        )
+        .bind(save_id)
+        .bind(season_id - 1)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let mut team_last_season_ranks: HashMap<i64, i32> = HashMap::new();
+        for r in &last_season_rank_rows {
+            let team_id: i64 = r.get("team_id");
+            let rank: i32 = r.try_get("rank").unwrap_or(99);
+            team_last_season_ranks.entry(team_id).or_insert(rank);
+        }
+
         // 6. 批量计算球队声望（简化版：基于荣誉+近期积分）
         let mut team_reputations = HashMap::new();
         for &team_id in team_names.keys() {
@@ -232,6 +255,7 @@ impl TransferCache {
             team_personalities,
             player_recent_honors,
             team_annual_ranks,
+            team_last_season_ranks,
             team_reputations,
         })
     }
@@ -262,6 +286,11 @@ impl TransferCache {
     /// 获取球队年度排名
     pub fn get_team_rank(&self, team_id: i64) -> i32 {
         self.team_annual_ranks.get(&team_id).copied().unwrap_or(99)
+    }
+
+    pub fn get_team_last_rank(&self, team_id: i64) -> i32 {
+        self.team_last_season_ranks.get(&team_id).copied()
+            .unwrap_or_else(|| self.get_team_rank(team_id))
     }
 
     /// 获取球队综合声望（0-100）
@@ -879,17 +908,38 @@ impl TransferEngine {
             // 续约谈判逻辑
             let loyalty_bonus = loyalty as f64 / 100.0;
             let satisfaction_bonus = satisfaction as f64 / 100.0;
-            let renewal_chance = (loyalty_bonus * 0.4 + satisfaction_bonus * 0.4 + 0.2).min(1.0);
 
-            // 最多3轮谈判
-            let mut renewed = false;
-            // 使用完整身价（含荣誉系数）计算期望薪资
             let market_value = if calculated_market_value > 0 {
                 calculated_market_value as u64
             } else {
                 MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", "MID")
             };
             let expected_salary = MarketValueEngine::estimate_salary(market_value, ability as u8, age as u8) as i64;
+
+            let team_rank = cache.get_team_rank(team_id);
+            let team_rank_bonus: f64 = match team_rank {
+                1..=3 => 0.15,
+                4..=7 => 0.08,
+                8..=10 => 0.0,
+                11..=14 => -0.08,
+                _ => -0.12,
+            };
+
+            let salary_ratio = if expected_salary > 0 { salary as f64 / expected_salary as f64 } else { 1.0 };
+            let salary_competitiveness: f64 = if salary_ratio >= 1.0 {
+                0.10
+            } else if salary_ratio >= 0.85 {
+                0.0
+            } else if salary_ratio >= 0.7 {
+                -0.10
+            } else {
+                -0.20
+            };
+
+            let renewal_chance = (loyalty_bonus * 0.3 + satisfaction_bonus * 0.3 + 0.15
+                + team_rank_bonus + salary_competitiveness).clamp(0.05, 0.95);
+
+            let mut renewed = false;
 
             for _negotiation_round in 0..self.config.negotiation_max_rounds {
                 let roll: f64 = rng.gen();
@@ -899,7 +949,15 @@ impl TransferEngine {
                     let base_years: i64 = if age <= 22 { 3 } else if age <= 25 { 2 } else if age <= 28 { 2 } else { 1 };
                     let random_adj: i64 = if rng.gen::<f64>() < 0.4 { 1 } else if rng.gen::<f64>() < 0.3 { -1 } else { 0 };
                     let new_contract_years = (base_years + random_adj).clamp(1, 4);
-                    let new_salary = (expected_salary as f64 * 0.95) as i64; // 续约有小折扣
+                    // 续约薪资博弈：选手筹码越强，要价越高
+                    let player_leverage: f64 = {
+                        let ability_factor = if ability >= 70 { 0.10 } else if ability >= 60 { 0.0 } else { -0.05 };
+                        let loyalty_factor = if loyalty >= 80 { -0.05 } else if loyalty <= 40 { 0.08 } else { 0.0 };
+                        let satisfaction_factor = if satisfaction >= 80 { -0.03 } else if satisfaction <= 40 { 0.05 } else { 0.0 };
+                        let age_factor = if age <= 24 { 0.05 } else if age >= 30 { -0.05 } else { 0.0 };
+                        (1.0_f64 + ability_factor + loyalty_factor + satisfaction_factor + age_factor).clamp(0.85, 1.15)
+                    };
+                    let new_salary = (expected_salary as f64 * player_leverage) as i64;
 
                     sqlx::query(
                         "UPDATE players SET salary = ?, contract_end_season = ?, loyalty = MIN(loyalty + 5, 100) WHERE id = ?"
@@ -912,7 +970,7 @@ impl TransferEngine {
                     .map_err(|e| format!("续约更新失败: {}", e))?;
 
                     // 记录合同历史
-                    Self::insert_contract(pool, save_id, player_id, team_id, "RENEWAL", new_salary, new_contract_years, season_id, 0, 0).await?;
+                    Self::insert_contract(pool, save_id, player_id, team_id, "RENEWAL", new_salary * new_contract_years, new_contract_years, season_id, 0, 0).await?;
 
                     let event = self.record_event(
                         pool, window_id, 3,
@@ -943,6 +1001,10 @@ impl TransferEngine {
                 // 旧合同失效
                 sqlx::query("UPDATE player_contracts SET is_active = 0 WHERE save_id = ? AND player_id = ? AND is_active = 1")
                     .bind(save_id).bind(player_id).execute(pool).await.ok();
+
+                // 清理该选手的活跃挂牌记录（防止R5对已成为自由球员的选手进行有合同转会）
+                sqlx::query("UPDATE player_listings SET status = 'CANCELLED' WHERE player_id = ? AND window_id = ? AND status = 'ACTIVE'")
+                    .bind(player_id).bind(window_id).execute(pool).await.ok();
 
                 // 更新缓存
                 cache.release_player(player_id, team_id);
@@ -1202,7 +1264,7 @@ impl TransferEngine {
 
         // 使用缓存获取排名
         let current_rank = cache.get_team_rank(team_id);
-        let last_rank = current_rank; // 缓存中只有当前排名，简化处理
+        let last_rank = cache.get_team_last_rank(team_id);
 
         let rank_change = current_rank - last_rank;
         let rank_trend = if rank_change < -2 {
@@ -1280,9 +1342,9 @@ impl TransferEngine {
         let positions = ["TOP", "JUG", "MID", "ADC", "SUP"];
 
         for pos in &positions {
-            let starter = roster.iter().find(|p| {
-                p.position == *pos && p.is_starter
-            });
+            let starter = roster.iter()
+                .filter(|p| p.position == *pos)
+                .max_by_key(|p| p.ability);
 
             let (starter_id, starter_name, starter_ability, starter_age) = match starter {
                 Some(p) => (Some(p.id), Some(p.game_id.clone()), Some(p.ability), Some(p.age)),
@@ -1647,6 +1709,17 @@ impl TransferEngine {
             return (true, "能力过低".to_string(), "".to_string());
         }
 
+        // 同位置超过2人时，挂牌该位置能力最低的选手
+        let same_pos_players: Vec<&CachedPlayer> = roster.iter()
+            .filter(|p| p.position == _position)
+            .collect();
+        if same_pos_players.len() >= 3 {
+            let min_ability_at_pos = same_pos_players.iter().map(|p| p.ability).min().unwrap_or(0);
+            if ability == min_ability_at_pos {
+                return (true, format!("{}位置已有{}人，能力最低被挂牌", _position, same_pos_players.len()), "".to_string());
+            }
+        }
+
         // 阵容超出奢侈税起征线时，更积极挂牌非首发且无培养价值的选手
         let over_threshold = roster_count as i64 - self.config.luxury_tax_threshold;
         if over_threshold > 0 {
@@ -1697,7 +1770,20 @@ impl TransferEngine {
 
         // 使用缓存获取所有球队ID
         let team_ids: Vec<i64> = cache.team_names.keys().copied().collect();
-        let mut team_transfer_counts: HashMap<i64, i64> = HashMap::new();
+        // 从数据库查询整个窗口期内每队已完成的转入数量（含R4本轮）
+        let window_transfer_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            r#"SELECT to_team_id, COUNT(*) as cnt FROM transfer_events
+               WHERE window_id = ? AND to_team_id IS NOT NULL
+               AND event_type IN ('FREE_AGENT_SIGNING', 'TRANSFER_PURCHASE', 'EMERGENCY_SIGNING')
+               GROUP BY to_team_id"#
+        )
+        .bind(window_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+        let mut team_transfer_counts: HashMap<i64, i64> = window_transfer_rows.iter()
+            .map(|r| (r.get::<i64, _>("to_team_id"), r.get::<i64, _>("cnt")))
+            .collect();
 
         for free_agent in &free_agents {
             let player_id: i64 = free_agent.get("id");
@@ -1727,20 +1813,26 @@ impl TransferEngine {
             for &team_id in &team_ids {
                 let balance = cache.team_balances.get(&team_id).copied().unwrap_or(0);
 
-                // 检查转会次数限制
+                // 检查转会次数限制（基础2个，空缺位置额外放宽）
                 let count = team_transfer_counts.get(&team_id).copied().unwrap_or(0);
-                if count >= self.config.max_transfers_per_round {
+                let roster = cache.get_roster(team_id);
+                let positions = ["TOP", "JUG", "MID", "ADC", "SUP"];
+                let vacant_positions = positions.iter()
+                    .filter(|pos| !roster.iter().any(|p| p.position == **pos))
+                    .count() as i64;
+                let dynamic_limit = self.config.max_transfers_per_round + vacant_positions;
+                if count >= dynamic_limit {
+                    continue;
+                }
+                if count >= self.config.max_transfers_per_window {
                     continue;
                 }
 
-                // 检查财务状况
                 let fin_status = FinancialStatus::from_balance(balance);
                 if !fin_status.can_buy() {
                     continue;
                 }
 
-                // 使用缓存获取球队阵容
-                let roster = cache.get_roster(team_id);
                 let roster_count = roster.len();
 
                 // 超过奢侈税起征线时，AI大幅降低签人意愿（但不硬性禁止）
@@ -1815,13 +1907,17 @@ impl TransferEngine {
                 };
                 let target_region_id = cache.team_region_ids.get(&team_id).copied().flatten();
 
+                let bonus_ratio = if weights.star_chasing > 0.7 { 0.35 }
+                    else if weights.bargain_hunting > 0.7 { 0.15 }
+                    else { 0.25 };
+
                 offers.push(TransferOffer {
                     team_id,
                     player_id,
                     offered_salary,
                     contract_years,
                     transfer_fee: 0,
-                    signing_bonus: offered_salary / 4,
+                    signing_bonus: (offered_salary as f64 * bonus_ratio) as i64,
                     match_score,
                     priority: match_score,
                     target_region_id,
@@ -1875,7 +1971,9 @@ impl TransferEngine {
                 });
             }
 
-            // 选出最佳报价：match_score 最高（已排序）且 willingness >= 40
+            // 选出最佳报价：选手选择意愿最高的队伍（自由球员有选择权）
+            // 按 willingness 降序排列，选手优先去最想去的队伍
+            bid_records.sort_by(|a, b| b.willingness.partial_cmp(&a.willingness).unwrap_or(std::cmp::Ordering::Equal));
             let winner_idx = bid_records.iter()
                 .find(|r| r.willingness >= 40.0)
                 .map(|r| r.offer_idx);
@@ -1920,25 +2018,29 @@ impl TransferEngine {
                 .await
                 .map_err(|e| format!("签约失败: {}", e))?;
 
-                // 扣除球队资金（签约奖金）
-                sqlx::query("UPDATE teams SET balance = balance - ? WHERE id = ?")
-                    .bind(offer.signing_bonus)
-                    .bind(to_team_id)
-                    .execute(pool)
-                    .await
-                    .map_err(|e| format!("扣除资金失败: {}", e))?;
+                // 扣除球队资金（签约奖金，不超过当前余额）
+                let current_balance = cache.team_balances.get(&to_team_id).copied().unwrap_or(0);
+                let actual_bonus = offer.signing_bonus.min(current_balance.max(0));
+                if actual_bonus > 0 {
+                    sqlx::query("UPDATE teams SET balance = balance - ? WHERE id = ?")
+                        .bind(actual_bonus)
+                        .bind(to_team_id)
+                        .execute(pool)
+                        .await
+                        .map_err(|e| format!("扣除资金失败: {}", e))?;
+                }
 
                 // 记录财务交易：签约奖金支出
                 Self::record_financial_transaction(
                     pool, save_id, season_id, to_team_id,
                     "TransferOut",
-                    -(offer.signing_bonus),
+                    -(actual_bonus),
                     &format!("自由球员签约: {}", game_id),
                     player_id,
                 ).await?;
 
                 // 更新缓存
-                cache.update_balance(to_team_id, -offer.signing_bonus);
+                cache.update_balance(to_team_id, -actual_bonus);
                 // 将自由球员添加到目标队伍缓存
                 let new_player = CachedPlayer {
                     id: player_id,
@@ -1964,7 +2066,7 @@ impl TransferEngine {
                 *team_transfer_counts.entry(to_team_id).or_insert(0) += 1;
 
                 // 记录合同历史
-                Self::insert_contract(pool, save_id, player_id, to_team_id, "FREE_AGENT", offer.offered_salary, offer.contract_years, season_id, 0, offer.signing_bonus).await?;
+                Self::insert_contract(pool, save_id, player_id, to_team_id, "FREE_AGENT", offer.offered_salary * offer.contract_years, offer.contract_years, season_id, 0, offer.signing_bonus).await?;
 
                 let event = self.record_event(
                     pool, window_id, 4,
@@ -2025,6 +2127,20 @@ impl TransferEngine {
         // 使用缓存获取所有球队ID
         let team_ids: Vec<i64> = cache.team_names.keys().copied().collect();
 
+        let window_transfer_rows_r5: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            r#"SELECT to_team_id, COUNT(*) as cnt FROM transfer_events
+               WHERE window_id = ? AND to_team_id IS NOT NULL
+               AND event_type IN ('FREE_AGENT_SIGNING', 'TRANSFER_PURCHASE', 'EMERGENCY_SIGNING')
+               GROUP BY to_team_id"#
+        )
+        .bind(window_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+        let team_window_counts: HashMap<i64, i64> = window_transfer_rows_r5.iter()
+            .map(|r| (r.get::<i64, _>("to_team_id"), r.get::<i64, _>("cnt")))
+            .collect();
+
         for listing in &listings {
             let listing_id: i64 = listing.get("listing_id");
             let player_id: i64 = listing.get("player_id");
@@ -2053,6 +2169,11 @@ impl TransferEngine {
                     continue;
                 }
 
+                let window_count = team_window_counts.get(&team_id).copied().unwrap_or(0);
+                if window_count >= self.config.max_transfers_per_window {
+                    continue;
+                }
+
                 let balance = cache.team_balances.get(&team_id).copied().unwrap_or(0);
                 if balance < min_price {
                     continue;
@@ -2072,6 +2193,19 @@ impl TransferEngine {
                 let over_threshold = roster.len() as i64 - self.config.luxury_tax_threshold;
                 if pos_count >= 2 || over_threshold >= 5 {
                     continue;
+                }
+
+                if pos_count == 1 {
+                    let best_ability_at_pos = roster.iter()
+                        .filter(|r| r.position == position)
+                        .map(|r| r.ability)
+                        .max()
+                        .unwrap_or(0);
+                    let is_upgrade = ability > best_ability_at_pos;
+                    let is_youth_prospect = age <= 23 && potential >= 70;
+                    if !is_upgrade && !is_youth_prospect {
+                        continue;
+                    }
                 }
 
                 // 使用缓存获取AI性格权重
@@ -2140,7 +2274,7 @@ impl TransferEngine {
 
             // 竞价升温：多个球队竞标时推高出价
             if all_bids.len() >= 2 {
-                let bid_premium = 1.0 + (all_bids.len() as f64 - 1.0) * 0.08;
+                let bid_premium = (1.0 + (all_bids.len() as f64 - 1.0) * 0.04).min(1.20);
                 for bid in all_bids.iter_mut() {
                     bid.2 = (bid.2 as f64 * bid_premium) as i64;  // 推高转会费
                 }
@@ -2279,7 +2413,7 @@ impl TransferEngine {
                 .map_err(|e| format!("更新挂牌状态失败: {}", e))?;
 
                 // 记录合同历史
-                Self::insert_contract(pool, save_id, player_id, to_team_id, "TRANSFER", new_salary, contract_years, season_id, bid_price, 0).await?;
+                Self::insert_contract(pool, save_id, player_id, to_team_id, "TRANSFER", new_salary * contract_years, contract_years, season_id, bid_price, 0).await?;
 
                 let event = self.record_event(
                     pool, window_id, round,
@@ -2351,18 +2485,8 @@ impl TransferEngine {
             // fallback: 如果合同表查出为0但有活跃选手，回退到旧算法（用 join_season 估算合同总年数）
             let team_annual_salary = if team_annual_salary == 0 {
                 let fallback: i64 = sqlx::query_scalar(
-                    r#"SELECT COALESCE(SUM(
-                        CASE
-                            WHEN contract_end_season > COALESCE(join_season, ?)
-                                 AND contract_end_season - COALESCE(join_season, ?) > 0
-                            THEN salary / (contract_end_season - COALESCE(join_season, ?))
-                            ELSE salary
-                        END
-                    ), 0) FROM players WHERE team_id = ? AND save_id = ? AND status = 'Active'"#
+                    "SELECT COALESCE(SUM(salary), 0) FROM players WHERE team_id = ? AND save_id = ? AND status = 'Active'"
                 )
-                .bind(season_id)
-                .bind(season_id)
-                .bind(season_id)
                 .bind(team_id)
                 .bind(save_id)
                 .fetch_one(pool)
@@ -2757,34 +2881,69 @@ impl TransferEngine {
                 (Position::Sup, "SUP"),
             ];
 
+            let mut rng = rand::rngs::StdRng::from_entropy();
+            let team_rank = cache.get_team_rank(team_id);
+            let team_reputation = cache.get_team_reputation(team_id);
+            let team_region_id = cache.team_region_ids.get(&team_id).copied().flatten();
+
             for (i, (_, pos_str)) in all_positions.iter().enumerate() {
                 if has_position[i] {
                     continue;
                 }
 
-                // 找最佳可用自由球员
-                let candidate: Option<sqlx::sqlite::SqliteRow> = sqlx::query(
-                    r#"SELECT id, game_id, ability, age
+                let candidates: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+                    r#"SELECT id, game_id, ability, age, potential, tag, loyalty,
+                              home_region_id, region_loyalty, stability
                        FROM players
                        WHERE save_id = ? AND status = 'Active' AND team_id IS NULL AND UPPER(position) = UPPER(?)
                        ORDER BY ability DESC
-                       LIMIT 1"#
+                       LIMIT 10"#
                 )
                 .bind(save_id)
                 .bind(*pos_str)
-                .fetch_optional(pool)
+                .fetch_all(pool)
                 .await
                 .map_err(|e| format!("查找紧急签约候选失败: {}", e))?;
 
-                if let Some(player) = candidate {
-                    let player_id: i64 = player.get("id");
-                    let game_id: String = player.get("game_id");
-                    let ability: i64 = player.get("ability");
-                    let age: i64 = player.get("age");
+                let mut best_candidate: Option<(i64, String, i64, i64, f64)> = None;
+                let target_roster = cache.get_roster(team_id);
 
+                for candidate in &candidates {
+                    let c_id: i64 = candidate.get("id");
+                    let c_game_id: String = candidate.get("game_id");
+                    let c_ability: i64 = candidate.get("ability");
+                    let c_age: i64 = candidate.get("age");
+                    let c_loyalty: i64 = candidate.try_get("loyalty").unwrap_or(50);
+                    let c_home_region_id: Option<i64> = candidate.try_get("home_region_id").ok();
+                    let c_region_loyalty: i64 = candidate.try_get("region_loyalty").unwrap_or(70);
+
+                    let salary_est = MarketValueEngine::estimate_salary(
+                        MarketValueEngine::calculate_base_market_value(c_ability as u8, c_age as u8, c_ability as u8, "NORMAL", pos_str),
+                        c_ability as u8, c_age as u8,
+                    ) as i64;
+
+                    let willingness = self.calculate_willingness(
+                        c_ability as u8, c_loyalty as u8, c_age as u8,
+                        salary_est, salary_est,
+                        c_home_region_id, team_region_id, c_region_loyalty,
+                        team_rank, team_reputation,
+                        &target_roster, pos_str,
+                        &mut rng,
+                    );
+
+                    if willingness >= 30.0 {
+                        best_candidate = Some((c_id, c_game_id, c_ability, c_age, willingness));
+                        break;
+                    }
+
+                    if best_candidate.is_none() {
+                        best_candidate = Some((c_id, c_game_id, c_ability, c_age, willingness));
+                    }
+                }
+
+                if let Some((player_id, game_id, ability, age, _willingness)) = best_candidate {
                     let salary = MarketValueEngine::estimate_salary(MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", pos_str), ability as u8, age as u8) as i64;
-                    // 紧急补人给短合同 1-2 年
-                    let contract_years: i64 = if age <= 25 && rand::random::<f64>() < 0.4 { 2 } else { 1 };
+                    let contract_years: i64 = if age <= 25 && rng.gen::<f64>() < 0.4 { 2 } else { 1 };
 
                     sqlx::query(
                         "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = 40, satisfaction = 50 WHERE id = ?"
@@ -2797,10 +2956,29 @@ impl TransferEngine {
                     .await
                     .map_err(|e| format!("紧急签约失败: {}", e))?;
 
-                    // 记录合同历史
-                    Self::insert_contract(pool, save_id, player_id, team_id, "EMERGENCY", salary, contract_years, season_id, 0, 0).await?;
+                    let signing_bonus = salary / 4;
+                    let current_balance = cache.team_balances.get(&team_id).copied().unwrap_or(0);
+                    let actual_bonus = signing_bonus.min(current_balance.max(0));
+                    if actual_bonus > 0 {
+                        sqlx::query("UPDATE teams SET balance = balance - ? WHERE id = ?")
+                            .bind(actual_bonus)
+                            .bind(team_id)
+                            .execute(pool)
+                            .await
+                            .map_err(|e| format!("紧急签约扣款失败: {}", e))?;
+                        cache.update_balance(team_id, -actual_bonus);
 
-                    // 更新缓存
+                        Self::record_financial_transaction(
+                            pool, save_id, season_id, team_id,
+                            "TransferOut",
+                            -(actual_bonus),
+                            &format!("紧急签约: {}", game_id),
+                            player_id,
+                        ).await?;
+                    }
+
+                    Self::insert_contract(pool, save_id, player_id, team_id, "EMERGENCY", salary * contract_years, contract_years, season_id, 0, actual_bonus).await?;
+
                     let new_player = CachedPlayer {
                         id: player_id,
                         game_id: game_id.clone(),
@@ -2972,6 +3150,14 @@ impl TransferEngine {
             .await
             .map_err(|e| format!("关闭转会窗口失败: {}", e))?;
 
+            sqlx::query(
+                "UPDATE player_listings SET status = 'EXPIRED' WHERE window_id = ? AND status = 'ACTIVE'"
+            )
+            .bind(window_id)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("清理未售出挂牌失败: {}", e))?;
+
             let message = if is_valid {
                 "转会窗口验证通过，已成功关闭".to_string()
             } else {
@@ -3098,7 +3284,16 @@ impl TransferEngine {
             *events_by_level.entry(event.level.clone()).or_insert(0) += 1;
             total_transfer_fee += event.transfer_fee;
 
-            // 统计球队转入/转出
+            let is_player_movement = matches!(
+                event.event_type.as_str(),
+                "CONTRACT_TERMINATION" | "FREE_AGENT_SIGNING" | "TRANSFER_PURCHASE"
+                | "EMERGENCY_SIGNING" | "PLAYER_RETIREMENT" | "PLAYER_RELEASE"
+            );
+
+            if !is_player_movement {
+                continue;
+            }
+
             if let Some(from_id) = event.from_team_id {
                 let entry = team_stats.entry(from_id).or_insert_with(|| {
                     (event.from_team_name.clone().unwrap_or_default(), 0, 0, 0, 0)
@@ -3766,6 +3961,7 @@ mod tests {
             team_personalities: HashMap::new(),
             player_recent_honors: HashSet::new(),
             team_annual_ranks: HashMap::new(),
+            team_last_season_ranks: HashMap::new(),
             team_reputations: HashMap::new(),
         }
     }
