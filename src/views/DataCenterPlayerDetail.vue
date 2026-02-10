@@ -166,11 +166,14 @@
       <template #header>
         <div class="card-header">
           <span class="card-title">影响力走势</span>
-          <div class="chart-legend" v-if="performanceData.length > 0">
-            <span class="legend-item">
-              <span class="legend-dot avg"></span>
-              平均影响力 {{ (playerStats.avgImpact || 0).toFixed(1) }}
-            </span>
+          <div class="chart-header-right">
+            <el-segmented v-model="impactRange" :options="impactRangeOptions" size="small" />
+            <div class="chart-legend" v-if="performanceData.length > 0">
+              <span class="legend-item">
+                <span class="legend-dot avg"></span>
+                平均影响力 {{ (playerStats.avgImpact || 0).toFixed(1) }}
+              </span>
+            </div>
           </div>
         </div>
       </template>
@@ -319,9 +322,16 @@ const playerId = computed(() => route.params.playerId as string)
 const playerRankValue = ref<number | null>(null)
 const playerStatsData = ref<PlayerSeasonStats | null>(null)
 const loading = ref(false)
-const impactHistory = ref<number[]>([])  // 真实影响力历史数据
-const playerFullDetail = ref<PlayerFullDetail | null>(null)  // 选手完整详情（含满意度/忠诚度）
-const marketValueHistory = ref<MarketValueChange[]>([])  // 身价变化历史
+const impactHistory = ref<number[]>([])
+const playerFullDetail = ref<PlayerFullDetail | null>(null)
+const marketValueHistory = ref<MarketValueChange[]>([])
+const impactRange = ref('全部')
+const impactRangeOptions = [
+  { label: '近10场', value: '近10场' },
+  { label: '近20场', value: '近20场' },
+  { label: '近50场', value: '近50场' },
+  { label: '全部', value: '全部' },
+]
 
 // 赛季列表
 const seasons = computed(() => {
@@ -410,7 +420,11 @@ const performanceData = computed(() => {
 
 // ECharts 配置
 const chartOption = computed(() => {
-  const data = performanceData.value
+  const allData = performanceData.value
+  const rangeMap: Record<string, number> = { '近10场': 10, '近20场': 20, '近50场': 50 }
+  const limit = rangeMap[impactRange.value]
+  const data = limit ? allData.slice(-limit) : allData
+  const offset = limit ? Math.max(0, allData.length - limit) : 0
   const avg = playerStats.value?.avgImpact || 0
 
   return {
@@ -418,7 +432,8 @@ const chartOption = computed(() => {
       trigger: 'axis',
       formatter: (params: any) => {
         const value = params[0]?.value || 0
-        return `第 ${params[0]?.dataIndex + 1} 场<br/>影响力: <b>${value}</b>`
+        const gameNum = params[0]?.dataIndex + 1 + offset
+        return `第 ${gameNum} 场<br/>影响力: <b>${value}</b>`
       }
     },
     grid: {
@@ -431,7 +446,7 @@ const chartOption = computed(() => {
     xAxis: {
       type: 'category',
       boundaryGap: false,
-      data: data.map((_, i) => i + 1),
+      data: data.map((_, i) => i + 1 + offset),
       axisLabel: {
         color: '#9ca3af'
       },
@@ -1167,6 +1182,12 @@ watch(selectedSeason, async () => {
         font-size: 18px;
         font-weight: 600;
         color: #1f2937;
+      }
+
+      .chart-header-right {
+        display: flex;
+        align-items: center;
+        gap: 16px;
       }
 
       .chart-legend {
