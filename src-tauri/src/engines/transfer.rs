@@ -354,6 +354,14 @@ impl TransferCache {
         }
     }
 
+    pub fn update_player_salary(&mut self, player_id: i64, team_id: i64, new_salary: i64) {
+        if let Some(roster) = self.team_rosters.get_mut(&team_id) {
+            if let Some(p) = roster.iter_mut().find(|p| p.id == player_id) {
+                p.salary = new_salary;
+            }
+        }
+    }
+
     /// 释放选手（从队伍移除，变为自由球员）
     pub fn release_player(&mut self, player_id: i64, team_id: i64) {
         if let Some(roster) = self.team_rosters.get_mut(&team_id) {
@@ -830,6 +838,9 @@ impl TransferEngine {
 
                 cache.retire_player(player_id, team_id);
 
+                sqlx::query("UPDATE player_contracts SET is_active = 0 WHERE save_id = ? AND player_id = ? AND is_active = 1")
+                    .bind(save_id).bind(player_id).execute(pool).await.ok();
+
                 let retire_desc = if retire_chance < 1.0 {
                     format!("{}岁退役，能力值{}（退役概率{}%）", new_age, new_ability, (retire_chance * 100.0) as i32)
                 } else {
@@ -850,6 +861,287 @@ impl TransferEngine {
             }
         }
 
+        // ============================================
+        // 满意度 & 忠诚度赛季结算
+        // ============================================
+
+        // 查询本赛季各球队在常规赛的排名（取夏季常规赛 > 春季常规赛）
+        let team_rank_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            r#"SELECT ls.team_id, ls.rank, t.tournament_type
+               FROM league_standings ls
+               JOIN tournaments t ON ls.tournament_id = t.id
+               WHERE t.save_id = ? AND t.season_id = ?
+               AND (t.tournament_type = 'SummerRegular' OR t.tournament_type = 'SpringRegular')
+               ORDER BY t.tournament_type DESC"#
+        )
+        .bind(save_id)
+        .bind(season_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let mut team_final_ranks: HashMap<i64, i32> = HashMap::new();
+        for r in &team_rank_rows {
+            let tid: i64 = r.get("team_id");
+            let rank: i32 = r.try_get("rank").unwrap_or(99);
+            team_final_ranks.entry(tid).or_insert(rank); // SummerRegular 优先
+        }
+
+        // 查询本赛季各球队荣誉（判断是否夺冠、进季后赛）
+        let team_honor_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            r#"SELECT team_id, honor_type FROM honors
+               WHERE save_id = ? AND season_id = ?
+               AND team_id IS NOT NULL
+               AND honor_type IN ('TeamChampion', 'TeamRunnerUp', 'TeamThird', 'TeamFourth')"#
+        )
+        .bind(save_id)
+        .bind(season_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let mut team_is_champion: HashSet<i64> = HashSet::new();
+        let mut team_made_playoffs: HashSet<i64> = HashSet::new();
+        let mut team_has_international: HashSet<i64> = HashSet::new();
+        for r in &team_honor_rows {
+            let tid: i64 = r.get("team_id");
+            let honor: String = r.get("honor_type");
+            match honor.as_str() {
+                "TeamChampion" => { team_is_champion.insert(tid); team_made_playoffs.insert(tid); }
+                "TeamRunnerUp" | "TeamThird" | "TeamFourth" => { team_made_playoffs.insert(tid); }
+                _ => {}
+            }
+        }
+
+        // 查询本赛季国际赛荣誉
+        let intl_honor_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            r#"SELECT DISTINCT team_id FROM honors
+               WHERE save_id = ? AND season_id = ?
+               AND team_id IS NOT NULL
+               AND tournament_type IN ('Msi', 'WorldChampionship', 'MadridMasters',
+                   'ShanghaiMasters', 'ClaudeIntercontinental', 'IcpIntercontinental', 'SuperIntercontinental')"#
+        )
+        .bind(save_id)
+        .bind(season_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        for r in &intl_honor_rows {
+            let tid: i64 = r.get("team_id");
+            team_has_international.insert(tid);
+        }
+
+        // 查询上赛季排名（连续未进季后赛的简化判断）
+        let prev_no_playoff: HashSet<i64> = {
+            let rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+                r#"SELECT ls.team_id, ls.rank
+                   FROM league_standings ls
+                   JOIN tournaments t ON ls.tournament_id = t.id
+                   WHERE t.save_id = ? AND t.season_id = ?
+                   AND t.tournament_type = 'SummerRegular'"#
+            )
+            .bind(save_id)
+            .bind(season_id - 1)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+            rows.iter()
+                .filter(|r| r.try_get::<i32, _>("rank").unwrap_or(99) >= 7)
+                .map(|r| r.get::<i64, _>("team_id"))
+                .collect()
+        };
+
+        // 查询选手加入赛季（用于忠诚度-在队年数）
+        let join_season_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            "SELECT id, join_season FROM players WHERE save_id = ? AND status = 'Active' AND team_id IS NOT NULL"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let join_season_map: HashMap<i64, i64> = join_season_rows.iter()
+            .map(|r| {
+                let pid: i64 = r.get("id");
+                let js: i64 = r.try_get("join_season").unwrap_or(season_id);
+                (pid, js)
+            })
+            .collect();
+
+        // 批量更新满意度和忠诚度
+        let active_players: Vec<CachedPlayer> = cache.team_rosters.values()
+            .flat_map(|roster| roster.iter().cloned())
+            .collect();
+
+        for player in &active_players {
+            let team_id = match player.team_id {
+                Some(tid) => tid,
+                None => continue,
+            };
+
+            let rank = team_final_ranks.get(&team_id).copied().unwrap_or(99);
+            let is_champion = team_is_champion.contains(&team_id);
+            let made_playoffs = team_made_playoffs.contains(&team_id);
+            let has_international = team_has_international.contains(&team_id);
+            let consecutive_no_playoffs = if rank >= 7 && prev_no_playoff.contains(&team_id) { 2u32 } else if rank >= 7 { 1 } else { 0 };
+
+            let (gp, _avg_perf) = stats_map.get(&player.id).copied().unwrap_or((0, 0.0));
+            let total_games = gp.max(0) as u32;
+            let games_as_starter = if player.is_starter { total_games } else { 0u32 };
+            let starter_ratio = if total_games > 0 { games_as_starter as f64 / total_games as f64 } else { 0.0 };
+
+            // === 满意度变化 ===
+            let mut sat_change: i32 = 0;
+
+            // 上场时间
+            if starter_ratio < 0.3 && player.ability >= 54 {
+                sat_change -= 20;
+            } else if starter_ratio < 0.5 && player.ability >= 47 {
+                sat_change -= 10;
+            } else if starter_ratio >= 0.8 {
+                sat_change += 5;
+            }
+
+            // 球队战绩
+            if rank >= 8 && player.ability >= 58 {
+                sat_change -= 15;
+            } else if rank >= 6 && player.ability >= 61 {
+                sat_change -= 10;
+            } else if rank <= 2 {
+                sat_change += 10;
+            } else if rank <= 4 {
+                sat_change += 5;
+            }
+
+            // 连续未进季后赛
+            if consecutive_no_playoffs >= 2 {
+                sat_change -= 15;
+            } else if consecutive_no_playoffs >= 1 {
+                sat_change -= 5;
+            }
+
+            // 薪资满意度
+            let market_value = MarketValueEngine::calculate_base_market_value(
+                player.ability as u8, player.age as u8, player.ability as u8, "NORMAL", &player.position
+            );
+            let expected_salary = MarketValueEngine::estimate_salary(market_value, player.ability as u8, player.age as u8);
+            let salary_ratio = if expected_salary > 0 { player.salary as f64 / expected_salary as f64 } else { 1.0 };
+
+            if salary_ratio < 0.5 {
+                sat_change -= 20;
+            } else if salary_ratio < 0.6 {
+                sat_change -= 15;
+            } else if salary_ratio < 0.8 {
+                sat_change -= 8;
+            } else if salary_ratio > 1.2 {
+                sat_change += 5;
+            }
+
+            // 夺冠/国际赛/季后赛加成
+            if is_champion {
+                sat_change += 20;
+            } else if has_international {
+                sat_change += 15;
+            } else if made_playoffs {
+                sat_change += 5;
+            }
+
+            // 年龄因素
+            if player.age >= 28 && rank >= 8 {
+                sat_change -= 10;
+            }
+            if player.age <= 24 && starter_ratio < 0.5 {
+                sat_change -= 5;
+            }
+
+            // === 忠诚度变化 ===
+            let mut loy_change: i32 = 2; // 每赛季自然增长
+
+            let join_s = join_season_map.get(&player.id).copied().unwrap_or(season_id);
+            let seasons_with_team = (season_id - join_s).max(0) as u32;
+
+            // 青训出身（第一赛季加成）
+            if seasons_with_team == 1 {
+                // 简化：不知道是否选秀出身，跳过 DraftOrigin 加成
+            }
+
+            // 球队战绩
+            if is_champion {
+                loy_change += 8;
+            } else if made_playoffs {
+                loy_change += 3;
+            } else if rank >= 8 {
+                loy_change -= 5;
+            }
+
+            // 长期替补
+            if !player.is_starter && seasons_with_team >= 2 {
+                loy_change -= 8;
+            }
+
+            // 应用变化
+            let new_satisfaction = (player.satisfaction + sat_change as i64).clamp(5, 100);
+            let new_loyalty = (player.loyalty + loy_change as i64).clamp(5, 100);
+
+            sqlx::query(
+                "UPDATE players SET satisfaction = ?, loyalty = ? WHERE id = ? AND save_id = ?"
+            )
+            .bind(new_satisfaction)
+            .bind(new_loyalty)
+            .bind(player.id)
+            .bind(save_id)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("更新满意度/忠诚度失败: {}", e))?;
+
+            // 同步更新缓存
+            if let Some(roster) = cache.team_rosters.get_mut(&team_id) {
+                if let Some(p) = roster.iter_mut().find(|p| p.id == player.id) {
+                    p.satisfaction = new_satisfaction;
+                    p.loyalty = new_loyalty;
+                }
+            }
+
+            // 满意度变化≥10 或 忠诚度变化≥5 时生成事件
+            let actual_sat_change = new_satisfaction - player.satisfaction;
+            let actual_loy_change = new_loyalty - player.loyalty;
+            if actual_sat_change.abs() >= 10 || actual_loy_change.abs() >= 5 {
+                let from_team_name = cache.get_team_name(team_id);
+                let mut parts = Vec::new();
+                if actual_sat_change != 0 {
+                    parts.push(format!("满意度 {} → {}（{}{}）",
+                        player.satisfaction, new_satisfaction,
+                        if actual_sat_change > 0 { "+" } else { "" }, actual_sat_change));
+                }
+                if actual_loy_change != 0 {
+                    parts.push(format!("忠诚度 {} → {}（{}{}）",
+                        player.loyalty, new_loyalty,
+                        if actual_loy_change > 0 { "+" } else { "" }, actual_loy_change));
+                }
+
+                let level = if actual_sat_change.abs() >= 20 || actual_loy_change.abs() >= 10 {
+                    EventLevel::A
+                } else {
+                    EventLevel::B
+                };
+
+                let event = self.record_event(
+                    pool, window_id, 1,
+                    TransferEventType::SeasonSettlement,
+                    level,
+                    player.id, &player.game_id, player.ability,
+                    Some(team_id), Some(&from_team_name),
+                    Some(team_id), Some(&from_team_name),
+                    0, 0, 0,
+                    &parts.join("，"),
+                ).await?;
+                events.push(event);
+            }
+        }
+
+        log::info!("✅ 满意度/忠诚度赛季结算完成，更新了 {} 名选手", active_players.len());
+
         // 更新所有球队战力
         self.recalculate_team_powers_optimized(pool, save_id).await?;
 
@@ -857,7 +1149,7 @@ impl TransferEngine {
             round: 1,
             round_name: "赛季结算".to_string(),
             events,
-            summary: "已完成赛季结算：选手年龄+1、能力值更新（含表现加成/年龄曲线/特性影响）、潜力微调、退役处理".to_string(),
+            summary: "已完成赛季结算：选手年龄+1、能力值更新（含表现加成/年龄曲线/特性影响）、潜力微调、退役处理、满意度/忠诚度更新".to_string(),
         })
     }
 
@@ -980,7 +1272,7 @@ impl TransferEngine {
                         Some(team_id), Some(&team_name),
                         Some(team_id), Some(&team_name),
                         0, new_salary, new_contract_years,
-                        &format!("续约{}年，年薪{}万", new_contract_years, new_salary / 10000),
+                        &format!("[合同到期] 续约{}年，年薪{}万", new_contract_years, new_salary / 10000),
                     ).await?;
                     events.push(event);
                     renewed = true;
@@ -1017,7 +1309,7 @@ impl TransferEngine {
                     Some(team_id), Some(&team_name),
                     None, None,
                     0, salary, 0,
-                    &format!("续约谈判失败，{}成为自由球员", game_id),
+                    &format!("[合同到期] 续约谈判失败，{}成为自由球员", game_id),
                 ).await?;
                 events.push(event);
             }
@@ -1061,12 +1353,124 @@ impl TransferEngine {
 
             for player in &roster {
                 // 3. 执行选手评估（使用缓存）
-                let player_eval = self.evaluate_player_cached(
+                let mut player_eval = self.evaluate_player_cached(
                     pool, save_id, window_id, player.id, &player.game_id,
                     team_id, &team_name, &team_eval,
                     player.ability, player.age, player.salary, player.satisfaction, player.loyalty, &player.position,
                     &roster, season_id, cache
                 ).await?;
+
+                // 3.5 涨薪谈判：薪资差距大的选手先向球队提涨薪要求
+                let estimated_salary = MarketValueEngine::estimate_salary(
+                    MarketValueEngine::calculate_base_market_value(player.ability as u8, player.age as u8, player.ability as u8, "NORMAL", &player.position),
+                    player.ability as u8, player.age as u8,
+                ) as i64;
+                let salary_ratio = if estimated_salary > 0 { player.salary as f64 / estimated_salary as f64 } else { 1.0 };
+
+                if salary_ratio < 0.85 && player.salary > 0 {
+                    let raise_target = (estimated_salary as f64 * 0.90) as i64;
+                    let raise_amount = raise_target - player.salary;
+
+                    // 球队决策：余额充足 + 选手能力高 → 同意
+                    let team_can_afford = balance > raise_amount * 3; // 至少能承担3年涨幅
+                    let player_is_valuable = player.ability >= 60;
+                    let roster_is_thin = cache.get_roster(team_id).iter()
+                        .filter(|p| p.position == player.position)
+                        .count() <= 1;
+
+                    let agree_prob: f64 = if team_can_afford && player_is_valuable {
+                        0.85
+                    } else if team_can_afford && roster_is_thin {
+                        0.75
+                    } else if team_can_afford {
+                        0.50
+                    } else if player_is_valuable {
+                        0.30
+                    } else {
+                        0.15
+                    };
+
+                    let mut rng = rand::rngs::StdRng::from_entropy();
+                    if rng.gen::<f64>() < agree_prob {
+                        // 涨薪成功：签新合同（延长2年）
+                        let new_contract_years: i64 = 2;
+                        let new_end_season = season_id + new_contract_years;
+
+                        sqlx::query("UPDATE players SET salary = ?, contract_end_season = ? WHERE id = ? AND save_id = ?")
+                            .bind(raise_target)
+                            .bind(new_end_season)
+                            .bind(player.id)
+                            .bind(save_id)
+                            .execute(pool)
+                            .await
+                            .map_err(|e| format!("更新薪资失败: {}", e))?;
+
+                        let new_satisfaction = (player.satisfaction + 8).min(100);
+                        sqlx::query("UPDATE players SET satisfaction = ? WHERE id = ? AND save_id = ?")
+                            .bind(new_satisfaction)
+                            .bind(player.id)
+                            .bind(save_id)
+                            .execute(pool)
+                            .await
+                            .map_err(|e| format!("更新满意度失败: {}", e))?;
+
+                        // 旧合同失效，插入新合同
+                        sqlx::query("UPDATE player_contracts SET is_active = 0 WHERE save_id = ? AND player_id = ? AND is_active = 1")
+                            .bind(save_id).bind(player.id).execute(pool).await.ok();
+                        Self::insert_contract(pool, save_id, player.id, team_id, "SALARY_RAISE", raise_target * new_contract_years, new_contract_years, season_id, 0, 0).await?;
+
+                        cache.update_player_salary(player.id, team_id, raise_target);
+
+                        player_eval.stay_score = (player_eval.stay_score + 20.0).clamp(0.0, 100.0);
+                        if player_eval.wants_to_leave && player_eval.stay_score >= 40.0 {
+                            player_eval.wants_to_leave = false;
+                            player_eval.leave_reason = String::new();
+                        }
+
+                        let event = self.record_event(
+                            pool, window_id, 2,
+                            TransferEventType::ContractRenewal,
+                            EventLevel::C,
+                            player.id, &player.game_id, player.ability,
+                            Some(team_id), Some(&team_name),
+                            Some(team_id), Some(&team_name),
+                            0, raise_target, new_contract_years,
+                            &format!("[主动涨薪] {}向{}提出涨薪要求，球队同意并续约{}年，年薪调整至{}万", player.game_id, team_name, new_contract_years, raise_target / 10000),
+                        ).await?;
+                        events.push(event);
+                    } else {
+                        // 涨薪被拒
+                        let new_satisfaction = (player.satisfaction as i64 - 12).max(0) as i64;
+                        sqlx::query("UPDATE players SET satisfaction = ? WHERE id = ? AND save_id = ?")
+                            .bind(new_satisfaction)
+                            .bind(player.id)
+                            .bind(save_id)
+                            .execute(pool)
+                            .await
+                            .map_err(|e| format!("更新满意度失败: {}", e))?;
+
+                        // 被拒后更想走
+                        player_eval.stay_score = (player_eval.stay_score - 15.0).clamp(0.0, 100.0);
+                        if player_eval.stay_score < 40.0 {
+                            player_eval.wants_to_leave = true;
+                            if player_eval.leave_reason.is_empty() {
+                                player_eval.leave_reason = "涨薪要求被拒绝".to_string();
+                            }
+                        }
+
+                        let event = self.record_event(
+                            pool, window_id, 2,
+                            TransferEventType::ContractRenewal,
+                            EventLevel::C,
+                            player.id, &player.game_id, player.ability,
+                            Some(team_id), Some(&team_name),
+                            Some(team_id), Some(&team_name),
+                            0, player.salary, 0,
+                            &format!("[主动涨薪] {}向{}提出涨薪要求（期望年薪{}万），但球队拒绝", player.game_id, team_name, raise_target / 10000),
+                        ).await?;
+                        events.push(event);
+                    }
+                }
 
                 // 4. 根据评估结果决定是否挂牌
                 if player_eval.should_list {
