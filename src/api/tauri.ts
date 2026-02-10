@@ -1910,6 +1910,12 @@ export const statsApi = {
 
   getPlayerContractHistory: (playerId: number) =>
     invokeCommand<PlayerContractRecord[]>('get_player_contract_history', { playerId }),
+
+  getPlayerTournamentHistory: (playerId: number, seasonId?: number) =>
+    invokeCommand<PlayerTournamentHistoryItem[]>('get_player_tournament_history', { playerId, seasonId }),
+
+  getPlayerYearlyTopHistory: (playerId: number) =>
+    invokeCommand<PlayerYearlyTopItem[]>('get_player_yearly_top_history', { playerId }),
 }
 
 export interface PlayerContractRecord {
@@ -1927,6 +1933,22 @@ export interface PlayerSeasonHistoryEntry {
   team_name: string
   ability: number
   potential: number
+}
+
+export interface PlayerTournamentHistoryItem {
+  tournament_type: string
+  season_id: number
+  games_played: number
+  avg_impact: number
+  max_impact: number
+  avg_performance: number
+}
+
+export interface PlayerYearlyTopItem {
+  season: string
+  yearly_top_score: number
+  rank: number
+  total_players: number
 }
 
 // Market value change record
@@ -2186,6 +2208,7 @@ export interface ScoreDimensions {
   stability_norm: number
   appearance_norm: number
   honor_norm: number
+  big_stage_norm: number
 }
 
 /** 选手评语 */
@@ -2208,6 +2231,18 @@ export interface AllProPlayer {
   commentary: PlayerCommentary
 }
 
+/** 选手单赛事表现明细 */
+export interface TournamentDetail {
+  tournament_name: string
+  tournament_type: string
+  games_played: number
+  avg_impact: number
+  avg_performance: number
+  best_performance: number
+  mvp_count: number
+  weight: number
+}
+
 /** 年度Top20选手信息 */
 export interface Top20Player {
   rank: number
@@ -2228,6 +2263,9 @@ export interface Top20Player {
   regional_titles: number
   dimensions: ScoreDimensions
   commentary: PlayerCommentary
+  tournament_details: TournamentDetail[]
+  big_stage_score: number
+  has_international: boolean
 }
 
 /** 特别奖选手信息 */

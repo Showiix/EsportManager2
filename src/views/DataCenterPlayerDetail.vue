@@ -79,94 +79,102 @@
     </div>
 
     <!-- 雷达图 + 选手状态 并列行 -->
-    <div class="radar-status-row" v-if="playerStats">
-      <!-- 能力雷达图 -->
-      <el-card class="radar-card">
-        <template #header>
-          <span class="card-title">能力画像</span>
-        </template>
-        <div class="chart-container small">
-          <v-chart v-if="radarChartOption.series" class="chart" :option="radarChartOption" autoresize />
-          <el-empty v-else description="暂无数据" :image-size="80" />
-        </div>
-        <div class="radar-labels" v-if="radarDimLabels.length > 0">
-          <span class="radar-label-item" v-for="dim in radarDimLabels" :key="dim.name">
-            {{ dim.name }}: <b>{{ dim.value }}</b>
-          </span>
-        </div>
-      </el-card>
-
-      <!-- 选手状态卡片 -->
-      <el-card class="status-card" v-if="playerFullDetail">
-        <template #header>
-          <div class="status-header">
-            <span class="status-title">
-              <el-icon><User /></el-icon>
-              选手状态
-            </span>
-          </div>
-        </template>
-
-        <div class="status-content">
-          <!-- 满意度 -->
-          <div class="status-item">
-            <div class="status-label">
-              <span class="label-text">满意度</span>
-              <span class="status-value" :class="getSatisfactionClass(playerFullDetail.player.satisfaction)">
-                {{ playerFullDetail.player.satisfaction }}
+    <!-- 图表折叠区域 -->
+    <div class="collapse-toolbar" v-if="playerStats">
+      <el-button size="small" text @click="toggleAllCharts">
+        <el-icon v-if="activeCharts.length > 0"><FolderOpened /></el-icon>
+        <el-icon v-else><Folder /></el-icon>
+        {{ activeCharts.length > 0 ? '全部收起' : '全部展开' }}
+      </el-button>
+    </div>
+    <el-collapse v-model="activeCharts" class="charts-collapse" v-if="playerStats">
+      <el-collapse-item title="能力画像 & 选手状态" name="radar-status">
+        <div class="radar-status-row">
+          <!-- 能力雷达图 -->
+          <el-card class="radar-card">
+            <template #header>
+              <span class="card-title">能力画像</span>
+            </template>
+            <div class="chart-container small">
+              <v-chart v-if="radarChartOption.series" class="chart" :option="radarChartOption" autoresize />
+              <el-empty v-else description="暂无数据" :image-size="80" />
+            </div>
+            <div class="radar-labels" v-if="radarDimLabels.length > 0">
+              <span class="radar-label-item" v-for="dim in radarDimLabels" :key="dim.name">
+                {{ dim.name }}: <b>{{ dim.value }}</b>
               </span>
             </div>
-            <el-progress
-              :percentage="playerFullDetail.player.satisfaction"
-              :stroke-width="8"
-              :color="getSatisfactionColor(playerFullDetail.player.satisfaction)"
-              :show-text="false"
-            />
-            <div class="status-desc">{{ getSatisfactionDesc(playerFullDetail.player.satisfaction) }}</div>
-          </div>
+          </el-card>
 
-          <!-- 忠诚度 -->
-          <div class="status-item">
-            <div class="status-label">
-              <span class="label-text">忠诚度</span>
-              <span class="status-value">{{ playerFullDetail.player.loyalty }}</span>
-              <el-tag
-                size="small"
-                :type="getLoyaltyTagType(playerFullDetail.player.loyalty)"
-                effect="plain"
-              >
-                {{ getLoyaltyTypeName(playerFullDetail.player.loyalty) }}
-              </el-tag>
+          <!-- 选手状态卡片 -->
+          <el-card class="status-card" v-if="playerFullDetail">
+            <template #header>
+              <div class="status-header">
+                <span class="status-title">
+                  <el-icon><User /></el-icon>
+                  选手状态
+                </span>
+              </div>
+            </template>
+
+            <div class="status-content">
+              <!-- 满意度 -->
+              <div class="status-item">
+                <div class="status-label">
+                  <span class="label-text">满意度</span>
+                  <span class="status-value" :class="getSatisfactionClass(playerFullDetail.player.satisfaction)">
+                    {{ playerFullDetail.player.satisfaction }}
+                  </span>
+                </div>
+                <el-progress
+                  :percentage="playerFullDetail.player.satisfaction"
+                  :stroke-width="8"
+                  :color="getSatisfactionColor(playerFullDetail.player.satisfaction)"
+                  :show-text="false"
+                />
+                <div class="status-desc">{{ getSatisfactionDesc(playerFullDetail.player.satisfaction) }}</div>
+              </div>
+
+              <!-- 忠诚度 -->
+              <div class="status-item">
+                <div class="status-label">
+                  <span class="label-text">忠诚度</span>
+                  <span class="status-value">{{ playerFullDetail.player.loyalty }}</span>
+                  <el-tag
+                    size="small"
+                    :type="getLoyaltyTagType(playerFullDetail.player.loyalty)"
+                    effect="plain"
+                  >
+                    {{ getLoyaltyTypeName(playerFullDetail.player.loyalty) }}
+                  </el-tag>
+                </div>
+                <el-progress
+                  :percentage="playerFullDetail.player.loyalty"
+                  :stroke-width="8"
+                  :color="getLoyaltyColor(playerFullDetail.player.loyalty)"
+                  :show-text="false"
+                />
+                <div class="status-desc">{{ getLoyaltyDesc(playerFullDetail.player.loyalty) }}</div>
+              </div>
+
+              <!-- 离队意愿警告 -->
+              <el-alert
+                v-if="playerFullDetail.player.satisfaction < 40"
+                type="warning"
+                :title="playerFullDetail.player.satisfaction < 30 ? '该选手可能想要离队' : '该选手满意度较低'"
+                :description="'满意度过低可能导致选手在转会窗口主动申请离队'"
+                :closable="false"
+                show-icon
+                class="departure-alert"
+              />
             </div>
-            <el-progress
-              :percentage="playerFullDetail.player.loyalty"
-              :stroke-width="8"
-              :color="getLoyaltyColor(playerFullDetail.player.loyalty)"
-              :show-text="false"
-            />
-            <div class="status-desc">{{ getLoyaltyDesc(playerFullDetail.player.loyalty) }}</div>
-          </div>
-
-          <!-- 离队意愿警告 -->
-          <el-alert
-            v-if="playerFullDetail.player.satisfaction < 40"
-            type="warning"
-            :title="playerFullDetail.player.satisfaction < 30 ? '该选手可能想要离队' : '该选手满意度较低'"
-            :description="'满意度过低可能导致选手在转会窗口主动申请离队'"
-            :closable="false"
-            show-icon
-            class="departure-alert"
-          />
+          </el-card>
         </div>
-      </el-card>
-    </div>
+      </el-collapse-item>
 
-    <!-- 影响力走势图 -->
-    <el-card class="chart-card" v-if="playerStats">
-      <template #header>
-        <div class="card-header">
-          <span class="card-title">影响力走势</span>
-          <div class="chart-header-right">
+      <el-collapse-item title="影响力走势" name="impact-trend">
+        <div class="collapse-chart-wrapper">
+          <div class="chart-header-inline">
             <el-segmented v-model="impactRange" :options="impactRangeOptions" size="small" />
             <div class="chart-legend" v-if="performanceData.length > 0">
               <span class="legend-item">
@@ -175,92 +183,127 @@
               </span>
             </div>
           </div>
-        </div>
-      </template>
-      <div class="chart-container">
-        <v-chart v-if="performanceData.length > 0" class="chart" :option="chartOption" autoresize />
-        <el-empty v-else description="暂无比赛数据" :image-size="100" />
-      </div>
-    </el-card>
-
-    <!-- 数据分析图表 -->
-    <div class="charts-row-2col" v-if="playerStats">
-      <!-- 身价走势 -->
-      <el-card class="market-value-card">
-        <template #header>
-          <span class="card-title">身价走势</span>
-        </template>
-        <div class="chart-container small">
-          <v-chart v-if="marketValueHistory.length > 0 && marketValueChartOption.series" class="chart" :option="marketValueChartOption" autoresize />
-          <el-empty v-else description="暂无身价数据" :image-size="80" />
-        </div>
-      </el-card>
-
-      <!-- 影响力分布 -->
-      <el-card class="distribution-card" v-if="performanceData.length > 0">
-        <template #header>
-          <span class="card-title">影响力分布</span>
-        </template>
-        <div class="chart-container small">
-          <v-chart class="chart" :option="distributionChartOption" autoresize />
-        </div>
-      </el-card>
-
-      <!-- 稳定性仪表盘 -->
-      <el-card class="gauge-card" v-if="performanceData.length > 0">
-        <template #header>
-          <span class="card-title">稳定性评分</span>
-        </template>
-        <div class="chart-container small">
-          <v-chart class="chart" :option="gaugeChartOption" autoresize />
-        </div>
-      </el-card>
-
-      <!-- 表现统计 -->
-      <el-card class="summary-card" v-if="performanceData.length > 0">
-        <template #header>
-          <span class="card-title">表现统计</span>
-        </template>
-        <div class="summary-stats">
-          <div class="summary-item">
-            <div class="summary-icon positive">
-              <el-icon><Top /></el-icon>
-            </div>
-            <div class="summary-content">
-              <div class="summary-value">{{ positiveGames }}</div>
-              <div class="summary-label">正向表现</div>
-            </div>
-          </div>
-          <div class="summary-item">
-            <div class="summary-icon negative">
-              <el-icon><Bottom /></el-icon>
-            </div>
-            <div class="summary-content">
-              <div class="summary-value">{{ negativeGames }}</div>
-              <div class="summary-label">负向表现</div>
-            </div>
-          </div>
-          <div class="summary-item">
-            <div class="summary-icon highlight">
-              <el-icon><StarFilled /></el-icon>
-            </div>
-            <div class="summary-content">
-              <div class="summary-value">{{ highlightGames }}</div>
-              <div class="summary-label">亮眼表现 (10+)</div>
-            </div>
-          </div>
-          <div class="summary-item">
-            <div class="summary-icon rate">
-              <el-icon><Promotion /></el-icon>
-            </div>
-            <div class="summary-content">
-              <div class="summary-value">{{ positiveRate }}%</div>
-              <div class="summary-label">正向率</div>
-            </div>
+          <div class="chart-container">
+            <v-chart v-if="performanceData.length > 0" class="chart" :option="chartOption" autoresize />
+            <el-empty v-else description="暂无比赛数据" :image-size="100" />
           </div>
         </div>
-      </el-card>
-    </div>
+      </el-collapse-item>
+
+      <el-collapse-item title="数据分析" name="data-analysis">
+        <div class="charts-row-2col">
+          <!-- 身价走势 -->
+          <el-card class="market-value-card">
+            <template #header>
+              <span class="card-title">身价走势</span>
+            </template>
+            <div class="chart-container small">
+              <v-chart v-if="marketValueHistory.length > 0 && marketValueChartOption.series" class="chart" :option="marketValueChartOption" autoresize />
+              <el-empty v-else description="暂无身价数据" :image-size="80" />
+            </div>
+          </el-card>
+
+          <!-- 影响力分布 -->
+          <el-card class="distribution-card" v-if="performanceData.length > 0">
+            <template #header>
+              <span class="card-title">影响力分布</span>
+            </template>
+            <div class="chart-container small">
+              <v-chart class="chart" :option="distributionChartOption" autoresize />
+            </div>
+          </el-card>
+
+          <!-- 稳定性仪表盘 -->
+          <el-card class="gauge-card" v-if="performanceData.length > 0">
+            <template #header>
+              <span class="card-title">稳定性评分</span>
+            </template>
+            <div class="chart-container small">
+              <v-chart class="chart" :option="gaugeChartOption" autoresize />
+            </div>
+          </el-card>
+
+          <!-- 表现统计 -->
+          <el-card class="summary-card" v-if="performanceData.length > 0">
+            <template #header>
+              <span class="card-title">表现统计</span>
+            </template>
+            <div class="summary-stats">
+              <div class="summary-item">
+                <div class="summary-icon positive">
+                  <el-icon><Top /></el-icon>
+                </div>
+                <div class="summary-content">
+                  <div class="summary-value">{{ positiveGames }}</div>
+                  <div class="summary-label">正向表现</div>
+                </div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-icon negative">
+                  <el-icon><Bottom /></el-icon>
+                </div>
+                <div class="summary-content">
+                  <div class="summary-value">{{ negativeGames }}</div>
+                  <div class="summary-label">负向表现</div>
+                </div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-icon highlight">
+                  <el-icon><StarFilled /></el-icon>
+                </div>
+                <div class="summary-content">
+                  <div class="summary-value">{{ highlightGames }}</div>
+                  <div class="summary-label">亮眼表现 (10+)</div>
+                </div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-icon rate">
+                  <el-icon><Promotion /></el-icon>
+                </div>
+                <div class="summary-content">
+                  <div class="summary-value">{{ positiveRate }}%</div>
+                  <div class="summary-label">正向率</div>
+                </div>
+              </div>
+            </div>
+          </el-card>
+        </div>
+      </el-collapse-item>
+
+      <el-collapse-item title="同位置对比 & 赛事表现" name="position-tournament" v-if="positionCompareOption.series || tournamentHistory.length > 0">
+        <div class="charts-row-2col">
+          <el-card class="position-compare-card" v-if="positionCompareOption.series">
+            <template #header>
+              <span class="card-title">同位置对比</span>
+            </template>
+            <div class="chart-container medium">
+              <v-chart class="chart" :option="positionCompareOption" autoresize />
+            </div>
+          </el-card>
+
+          <el-card class="tournament-card" v-if="tournamentHistory.length > 0">
+            <template #header>
+              <span class="card-title">赛事表现</span>
+            </template>
+            <div class="chart-container medium">
+              <v-chart class="chart" :option="tournamentChartOption" autoresize />
+            </div>
+          </el-card>
+        </div>
+      </el-collapse-item>
+
+      <el-collapse-item title="职业生涯能力走势" name="career-ability" v-if="seasonHistory.length > 1">
+        <div class="chart-container">
+          <v-chart class="chart" :option="careerAbilityOption" autoresize />
+        </div>
+      </el-collapse-item>
+
+      <el-collapse-item title="年度Top排名走势" name="yearly-top" v-if="yearlyTopHistory.length > 0">
+        <div class="chart-container">
+          <v-chart class="chart" :option="yearlyTopRankOption" autoresize />
+        </div>
+      </el-collapse-item>
+    </el-collapse>
 
     <!-- 无数据提示 -->
     <el-empty v-if="!playerStats" description="暂无该选手数据" />
@@ -270,10 +313,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, VideoCamera, TrendCharts, Aim, Star, Top, Bottom, StarFilled, Promotion, User } from '@element-plus/icons-vue'
+import { ArrowLeft, VideoCamera, TrendCharts, Aim, Star, Top, Bottom, StarFilled, Promotion, User, Folder, FolderOpened } from '@element-plus/icons-vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart, BarChart, GaugeChart, RadarChart } from 'echarts/charts'
+import { LineChart, BarChart, GaugeChart, RadarChart, BoxplotChart } from 'echarts/charts'
 import {
   TitleComponent,
   TooltipComponent,
@@ -287,7 +330,7 @@ import { usePlayerStore } from '@/stores/usePlayerStore'
 import { useGameStore } from '@/stores/useGameStore'
 import { teamApi, statsApi, playerApi } from '@/api/tauri'
 import type { PlayerPosition, PlayerSeasonStats } from '@/types/player'
-import type { PlayerFullDetail, MarketValueChange } from '@/api/tauri'
+import type { PlayerFullDetail, MarketValueChange, PlayerSeasonHistoryEntry, PlayerTournamentHistoryItem, PlayerYearlyTopItem, PlayerRankingItem } from '@/api/tauri'
 import { POSITION_NAMES } from '@/types/player'
 import { createLogger } from '@/utils/logger'
 
@@ -300,6 +343,7 @@ use([
   BarChart,
   GaugeChart,
   RadarChart,
+  BoxplotChart,
   TitleComponent,
   TooltipComponent,
   GridComponent,
@@ -325,7 +369,16 @@ const loading = ref(false)
 const impactHistory = ref<number[]>([])
 const playerFullDetail = ref<PlayerFullDetail | null>(null)
 const marketValueHistory = ref<MarketValueChange[]>([])
+const positionRankings = ref<PlayerRankingItem[]>([])
+const tournamentHistory = ref<PlayerTournamentHistoryItem[]>([])
+const seasonHistory = ref<PlayerSeasonHistoryEntry[]>([])
+const yearlyTopHistory = ref<PlayerYearlyTopItem[]>([])
 const impactRange = ref('全部')
+const activeCharts = ref<string[]>([])
+const allChartNames = ['radar-status', 'impact-trend', 'data-analysis', 'position-tournament', 'career-ability', 'yearly-top']
+const toggleAllCharts = () => {
+  activeCharts.value = activeCharts.value.length > 0 ? [] : [...allChartNames]
+}
 const impactRangeOptions = [
   { label: '近10场', value: '近10场' },
   { label: '近20场', value: '近20场' },
@@ -402,6 +455,47 @@ const fetchPlayerStats = async () => {
     marketValueHistory.value = []
   }
 
+  // 获取同位置排行数据
+  try {
+    const seasonNum = Number(selectedSeason.value.replace('S', ''))
+    const position = playerStatsData.value?.position
+    if (position) {
+      const rankings = await statsApi.getPositionRanking(seasonNum, position, 10)
+      positionRankings.value = rankings || []
+    }
+  } catch (error) {
+    logger.error('[DataCenterPlayerDetail] 获取位置排行失败:', error)
+    positionRankings.value = []
+  }
+
+  // 获取赛事表现历史
+  try {
+    const seasonNum = Number(selectedSeason.value.replace('S', ''))
+    const history = await statsApi.getPlayerTournamentHistory(playerIdNum, seasonNum)
+    tournamentHistory.value = history || []
+  } catch (error) {
+    logger.error('[DataCenterPlayerDetail] 获取赛事表现历史失败:', error)
+    tournamentHistory.value = []
+  }
+
+  // 获取职业生涯历史
+  try {
+    const history = await statsApi.getPlayerSeasonHistory(playerIdNum)
+    seasonHistory.value = history || []
+  } catch (error) {
+    logger.error('[DataCenterPlayerDetail] 获取赛季历史失败:', error)
+    seasonHistory.value = []
+  }
+
+  // 获取年度Top排名历史
+  try {
+    const history = await statsApi.getPlayerYearlyTopHistory(playerIdNum)
+    yearlyTopHistory.value = history || []
+  } catch (error) {
+    logger.error('[DataCenterPlayerDetail] 获取年度Top历史失败:', error)
+    yearlyTopHistory.value = []
+  }
+
   loading.value = false
 }
 
@@ -416,6 +510,29 @@ const performanceData = computed(() => {
   }
   // 没有真实数据时返回空数组
   return []
+})
+
+const INTL_TYPES = new Set([
+  'Msi', 'MadridMasters', 'ClaudeIntercontinental', 'WorldChampionship',
+  'ShanghaiMasters', 'IcpIntercontinental', 'SuperIntercontinental'
+])
+
+const bigStageScore = computed(() => {
+  const history = tournamentHistory.value
+  if (!history || history.length === 0) return 0
+  let intlImpactSum = 0
+  let intlGames = 0
+  for (const t of history) {
+    if (INTL_TYPES.has(t.tournament_type)) {
+      intlImpactSum += t.avg_impact * t.games_played
+      intlGames += t.games_played
+    }
+  }
+  return intlGames > 0 ? intlImpactSum / intlGames : 0
+})
+
+const hasInternational = computed(() => {
+  return tournamentHistory.value.some(t => INTL_TYPES.has(t.tournament_type))
 })
 
 // ECharts 配置
@@ -640,21 +757,24 @@ const radarChartOption = computed(() => {
   const stats = playerStats.value
   if (!stats) return {}
 
-  // 5维度归一化到 0-100
-  const impactNorm = Math.min(100, Math.max(0, (stats.avgImpact + 10) * 3.33))
+  const impactNorm = Math.min(100, Math.max(0, (stats.avgImpact + 5) * 5))
   const consistencyNorm = Math.min(100, Math.max(0, stats.consistencyScore || 0))
-  const gamesNorm = Math.min(100, Math.max(0, (stats.gamesPlayed || 0) / 2))
+  const gamesNorm = Math.min(100, Math.max(0, (stats.gamesPlayed || 0) * 0.83))
   const championNorm = Math.min(100, Math.max(0, (stats.championBonus || 0) * 6.67))
   const performanceNorm = Math.min(100, Math.max(0, ((stats.avgPerformance || 50) - 50) * 2))
+  const bigStageNorm = hasInternational.value
+    ? Math.min(100, Math.max(0, (bigStageScore.value + 5) * 5))
+    : 0
 
   return {
     radar: {
       indicator: [
         { name: '影响力', max: 100 },
+        { name: '发挥', max: 100 },
+        { name: '大赛', max: 100 },
         { name: '稳定性', max: 100 },
         { name: '出场', max: 100 },
-        { name: '冠军', max: 100 },
-        { name: '发挥', max: 100 }
+        { name: '荣誉', max: 100 }
       ],
       shape: 'polygon',
       splitNumber: 4,
@@ -677,7 +797,7 @@ const radarChartOption = computed(() => {
     series: [{
       type: 'radar',
       data: [{
-        value: [impactNorm, consistencyNorm, gamesNorm, championNorm, performanceNorm],
+        value: [impactNorm, performanceNorm, bigStageNorm, consistencyNorm, gamesNorm, championNorm],
         areaStyle: {
           color: 'rgba(59, 130, 246, 0.2)'
         },
@@ -697,12 +817,16 @@ const radarChartOption = computed(() => {
 const radarDimLabels = computed(() => {
   const stats = playerStats.value
   if (!stats) return []
+  const bsLabel = hasInternational.value
+    ? `${bigStageScore.value >= 0 ? '+' : ''}${bigStageScore.value.toFixed(1)}`
+    : 'N/A'
   return [
     { name: '影响力', value: `${stats.avgImpact >= 0 ? '+' : ''}${(stats.avgImpact || 0).toFixed(1)}` },
+    { name: '发挥', value: `${(stats.avgPerformance || 0).toFixed(1)}` },
+    { name: '大赛', value: bsLabel },
     { name: '稳定性', value: `${(stats.consistencyScore || 0).toFixed(0)}` },
     { name: '出场', value: `${stats.gamesPlayed || 0}场` },
-    { name: '冠军', value: `${(stats.championBonus || 0).toFixed(1)}` },
-    { name: '发挥', value: `${(stats.avgPerformance || 0).toFixed(1)}` }
+    { name: '荣誉', value: `${(stats.championBonus || 0).toFixed(1)}` }
   ]
 })
 
@@ -785,7 +909,328 @@ const marketValueChartOption = computed(() => {
   }
 })
 
-// 方法
+// 同位置对比雷达图
+const positionCompareOption = computed(() => {
+  const stats = playerStats.value
+  if (!stats || positionRankings.value.length === 0) return {}
+
+  const playerIdNum = Number(playerId.value)
+  const top3 = positionRankings.value.slice(0, 3)
+  const currentPlayer = positionRankings.value.find(r => r.player_id === playerIdNum)
+
+  const players = [...top3]
+  if (currentPlayer && !top3.find(p => p.player_id === playerIdNum)) {
+    players.push(currentPlayer)
+  }
+
+  const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']
+  const indicators = [
+    { name: '影响力', max: 100 },
+    { name: '发挥', max: 100 },
+    { name: '大赛', max: 100 },
+    { name: '稳定性', max: 100 },
+    { name: '出场', max: 100 },
+    { name: '荣誉', max: 100 }
+  ]
+
+  const seriesData = players.map((p, i) => {
+    const impactNorm = Math.min(100, Math.max(0, (p.avg_impact + 5) * 5))
+    const consistencyNorm = Math.min(100, Math.max(0, p.consistency_score || 0))
+    const gamesNorm = Math.min(100, Math.max(0, (p.games_played || 0) * 0.83))
+    const championNorm = Math.min(100, Math.max(0, (p.champion_bonus || 0) * 6.67))
+    const performanceNorm = Math.min(100, Math.max(0, ((p.avg_performance || 50) - 50) * 2))
+    const bigStageNorm = p.player_id === playerIdNum && hasInternational.value
+      ? Math.min(100, Math.max(0, (bigStageScore.value + 5) * 5))
+      : 0
+
+    return {
+      value: [impactNorm, performanceNorm, bigStageNorm, consistencyNorm, gamesNorm, championNorm],
+      name: p.player_id === playerIdNum ? `${p.player_name} (本人)` : p.player_name,
+      lineStyle: {
+        width: p.player_id === playerIdNum ? 3 : 1.5,
+        color: colors[i],
+        type: p.player_id === playerIdNum ? 'solid' as const : 'dashed' as const
+      },
+      areaStyle: {
+        color: p.player_id === playerIdNum ? `${colors[i]}33` : 'transparent'
+      },
+      itemStyle: { color: colors[i] }
+    }
+  })
+
+  return {
+    legend: {
+      data: seriesData.map(d => d.name),
+      bottom: 0,
+      textStyle: { fontSize: 11, color: '#6b7280' }
+    },
+    radar: {
+      indicator: indicators,
+      shape: 'polygon' as const,
+      splitNumber: 4,
+      radius: '60%',
+      axisName: { color: '#6b7280', fontSize: 11 },
+      splitLine: { lineStyle: { color: '#e5e7eb' } },
+      splitArea: { areaStyle: { color: ['rgba(59,130,246,0.02)', 'rgba(59,130,246,0.05)'] } },
+      axisLine: { lineStyle: { color: '#e5e7eb' } }
+    },
+    series: [{
+      type: 'radar',
+      data: seriesData
+    }]
+  }
+})
+
+// 赛事表现箱线图（用柱状图模拟：每赛事的 avg_impact + max_impact 范围）
+const tournamentChartOption = computed(() => {
+  const data = tournamentHistory.value
+  if (!data || data.length === 0) return {}
+
+  const typeNames: Record<string, string> = {
+    'SpringRegular': '春季常规赛',
+    'SpringPlayoffs': '春季季后赛',
+    'Msi': 'MSI季中赛',
+    'MadridMasters': '马德里大师赛',
+    'SummerRegular': '夏季常规赛',
+    'SummerPlayoffs': '夏季季后赛',
+    'ClaudeIntercontinental': 'Claude洲际赛',
+    'WorldChampionship': '世界赛',
+    'ShanghaiMasters': '上海大师赛',
+    'IcpIntercontinental': 'ICP洲际赛',
+    'SuperIntercontinental': 'Super洲际赛',
+  }
+
+  const categories = data.map(d => typeNames[d.tournament_type] || d.tournament_type)
+  const avgData = data.map(d => Math.round(d.avg_impact * 10) / 10)
+  const maxData = data.map(d => Math.round(d.max_impact * 10) / 10)
+  const gamesData = data.map(d => d.games_played)
+
+  return {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params: any) => {
+        const idx = params[0]?.dataIndex ?? 0
+        return `${categories[idx]}<br/>
+          平均影响力: <b>${avgData[idx]}</b><br/>
+          最高影响力: <b>${maxData[idx]}</b><br/>
+          参与局数: <b>${gamesData[idx]}</b>`
+      }
+    },
+    grid: { left: '3%', right: '4%', bottom: '15%', top: '10%', containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: categories,
+      axisLabel: { color: '#6b7280', fontSize: 10, rotate: 30 },
+      axisLine: { lineStyle: { color: '#e5e7eb' } }
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#9ca3af' },
+      splitLine: { lineStyle: { color: '#f3f4f6' } }
+    },
+    series: [
+      {
+        name: '平均影响力',
+        type: 'bar',
+        data: avgData,
+        barWidth: '35%',
+        itemStyle: {
+          borderRadius: [4, 4, 0, 0],
+          color: {
+            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: '#60a5fa' },
+              { offset: 1, color: '#3b82f6' }
+            ]
+          }
+        }
+      },
+      {
+        name: '最高影响力',
+        type: 'bar',
+        data: maxData,
+        barWidth: '35%',
+        itemStyle: {
+          borderRadius: [4, 4, 0, 0],
+          color: {
+            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: '#34d399' },
+              { offset: 1, color: '#10b981' }
+            ]
+          }
+        }
+      }
+    ]
+  }
+})
+
+// 职业生涯能力走势折线图
+const careerAbilityOption = computed(() => {
+  const data = seasonHistory.value
+  if (!data || data.length === 0) return {}
+
+  return {
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params: any) => {
+        const idx = params[0]?.dataIndex ?? 0
+        const entry = data[idx]
+        return `${entry.season}<br/>
+          战队: <b>${entry.team_name}</b><br/>
+          能力: <b>${entry.ability}</b><br/>
+          潜力: <b>${entry.potential}</b>`
+      }
+    },
+    legend: {
+      data: ['能力', '潜力'],
+      bottom: 0,
+      textStyle: { fontSize: 11, color: '#6b7280' }
+    },
+    grid: { left: '3%', right: '4%', bottom: '12%', top: '10%', containLabel: true },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: data.map(d => d.season),
+      axisLabel: { color: '#9ca3af' },
+      axisLine: { lineStyle: { color: '#e5e7eb' } }
+    },
+    yAxis: {
+      type: 'value',
+      min: (value: { min: number }) => Math.max(0, Math.floor(value.min / 10) * 10 - 5),
+      max: 100,
+      axisLabel: { color: '#9ca3af' },
+      splitLine: { lineStyle: { color: '#f3f4f6' } }
+    },
+    series: [
+      {
+        name: '能力',
+        type: 'line',
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 8,
+        data: data.map(d => d.ability),
+        lineStyle: { width: 3, color: '#3b82f6' },
+        itemStyle: { color: '#3b82f6', borderWidth: 2, borderColor: '#fff' },
+        areaStyle: {
+          color: {
+            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(59,130,246,0.2)' },
+              { offset: 1, color: 'rgba(59,130,246,0.02)' }
+            ]
+          }
+        }
+      },
+      {
+        name: '潜力',
+        type: 'line',
+        smooth: true,
+        symbol: 'diamond',
+        symbolSize: 6,
+        data: data.map(d => d.potential),
+        lineStyle: { width: 2, color: '#8b5cf6', type: 'dashed' },
+        itemStyle: { color: '#8b5cf6', borderWidth: 2, borderColor: '#fff' }
+      }
+    ]
+  }
+})
+
+// 年度Top排名走势折线图
+const yearlyTopRankOption = computed(() => {
+  const data = yearlyTopHistory.value
+  if (!data || data.length === 0) return {}
+
+  const rankData = data.map(d => d.rank <= 20 ? d.rank : null)
+  const hasOffChart = data.some(d => d.rank > 20)
+
+  return {
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params: any) => {
+        const idx = params[0]?.dataIndex ?? 0
+        const entry = data[idx]
+        const rankStr = entry.rank <= 20 ? `#${entry.rank}` : '20+（未上榜）'
+        return `${entry.season}<br/>
+          排名: <b>${rankStr}</b><br/>
+          得分: <b>${entry.yearly_top_score.toFixed(1)}</b><br/>
+          参与人数: ${entry.total_players}`
+      }
+    },
+    grid: { left: '3%', right: '4%', bottom: '8%', top: '10%', containLabel: true },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: data.map(d => d.season),
+      axisLabel: { color: '#9ca3af' },
+      axisLine: { lineStyle: { color: '#e5e7eb' } }
+    },
+    yAxis: {
+      type: 'value',
+      inverse: true,
+      min: 1,
+      max: hasOffChart ? 25 : 20,
+      axisLabel: {
+        color: '#9ca3af',
+        formatter: (value: number) => value > 20 ? '20+' : `#${value}`
+      },
+      splitLine: { lineStyle: { color: '#f3f4f6' } }
+    },
+    series: [{
+      type: 'line',
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 10,
+      connectNulls: false,
+      data: rankData.map((r) => {
+        if (r === null) {
+          return {
+            value: 22,
+            itemStyle: { color: '#d1d5db', borderColor: '#9ca3af' },
+            label: { show: true, formatter: '20+', color: '#9ca3af', fontSize: 10 }
+          }
+        }
+        return {
+          value: r,
+          itemStyle: {
+            color: r <= 3 ? '#f59e0b' : r <= 10 ? '#3b82f6' : '#6b7280',
+            borderWidth: 2,
+            borderColor: '#fff'
+          },
+          label: {
+            show: true,
+            formatter: `#${r}`,
+            color: r <= 3 ? '#f59e0b' : r <= 10 ? '#3b82f6' : '#6b7280',
+            fontSize: 11,
+            fontWeight: 'bold',
+            position: 'top'
+          }
+        }
+      }),
+      lineStyle: {
+        width: 3,
+        color: {
+          type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
+          colorStops: [
+            { offset: 0, color: '#f59e0b' },
+            { offset: 1, color: '#3b82f6' }
+          ]
+        }
+      },
+      areaStyle: {
+        color: {
+          type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+          colorStops: [
+            { offset: 0, color: 'rgba(245,158,11,0.15)' },
+            { offset: 1, color: 'rgba(59,130,246,0.05)' }
+          ]
+        }
+      }
+    }]
+  }
+})
+
 const goBack = () => {
   router.push('/data-center')
 }
@@ -935,6 +1380,79 @@ watch(selectedSeason, async () => {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 24px;
+  }
+
+  .collapse-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 8px;
+  }
+
+  .charts-collapse {
+    border: none;
+    margin-bottom: 24px;
+
+    :deep(.el-collapse-item__header) {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1f2937;
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 4px;
+      border: none;
+      height: auto;
+      line-height: 1.5;
+    }
+
+    :deep(.el-collapse-item__wrap) {
+      border: none;
+    }
+
+    :deep(.el-collapse-item__content) {
+      padding: 16px 0;
+    }
+
+    :deep(.el-collapse-item) {
+      border: none;
+      margin-bottom: 8px;
+    }
+
+    .chart-container {
+      height: 300px;
+
+      .chart {
+        width: 100%;
+        height: 100%;
+      }
+    }
+  }
+
+  .collapse-chart-wrapper {
+    .chart-header-inline {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 12px;
+
+      .chart-legend {
+        .legend-item {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 14px;
+          color: #6b7280;
+
+          .legend-dot {
+            width: 12px;
+            height: 3px;
+            border-radius: 2px;
+
+            &.avg { background: #f59e0b; }
+          }
+        }
+      }
+    }
   }
 
   .player-info-card {
@@ -1244,7 +1762,9 @@ watch(selectedSeason, async () => {
 
   .market-value-card,
   .distribution-card,
-  .gauge-card {
+  .gauge-card,
+  .position-compare-card,
+  .tournament-card {
     :deep(.el-card__header) {
       padding: 12px 16px;
       border-bottom: 1px solid #f3f4f6;
@@ -1252,6 +1772,15 @@ watch(selectedSeason, async () => {
 
     :deep(.el-card__body) {
       padding: 16px;
+    }
+  }
+
+  .chart-container.medium {
+    height: 280px;
+
+    .chart {
+      width: 100%;
+      height: 100%;
     }
   }
 
