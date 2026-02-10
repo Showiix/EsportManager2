@@ -238,7 +238,19 @@ pub async fn get_season_impact_ranking(
         }
     };
 
-    let ranking: Vec<PlayerRankingItem> = stats_list.into_iter().map(|s| s.into()).collect();
+    let mut ranking: Vec<PlayerRankingItem> = stats_list.into_iter().map(|s| s.into()).collect();
+
+    for player in &mut ranking {
+        let big_stage = query_player_big_stage(&pool, &save_id, season_id, player.player_id).await;
+        player.big_stage_score = big_stage.0;
+        player.has_international = big_stage.1;
+        player.yearly_top_score = calc_6dim_score(
+            player.avg_impact, player.avg_performance, player.consistency_score,
+            player.games_played, player.champion_bonus, big_stage.0, big_stage.1,
+        );
+    }
+    ranking.sort_by(|a, b| b.yearly_top_score.partial_cmp(&a.yearly_top_score).unwrap_or(std::cmp::Ordering::Equal));
+
     Ok(StatsCommandResult::ok(ranking))
 }
 
@@ -273,7 +285,19 @@ pub async fn get_position_ranking(
         Err(e) => return Ok(StatsCommandResult::err(format!("Failed to get ranking: {}", e))),
     };
 
-    let ranking: Vec<PlayerRankingItem> = stats_list.into_iter().map(|s| s.into()).collect();
+    let mut ranking: Vec<PlayerRankingItem> = stats_list.into_iter().map(|s| s.into()).collect();
+
+    for player in &mut ranking {
+        let big_stage = query_player_big_stage(&pool, &save_id, season_id, player.player_id).await;
+        player.big_stage_score = big_stage.0;
+        player.has_international = big_stage.1;
+        player.yearly_top_score = calc_6dim_score(
+            player.avg_impact, player.avg_performance, player.consistency_score,
+            player.games_played, player.champion_bonus, big_stage.0, big_stage.1,
+        );
+    }
+    ranking.sort_by(|a, b| b.yearly_top_score.partial_cmp(&a.yearly_top_score).unwrap_or(std::cmp::Ordering::Equal));
+
     Ok(StatsCommandResult::ok(ranking))
 }
 
@@ -831,4 +855,178 @@ pub async fn get_player_contract_history(
     }).collect();
 
     Ok(StatsCommandResult::ok(records))
+}
+
+/// 选手赛事表现历史（用于箱线图 —— 每个赛事的 avg_impact / max_impact / games_played 等）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerTournamentHistoryItem {
+    pub tournament_type: String,
+    pub season_id: i64,
+    pub games_played: i64,
+    pub avg_impact: f64,
+    pub max_impact: f64,
+    pub avg_performance: f64,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_player_tournament_history(
+    state: State<'_, AppState>,
+    player_id: i64,
+    season_id: Option<i64>,
+) -> Result<StatsCommandResult<Vec<PlayerTournamentHistoryItem>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(StatsCommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(StatsCommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(StatsCommandResult::err(format!("Database error: {}", e))),
+    };
+
+    let rows = if let Some(sid) = season_id {
+        sqlx::query(
+            r#"
+            SELECT tournament_type, season_id, games_played, avg_impact, max_impact, avg_performance
+            FROM player_tournament_stats
+            WHERE save_id = ? AND player_id = ? AND season_id = ?
+            ORDER BY tournament_id ASC
+            "#
+        )
+        .bind(&save_id)
+        .bind(player_id)
+        .bind(sid)
+        .fetch_all(&pool)
+        .await
+    } else {
+        sqlx::query(
+            r#"
+            SELECT tournament_type, season_id, games_played, avg_impact, max_impact, avg_performance
+            FROM player_tournament_stats
+            WHERE save_id = ? AND player_id = ?
+            ORDER BY season_id ASC, tournament_id ASC
+            "#
+        )
+        .bind(&save_id)
+        .bind(player_id)
+        .fetch_all(&pool)
+        .await
+    }.map_err(|e| format!("Failed to get tournament history: {}", e))?;
+
+    use sqlx::Row;
+    let items: Vec<PlayerTournamentHistoryItem> = rows.iter().map(|row| {
+        PlayerTournamentHistoryItem {
+            tournament_type: row.get("tournament_type"),
+            season_id: row.get("season_id"),
+            games_played: row.get::<i64, _>("games_played"),
+            avg_impact: row.get("avg_impact"),
+            max_impact: row.get("max_impact"),
+            avg_performance: row.get("avg_performance"),
+        }
+    }).collect();
+
+    Ok(StatsCommandResult::ok(items))
+}
+
+/// 选手年度 Top 排名走势（每赛季的 yearly_top_score + 排名）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerYearlyTopItem {
+    pub season: String,
+    pub yearly_top_score: f64,
+    pub rank: i64,       // 0 表示未上榜
+    pub total_players: i64,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_player_yearly_top_history(
+    state: State<'_, AppState>,
+    player_id: i64,
+) -> Result<StatsCommandResult<Vec<PlayerYearlyTopItem>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(StatsCommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(StatsCommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(StatsCommandResult::err(format!("Database error: {}", e))),
+    };
+
+    // 查出该选手所有赛季的 yearly_top_score
+    let player_rows = sqlx::query(
+        r#"
+        SELECT season_id, yearly_top_score
+        FROM player_season_stats
+        WHERE save_id = ? AND player_id = ? AND season_id <= 100
+        ORDER BY season_id ASC
+        "#
+    )
+    .bind(&save_id)
+    .bind(player_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("Failed to get yearly top history: {}", e))?;
+
+    use sqlx::Row;
+    let mut items: Vec<PlayerYearlyTopItem> = Vec::new();
+
+    for row in &player_rows {
+        let season_id: i64 = row.get("season_id");
+        let score: f64 = row.get("yearly_top_score");
+
+        // 查该赛季所有选手的排名（按 yearly_top_score DESC）
+        let rank_row = sqlx::query(
+            r#"
+            SELECT COUNT(*) as rank
+            FROM player_season_stats
+            WHERE save_id = ? AND season_id = ? AND season_id <= 100 AND yearly_top_score > ?
+            "#
+        )
+        .bind(&save_id)
+        .bind(season_id)
+        .bind(score)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| format!("Failed to calculate rank: {}", e))?;
+
+        let rank: i64 = rank_row.get::<i64, _>("rank") + 1;
+
+        let total_row = sqlx::query(
+            r#"
+            SELECT COUNT(*) as total
+            FROM player_season_stats
+            WHERE save_id = ? AND season_id = ? AND season_id <= 100 AND games_played > 0
+            "#
+        )
+        .bind(&save_id)
+        .bind(season_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| format!("Failed to count total: {}", e))?;
+
+        let total: i64 = total_row.get("total");
+
+        items.push(PlayerYearlyTopItem {
+            season: format!("S{}", season_id),
+            yearly_top_score: score,
+            rank,
+            total_players: total,
+        });
+    }
+
+    Ok(StatsCommandResult::ok(items))
 }

@@ -70,6 +70,7 @@ use commands::{
     get_team_player_stats, clear_season_stats, get_player_impact_history,
     get_tournament_mvp_ranking, recalculate_yearly_scores, get_annual_awards_data,
     get_player_market_value_changes, get_player_season_history, get_player_contract_history,
+    get_player_tournament_history, get_player_yearly_top_history,
     // 选手特性和状态命令
     get_player_traits, get_player_condition, get_player_full_detail,
     // 年度积分命令
@@ -286,6 +287,8 @@ pub fn run() {
             get_player_market_value_changes,
             get_player_season_history,
             get_player_contract_history,
+            get_player_tournament_history,
+            get_player_yearly_top_history,
             // 选手特性和状态命令
             get_player_traits,
             get_player_condition,
