@@ -302,43 +302,55 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="gamesPlayed" label="场次" width="80" align="center" />
+        <el-table-column prop="gamesPlayed" label="场次" width="60" align="center" />
 
-        <el-table-column label="出场分" width="80" align="center">
+        <el-table-column label="影响力" width="85" align="center">
           <template #default="{ row }">
-            <span class="games-bonus">{{ ((row.gamesPlayed || 0) / 10).toFixed(1) }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column prop="avgImpact" label="影响力" width="100" align="center">
-          <template #default="{ row }">
-            <span :class="getImpactClass(row.avgImpact)">
-              {{ formatImpact(row.avgImpact) }}
-            </span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="冠军分" width="80" align="center">
-          <template #default="{ row }">
-            <span class="champion-bonus">{{ (row.championBonus || 0).toFixed(1) }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column prop="consistencyScore" label="稳定性" width="120" align="center">
-          <template #default="{ row }">
-            <div class="consistency-cell">
-              <el-progress
-                :percentage="row.consistencyScore || 0"
-                :stroke-width="8"
-                :show-text="false"
-                :color="getConsistencyColor(row.consistencyScore)"
-              />
-              <span class="consistency-value">{{ (row.consistencyScore || 0).toFixed(0) }}</span>
+            <div class="mini-bar-cell">
+              <div class="mini-bar"><div class="mini-fill impact" :style="{ width: Math.min(100, Math.max(0, (row.avgImpact + 5) * 5)) + '%' }"></div></div>
+              <span :class="getImpactClass(row.avgImpact)">{{ formatImpact(row.avgImpact) }}</span>
             </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="yearlyTopScore" label="得分" width="100" align="center">
+        <el-table-column label="发挥" width="75" align="center">
+          <template #default="{ row }">
+            <div class="mini-bar-cell">
+              <div class="mini-bar"><div class="mini-fill perf" :style="{ width: Math.min(100, Math.max(0, ((row.avgPerformance || 50) - 50) * 2)) + '%' }"></div></div>
+              <span>{{ (row.avgPerformance || 0).toFixed(1) }}</span>
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="大赛" width="75" align="center">
+          <template #default="{ row }">
+            <div class="mini-bar-cell">
+              <div class="mini-bar"><div class="mini-fill big-stage" :style="{ width: (row.hasInternational ? Math.min(100, Math.max(0, ((row.bigStageScore || 0) + 5) * 5)) : 0) + '%' }"></div></div>
+              <span v-if="row.hasInternational" :class="{ 'positive-val': (row.bigStageScore || 0) > 0, 'negative-val': (row.bigStageScore || 0) < 0 }">
+                {{ (row.bigStageScore || 0) > 0 ? '+' : '' }}{{ (row.bigStageScore || 0).toFixed(1) }}
+              </span>
+              <span v-else class="na-val">-</span>
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="稳定" width="70" align="center">
+          <template #default="{ row }">
+            <div class="mini-bar-cell">
+              <div class="mini-bar"><div class="mini-fill stab" :style="{ width: (row.consistencyScore || 0) + '%' }"></div></div>
+              <span>{{ (row.consistencyScore || 0).toFixed(0) }}</span>
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="荣誉" width="60" align="center">
+          <template #default="{ row }">
+            <span v-if="(row.championBonus || 0) > 0" class="champion-bonus">+{{ (row.championBonus || 0).toFixed(0) }}</span>
+            <span v-else class="na-val">-</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="yearlyTopScore" label="总分" width="75" align="center" sortable>
           <template #default="{ row }">
             <span class="yearly-score" :class="getScoreClass(row.yearlyTopScore || row.avgImpact)">
               {{ (row.yearlyTopScore || row.avgImpact || 0).toFixed(1) }}
@@ -1142,12 +1154,7 @@ const getRankRowClass = ({ rowIndex }: { rowIndex: number }): string => {
   return ''
 }
 
-const getConsistencyColor = (score: number | null | undefined): string => {
-  if (score == null) return '#909399'
-  if (score >= 80) return '#67c23a'
-  if (score >= 60) return '#e6a23c'
-  return '#f56c6c'
-}
+
 
 const getScoreClass = (score: number): string => {
   if (score > 15) return 'score-excellent'
@@ -1540,6 +1547,24 @@ watch([selectedPosition, searchQuery], () => {
       color: #6b7280;
     }
   }
+
+  .mini-bar-cell {
+    display: flex; align-items: center; gap: 4px;
+    .mini-bar {
+      flex: 1; height: 4px; background: #f3f4f6; border-radius: 2px; overflow: hidden;
+      .mini-fill {
+        height: 100%; border-radius: 2px; transition: width 0.3s;
+        &.impact { background: #3b82f6; }
+        &.perf { background: #22c55e; }
+        &.big-stage { background: #ec4899; }
+        &.stab { background: #f59e0b; }
+      }
+    }
+    span { font-size: 12px; font-weight: 600; color: #374151; min-width: 28px; text-align: right; }
+  }
+  .positive-val { color: #10b981 !important; }
+  .negative-val { color: #ef4444 !important; }
+  .na-val { color: #d1d5db; font-size: 12px; }
 
   .analysis-collapse {
     border: none;

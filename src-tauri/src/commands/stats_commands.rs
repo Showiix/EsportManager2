@@ -240,13 +240,14 @@ pub async fn get_season_impact_ranking(
 
     let mut ranking: Vec<PlayerRankingItem> = stats_list.into_iter().map(|s| s.into()).collect();
 
+    let big_stage_map = query_all_players_big_stage(&pool, &save_id, season_id).await;
     for player in &mut ranking {
-        let big_stage = query_player_big_stage(&pool, &save_id, season_id, player.player_id).await;
-        player.big_stage_score = big_stage.0;
-        player.has_international = big_stage.1;
+        let (bs_score, bs_intl) = big_stage_map.get(&player.player_id).copied().unwrap_or((0.0, false));
+        player.big_stage_score = bs_score;
+        player.has_international = bs_intl;
         player.yearly_top_score = calc_6dim_score(
             player.avg_impact, player.avg_performance, player.consistency_score,
-            player.games_played, player.champion_bonus, big_stage.0, big_stage.1,
+            player.games_played, player.champion_bonus, bs_score, bs_intl,
         );
     }
     ranking.sort_by(|a, b| b.yearly_top_score.partial_cmp(&a.yearly_top_score).unwrap_or(std::cmp::Ordering::Equal));
@@ -287,13 +288,14 @@ pub async fn get_position_ranking(
 
     let mut ranking: Vec<PlayerRankingItem> = stats_list.into_iter().map(|s| s.into()).collect();
 
+    let big_stage_map = query_all_players_big_stage(&pool, &save_id, season_id).await;
     for player in &mut ranking {
-        let big_stage = query_player_big_stage(&pool, &save_id, season_id, player.player_id).await;
-        player.big_stage_score = big_stage.0;
-        player.has_international = big_stage.1;
+        let (bs_score, bs_intl) = big_stage_map.get(&player.player_id).copied().unwrap_or((0.0, false));
+        player.big_stage_score = bs_score;
+        player.has_international = bs_intl;
         player.yearly_top_score = calc_6dim_score(
             player.avg_impact, player.avg_performance, player.consistency_score,
-            player.games_played, player.champion_bonus, big_stage.0, big_stage.1,
+            player.games_played, player.champion_bonus, bs_score, bs_intl,
         );
     }
     ranking.sort_by(|a, b| b.yearly_top_score.partial_cmp(&a.yearly_top_score).unwrap_or(std::cmp::Ordering::Equal));
@@ -1029,4 +1031,80 @@ pub async fn get_player_yearly_top_history(
     }
 
     Ok(StatsCommandResult::ok(items))
+}
+
+async fn query_all_players_big_stage(
+    pool: &sqlx::SqlitePool,
+    save_id: &str,
+    season_id: i64,
+) -> std::collections::HashMap<i64, (f64, bool)> {
+    let rows = sqlx::query(
+        r#"
+        SELECT gpp.player_id, t.tournament_type,
+               COUNT(DISTINCT gpp.game_id) as games_played,
+               AVG(gpp.impact_score) as avg_impact
+        FROM game_player_performances gpp
+        JOIN match_games mg ON gpp.game_id = mg.id AND gpp.save_id = mg.save_id
+        JOIN matches m ON mg.match_id = m.id AND mg.save_id = m.save_id
+        JOIN tournaments t ON m.tournament_id = t.id AND m.save_id = t.save_id
+        WHERE gpp.save_id = ? AND t.season_id = ?
+        AND t.tournament_type NOT IN ('SpringRegular', 'SpringPlayoffs', 'SummerRegular', 'SummerPlayoffs')
+        GROUP BY gpp.player_id, t.tournament_type
+        "#
+    )
+    .bind(save_id)
+    .bind(season_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let mut player_intl: std::collections::HashMap<i64, (f64, f64)> = std::collections::HashMap::new();
+    for row in &rows {
+        let pid: i64 = row.get("player_id");
+        let games = row.get::<i64, _>("games_played") as f64;
+        let avg_impact: f64 = row.get("avg_impact");
+        let entry = player_intl.entry(pid).or_insert((0.0, 0.0));
+        entry.0 += avg_impact * games;
+        entry.1 += games;
+    }
+
+    player_intl.into_iter().map(|(pid, (impact_sum, games))| {
+        let score = if games > 0.0 { impact_sum / games } else { 0.0 };
+        (pid, (score, true))
+    }).collect()
+}
+
+fn calc_6dim_score(
+    avg_impact: f64,
+    avg_performance: f64,
+    consistency_score: f64,
+    games_played: i32,
+    champion_bonus: f64,
+    big_stage_score: f64,
+    has_international: bool,
+) -> f64 {
+    let impact_norm = ((avg_impact + 5.0) * 5.0).clamp(0.0, 100.0);
+    let perf_norm = ((avg_performance - 50.0) * 2.0).clamp(0.0, 100.0);
+    let stability_norm = consistency_score.clamp(0.0, 100.0);
+    let appearance_norm = (games_played as f64 * 0.83).clamp(0.0, 100.0);
+    let honor_raw = (champion_bonus * 6.67).clamp(0.0, 100.0);
+    let honor_discount = if avg_impact >= 0.0 {
+        1.0
+    } else {
+        ((avg_impact + 5.0) / 5.0).clamp(0.2, 1.0)
+    };
+    let honor_norm = honor_raw * honor_discount;
+    let big_stage_norm = if has_international {
+        ((big_stage_score + 5.0) * 5.0).clamp(0.0, 100.0)
+    } else {
+        0.0
+    };
+
+    let base = impact_norm * 0.40
+        + perf_norm * 0.18
+        + stability_norm * 0.12
+        + appearance_norm * 0.10
+        + honor_norm * 0.05
+        + big_stage_norm * 0.15;
+    if has_international { base } else { base * 0.95 }
 }

@@ -290,6 +290,45 @@
             </div>
           </el-card>
         </div>
+
+        <!-- 赛事表现明细卡片 -->
+        <div class="tournament-breakdown" v-if="tournamentHistory.length > 0">
+          <div class="breakdown-header">
+            <span class="breakdown-title">各赛事表现明细</span>
+            <span class="big-stage-badge" :class="bigStageScore >= 0 ? 'positive' : 'negative'" v-if="hasInternational">
+              大赛影响力 {{ bigStageScore >= 0 ? '+' : '' }}{{ bigStageScore.toFixed(1) }}
+            </span>
+            <span class="big-stage-badge no-intl" v-else>未参加国际赛</span>
+          </div>
+          <div class="breakdown-grid">
+            <div class="tournament-detail-item" v-for="td in tournamentHistory" :key="td.tournament_type">
+              <div class="td-header">
+                <span class="td-name">{{ tournamentTypeNames[td.tournament_type] || td.tournament_type }}</span>
+                <span class="td-weight" :class="getTournamentWeightClass(td.tournament_type)">×{{ getTournamentWeight(td.tournament_type).toFixed(1) }}</span>
+              </div>
+              <div class="td-stats">
+                <div class="td-stat">
+                  <span class="td-label">场次</span>
+                  <span class="td-value">{{ td.games_played }}</span>
+                </div>
+                <div class="td-stat">
+                  <span class="td-label">影响力</span>
+                  <span class="td-value" :class="{ 'positive-val': td.avg_impact > 0, 'negative-val': td.avg_impact < 0 }">
+                    {{ td.avg_impact > 0 ? '+' : '' }}{{ td.avg_impact.toFixed(1) }}
+                  </span>
+                </div>
+                <div class="td-stat">
+                  <span class="td-label">发挥</span>
+                  <span class="td-value">{{ td.avg_performance.toFixed(1) }}</span>
+                </div>
+                <div class="td-stat">
+                  <span class="td-label">巅峰</span>
+                  <span class="td-value">{{ td.max_impact.toFixed(1) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </el-collapse-item>
 
       <el-collapse-item title="职业生涯能力走势" name="career-ability" v-if="seasonHistory.length > 1">
@@ -534,6 +573,45 @@ const bigStageScore = computed(() => {
 const hasInternational = computed(() => {
   return tournamentHistory.value.some(t => INTL_TYPES.has(t.tournament_type))
 })
+
+// 赛事权重映射（和 awards_commands.rs tournament_type_weight 一致）
+const tournamentWeights: Record<string, number> = {
+  'WorldChampionship': 1.5,
+  'SuperIntercontinental': 1.4,
+  'Msi': 1.3,
+  'ClaudeIntercontinental': 1.2,
+  'IcpIntercontinental': 1.2,
+  'MadridMasters': 1.1,
+  'ShanghaiMasters': 1.1,
+  'SpringPlayoffs': 1.05,
+  'SummerPlayoffs': 1.05,
+}
+
+// 赛事类型中文名（复用 tournamentChartOption 里的映射）
+const tournamentTypeNames: Record<string, string> = {
+  'SpringRegular': '春季常规赛',
+  'SpringPlayoffs': '春季季后赛',
+  'Msi': 'MSI季中赛',
+  'MadridMasters': '马德里大师赛',
+  'SummerRegular': '夏季常规赛',
+  'SummerPlayoffs': '夏季季后赛',
+  'ClaudeIntercontinental': 'Claude洲际赛',
+  'WorldChampionship': '世界赛',
+  'ShanghaiMasters': '上海大师赛',
+  'IcpIntercontinental': 'ICP洲际赛',
+  'SuperIntercontinental': 'Super洲际赛',
+}
+
+const getTournamentWeight = (type: string): number => {
+  return tournamentWeights[type] ?? 0.9
+}
+
+const getTournamentWeightClass = (type: string): string => {
+  const w = getTournamentWeight(type)
+  if (w >= 1.3) return 'weight-high'
+  if (w >= 1.0) return 'weight-mid'
+  return 'weight-low'
+}
 
 // ECharts 配置
 const chartOption = computed(() => {
@@ -939,8 +1017,8 @@ const positionCompareOption = computed(() => {
     const gamesNorm = Math.min(100, Math.max(0, (p.games_played || 0) * 0.83))
     const championNorm = Math.min(100, Math.max(0, (p.champion_bonus || 0) * 6.67))
     const performanceNorm = Math.min(100, Math.max(0, ((p.avg_performance || 50) - 50) * 2))
-    const bigStageNorm = p.player_id === playerIdNum && hasInternational.value
-      ? Math.min(100, Math.max(0, (bigStageScore.value + 5) * 5))
+    const bigStageNorm = p.has_international
+      ? Math.min(100, Math.max(0, (p.big_stage_score + 5) * 5))
       : 0
 
     return {
@@ -1781,6 +1859,78 @@ watch(selectedSeason, async () => {
     .chart {
       width: 100%;
       height: 100%;
+    }
+  }
+
+  // 赛事表现明细卡片
+  .tournament-breakdown {
+    margin-top: 16px;
+    padding: 16px;
+    background: #f9fafb;
+    border-radius: 12px;
+
+    .breakdown-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+
+      .breakdown-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #374151;
+      }
+
+      .big-stage-badge {
+        font-size: 12px;
+        font-weight: 700;
+        padding: 3px 10px;
+        border-radius: 6px;
+        &.positive { background: #d1fae5; color: #059669; }
+        &.negative { background: #fee2e2; color: #dc2626; }
+        &.no-intl { background: #fef3c7; color: #d97706; }
+      }
+    }
+
+    .breakdown-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px;
+    }
+
+    .tournament-detail-item {
+      padding: 12px;
+      background: white;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+
+      .td-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+
+        .td-name { font-size: 13px; font-weight: 600; color: #1f2937; }
+        .td-weight {
+          font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+          &.weight-high { background: #fef3c7; color: #d97706; }
+          &.weight-mid { background: #e0e7ff; color: #4f46e5; }
+          &.weight-low { background: #f3f4f6; color: #6b7280; }
+        }
+      }
+
+      .td-stats {
+        display: flex; flex-wrap: wrap; gap: 10px;
+        .td-stat {
+          display: flex; flex-direction: column;
+          .td-label { font-size: 11px; color: #9ca3af; }
+          .td-value {
+            font-size: 13px; font-weight: 600; color: #374151;
+            &.positive-val { color: #10b981; }
+            &.negative-val { color: #ef4444; }
+          }
+        }
+      }
     }
   }
 
