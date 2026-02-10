@@ -190,6 +190,26 @@
       </el-card>
     </div>
 
+    <!-- 新增分析图表（可折叠） -->
+    <el-collapse v-model="activeAnalysisCharts" class="analysis-collapse" v-if="rankings.length > 0">
+      <el-collapse-item title="数据分析图表" name="region-impact">
+        <div class="new-charts-row">
+          <el-card shadow="hover">
+            <template #header><span class="card-title">选手能力分布</span></template>
+            <div class="chart-container">
+              <v-chart class="chart" :option="abilityScatterOption" autoresize />
+            </div>
+          </el-card>
+          <el-card shadow="hover">
+            <template #header><span class="card-title">影响力分布</span></template>
+            <div class="chart-container">
+              <v-chart class="chart" :option="impactHeatmapOption" autoresize />
+            </div>
+          </el-card>
+        </div>
+      </el-collapse-item>
+    </el-collapse>
+
     <!-- 筛选栏 -->
     <div class="filter-bar">
       <div class="position-filters">
@@ -351,14 +371,15 @@ import { useRouter } from 'vue-router'
 import { DataLine, Refresh, ArrowRight, ArrowDown, User, VideoCamera, TrendCharts, Star } from '@element-plus/icons-vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { BarChart, ScatterChart } from 'echarts/charts'
+import { BarChart, ScatterChart, HeatmapChart } from 'echarts/charts'
 import {
   TitleComponent,
   TooltipComponent,
   GridComponent,
   LegendComponent,
   MarkLineComponent,
-  MarkAreaComponent
+  MarkAreaComponent,
+  VisualMapComponent
 } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { usePlayerStore } from '@/stores/usePlayerStore'
@@ -375,12 +396,14 @@ use([
   CanvasRenderer,
   BarChart,
   ScatterChart,
+  HeatmapChart,
   TitleComponent,
   TooltipComponent,
   GridComponent,
   LegendComponent,
   MarkLineComponent,
-  MarkAreaComponent
+  MarkAreaComponent,
+  VisualMapComponent
 ])
 
 const logger = createLogger('DataCenter')
@@ -397,6 +420,7 @@ const teamsRegionMap = ref<Record<string, number>>({})
 // 状态
 const selectedSeason = ref(seasonStore.currentSeason)
 const selectedPosition = ref('')
+const activeAnalysisCharts = ref<string[]>([])
 const searchQuery = ref('')
 const loading = ref(false)
 const rankings = ref<PlayerSeasonStats[]>([])
@@ -785,6 +809,133 @@ const onScatterClick = (params: any) => {
     router.push(`/data-center/player/${params.data[5]}?season=S${selectedSeason.value}`)
   }
 }
+
+// ========== 新增图表 ==========
+
+// 1. 选手能力分布散点图（发挥值 vs 影响力，按位置区分）
+const abilityScatterOption = computed(() => {
+  const data = rankings.value
+  if (data.length === 0) return {}
+
+  const posConfig: Record<string, { label: string; color: string }> = {
+    TOP: { label: '上单', color: '#ef4444' },
+    JUG: { label: '打野', color: '#f59e0b' },
+    MID: { label: '中单', color: '#3b82f6' },
+    ADC: { label: '下路', color: '#22c55e' },
+    SUP: { label: '辅助', color: '#8b5cf6' },
+  }
+
+  const series = Object.entries(posConfig).map(([pos, cfg]) => {
+    const players = data.filter(p => p.position === pos)
+    return {
+      name: cfg.label,
+      type: 'scatter' as const,
+      symbolSize: 8,
+      itemStyle: { color: cfg.color, opacity: 0.75 },
+      data: players.map(p => [
+        Math.round((p.avgPerformance || 0) * 10) / 10,
+        Math.round((p.avgImpact || 0) * 10) / 10,
+        p.playerName,
+      ]),
+    }
+  })
+
+  return {
+    tooltip: {
+      formatter: (params: any) => {
+        const [perf, impact, name] = params.data
+        return `<b>${name}</b> (${params.seriesName})<br/>发挥值: ${perf}<br/>影响力: ${impact >= 0 ? '+' : ''}${impact}`
+      }
+    },
+    legend: {
+      data: Object.values(posConfig).map(c => c.label),
+      top: 0,
+      textStyle: { color: '#6b7280', fontSize: 11 }
+    },
+    grid: { left: '3%', right: '5%', bottom: '3%', top: '36px', containLabel: true },
+    xAxis: {
+      type: 'value' as const,
+      name: '发挥值',
+      nameTextStyle: { color: '#9ca3af', fontSize: 11 },
+      axisLabel: { color: '#9ca3af' },
+      splitLine: { lineStyle: { color: '#f3f4f6' } }
+    },
+    yAxis: {
+      type: 'value' as const,
+      name: '影响力',
+      nameTextStyle: { color: '#9ca3af', fontSize: 11 },
+      axisLabel: {
+        color: '#9ca3af',
+        formatter: (v: number) => v > 0 ? `+${v}` : `${v}`
+      },
+      splitLine: { lineStyle: { color: '#f3f4f6' } }
+    },
+    series,
+  }
+})
+
+// 2. 影响力分布热力图
+const impactHeatmapOption = computed(() => {
+  const data = rankings.value
+  if (data.length === 0) return {}
+
+  const positions = ['TOP', 'JUG', 'MID', 'ADC', 'SUP']
+  const posLabels = ['上单', '打野', '中单', '下路', '辅助']
+  const ranges = ['<-5', '-5~0', '0~5', '5~10', '>10']
+  const rangeBounds: [number, number][] = [[-Infinity, -5], [-5, 0], [0, 5], [5, 10], [10, Infinity]]
+
+  const heatData: [number, number, number][] = []
+  let maxVal = 0
+
+  positions.forEach((pos, pi) => {
+    const players = data.filter(p => p.position === pos)
+    rangeBounds.forEach((bound, ri) => {
+      const count = players.filter(p => (p.avgImpact || 0) >= bound[0] && (p.avgImpact || 0) < bound[1]).length
+      heatData.push([pi, ri, count])
+      if (count > maxVal) maxVal = count
+    })
+  })
+
+  return {
+    tooltip: {
+      formatter: (params: any) => {
+        const [pi, ri, count] = params.data
+        return `${posLabels[pi]} · ${ranges[ri]}<br/>人数: <b>${count}</b>`
+      }
+    },
+    grid: { left: '10%', right: '10%', bottom: '22%', top: '5%' },
+    xAxis: {
+      type: 'category' as const,
+      data: posLabels,
+      axisLabel: { color: '#6b7280' },
+      splitArea: { show: true, areaStyle: { color: ['rgba(0,0,0,0.02)', 'rgba(0,0,0,0)'] } }
+    },
+    yAxis: {
+      type: 'category' as const,
+      data: ranges,
+      axisLabel: { color: '#6b7280' },
+      splitArea: { show: true, areaStyle: { color: ['rgba(0,0,0,0.02)', 'rgba(0,0,0,0)'] } }
+    },
+    visualMap: {
+      min: 0,
+      max: maxVal || 1,
+      calculable: true,
+      orient: 'horizontal' as const,
+      left: 'center',
+      bottom: '2%',
+      itemWidth: 15,
+      itemHeight: 100,
+      inRange: { color: ['#eff6ff', '#3b82f6', '#1e40af'] },
+      textStyle: { color: '#6b7280' }
+    },
+    series: [{
+      type: 'heatmap',
+      data: heatData,
+      label: { show: true, color: '#303133', fontSize: 12 },
+      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.3)' } }
+    }]
+  }
+})
 
 // Top5 选手
 const top5Players = computed(() => {
@@ -1390,6 +1541,60 @@ watch([selectedPosition, searchQuery], () => {
     }
   }
 
+  .analysis-collapse {
+    border: none;
+    margin-bottom: 24px;
+
+    :deep(.el-collapse-item__header) {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1f2937;
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 4px;
+      border: none;
+      height: auto;
+      line-height: 1.5;
+    }
+
+    :deep(.el-collapse-item__wrap) {
+      border: none;
+    }
+
+    :deep(.el-collapse-item__content) {
+      padding: 16px 0;
+    }
+
+    :deep(.el-collapse-item) {
+      border: none;
+      margin-bottom: 8px;
+    }
+  }
+
+  // 新增图表行
+  .new-charts-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    .chart-container {
+      height: 320px;
+
+      .chart {
+        width: 100%;
+        height: 100%;
+      }
+    }
+  }
+
   // 散点图区域
   .scatter-chart-section {
     margin-bottom: 24px;
@@ -1528,6 +1733,10 @@ watch([selectedPosition, searchQuery], () => {
     }
 
     .charts-dashboard-row {
+      grid-template-columns: 1fr;
+    }
+
+    .new-charts-row {
       grid-template-columns: 1fr;
     }
   }
