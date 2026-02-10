@@ -1,7 +1,7 @@
 use crate::models::{
-    ContractExpireDetail, Player, PlayerAgingResult, PlayerDeclineDetail,
-    PlayerGrowthDetail, PlayerRetirementDetail, PlayerStatus, PlayerTag, Position,
-    RetirementReason, RookieGenerationDetail, SeasonSettlementResult, Team,
+    ContractExpireDetail, Player, PlayerAgingResult, PlayerDeclineDetail, PlayerGrowthDetail,
+    PlayerRetirementDetail, PlayerStatus, PlayerTag, Position, RetirementReason,
+    RookieGenerationDetail, SeasonSettlementResult, Team,
 };
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -529,7 +529,9 @@ impl EventEngine {
 
             // 1. 年龄更新
             let aging = self.update_player_age(player);
-            result.age_updates.push((player.id, aging.new_age, aging.new_stability));
+            result
+                .age_updates
+                .push((player.id, aging.new_age, aging.new_stability));
 
             // 使用更新后的年龄进行判断
             let aged_player = Player {
@@ -547,7 +549,8 @@ impl EventEngine {
             // 3. 合同到期处理
             if self.is_contract_expired(player, current_season) {
                 if let Some(team) = team {
-                    let detail = self.process_contract_expiration(&aged_player, team, current_season);
+                    let detail =
+                        self.process_contract_expiration(&aged_player, team, current_season);
                     result.contract_updates.push((
                         player.id,
                         detail.renewed,
@@ -564,7 +567,9 @@ impl EventEngine {
             if let Some(growth) = self.calculate_player_growth(&aged_player) {
                 result.ability_updates.push((player.id, growth.new_ability));
             } else if let Some(decline) = self.calculate_player_decline(&aged_player) {
-                result.ability_updates.push((player.id, decline.new_ability));
+                result
+                    .ability_updates
+                    .push((player.id, decline.new_ability));
             }
         }
 
@@ -576,13 +581,7 @@ impl EventEngine {
 mod tests {
     use super::*;
 
-    fn create_test_player(
-        id: u64,
-        age: u8,
-        ability: u8,
-        potential: u8,
-        tag: PlayerTag,
-    ) -> Player {
+    fn create_test_player(id: u64, age: u8, ability: u8, potential: u8, tag: PlayerTag) -> Player {
         Player {
             id,
             game_id: format!("Player{}", id),
@@ -605,6 +604,7 @@ mod tests {
             is_starter: true,
             loyalty: 50,
             satisfaction: 50,
+            growth_accumulator: 0.0,
         }
     }
 
@@ -636,6 +636,7 @@ mod tests {
             is_starter: true,
             loyalty: 50,
             satisfaction: 50,
+            growth_accumulator: 0.0,
         }
     }
 
@@ -769,7 +770,10 @@ mod tests {
                 decline_count += 1;
             }
         }
-        assert!(decline_count > 0, "30-year-old player should decline at least sometimes");
+        assert!(
+            decline_count > 0,
+            "30-year-old player should decline at least sometimes"
+        );
     }
 
     #[test]
@@ -965,8 +969,11 @@ mod tests {
         for _ in 0..50 {
             let rookie = engine.generate_rookie(&team, Position::Top, 1);
             // 新生成器: Genius 64-67, Normal 61-64, Ordinary 59-61
-            assert!(rookie.ability >= 59 && rookie.ability <= 67,
-                "ability {} out of range 59-67", rookie.ability);
+            assert!(
+                rookie.ability >= 59 && rookie.ability <= 67,
+                "ability {} out of range 59-67",
+                rookie.ability
+            );
             // 潜力应高于能力
             assert!(rookie.potential > rookie.ability);
             assert!(rookie.potential <= 100);
@@ -1021,8 +1028,14 @@ mod tests {
         // 应该有年龄更新
         assert_eq!(result.age_updates.len(), 2);
         // 验证年龄更新正确
-        assert!(result.age_updates.iter().any(|(id, age, _)| *id == 1 && *age == 23));
-        assert!(result.age_updates.iter().any(|(id, age, _)| *id == 2 && *age == 31));
+        assert!(result
+            .age_updates
+            .iter()
+            .any(|(id, age, _)| *id == 1 && *age == 23));
+        assert!(result
+            .age_updates
+            .iter()
+            .any(|(id, age, _)| *id == 2 && *age == 31));
     }
 
     // ==================== 应用事件测试 ====================

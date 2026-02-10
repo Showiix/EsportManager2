@@ -816,6 +816,7 @@ fn row_to_player(row: &sqlx::sqlite::SqliteRow) -> Player {
         is_starter: row.get("is_starter"),
         loyalty: row.try_get::<i64, _>("loyalty").ok().map(|v| v as u8).unwrap_or(50),
         satisfaction: row.try_get::<i64, _>("satisfaction").ok().map(|v| v as u8).unwrap_or(50),
+        growth_accumulator: row.try_get::<f64, _>("growth_accumulator").unwrap_or(0.0),
     }
 }
 
@@ -3741,6 +3742,7 @@ mod tests {
             is_starter: true,
             loyalty: 50,
             satisfaction: 50,
+            growth_accumulator: 0.0,
         }
     }
 

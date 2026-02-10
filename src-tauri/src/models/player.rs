@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::engines::market_value::MarketValueEngine;
+use serde::{Deserialize, Serialize};
 
 /// 选手标签
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,10 +112,10 @@ impl RegionCode {
     /// 获取赛区身价系数
     pub fn market_value_factor(&self) -> f64 {
         match self {
-            RegionCode::LPL => 1.3,  // 资本最雄厚
-            RegionCode::LCK => 1.2,  // 传统强区
-            RegionCode::LEC => 1.0,  // 欧洲标准
-            RegionCode::LCS => 0.9,  // 北美略低
+            RegionCode::LPL => 1.3, // 资本最雄厚
+            RegionCode::LCK => 1.2, // 传统强区
+            RegionCode::LEC => 1.0, // 欧洲标准
+            RegionCode::LCS => 0.9, // 北美略低
             RegionCode::Other => 0.8,
         }
     }
@@ -191,6 +191,8 @@ pub struct Player {
     /// 满意度 (0-100)，默认50
     #[serde(default = "default_satisfaction")]
     pub satisfaction: u8,
+    #[serde(default)]
+    pub growth_accumulator: f64,
 }
 
 /// 默认忠诚度值
@@ -207,9 +209,9 @@ impl Player {
     /// 根据年龄计算稳定性
     pub fn calculate_stability(age: u8) -> u8 {
         match age {
-            16..=24 => 60 + (age - 16) * 2,  // 60-76
-            25..=29 => 75 + (age - 25) * 2,  // 75-85
-            30..=36 => 85 + (age - 30),      // 85-91
+            16..=24 => 60 + (age - 16) * 2, // 60-76
+            25..=29 => 75 + (age - 25) * 2, // 75-85
+            30..=36 => 85 + (age - 30),     // 85-91
             _ => 70,
         }
     }
@@ -217,9 +219,9 @@ impl Player {
     /// 根据年龄获取状态加成上限
     pub fn max_form_bonus(age: u8) -> i8 {
         match age {
-            16..=24 => 8,   // 年轻选手高上限
-            25..=29 => 3,   // 巅峰期稳定
-            _ => 2,         // 老将低上限
+            16..=24 => 8, // 年轻选手高上限
+            25..=29 => 3, // 巅峰期稳定
+            _ => 2,       // 老将低上限
         }
     }
 
@@ -240,7 +242,11 @@ impl Player {
             None => "MID",
         };
         MarketValueEngine::calculate_base_market_value(
-            self.ability, self.age, self.potential, tag_str, pos_str,
+            self.ability,
+            self.age,
+            self.potential,
+            tag_str,
+            pos_str,
         )
     }
 
@@ -280,11 +286,11 @@ impl Player {
     /// 静态方法：根据忠诚度计算离队意愿阈值
     pub fn departure_threshold_static(loyalty: u8) -> u8 {
         match loyalty {
-            90..=100 => 20,  // 极高忠诚：满意度要降到20以下
-            70..=89 => 35,   // 高忠诚：35以下
-            50..=69 => 50,   // 普通：50以下
-            30..=49 => 60,   // 低忠诚：60以下就想走
-            _ => 70,         // 极低：70以下就想走
+            90..=100 => 20, // 极高忠诚：满意度要降到20以下
+            70..=89 => 35,  // 高忠诚：35以下
+            50..=69 => 50,  // 普通：50以下
+            30..=49 => 60,  // 低忠诚：60以下就想走
+            _ => 70,        // 极低：70以下就想走
         }
     }
 
@@ -292,10 +298,10 @@ impl Player {
     /// 高忠诚选手可能拒绝其他球队的邀约
     pub fn reject_poaching_chance(&self) -> f64 {
         match self.loyalty {
-            90..=100 => 0.7,  // 70%概率拒绝
-            70..=89 => 0.4,   // 40%概率拒绝
-            50..=69 => 0.1,   // 10%概率拒绝
-            _ => 0.0,         // 不会拒绝
+            90..=100 => 0.7, // 70%概率拒绝
+            70..=89 => 0.4,  // 40%概率拒绝
+            50..=69 => 0.1,  // 10%概率拒绝
+            _ => 0.0,        // 不会拒绝
         }
     }
 
@@ -303,9 +309,9 @@ impl Player {
     /// 忠诚选手要求更高转会费才肯走
     pub fn loyalty_price_factor(&self) -> f64 {
         match self.loyalty {
-            80..=100 => 1.3,  // 要求130%身价
-            60..=79 => 1.15,  // 要求115%身价
-            _ => 1.0,         // 正常身价
+            80..=100 => 1.3, // 要求130%身价
+            60..=79 => 1.15, // 要求115%身价
+            _ => 1.0,        // 正常身价
         }
     }
 
@@ -313,9 +319,9 @@ impl Player {
     /// 高忠诚自由球员优先考虑老东家续约
     pub fn former_team_bonus(&self) -> f64 {
         match self.loyalty {
-            80..=100 => 0.3,  // 老东家吸引力+30%
-            60..=79 => 0.15,  // +15%
-            _ => 0.0,         // 无加成
+            80..=100 => 0.3, // 老东家吸引力+30%
+            60..=79 => 0.15, // +15%
+            _ => 0.0,        // 无加成
         }
     }
 
@@ -342,7 +348,9 @@ mod tests {
     #[test]
     fn test_player_tag_market_value_factor() {
         assert!(PlayerTag::Genius.market_value_factor() > PlayerTag::Normal.market_value_factor());
-        assert!(PlayerTag::Normal.market_value_factor() > PlayerTag::Ordinary.market_value_factor());
+        assert!(
+            PlayerTag::Normal.market_value_factor() > PlayerTag::Ordinary.market_value_factor()
+        );
     }
 
     #[test]
@@ -424,13 +432,28 @@ mod tests {
     #[test]
     fn test_update_loyalty_clamp() {
         let mut player = Player {
-            id: 1, game_id: "test".into(), real_name: None, nationality: None,
-            age: 22, ability: 75, potential: 85, stability: 70,
-            tag: PlayerTag::Normal, status: PlayerStatus::Active,
-            position: Some(Position::Mid), team_id: Some(1),
-            salary: 5_000_000, market_value: 0, calculated_market_value: 0,
-            contract_end_season: Some(3), join_season: 1, retire_season: None,
-            is_starter: true, loyalty: 90, satisfaction: 50,
+            id: 1,
+            game_id: "test".into(),
+            real_name: None,
+            nationality: None,
+            age: 22,
+            ability: 75,
+            potential: 85,
+            stability: 70,
+            tag: PlayerTag::Normal,
+            status: PlayerStatus::Active,
+            position: Some(Position::Mid),
+            team_id: Some(1),
+            salary: 5_000_000,
+            market_value: 0,
+            calculated_market_value: 0,
+            contract_end_season: Some(3),
+            join_season: 1,
+            retire_season: None,
+            is_starter: true,
+            loyalty: 90,
+            satisfaction: 50,
+            growth_accumulator: 0.0,
         };
 
         player.update_loyalty(20);
@@ -444,13 +467,28 @@ mod tests {
     fn test_reject_poaching_chance() {
         let make = |loyalty: u8| -> Player {
             Player {
-                id: 1, game_id: "test".into(), real_name: None, nationality: None,
-                age: 22, ability: 75, potential: 85, stability: 70,
-                tag: PlayerTag::Normal, status: PlayerStatus::Active,
-                position: Some(Position::Mid), team_id: Some(1),
-                salary: 5_000_000, market_value: 0, calculated_market_value: 0,
-                contract_end_season: Some(3), join_season: 1, retire_season: None,
-                is_starter: true, loyalty, satisfaction: 50,
+                id: 1,
+                game_id: "test".into(),
+                real_name: None,
+                nationality: None,
+                age: 22,
+                ability: 75,
+                potential: 85,
+                stability: 70,
+                tag: PlayerTag::Normal,
+                status: PlayerStatus::Active,
+                position: Some(Position::Mid),
+                team_id: Some(1),
+                salary: 5_000_000,
+                market_value: 0,
+                calculated_market_value: 0,
+                contract_end_season: Some(3),
+                join_season: 1,
+                retire_season: None,
+                is_starter: true,
+                loyalty,
+                satisfaction: 50,
+                growth_accumulator: 0.0,
             }
         };
         assert!((make(95).reject_poaching_chance() - 0.7).abs() < f64::EPSILON);
@@ -463,13 +501,28 @@ mod tests {
     fn test_loyalty_price_factor() {
         let make = |loyalty: u8| -> Player {
             Player {
-                id: 1, game_id: "test".into(), real_name: None, nationality: None,
-                age: 22, ability: 75, potential: 85, stability: 70,
-                tag: PlayerTag::Normal, status: PlayerStatus::Active,
-                position: Some(Position::Mid), team_id: Some(1),
-                salary: 5_000_000, market_value: 0, calculated_market_value: 0,
-                contract_end_season: Some(3), join_season: 1, retire_season: None,
-                is_starter: true, loyalty, satisfaction: 50,
+                id: 1,
+                game_id: "test".into(),
+                real_name: None,
+                nationality: None,
+                age: 22,
+                ability: 75,
+                potential: 85,
+                stability: 70,
+                tag: PlayerTag::Normal,
+                status: PlayerStatus::Active,
+                position: Some(Position::Mid),
+                team_id: Some(1),
+                salary: 5_000_000,
+                market_value: 0,
+                calculated_market_value: 0,
+                contract_end_season: Some(3),
+                join_season: 1,
+                retire_season: None,
+                is_starter: true,
+                loyalty,
+                satisfaction: 50,
+                growth_accumulator: 0.0,
             }
         };
         assert!((make(90).loyalty_price_factor() - 1.3).abs() < f64::EPSILON);

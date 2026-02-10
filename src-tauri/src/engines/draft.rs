@@ -150,8 +150,9 @@ impl DraftEngine {
             join_season: current_season,
             retire_season: None,
             is_starter: false,
-            loyalty: 50,      // 新秀默认忠诚度50
-            satisfaction: 50, // 新秀默认满意度50
+            loyalty: 50,
+            satisfaction: 50,
+            growth_accumulator: 0.0,
         }
     }
 

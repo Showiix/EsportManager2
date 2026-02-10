@@ -1899,6 +1899,24 @@ impl DatabaseManager {
             log::info!("✅ teams 添加 brand_value 列成功");
         }
 
+        // 迁移14: 为 players 表添加 growth_accumulator 字段（成长累积器）
+        let player_columns_v2: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM pragma_table_info('players')"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        let player_column_names_v2: Vec<&str> = player_columns_v2.iter().map(|c| c.0.as_str()).collect();
+
+        if !player_column_names_v2.contains(&"growth_accumulator") {
+            sqlx::query("ALTER TABLE players ADD COLUMN growth_accumulator REAL NOT NULL DEFAULT 0.0")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            log::info!("✅ players 添加 growth_accumulator 列成功");
+        }
+
         Ok(())
     }
 }

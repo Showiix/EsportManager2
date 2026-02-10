@@ -205,6 +205,7 @@ impl InitService {
             is_starter: config.is_starter,
             loyalty,
             satisfaction,
+            growth_accumulator: 0.0,
         }
     }
 
@@ -272,6 +273,7 @@ impl InitService {
                     is_starter,
                     loyalty,
                     satisfaction,
+                    growth_accumulator: 0.0,
                 });
 
                 player_counter += 1;
@@ -731,6 +733,7 @@ impl InitService {
                     is_starter: false,
                     loyalty,
                     satisfaction,
+                    growth_accumulator: 0.0,
                 };
 
                 let player_id = PlayerRepository::create(pool, save_id, &player)
@@ -920,11 +923,12 @@ impl InitService {
                         join_season: current_season,
                         retire_season: None,
                         is_starter: player_config.is_starter,
-                        loyalty,
-                        satisfaction,
-                    };
+                    loyalty,
+                    satisfaction,
+                    growth_accumulator: 0.0,
+                };
 
-                    let player_id = PlayerRepository::create(pool, save_id, &player)
+                let player_id = PlayerRepository::create(pool, save_id, &player)
                         .await
                         .map_err(|e| e.to_string())?;
 
@@ -1005,6 +1009,7 @@ impl InitService {
                     is_starter: false,
                     loyalty,
                     satisfaction,
+                    growth_accumulator: 0.0,
                 };
 
                 let player_id = PlayerRepository::create(pool, save_id, &player)
