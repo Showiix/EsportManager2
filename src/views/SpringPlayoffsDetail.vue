@@ -1073,10 +1073,10 @@ const doSimulateMatch = async (match: any, dbMatchId: number, matchIdPrefix: str
     games: result.games.map((game: DetailedGameResult) => {
       // 计算队伍战力（选手实际发挥能力平均值）- 每局不同
       const teamAPower = game.home_players.length > 0
-        ? Math.round(game.home_players.reduce((sum, p) => sum + (p.actual_ability || p.base_ability), 0) / game.home_players.length)
+        ? game.home_players.reduce((sum, p) => sum + (p.actual_ability || p.base_ability), 0) / game.home_players.length
         : 0
       const teamBPower = game.away_players.length > 0
-        ? Math.round(game.away_players.reduce((sum, p) => sum + (p.actual_ability || p.base_ability), 0) / game.away_players.length)
+        ? game.away_players.reduce((sum, p) => sum + (p.actual_ability || p.base_ability), 0) / game.away_players.length
         : 0
       const powerDifference = teamAPower - teamBPower
 
@@ -1086,16 +1086,19 @@ const doSimulateMatch = async (match: any, dbMatchId: number, matchIdPrefix: str
         teamAName: match.teamA,
         teamAPower,
         teamAPerformance: game.home_performance,
+        teamAMetaPower: game.home_performance,
         teamAPlayers: game.home_players.map(p => convertPlayerPerformance(p, String(result.home_team_id))),
         teamBId: String(result.away_team_id),
         teamBName: match.teamB,
         teamBPower,
         teamBPerformance: game.away_performance,
+        teamBMetaPower: game.away_performance,
         teamBPlayers: game.away_players.map(p => convertPlayerPerformance(p, String(result.away_team_id))),
         winnerId: String(game.winner_id),
         winnerName: game.winner_id === result.home_team_id ? match.teamA : match.teamB,
         powerDifference,
         performanceDifference: game.home_performance - game.away_performance,
+        metaPowerDifference: game.home_performance - game.away_performance,
         isUpset: powerDifference > 0 && game.winner_id !== result.home_team_id ||
                  powerDifference < 0 && game.winner_id === result.home_team_id,
         duration: game.duration_minutes,

@@ -697,15 +697,22 @@ const convertBackendToMatchDetail = (result: any, match: any): MatchDetail => {
     winnerId: String(result.winner_id),
     winnerName: result.winner_id === result.home_team_id ? teamAName : teamBName,
     games: result.games.map((game: any, index: number) => {
-      const teamAPower = game.home_performance || 70
-      const teamBPower = game.away_performance || 70
+      const homePlayers = game.home_players || []
+      const awayPlayers = game.away_players || []
+      const teamAPower = homePlayers.length > 0
+        ? homePlayers.reduce((sum: number, p: any) => sum + (p.actual_ability || p.base_ability || 70), 0) / homePlayers.length
+        : 70
+      const teamBPower = awayPlayers.length > 0
+        ? awayPlayers.reduce((sum: number, p: any) => sum + (p.actual_ability || p.base_ability || 70), 0) / awayPlayers.length
+        : 70
       return {
         gameNumber: game.game_number || index + 1,
         teamAId: match.teamAId,
         teamAName,
         teamAPower,
         teamAPerformance: game.home_performance || 70,
-        teamAPlayers: (game.home_players || []).map((p: any) => ({
+        teamAMetaPower: game.home_performance || undefined,
+        teamAPlayers: homePlayers.map((p: any) => ({
           playerId: String(p.player_id),
           playerName: p.player_name,
           position: p.position,
@@ -737,6 +744,7 @@ const convertBackendToMatchDetail = (result: any, match: any): MatchDetail => {
         teamBName,
         teamBPower,
         teamBPerformance: game.away_performance || 70,
+        teamBMetaPower: game.away_performance || undefined,
         teamBPlayers: (game.away_players || []).map((p: any) => ({
           playerId: String(p.player_id),
           playerName: p.player_name,
@@ -769,6 +777,7 @@ const convertBackendToMatchDetail = (result: any, match: any): MatchDetail => {
         winnerName: game.winner_id === result.home_team_id ? teamAName : teamBName,
         powerDifference: teamAPower - teamBPower,
         performanceDifference: (game.home_performance || 0) - (game.away_performance || 0),
+        metaPowerDifference: (game.home_performance || 0) - (game.away_performance || 0),
         isUpset: (teamAPower < teamBPower && game.winner_id === result.home_team_id) ||
                  (teamAPower > teamBPower && game.winner_id === result.away_team_id)
       }

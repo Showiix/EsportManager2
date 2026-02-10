@@ -686,10 +686,10 @@ const convertBackendToMatchDetail = (result: any, match: any): MatchDetail => {
       const homePlayers = game.home_players || []
       const awayPlayers = game.away_players || []
       const teamAPower = homePlayers.length > 0
-        ? Math.round(homePlayers.reduce((sum: number, p: any) => sum + (p.actual_ability || p.base_ability || 0), 0) / homePlayers.length)
+        ? homePlayers.reduce((sum: number, p: any) => sum + (p.actual_ability || p.base_ability || 0), 0) / homePlayers.length
         : 0
       const teamBPower = awayPlayers.length > 0
-        ? Math.round(awayPlayers.reduce((sum: number, p: any) => sum + (p.actual_ability || p.base_ability || 0), 0) / awayPlayers.length)
+        ? awayPlayers.reduce((sum: number, p: any) => sum + (p.actual_ability || p.base_ability || 0), 0) / awayPlayers.length
         : 0
       const powerDifference = teamAPower - teamBPower
 
@@ -702,12 +702,15 @@ const convertBackendToMatchDetail = (result: any, match: any): MatchDetail => {
         teamAName,
         teamAPower,
         teamAPerformance: game.home_performance,
+        teamAMetaPower: game.home_performance,
         teamBId: match.teamBId,
         teamBName,
         teamBPower,
         teamBPerformance: game.away_performance,
+        teamBMetaPower: game.away_performance,
         powerDifference,
         performanceDifference: game.home_performance - game.away_performance,
+        metaPowerDifference: game.home_performance - game.away_performance,
         isUpset: (powerDifference > 0 && game.winner_id !== result.home_team_id) ||
                  (powerDifference < 0 && game.winner_id === result.home_team_id),
         mvp: game.game_mvp ? {

@@ -738,8 +738,11 @@ const convertToMatchDetail = (result: DetailedMatchResult, matchId: string): Mat
         }))
       })),
       teamAPerformance: game.home_performance,
+      teamAMetaPower: game.home_performance,
       teamBPerformance: game.away_performance,
+      teamBMetaPower: game.away_performance,
       performanceDifference: game.home_performance - game.away_performance,
+      metaPowerDifference: game.home_performance - game.away_performance,
       gameNoise: 0,
       mvpPlayerId: game.game_mvp?.player_id?.toString(),
       mvpPlayerName: game.game_mvp?.player_name,
