@@ -240,11 +240,11 @@ impl LoyaltyChangeReason {
     /// 获取默认变化值
     pub fn default_change(&self) -> i32 {
         match self {
-            LoyaltyChangeReason::SeasonPassed => 2,
+            LoyaltyChangeReason::SeasonPassed => 3,
             LoyaltyChangeReason::DraftOrigin => 15,
             LoyaltyChangeReason::TeamChampion => 8,
-            LoyaltyChangeReason::MadePlayoffs => 3,
-            LoyaltyChangeReason::PoorTeamPerformance => -5,
+            LoyaltyChangeReason::MadePlayoffs => 5,
+            LoyaltyChangeReason::PoorTeamPerformance => -3,
             LoyaltyChangeReason::LongTermBench => -5,
             LoyaltyChangeReason::ListedForSale => -15,
             LoyaltyChangeReason::SalaryRaise => 5,

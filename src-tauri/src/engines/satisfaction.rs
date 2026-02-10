@@ -7,8 +7,7 @@
 
 use crate::engines::market_value::MarketValueEngine;
 use crate::models::{
-    DepartureReason, LoyaltyChange, LoyaltyChangeReason, Player,
-    TeamSeasonPerformance,
+    DepartureReason, LoyaltyChange, LoyaltyChangeReason, Player, TeamSeasonPerformance,
 };
 
 /// 满意度计算引擎
@@ -43,34 +42,35 @@ impl SatisfactionEngine {
         };
 
         if starter_ratio < 0.3 && player.ability >= 54 {
-            change -= 20; // 能力强但打不上比赛
+            change -= 12;
         } else if starter_ratio < 0.5 && player.ability >= 47 {
-            change -= 10;
+            change -= 6;
         } else if starter_ratio >= 0.8 {
-            change += 5; // 稳定首发
+            change += 8;
         }
 
         // 2. 球队战绩影响
         if let Some(rank) = team_perf.final_rank {
             if rank >= 8 && player.ability >= 58 {
-                change -= 15; // 强选手在弱队
+                change -= 10;
             } else if rank >= 6 && player.ability >= 61 {
-                change -= 10; // 顶级选手在中下游队伍
+                change -= 6;
             } else if rank <= 2 {
-                change += 10; // 好成绩
+                change += 10;
             } else if rank <= 4 {
-                change += 5;
+                change += 8;
             }
         }
 
         if team_perf.consecutive_no_playoffs >= 2 {
-            change -= 15; // 连续无缘季后赛
+            change -= 10;
         } else if team_perf.consecutive_no_playoffs >= 1 {
-            change -= 5;
+            change -= 3;
         }
 
         // 3. 薪资满意度
-        let expected_salary = MarketValueEngine::estimate_salary(market_value, player.ability, player.age);
+        let expected_salary =
+            MarketValueEngine::estimate_salary(market_value, player.ability, player.age);
         let salary_ratio = if expected_salary > 0 {
             player.salary as f64 / expected_salary as f64
         } else {
@@ -78,11 +78,11 @@ impl SatisfactionEngine {
         };
 
         if salary_ratio < 0.5 {
-            change -= 20;
-        } else if salary_ratio < 0.6 {
             change -= 15;
+        } else if salary_ratio < 0.6 {
+            change -= 10;
         } else if salary_ratio < 0.8 {
-            change -= 8;
+            change -= 5;
         } else if salary_ratio > 1.2 {
             change += 5;
         }
@@ -97,13 +97,24 @@ impl SatisfactionEngine {
         }
 
         // 5. 年龄因素
-        // 老将如果战绩差更容易不满意
         if player.age >= 28 && team_perf.is_poor_performance() {
-            change -= 10;
+            change -= 6;
         }
-        // 年轻选手如果长期替补更容易不满意
         if player.age <= 24 && starter_ratio < 0.5 {
-            change -= 5;
+            change -= 3;
+        }
+
+        // 6. 满意度自然回归：每赛季向60靠拢，幅度为差值的10%，至少±1
+        let current_sat = player.satisfaction as i64;
+        let regression_target = 60i64;
+        let diff = regression_target - current_sat;
+        if diff != 0 {
+            let regression = if diff > 0 {
+                (diff as f64 * 0.1).ceil() as i32
+            } else {
+                (diff as f64 * 0.1).floor() as i32
+            };
+            change += regression;
         }
 
         change
@@ -152,7 +163,8 @@ impl SatisfactionEngine {
         // 4. 薪资不满（通过满意度间接判断）
         if satisfaction < 35 {
             let market_value = player.calculate_market_value();
-            let expected = MarketValueEngine::estimate_salary(market_value, player.ability, player.age);
+            let expected =
+                MarketValueEngine::estimate_salary(market_value, player.ability, player.age);
             if player.salary < (expected as f64 * 0.7) as u64 {
                 reasons.push(DepartureReason::SalaryDispute);
             }
@@ -358,7 +370,7 @@ mod tests {
         let mut changes = Vec::new();
 
         // 赛季自然增长
-        changes.push((2, LoyaltyChangeReason::SeasonPassed));
+        changes.push((3, LoyaltyChangeReason::SeasonPassed));
 
         // 青训加成
         changes.push((15, LoyaltyChangeReason::DraftOrigin));
@@ -367,6 +379,6 @@ mod tests {
         changes.push((8, LoyaltyChangeReason::TeamChampion));
 
         let total = LoyaltyEngine::sum_changes(&changes);
-        assert_eq!(total, 25);
+        assert_eq!(total, 26);
     }
 }

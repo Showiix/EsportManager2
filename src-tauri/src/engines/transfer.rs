@@ -33,6 +33,7 @@ pub struct CachedPlayer {
     pub contract_end_season: Option<i64>,
     pub status: String,
     pub stability: i64,
+    pub growth_accumulator: f64,
 }
 
 impl CachedPlayer {
@@ -55,6 +56,7 @@ impl CachedPlayer {
             contract_end_season: row.try_get("contract_end_season").ok(),
             status: row.try_get("status").unwrap_or_else(|_| "Active".to_string()),
             stability: row.try_get("stability").unwrap_or(60),
+            growth_accumulator: row.try_get("growth_accumulator").unwrap_or(0.0),
         }
     }
 }
@@ -342,13 +344,14 @@ impl TransferCache {
         }
     }
 
-    /// 更新选手属性（年龄/能力）
-    pub fn update_player_stats(&mut self, player_id: i64, team_id: Option<i64>, new_age: i64, new_ability: i64) {
+    /// 更新选手属性（年龄/能力/累积器）
+    pub fn update_player_stats(&mut self, player_id: i64, team_id: Option<i64>, new_age: i64, new_ability: i64, new_accumulator: f64) {
         if let Some(tid) = team_id {
             if let Some(roster) = self.team_rosters.get_mut(&tid) {
                 if let Some(p) = roster.iter_mut().find(|p| p.id == player_id) {
                     p.age = new_age;
                     p.ability = new_ability;
+                    p.growth_accumulator = new_accumulator;
                 }
             }
         }
@@ -619,9 +622,10 @@ impl TransferEngine {
             let effective_age = if has_late_blocker { new_age - 2 } else { new_age };
 
             let mut perf_desc = String::new();
+            let prev_accumulator = player.growth_accumulator;
 
-            let new_ability = if new_age <= growth_cap && ability < potential {
-                // ========== 成长期 ==========
+            let (new_ability, new_accumulator) = if new_age <= growth_cap && ability < potential {
+                // ========== 成长期（累积器模式） ==========
 
                 // ① 随机基础成长 (A)
                 let base_growth: i64 = match tag.to_uppercase().as_str() {
@@ -658,45 +662,47 @@ impl TransferEngine {
                     1.0
                 };
 
-                // ⑤ 年龄衰减后成长 = probabilistic_round(base × 系数)
-                let growth_after_age = probabilistic_round(
-                    base_growth as f64 * age_coeff * prodigy_mod, &mut rng
-                );
+                // ⑤ 年龄衰减后成长（精确小数）
+                let growth_after_age_f64 = base_growth as f64 * age_coeff * prodigy_mod;
 
                 // ⑥ 表现加成 (D) — 基于赛季统计
-                let perf_bonus = match stats_map.get(&player_id) {
+                let perf_bonus: f64 = match stats_map.get(&player_id) {
                     Some(&(gp, avg_perf)) if gp >= 20 && avg_perf > ability as f64 + 5.0 => {
                         if perf_desc.is_empty() { perf_desc = "超常发挥".to_string(); }
                         else { perf_desc.push_str("+超常发挥"); }
-                        1i64
+                        1.0
                     }
                     Some(&(gp, avg_perf)) if gp >= 20 && avg_perf > ability as f64 => {
                         if rng.gen_bool(0.5) {
                             if perf_desc.is_empty() { perf_desc = "突破成长".to_string(); }
                             else { perf_desc.push_str("+突破成长"); }
-                            1
-                        } else { 0 }
+                            1.0
+                        } else { 0.0 }
                     }
                     Some(&(gp, _)) if gp == 0 => {
                         if perf_desc.is_empty() { perf_desc = "缺乏实战".to_string(); }
                         else { perf_desc.push_str("+缺乏实战"); }
-                        // 缺乏实战：成长减半（向上取整保留最低1点成长机会）
-                        -((growth_after_age + 1) / 2)
+                        // 缺乏实战：成长减半
+                        -(growth_after_age_f64 / 2.0)
                     }
                     Some(&(gp, avg_perf)) if gp > 0 && avg_perf < (ability as f64) - 5.0 => {
                         if perf_desc.is_empty() { perf_desc = "表现低迷".to_string(); }
                         else { perf_desc.push_str("+表现低迷"); }
-                        -1
+                        -1.0
                     }
-                    _ => 0,
+                    _ => 0.0,
                 };
 
-                // ⑦ 最终成长值
-                let final_growth = (growth_after_age + perf_bonus).max(0);
-                (ability + final_growth).min(potential).min(100)
+                // ⑦ 累积器模式：小数精确累积，攒够整数才涨
+                let raw_growth = (growth_after_age_f64 + perf_bonus).max(0.0);
+                let accumulated = prev_accumulator + raw_growth;
+                let integer_part = accumulated.trunc() as i64;
+                let remainder = accumulated.fract();
+                let new_val = (ability + integer_part).min(potential).min(100);
+                (new_val, remainder)
 
             } else if new_age > growth_cap {
-                // ========== 衰退期 ==========
+                // ========== 衰退期（累积器模式） ==========
 
                 // ① 基础衰退率 (B) — 渐进式衰退
                 let base_decline: f64 = match effective_age {
@@ -719,15 +725,19 @@ impl TransferEngine {
                     else if has_glass_cannon { 1.5 }
                     else { 1.0 };
 
-                // ④ 概率取整
-                let final_decline = probabilistic_round(
-                    base_decline * tag_decay * trait_decay, &mut rng
-                );
-                (ability - final_decline).max(50)
+                // ④ 累积器模式：负数累积，攒够才降
+                let raw_decline = base_decline * tag_decay * trait_decay;
+                // 衰退用负数累积（prev_accumulator 可能有正的残留，先抵消）
+                let accumulated = prev_accumulator - raw_decline;
+                let integer_part = accumulated.trunc() as i64; // 负数时 trunc 朝零取整，如 -1.3 → -1
+                let remainder = accumulated.fract(); // -1.3 → -0.3
+                // integer_part 为负数时表示衰退量（如 -1），ability + (-1) = 衰退1点
+                let new_val = (ability + integer_part).max(50);
+                (new_val, remainder)
 
             } else {
                 // 已达潜力上限且在成长期，不成长也不衰退
-                ability
+                (ability, prev_accumulator)
             };
 
             // ========== 潜力微漂移 (E) ==========
@@ -747,11 +757,12 @@ impl TransferEngine {
 
             // ========== 更新数据库 ==========
             sqlx::query(
-                "UPDATE players SET age = ?, ability = ?, potential = ? WHERE id = ? AND save_id = ?"
+                "UPDATE players SET age = ?, ability = ?, potential = ?, growth_accumulator = ? WHERE id = ? AND save_id = ?"
             )
             .bind(new_age)
             .bind(new_ability)
             .bind(new_potential)
+            .bind(new_accumulator)
             .bind(player_id)
             .bind(save_id)
             .execute(pool)
@@ -759,7 +770,7 @@ impl TransferEngine {
             .map_err(|e| format!("更新选手年龄/能力失败: {}", e))?;
 
             // 更新缓存
-            cache.update_player_stats(player_id, team_id, new_age, new_ability);
+            cache.update_player_stats(player_id, team_id, new_age, new_ability, new_accumulator);
 
             // ========== 事件记录 ==========
             let ability_change = new_ability - ability;
@@ -996,29 +1007,29 @@ impl TransferEngine {
 
             // 上场时间
             if starter_ratio < 0.3 && player.ability >= 54 {
-                sat_change -= 20;
+                sat_change -= 12;
             } else if starter_ratio < 0.5 && player.ability >= 47 {
-                sat_change -= 10;
+                sat_change -= 6;
             } else if starter_ratio >= 0.8 {
-                sat_change += 5;
+                sat_change += 8;
             }
 
             // 球队战绩
             if rank >= 8 && player.ability >= 58 {
-                sat_change -= 15;
-            } else if rank >= 6 && player.ability >= 61 {
                 sat_change -= 10;
+            } else if rank >= 6 && player.ability >= 61 {
+                sat_change -= 6;
             } else if rank <= 2 {
                 sat_change += 10;
             } else if rank <= 4 {
-                sat_change += 5;
+                sat_change += 8;
             }
 
             // 连续未进季后赛
             if consecutive_no_playoffs >= 2 {
-                sat_change -= 15;
+                sat_change -= 10;
             } else if consecutive_no_playoffs >= 1 {
-                sat_change -= 5;
+                sat_change -= 3;
             }
 
             // 薪资满意度
@@ -1029,11 +1040,11 @@ impl TransferEngine {
             let salary_ratio = if expected_salary > 0 { player.salary as f64 / expected_salary as f64 } else { 1.0 };
 
             if salary_ratio < 0.5 {
-                sat_change -= 20;
-            } else if salary_ratio < 0.6 {
                 sat_change -= 15;
+            } else if salary_ratio < 0.6 {
+                sat_change -= 10;
             } else if salary_ratio < 0.8 {
-                sat_change -= 8;
+                sat_change -= 5;
             } else if salary_ratio > 1.2 {
                 sat_change += 5;
             }
@@ -1049,14 +1060,27 @@ impl TransferEngine {
 
             // 年龄因素
             if player.age >= 28 && rank >= 8 {
-                sat_change -= 10;
+                sat_change -= 6;
             }
             if player.age <= 24 && starter_ratio < 0.5 {
-                sat_change -= 5;
+                sat_change -= 3;
+            }
+
+            // 满意度自然回归：每赛季向60靠拢，幅度为差值的10%，至少±1
+            let current_sat = player.satisfaction;
+            let regression_target = 60i64;
+            let diff = regression_target - current_sat;
+            if diff != 0 {
+                let regression = if diff > 0 {
+                    (diff as f64 * 0.1).ceil() as i32
+                } else {
+                    (diff as f64 * 0.1).floor() as i32
+                };
+                sat_change += regression;
             }
 
             // === 忠诚度变化 ===
-            let mut loy_change: i32 = 2; // 每赛季自然增长
+            let mut loy_change: i32 = 3; // 每赛季自然增长（+2 → +3）
 
             let join_s = join_season_map.get(&player.id).copied().unwrap_or(season_id);
             let seasons_with_team = (season_id - join_s).max(0) as u32;
@@ -1070,14 +1094,14 @@ impl TransferEngine {
             if is_champion {
                 loy_change += 8;
             } else if made_playoffs {
-                loy_change += 3;
+                loy_change += 5;
             } else if rank >= 8 {
-                loy_change -= 5;
+                loy_change -= 3;
             }
 
             // 长期替补
             if !player.is_starter && seasons_with_team >= 2 {
-                loy_change -= 8;
+                loy_change -= 5;
             }
 
             // 应用变化
@@ -2464,6 +2488,7 @@ impl TransferEngine {
                     contract_end_season: Some(season_id + offer.contract_years),
                     status: "Active".to_string(),
                     stability: free_agent.try_get("stability").unwrap_or(60),
+                    growth_accumulator: free_agent.try_get("growth_accumulator").unwrap_or(0.0),
                 };
                 cache.team_rosters.entry(to_team_id).or_default().push(new_player);
 
@@ -3401,6 +3426,7 @@ impl TransferEngine {
                         contract_end_season: Some(season_id + contract_years),
                         status: "Active".to_string(),
                         stability: 60,
+                        growth_accumulator: 0.0,
                     };
                     cache.team_rosters.entry(team_id).or_default().push(new_player);
 
@@ -4353,6 +4379,7 @@ mod tests {
             contract_end_season: Some(3),
             status: "Active".to_string(),
             stability: 70,
+            growth_accumulator: 0.0,
         }
     }
 
