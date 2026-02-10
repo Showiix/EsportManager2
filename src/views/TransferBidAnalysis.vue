@@ -504,13 +504,13 @@ function handlePageChange(page: number) {
 }
 
 function getPositionShort(pos: string | null) {
-  const map: Record<string, string> = { Top: 'TOP', Jug: 'JUG', Mid: 'MID', Adc: 'BOT', Sup: 'SUP' }
-  return map[pos || ''] || '?'
+  const map: Record<string, string> = { top: 'TOP', jug: 'JUG', mid: 'MID', adc: 'BOT', sup: 'SUP', bot: 'BOT' }
+  return map[(pos || '').toLowerCase()] || (pos || '?')
 }
 
 function getPositionClass(pos: string | null) {
-  const map: Record<string, string> = { Top: 'position-top', Jug: 'position-jug', Mid: 'position-mid', Adc: 'position-bot', Sup: 'position-sup' }
-  return map[pos || ''] || ''
+  const map: Record<string, string> = { top: 'position-top', jug: 'position-jug', mid: 'position-mid', adc: 'position-bot', sup: 'position-sup', bot: 'position-bot' }
+  return map[(pos || '').toLowerCase()] || ''
 }
 
 function getAbilityClass(ability: number) {
