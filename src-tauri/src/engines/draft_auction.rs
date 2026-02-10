@@ -7,10 +7,9 @@
 //! - 拍卖事件生成
 
 use crate::models::{
-    AuctionEventType, AuctionStatus, BidStatus, DraftOrder, DraftPickAuction,
-    DraftPickAuctionEvent, DraftPickBid, DraftPickListing, DraftListingStatus, EventImportance,
-    FinancialStatus, Team,
     calculate_commission, calculate_seller_revenue, get_position_name, get_price_for_position,
+    AuctionEventType, AuctionStatus, BidStatus, DraftListingStatus, DraftOrder, DraftPickAuction,
+    DraftPickAuctionEvent, DraftPickBid, DraftPickListing, EventImportance, FinancialStatus, Team,
     COMMISSION_RATE,
 };
 use rand::Rng;
@@ -117,20 +116,24 @@ impl DraftAuctionEngine {
             let roster_count = roster_counts.get(&team.id).copied().unwrap_or(0);
             let needs = position_needs.get(&team.id).cloned().unwrap_or_default();
 
-            self.teams.insert(team.id, TeamAuctionInfo {
-                team_id: team.id,
-                team_name: team.name.clone(),
-                balance: team.balance,
-                financial_status: FinancialStatus::from_balance(team.balance),
-                roster_count,
-                position_needs: needs,
-                avg_ability: team.power_rating,
-            });
+            self.teams.insert(
+                team.id,
+                TeamAuctionInfo {
+                    team_id: team.id,
+                    team_name: team.name.clone(),
+                    balance: team.balance,
+                    financial_status: FinancialStatus::from_balance(team.balance),
+                    roster_count,
+                    position_needs: needs,
+                    avg_ability: team.power_rating,
+                },
+            );
         }
 
         // 构建选秀顺位映射
         for order in draft_orders {
-            self.draft_orders.insert(order.team_id, order.draft_position);
+            self.draft_orders
+                .insert(order.team_id, order.draft_position);
         }
     }
 
@@ -144,20 +147,25 @@ impl DraftAuctionEngine {
         self.auction.current_round = 0;
 
         // 生成拍卖开始事件
-        new_events.push(self.create_event(
-            AuctionEventType::AuctionStart,
-            None,
-            None,
-            None,
-            None,
-            "选秀权拍卖大会正式开始！".to_string(),
-            "各支球队将根据自身情况决定是否出售手中的选秀权。本次拍卖将进行最多3轮竞价。".to_string(),
-            EventImportance::Breaking,
-            0,
-        ));
+        new_events.push(
+            self.create_event(
+                AuctionEventType::AuctionStart,
+                None,
+                None,
+                None,
+                None,
+                "选秀权拍卖大会正式开始！".to_string(),
+                "各支球队将根据自身情况决定是否出售手中的选秀权。本次拍卖将进行最多3轮竞价。"
+                    .to_string(),
+                EventImportance::Breaking,
+                0,
+            ),
+        );
 
         // 遍历所有选秀顺位，评估是否卖签
-        let draft_orders: Vec<(u64, u32)> = self.draft_orders.iter()
+        let draft_orders: Vec<(u64, u32)> = self
+            .draft_orders
+            .iter()
             .map(|(&team_id, &position)| (team_id, position))
             .collect();
 
@@ -208,7 +216,11 @@ impl DraftAuctionEngine {
                                 position_name,
                                 pricing.starting_price / 10000
                             ),
-                            if position <= 3 { EventImportance::Major } else { EventImportance::Normal },
+                            if position <= 3 {
+                                EventImportance::Major
+                            } else {
+                                EventImportance::Normal
+                            },
                             0,
                         ));
                     }
@@ -239,26 +251,31 @@ impl DraftAuctionEngine {
     }
 
     /// AI 卖签决策（4因素相乘模型）
-    fn evaluate_sell_decision(&self, team_info: &TeamAuctionInfo, position: u32, rng: &mut impl Rng) -> bool {
-        // 1. 财务动机（越穷越想卖）
+    fn evaluate_sell_decision(
+        &self,
+        team_info: &TeamAuctionInfo,
+        position: u32,
+        rng: &mut impl Rng,
+    ) -> bool {
+        // 1. 财务动机（越穷越想卖，但富队也有套现动机）
         let financial_motivation: f64 = match team_info.financial_status {
-            FinancialStatus::Bankrupt => 0.70,
-            FinancialStatus::Deficit  => 0.50,
-            FinancialStatus::Tight    => 0.25,
-            FinancialStatus::Healthy  => 0.10,
-            FinancialStatus::Wealthy  => 0.05,
+            FinancialStatus::Bankrupt => 0.80,
+            FinancialStatus::Deficit => 0.60,
+            FinancialStatus::Tight => 0.40,
+            FinancialStatus::Healthy => 0.25,
+            FinancialStatus::Wealthy => 0.15,
         };
 
-        // 2. 签位留存系数（高签越不想卖）
+        // 2. 签位留存系数（高签越不想卖，低签更愿意卖）
         let pick_retention = match position {
-            1      => 0.10,
-            2      => 0.15,
-            3      => 0.20,
-            4..=5  => 0.40,
-            6..=8  => 0.60,
-            9..=10 => 0.80,
-            11..=12 => 1.00,
-            _      => 1.20,
+            1 => 0.10,
+            2 => 0.20,
+            3 => 0.30,
+            4..=5 => 0.50,
+            6..=8 => 0.75,
+            9..=10 => 1.00,
+            11..=12 => 1.30,
+            _ => 1.50,
         };
 
         // 3. 阵容系数（缺人保签，满员甩签）
@@ -281,8 +298,9 @@ impl DraftAuctionEngine {
             1.00
         };
 
-        let sell_prob: f64 = (financial_motivation * pick_retention * roster_factor * strength_factor)
-            .clamp(0.0, 0.90);
+        let sell_prob: f64 =
+            (financial_motivation * pick_retention * roster_factor * strength_factor)
+                .clamp(0.0, 0.90);
         rng.gen::<f64>() < sell_prob
     }
 
@@ -300,7 +318,8 @@ impl DraftAuctionEngine {
         let save_id = self.auction.save_id.clone();
 
         // 收集所有活跃挂牌的索引
-        let active_indices: Vec<usize> = self.listings
+        let active_indices: Vec<usize> = self
+            .listings
             .iter()
             .enumerate()
             .filter(|(_, l)| l.status == DraftListingStatus::Active)
@@ -324,8 +343,16 @@ impl DraftAuctionEngine {
                 )
             };
 
-            let (listing_id, seller_team_id, seller_team_name, draft_position,
-                 current_price, min_increment, current_bid_round, buyer_team_id) = listing_data;
+            let (
+                listing_id,
+                seller_team_id,
+                seller_team_name,
+                draft_position,
+                current_price,
+                min_increment,
+                current_bid_round,
+                buyer_team_id,
+            ) = listing_data;
 
             // 收集本轮出价
             let mut round_bidders: Vec<(u64, i64, String)> = Vec::new();
@@ -345,7 +372,7 @@ impl DraftAuctionEngine {
                     current_bid_round,
                     buyer_team_id,
                     current_round,
-                    &mut rng
+                    &mut rng,
                 );
 
                 if let Some(amount) = bid_amount {
@@ -375,8 +402,7 @@ impl DraftAuctionEngine {
                         headline: format!("{}流拍！", position_name),
                         description: format!(
                             "无人竞拍{}，{}将保留该选秀权。",
-                            position_name,
-                            seller_team_name
+                            position_name, seller_team_name
                         ),
                         importance: EventImportance::Normal,
                         round: current_round,
@@ -449,7 +475,11 @@ impl DraftAuctionEngine {
                         seller_team_name,
                         position_name
                     ),
-                    importance: if draft_position <= 3 { EventImportance::Major } else { EventImportance::Normal },
+                    importance: if draft_position <= 3 {
+                        EventImportance::Major
+                    } else {
+                        EventImportance::Normal
+                    },
                     round: current_round,
                     created_at: chrono::Utc::now().to_rfc3339(),
                 });
@@ -463,7 +493,11 @@ impl DraftAuctionEngine {
         }
 
         // 检查是否所有挂牌都已处理完毕
-        let active_listings = self.listings.iter().filter(|l| l.status == DraftListingStatus::Active).count();
+        let active_listings = self
+            .listings
+            .iter()
+            .filter(|l| l.status == DraftListingStatus::Active)
+            .count();
         if active_listings == 0 || current_round >= max_rounds {
             self.complete_auction(&mut new_events);
         }
@@ -494,10 +528,10 @@ impl DraftAuctionEngine {
     ) -> Option<i64> {
         // 1. 财务差异化预算
         let budget_ratio = match team_info.financial_status {
-            FinancialStatus::Wealthy  => 0.40,
-            FinancialStatus::Healthy  => 0.30,
-            FinancialStatus::Tight    => 0.15,
-            FinancialStatus::Deficit  => 0.05,
+            FinancialStatus::Wealthy => 0.40,
+            FinancialStatus::Healthy => 0.30,
+            FinancialStatus::Tight => 0.15,
+            FinancialStatus::Deficit => 0.05,
             FinancialStatus::Bankrupt => return None,
         };
         let available_budget = (team_info.balance as f64 * budget_ratio) as i64;
@@ -509,20 +543,20 @@ impl DraftAuctionEngine {
 
         // 2. 签位价值（14级梯度）
         let pick_value: f64 = match draft_position {
-            1  => 100.0,
-            2  => 92.0,
-            3  => 85.0,
-            4  => 78.0,
-            5  => 72.0,
-            6  => 65.0,
-            7  => 58.0,
-            8  => 52.0,
-            9  => 45.0,
+            1 => 100.0,
+            2 => 92.0,
+            3 => 85.0,
+            4 => 78.0,
+            5 => 72.0,
+            6 => 65.0,
+            7 => 58.0,
+            8 => 52.0,
+            9 => 45.0,
             10 => 40.0,
             11 => 35.0,
             12 => 30.0,
             13 => 25.0,
-            _  => 20.0,
+            _ => 20.0,
         };
 
         // 3. 阵容需求（超过10人奢侈税起征线后大幅降低）
@@ -563,10 +597,10 @@ impl DraftAuctionEngine {
 
         // 7. 财务信心
         bid_prob *= match team_info.financial_status {
-            FinancialStatus::Wealthy  => 1.30,
-            FinancialStatus::Healthy  => 1.00,
-            FinancialStatus::Tight    => 0.60,
-            FinancialStatus::Deficit  => 0.25,
+            FinancialStatus::Wealthy => 1.30,
+            FinancialStatus::Healthy => 1.00,
+            FinancialStatus::Tight => 0.60,
+            FinancialStatus::Deficit => 0.25,
             FinancialStatus::Bankrupt => 0.00,
         };
 
@@ -581,10 +615,10 @@ impl DraftAuctionEngine {
 
         // 9. 差异化出价上限
         let aggression = match team_info.financial_status {
-            FinancialStatus::Wealthy  => 1.5,
-            FinancialStatus::Healthy  => 1.3,
-            FinancialStatus::Tight    => 1.15,
-            _                         => 1.05,
+            FinancialStatus::Wealthy => 1.5,
+            FinancialStatus::Healthy => 1.3,
+            FinancialStatus::Tight => 1.15,
+            _ => 1.05,
         };
         let max_bid = (min_bid as f64 * aggression).min(available_budget as f64) as i64;
         if max_bid <= min_bid {
@@ -595,7 +629,12 @@ impl DraftAuctionEngine {
     }
 
     /// 完成指定索引的挂牌交易
-    fn finalize_listing_sale(&mut self, idx: usize, round: u32, events: &mut Vec<DraftPickAuctionEvent>) {
+    fn finalize_listing_sale(
+        &mut self,
+        idx: usize,
+        round: u32,
+        events: &mut Vec<DraftPickAuctionEvent>,
+    ) {
         let listing = &mut self.listings[idx];
         if let Some(buyer_id) = listing.buyer_team_id {
             listing.status = DraftListingStatus::Sold;
@@ -611,7 +650,10 @@ impl DraftAuctionEngine {
             // 标记获胜出价
             let listing_id = listing.id;
             for bid in &mut self.bids {
-                if bid.listing_id == listing_id && bid.bidder_team_id == buyer_id && bid.status == BidStatus::Active {
+                if bid.listing_id == listing_id
+                    && bid.bidder_team_id == buyer_id
+                    && bid.status == BidStatus::Active
+                {
                     bid.status = BidStatus::Won;
                 }
             }
@@ -649,7 +691,11 @@ impl DraftAuctionEngine {
                     seller_team_name,
                     seller_revenue / 10000
                 ),
-                importance: if draft_position <= 3 { EventImportance::Breaking } else { EventImportance::Major },
+                importance: if draft_position <= 3 {
+                    EventImportance::Breaking
+                } else {
+                    EventImportance::Major
+                },
                 round,
                 created_at: chrono::Utc::now().to_rfc3339(),
             });
@@ -661,8 +707,16 @@ impl DraftAuctionEngine {
         self.auction.status = AuctionStatus::Completed;
         self.auction.completed_at = Some(chrono::Utc::now().to_rfc3339());
 
-        let sold_count = self.listings.iter().filter(|l| l.status == DraftListingStatus::Sold).count();
-        let expired_count = self.listings.iter().filter(|l| l.status == DraftListingStatus::Expired).count();
+        let sold_count = self
+            .listings
+            .iter()
+            .filter(|l| l.status == DraftListingStatus::Sold)
+            .count();
+        let expired_count = self
+            .listings
+            .iter()
+            .filter(|l| l.status == DraftListingStatus::Expired)
+            .count();
 
         events.push(self.create_event(
             AuctionEventType::AuctionEnd,
@@ -777,11 +831,26 @@ mod tests {
     #[test]
     fn test_financial_status_from_balance() {
         // 阈值（元）：Wealthy > 10_000_000, Healthy > 5_000_000, Tight > 1_000_000, Deficit >= 0, Bankrupt < 0
-        assert_eq!(FinancialStatus::from_balance(20_000_000), FinancialStatus::Wealthy);
-        assert_eq!(FinancialStatus::from_balance(8_000_000), FinancialStatus::Healthy);
-        assert_eq!(FinancialStatus::from_balance(3_000_000), FinancialStatus::Tight);
-        assert_eq!(FinancialStatus::from_balance(500_000), FinancialStatus::Deficit);
-        assert_eq!(FinancialStatus::from_balance(-1_000_000), FinancialStatus::Bankrupt);
+        assert_eq!(
+            FinancialStatus::from_balance(20_000_000),
+            FinancialStatus::Wealthy
+        );
+        assert_eq!(
+            FinancialStatus::from_balance(8_000_000),
+            FinancialStatus::Healthy
+        );
+        assert_eq!(
+            FinancialStatus::from_balance(3_000_000),
+            FinancialStatus::Tight
+        );
+        assert_eq!(
+            FinancialStatus::from_balance(500_000),
+            FinancialStatus::Deficit
+        );
+        assert_eq!(
+            FinancialStatus::from_balance(-1_000_000),
+            FinancialStatus::Bankrupt
+        );
     }
 
     #[test]
@@ -791,6 +860,6 @@ mod tests {
         let revenue = calculate_seller_revenue(price);
 
         assert_eq!(commission, 50_0000); // 5% of 1000万
-        assert_eq!(revenue, 950_0000);   // 1000万 - 50万
+        assert_eq!(revenue, 950_0000); // 1000万 - 50万
     }
 }

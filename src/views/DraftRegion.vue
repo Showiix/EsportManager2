@@ -138,7 +138,7 @@
             </div>
           </div>
           <div class="prospect-tag" :class="player.tag.toLowerCase()">
-            {{ player.tag === 'GENIUS' ? '天才' : '普通' }}
+            {{ player.tag.toLowerCase() === 'genius' ? '天才' : player.tag.toLowerCase() === 'ordinary' ? '平庸' : '普通' }}
           </div>
         </div>
       </div>
@@ -1232,6 +1232,11 @@ const completeDraft = () => {
     &.normal {
       background: #f3f4f6;
       color: #6b7280;
+    }
+
+    &.ordinary {
+      background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+      color: #991b1b;
     }
   }
 }

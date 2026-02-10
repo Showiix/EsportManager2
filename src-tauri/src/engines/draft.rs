@@ -1,5 +1,5 @@
-use rand::Rng;
 use crate::models::{DraftOrder, DraftPlayer, DraftResult, Player, PlayerStatus};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 /// 选秀系统引擎
@@ -76,10 +76,7 @@ impl DraftEngine {
                 team_id,
                 summer_rank,
                 draft_position: position,
-                lottery_result: Some(format!(
-                    "第{}名获得第{}顺位",
-                    summer_rank, position
-                )),
+                lottery_result: Some(format!("第{}名获得第{}顺位", summer_rank, position)),
             });
         }
 
@@ -102,7 +99,8 @@ impl DraftEngine {
         // 按选秀顺位进行选秀
         for order in &self.draft_order {
             // 找到最高排名的未被选中球员
-            if let Some(player) = self.draft_pool
+            if let Some(player) = self
+                .draft_pool
                 .iter_mut()
                 .filter(|p| !p.is_picked && p.region_id == region_id)
                 .min_by_key(|p| p.draft_rank)
@@ -146,13 +144,13 @@ impl DraftEngine {
             position: draft_player.position,
             team_id: Some(team_id),
             salary: calculate_draft_salary(draft_player.ability, draft_player.potential),
-            market_value: 0, // 稍后计算
-            calculated_market_value: 0, // 选秀新秀尚无荣誉加成
+            market_value: 0,                               // 稍后计算
+            calculated_market_value: 0,                    // 选秀新秀尚无荣誉加成
             contract_end_season: Some(current_season + 3), // 默认3年合同
             join_season: current_season,
             retire_season: None,
             is_starter: false,
-            loyalty: 50, // 新秀默认忠诚度50
+            loyalty: 50,      // 新秀默认忠诚度50
             satisfaction: 50, // 新秀默认满意度50
         }
     }
@@ -187,7 +185,7 @@ fn calculate_draft_salary(ability: u8, potential: u8) -> u64 {
         0
     };
 
-    (base + potential_bonus) as u64
+    (base + potential_bonus) as u64 * 10000
 }
 
 /// 选秀抽签结果
@@ -224,7 +222,8 @@ mod tests {
         assert_eq!(orders.len(), 14);
 
         // 每个顺位应该唯一
-        let positions: std::collections::HashSet<_> = orders.iter().map(|o| o.draft_position).collect();
+        let positions: std::collections::HashSet<_> =
+            orders.iter().map(|o| o.draft_position).collect();
         assert_eq!(positions.len(), 14);
     }
 
@@ -237,8 +236,11 @@ mod tests {
 
         // 验证所有位置1-14都被分配
         for pos in 1..=14 {
-            assert!(orders.iter().any(|o| o.draft_position == pos),
-                "Position {} not assigned", pos);
+            assert!(
+                orders.iter().any(|o| o.draft_position == pos),
+                "Position {} not assigned",
+                pos
+            );
         }
     }
 
@@ -282,8 +284,8 @@ mod tests {
     fn test_draft_salary_potential_bonus() {
         // 相同能力，高潜力应该薪资更高
         let salary_high_pot = calculate_draft_salary(70, 85); // +15潜力
-        let salary_med_pot = calculate_draft_salary(70, 78);  // +8潜力
-        let salary_low_pot = calculate_draft_salary(70, 72);  // +2潜力
+        let salary_med_pot = calculate_draft_salary(70, 78); // +8潜力
+        let salary_low_pot = calculate_draft_salary(70, 72); // +2潜力
 
         assert!(salary_high_pot > salary_med_pot);
         assert!(salary_med_pot > salary_low_pot);
@@ -293,25 +295,23 @@ mod tests {
     fn test_import_draft_pool() {
         let mut engine = DraftEngine::new();
 
-        let players = vec![
-            DraftPlayer {
-                id: 1,
-                save_id: "save1".to_string(),
-                season_id: 1,
-                region_id: 1,
-                game_id: "Rookie1".to_string(),
-                real_name: None,
-                nationality: None,
-                age: 18,
-                ability: 65,
-                potential: 80,
-                position: Some(Position::Mid),
-                tag: PlayerTag::Normal,
-                draft_rank: 1,
-                is_picked: false,
-                picked_by_team_id: None,
-            },
-        ];
+        let players = vec![DraftPlayer {
+            id: 1,
+            save_id: "save1".to_string(),
+            season_id: 1,
+            region_id: 1,
+            game_id: "Rookie1".to_string(),
+            real_name: None,
+            nationality: None,
+            age: 18,
+            ability: 65,
+            potential: 80,
+            position: Some(Position::Mid),
+            tag: PlayerTag::Normal,
+            draft_rank: 1,
+            is_picked: false,
+            picked_by_team_id: None,
+        }];
 
         engine.import_draft_pool(players.clone());
 
@@ -358,23 +358,25 @@ mod tests {
         let mut engine = DraftEngine::new();
 
         // 设置选秀池
-        let players: Vec<DraftPlayer> = (1..=5).map(|i| DraftPlayer {
-            id: i,
-            save_id: "save1".to_string(),
-            season_id: 1,
-            region_id: 1,
-            game_id: format!("Player{}", i),
-            real_name: None,
-            nationality: None,
-            age: 18,
-            ability: 60 + i as u8,
-            potential: 80 + i as u8,
-            position: Some(Position::Mid),
-            tag: PlayerTag::Normal,
-            draft_rank: i as u8,
-            is_picked: false,
-            picked_by_team_id: None,
-        }).collect();
+        let players: Vec<DraftPlayer> = (1..=5)
+            .map(|i| DraftPlayer {
+                id: i,
+                save_id: "save1".to_string(),
+                season_id: 1,
+                region_id: 1,
+                game_id: format!("Player{}", i),
+                real_name: None,
+                nationality: None,
+                age: 18,
+                ability: 60 + i as u8,
+                potential: 80 + i as u8,
+                position: Some(Position::Mid),
+                tag: PlayerTag::Normal,
+                draft_rank: i as u8,
+                is_picked: false,
+                picked_by_team_id: None,
+            })
+            .collect();
         engine.import_draft_pool(players);
 
         // 设置选秀顺位
@@ -411,8 +413,12 @@ mod tests {
         }
 
         // 第14名获得状元签的次数应远超第1名
-        assert!(rank14_got_first > rank1_got_first * 5,
-            "Rank 14 got #1 pick {} times, Rank 1 got {} times", rank14_got_first, rank1_got_first);
+        assert!(
+            rank14_got_first > rank1_got_first * 5,
+            "Rank 14 got #1 pick {} times, Rank 1 got {} times",
+            rank14_got_first,
+            rank1_got_first
+        );
         // 第1名也应有机会（非零）
         // 注意: 概率极低 (~0.1%), 1000次可能为0，所以不强制断言非零
     }
