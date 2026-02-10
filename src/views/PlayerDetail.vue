@@ -80,13 +80,22 @@
     <el-row :gutter="20" class="detail-row">
       <!-- 合同信息 -->
       <el-col :span="12">
-        <el-card class="detail-card">
+        <el-card class="detail-card contract-card">
           <template #header>
             <div class="card-header">
               <h2>
                 <el-icon><Document /></el-icon>
                 合同信息
               </h2>
+              <el-button
+                v-if="contractHistory.length > 0"
+                text
+                size="small"
+                @click="showContractHistory = !showContractHistory"
+              >
+                {{ showContractHistory ? '收起历史' : '合同历史' }}
+                <el-icon class="collapse-arrow" :class="{ expanded: showContractHistory }"><ArrowDown /></el-icon>
+              </el-button>
             </div>
           </template>
           <div class="info-list">
@@ -115,6 +124,32 @@
                 <el-icon class="click-icon"><ArrowRight /></el-icon>
               </span>
             </div>
+          </div>
+
+          <div v-if="showContractHistory" class="contract-history">
+            <el-divider content-position="left">合同历史</el-divider>
+            <el-timeline>
+              <el-timeline-item
+                v-for="(record, idx) in contractHistory"
+                :key="idx"
+                :timestamp="record.season"
+                placement="top"
+                :color="getContractEventColor(record.event_type)"
+              >
+                <div class="contract-event">
+                  <div class="contract-event-header">
+                    <el-tag size="small" :type="getContractEventTagType(record.event_type)">{{ record.event_type }}</el-tag>
+                    <span class="contract-team">{{ record.team_name }}</span>
+                  </div>
+                  <div class="contract-event-detail">
+                    <span v-if="record.salary > 0">年薪 {{ formatMoney(record.salary) }}</span>
+                    <span v-if="record.contract_years > 0">· {{ record.contract_years }}年</span>
+                    <span v-if="record.transfer_fee > 0">· 转会费 {{ formatMoney(record.transfer_fee) }}</span>
+                  </div>
+                  <div v-if="record.reason" class="contract-event-reason">{{ record.reason }}</div>
+                </div>
+              </el-timeline-item>
+            </el-timeline>
           </div>
         </el-card>
       </el-col>
@@ -295,45 +330,50 @@
     <!-- 荣誉记录 -->
     <el-card class="honors-card">
       <template #header>
-        <div class="card-header">
+        <div class="card-header clickable" @click="honorsExpanded = !honorsExpanded">
           <h2>
             <el-icon><Trophy /></el-icon>
             荣誉记录
           </h2>
-          <span class="count-badge">共 {{ honors.length }} 项荣誉</span>
+          <div class="header-right">
+            <span class="count-badge">共 {{ honors.length }} 项荣誉</span>
+            <el-icon class="collapse-arrow" :class="{ expanded: honorsExpanded }"><ArrowDown /></el-icon>
+          </div>
         </div>
       </template>
 
-      <el-empty v-if="honors.length === 0" description="暂无荣誉记录">
-        <template #image>
-          <el-icon class="empty-icon"><Trophy /></el-icon>
-        </template>
-      </el-empty>
+      <template v-if="honorsExpanded">
+        <el-empty v-if="honors.length === 0" description="暂无荣誉记录">
+          <template #image>
+            <el-icon class="empty-icon"><Trophy /></el-icon>
+          </template>
+        </el-empty>
 
-      <el-timeline v-else>
-        <el-timeline-item
-          v-for="honor in honors"
-          :key="`${honor.season}-${honor.tournament}`"
-          :timestamp="honor.season"
-          placement="top"
-          :color="getHonorColor(honor.position)"
-          size="large"
-        >
-          <el-card class="honor-card" :class="getHonorClass(honor.position)" shadow="hover">
-            <div class="honor-content">
-              <div class="honor-icon">
-                {{ getHonorEmoji(honor.position) }}
+        <el-timeline v-else>
+          <el-timeline-item
+            v-for="honor in honors"
+            :key="`${honor.season}-${honor.tournament}`"
+            :timestamp="honor.season"
+            placement="top"
+            :color="getHonorColor(honor.position)"
+            size="large"
+          >
+            <el-card class="honor-card" :class="getHonorClass(honor.position)" shadow="hover">
+              <div class="honor-content">
+                <div class="honor-icon">
+                  {{ getHonorEmoji(honor.position) }}
+                </div>
+                <div class="honor-info">
+                  <div class="honor-title">{{ honor.tournament }}</div>
+                  <el-tag :type="getHonorTagType(honor.position)" size="default" effect="dark">
+                    {{ honor.position }}
+                  </el-tag>
+                </div>
               </div>
-              <div class="honor-info">
-                <div class="honor-title">{{ honor.tournament }}</div>
-                <el-tag :type="getHonorTagType(honor.position)" size="default" effect="dark">
-                  {{ honor.position }}
-                </el-tag>
-              </div>
-            </div>
-          </el-card>
-        </el-timeline-item>
-      </el-timeline>
+            </el-card>
+          </el-timeline-item>
+        </el-timeline>
+      </template>
     </el-card>
 
     <!-- 赛季历史 -->
@@ -349,13 +389,13 @@
 
       <el-table :data="seasonHistory" stripe class="history-table">
         <el-table-column prop="season" label="赛季" width="120" align="center" />
-        <el-table-column prop="team" label="所属战队" width="150">
+        <el-table-column label="所属战队" width="150">
           <template #default="{ row }">
             <div class="team-cell">
               <div class="team-avatar mini" :class="player.region.toLowerCase()">
-                {{ row.team.substring(0, 2) }}
+                {{ (row.team_name || row.team || '').substring(0, 2) }}
               </div>
-              <span>{{ row.team }}</span>
+              <span>{{ row.team_name || row.team }}</span>
             </div>
           </template>
         </el-table-column>
@@ -646,10 +686,12 @@ import {
   Aim,
   StarFilled,
   Monitor,
+  ArrowDown,
 } from '@element-plus/icons-vue'
-import { teamApi, playerApi, honorApi, statsApi, formatHonorType, type TraitInfo, type PlayerConditionInfo, type MarketValueChange } from '@/api/tauri'
+import { teamApi, playerApi, honorApi, statsApi, formatHonorType, type TraitInfo, type PlayerConditionInfo, type MarketValueChange, type PlayerContractRecord } from '@/api/tauri'
 import { formatMoney } from '@/utils'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
+import { useTimeStore } from '@/stores/useTimeStore'
 import * as echarts from 'echarts'
 import { createLogger } from '@/utils/logger'
 
@@ -658,6 +700,7 @@ const logger = createLogger('PlayerDetail')
 const route = useRoute()
 const playerId = route.params.id as string
 const teamStore = useTeamStoreTauri()
+const timeStore = useTimeStore()
 
 // 选手数据
 const player = ref({
@@ -681,6 +724,10 @@ const player = ref({
   contractEnd: 'S2',
   joinSeason: 'S1',
 })
+
+const honorsExpanded = ref(false)
+const contractHistory = ref<PlayerContractRecord[]>([])
+const showContractHistory = ref(false)
 
 // 荣誉记录
 const honors = ref<Array<{season: string, tournament: string, position: string}>>([])
@@ -761,7 +808,7 @@ watch(showMarketValueDialog, (newVal) => {
 })
 
 // 赛季历史
-const seasonHistory = ref<Array<{season: string, team: string, ability: number, potential: number}>>([])
+const seasonHistory = ref<Array<{season: string, team_name?: string, team?: string, ability: number, potential: number}>>([])
 
 // 位置简称映射
 const positionShortMap: Record<string, string> = {
@@ -828,7 +875,7 @@ onMounted(async () => {
           marketValue: foundPlayer.market_value || marketValue,
           calculatedMarketValue: foundPlayer.calculated_market_value || 0,  // 计算后的身价
           contractEnd: foundPlayer.contract_end_season ? `S${foundPlayer.contract_end_season}` : 'S3',
-          joinSeason: 'S1',
+          joinSeason: foundPlayer.join_season ? `S${foundPlayer.join_season}` : 'S1',
         }
 
         // 加载选手荣誉
@@ -842,6 +889,13 @@ onMounted(async () => {
         } catch (e) {
           logger.error('Failed to load player honors:', e)
           honors.value = []
+        }
+
+        try {
+          contractHistory.value = await statsApi.getPlayerContractHistory(numericId)
+        } catch (e) {
+          logger.error('Failed to load contract history:', e)
+          contractHistory.value = []
         }
 
         // 加载选手特性和状态
@@ -873,13 +927,27 @@ onMounted(async () => {
           playerStats.value = null
         }
 
-        // 生成赛季历史
-        seasonHistory.value = [{
-          season: 'S1',
-          team: teamName,
-          ability: foundPlayer.ability,
-          potential: foundPlayer.potential
-        }]
+        // 加载赛季历史
+        try {
+          const history = await statsApi.getPlayerSeasonHistory(numericId)
+          if (history && history.length > 0) {
+            seasonHistory.value = history
+          } else {
+            seasonHistory.value = [{
+              season: 'S1',
+              team_name: teamName,
+              ability: foundPlayer.ability,
+              potential: foundPlayer.potential
+            }]
+          }
+        } catch (e) {
+          seasonHistory.value = [{
+            season: 'S1',
+            team_name: teamName,
+            ability: foundPlayer.ability,
+            potential: foundPlayer.potential
+          }]
+        }
       }
     }
   } catch (error) {
@@ -903,7 +971,7 @@ const careerYears = computed(() => {
   const joinMatch = player.value.joinSeason.match(/S(\d+)/)
   if (joinMatch) {
     const joinYear = parseInt(joinMatch[1])
-    const currentYear = 1 // 当前 S1
+    const currentYear = timeStore.currentSeason || 1
     return Math.max(1, currentYear - joinYear + 1)
   }
   return 1
@@ -1009,6 +1077,28 @@ const getSatisfactionColor = (satisfaction: number) => {
   if (satisfaction >= 50) return '#3b82f6'  // 中等 - 蓝色
   if (satisfaction >= 40) return '#f59e0b'  // 较低 - 橙色
   return '#ef4444'  // 低满意度 - 红色
+}
+
+const getContractEventColor = (eventType: string) => {
+  const colors: Record<string, string> = {
+    '续约': '#67c23a',
+    '自由签约': '#409eff',
+    '转会加盟': '#e6a23c',
+    '紧急签约': '#f56c6c',
+    '赛季结算': '#909399',
+  }
+  return colors[eventType] || '#909399'
+}
+
+const getContractEventTagType = (eventType: string): '' | 'success' | 'warning' | 'danger' | 'info' => {
+  const types: Record<string, '' | 'success' | 'warning' | 'danger' | 'info'> = {
+    '续约': 'success',
+    '自由签约': '',
+    '转会加盟': 'warning',
+    '紧急签约': 'danger',
+    '赛季结算': 'info',
+  }
+  return types[eventType] || 'info'
 }
 
 const getHonorColor = (position: string) => {
@@ -1664,6 +1754,51 @@ watch(playerStats, async () => {
   height: 100%;
 }
 
+.contract-card {
+  height: auto;
+
+  .collapse-arrow {
+    transition: transform 0.3s ease;
+    transform: rotate(-90deg);
+    margin-left: 4px;
+
+    &.expanded {
+      transform: rotate(0deg);
+    }
+  }
+}
+
+.contract-history {
+  margin-top: 8px;
+
+  .contract-event {
+    .contract-event-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+
+      .contract-team {
+        font-weight: 500;
+        color: #303133;
+      }
+    }
+
+    .contract-event-detail {
+      font-size: 13px;
+      color: #606266;
+
+      span + span { margin-left: 4px; }
+    }
+
+    .contract-event-reason {
+      font-size: 12px;
+      color: #909399;
+      margin-top: 2px;
+    }
+  }
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -1746,6 +1881,27 @@ watch(playerStats, async () => {
 .honors-card {
   border-radius: 12px;
   margin-bottom: 20px;
+
+  .clickable {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .collapse-arrow {
+    transition: transform 0.3s ease;
+    transform: rotate(-90deg);
+    color: #909399;
+
+    &.expanded {
+      transform: rotate(0deg);
+    }
+  }
 }
 
 .empty-icon {

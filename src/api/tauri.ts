@@ -248,6 +248,7 @@ export interface Player {
   market_value: number
   calculated_market_value: number  // 计算后的身价（含荣誉和赛区系数）
   contract_end_season: number | null
+  join_season: number | null
   status: string
   tag: string
   is_starter: boolean
@@ -1193,6 +1194,7 @@ export interface SeasonFinanceReport {
   league_share: number
   transfer_net: number
   operating_cost: number
+  weak_team_subsidy: number
 }
 
 export interface PrizePoolInfo {
@@ -1902,6 +1904,29 @@ export const statsApi = {
   // Get player market value changes history
   getPlayerMarketValueChanges: (playerId: number) =>
     invokeCommand<MarketValueChange[]>('get_player_market_value_changes', { playerId }),
+
+  getPlayerSeasonHistory: (playerId: number) =>
+    invokeCommand<PlayerSeasonHistoryEntry[]>('get_player_season_history', { playerId }),
+
+  getPlayerContractHistory: (playerId: number) =>
+    invokeCommand<PlayerContractRecord[]>('get_player_contract_history', { playerId }),
+}
+
+export interface PlayerContractRecord {
+  season: string
+  event_type: string
+  team_name: string
+  salary: number
+  contract_years: number
+  transfer_fee: number
+  reason: string | null
+}
+
+export interface PlayerSeasonHistoryEntry {
+  season: string
+  team_name: string
+  ability: number
+  potential: number
 }
 
 // Market value change record

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use tauri::State;
 use crate::commands::save_commands::AppState;
 use crate::db::repository::PlayerStatsRepository;
@@ -503,8 +504,6 @@ pub async fn recalculate_yearly_scores(
 
     let mut updated_count = 0;
     for mut stats in all_stats {
-        // 重新计算（五维归一化加权）
-        stats.champion_bonus = (stats.international_titles * 3 + stats.regional_titles) as f64;
         stats.yearly_top_score = PlayerSeasonStatistics::calculate_yearly_top_score(
             stats.avg_impact,
             stats.avg_performance,
@@ -597,4 +596,239 @@ pub async fn get_player_market_value_changes(
     }).collect();
 
     Ok(StatsCommandResult::ok(changes))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PlayerSeasonHistoryEntry {
+    pub season: String,
+    pub team_name: String,
+    pub ability: i64,
+    pub potential: i64,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_player_season_history(
+    state: State<'_, AppState>,
+    player_id: i64,
+) -> Result<StatsCommandResult<Vec<PlayerSeasonHistoryEntry>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(StatsCommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(StatsCommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(StatsCommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let current_season: i64 = sqlx::query_scalar("SELECT current_season FROM saves WHERE id = ?")
+        .bind(&save_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let player_row = sqlx::query(
+        "SELECT ability, potential, tag, age, join_season FROM players WHERE id = ? AND save_id = ?"
+    )
+    .bind(player_id)
+    .bind(&save_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let player_row = match player_row {
+        Some(r) => r,
+        None => return Ok(StatsCommandResult::err("Player not found")),
+    };
+
+    let current_ability: i64 = player_row.get("ability");
+    let potential: i64 = player_row.get("potential");
+    let tag_str: String = player_row.get("tag");
+    let current_age: i64 = player_row.get("age");
+    let join_season: Option<i64> = player_row.get("join_season");
+
+    let growth_per_season: i64 = match tag_str.as_str() {
+        "Genius" => 3,
+        "Normal" => 2,
+        "Ordinary" => 1,
+        _ => 2,
+    };
+
+    let start_season = join_season.unwrap_or(1);
+
+    // 从 player_season_stats 获取每赛季的 team_id
+    let stats_rows = sqlx::query(
+        r#"
+        SELECT pss.season_id, pss.team_id, COALESCE(t.name, '未知') as team_name
+        FROM player_season_stats pss
+        LEFT JOIN teams t ON pss.team_id = t.id
+        WHERE pss.save_id = ? AND pss.player_id = ?
+        ORDER BY pss.season_id
+        "#
+    )
+    .bind(&save_id)
+    .bind(player_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut season_team_map: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+    for row in &stats_rows {
+        let season_id: i64 = row.get("season_id");
+        let team_name: String = row.get("team_name");
+        season_team_map.insert(season_id, team_name);
+    }
+
+    // 如果 player_season_stats 没有数据，用当前队伍填充
+    if season_team_map.is_empty() {
+        let team_name: String = sqlx::query_scalar(
+            "SELECT COALESCE(t.name, '未知') FROM players p LEFT JOIN teams t ON p.team_id = t.id WHERE p.id = ? AND p.save_id = ?"
+        )
+        .bind(player_id)
+        .bind(&save_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or_else(|| "未知".to_string());
+
+        for s in start_season..=current_season {
+            season_team_map.insert(s, team_name.clone());
+        }
+    }
+
+    // 从当前赛季反推每赛季的 ability
+    // 当前赛季的 ability 是已知的，往前推
+    let mut history: Vec<PlayerSeasonHistoryEntry> = Vec::new();
+
+    for season in start_season..=current_season {
+        let seasons_ago = current_season - season;
+        let age_at_season = current_age - seasons_ago;
+
+        // 反推 ability：从当前值往回减去成长/加上衰退
+        let mut ability = current_ability;
+        for s in (season..current_season).rev() {
+            let age_at_s = current_age - (current_season - s);
+            // 这个赛季结束时发生了什么变化？（s → s+1 的变化）
+            let age_after = age_at_s + 1; // 赛季结束后年龄+1
+            if age_at_s < 28 {
+                // 成长阶段：s+1 的 ability = s 的 ability + growth（上限 potential）
+                // 反推：s 的 ability = s+1 的 ability - growth
+                ability -= growth_per_season;
+            } else if age_after >= 30 {
+                // 衰退阶段：s+1 的 ability = s 的 ability - decline
+                // 反推：s 的 ability = s+1 的 ability + decline
+                let decline = match age_after {
+                    30..=31 => 1,
+                    32..=33 => 2,
+                    34..=35 => 3,
+                    _ => 4,
+                };
+                ability += decline;
+            }
+            // 28-29岁：不变
+        }
+
+        let team_name = season_team_map.get(&season)
+            .or_else(|| {
+                // 如果该赛季没有统计记录，找最近的前一个赛季的队伍
+                (start_season..season).rev()
+                    .find_map(|s| season_team_map.get(&s))
+            })
+            .cloned()
+            .unwrap_or_else(|| {
+                // 最后兜底：用当前赛季的队伍
+                season_team_map.values().next().cloned().unwrap_or_else(|| "未知".to_string())
+            });
+
+        history.push(PlayerSeasonHistoryEntry {
+            season: format!("S{}", season),
+            team_name,
+            ability: ability.max(0),
+            potential,
+        });
+    }
+
+    Ok(StatsCommandResult::ok(history))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerContractRecord {
+    pub season: String,
+    pub event_type: String,
+    pub team_name: String,
+    pub salary: i64,
+    pub contract_years: i64,
+    pub transfer_fee: i64,
+    pub reason: Option<String>,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_player_contract_history(
+    state: State<'_, AppState>,
+    player_id: i64,
+) -> Result<StatsCommandResult<Vec<PlayerContractRecord>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(StatsCommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(StatsCommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(StatsCommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let rows = sqlx::query(
+        r#"
+        SELECT season_id, event_type, 
+               COALESCE(to_team_name, from_team_name, '') as team_name,
+               salary, COALESCE(contract_years, 0) as contract_years,
+               transfer_fee, reason
+        FROM transfer_events
+        WHERE save_id = ? AND player_id = ?
+          AND event_type IN ('CONTRACT_RENEWAL', 'FREE_AGENT_SIGNING', 'TRANSFER_PURCHASE', 'EMERGENCY_SIGNING', 'SEASON_SETTLEMENT')
+        ORDER BY season_id ASC, id ASC
+        "#
+    )
+    .bind(&save_id)
+    .bind(player_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("Failed to get contract history: {}", e))?;
+
+    let records: Vec<PlayerContractRecord> = rows.iter().map(|row| {
+        let event_type: String = row.get("event_type");
+        let display_type = match event_type.as_str() {
+            "CONTRACT_RENEWAL" => "续约",
+            "FREE_AGENT_SIGNING" => "自由签约",
+            "TRANSFER_PURCHASE" => "转会加盟",
+            "EMERGENCY_SIGNING" => "紧急签约",
+            "SEASON_SETTLEMENT" => "赛季结算",
+            _ => &event_type,
+        };
+        PlayerContractRecord {
+            season: format!("S{}", row.get::<i64, _>("season_id")),
+            event_type: display_type.to_string(),
+            team_name: row.get("team_name"),
+            salary: row.get("salary"),
+            contract_years: row.get("contract_years"),
+            transfer_fee: row.get("transfer_fee"),
+            reason: row.get("reason"),
+        }
+    }).collect();
+
+    Ok(StatsCommandResult::ok(records))
 }
