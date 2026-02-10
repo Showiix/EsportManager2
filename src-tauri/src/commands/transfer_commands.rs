@@ -1620,3 +1620,178 @@ pub async fn get_player_bids(
         outcome: outcome.to_string(),
     }))
 }
+
+// ============================================
+// 选手解约命令
+// ============================================
+
+/// 解约选手（球队支付身价50%作为解约金，选手变为自由球员）
+#[tauri::command]
+pub async fn release_player(
+    state: State<'_, AppState>,
+    player_id: i64,
+) -> Result<CommandResult<ReleasePlayerResult>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    // 获取选手信息
+    let player = sqlx::query(
+        r#"SELECT p.id, p.game_id, p.team_id, p.ability, p.age, p.potential, p.tag, p.position,
+                  p.salary, p.calculated_market_value, p.status,
+                  t.name as team_name, t.balance as team_balance
+           FROM players p
+           LEFT JOIN teams t ON p.team_id = t.id
+           WHERE p.id = ? AND p.save_id = ?"#
+    )
+    .bind(player_id)
+    .bind(&save_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| format!("查询选手失败: {}", e))?
+    .ok_or("选手不存在")?;
+
+    let team_id: Option<i64> = player.get("team_id");
+    let team_id = team_id.ok_or("该选手没有所属战队，无法解约")?;
+    let game_id: String = player.get("game_id");
+    let ability: i64 = player.get("ability");
+    let age: i64 = player.get("age");
+    let potential: i64 = player.get("potential");
+    let tag: String = player.get("tag");
+    let position: String = player.get("position");
+    let calculated_market_value: i64 = player.try_get("calculated_market_value").unwrap_or(0);
+    let team_name: String = player.get("team_name");
+    let team_balance: i64 = player.get("team_balance");
+
+    // 计算身价
+    let market_value = if calculated_market_value > 0 {
+        calculated_market_value
+    } else {
+        crate::engines::MarketValueEngine::calculate_base_market_value(
+            ability as u8, age as u8, potential as u8, &tag, &position
+        ) as i64
+    };
+
+    // 解约金 = 身价的50%
+    let release_fee = market_value / 2;
+
+    // 检查余额是否足够
+    if team_balance < release_fee {
+        return Ok(CommandResult::err(&format!(
+            "余额不足：解约{}需要{}万，当前余额{}万",
+            game_id, release_fee / 10000, team_balance / 10000
+        )));
+    }
+
+    // 获取当前赛季
+    let season_id: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(season), 1) FROM game_time WHERE save_id = ?"
+    )
+    .bind(&save_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| format!("查询赛季失败: {}", e))?;
+
+    // 1. 扣除解约金
+    sqlx::query("UPDATE teams SET balance = balance - ? WHERE id = ? AND save_id = ?")
+        .bind(release_fee)
+        .bind(team_id)
+        .bind(&save_id)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("扣除解约金失败: {}", e))?;
+
+    // 2. 记录财务交易
+    sqlx::query(
+        "INSERT INTO financial_transactions (save_id, team_id, season_id, transaction_type, amount, description) VALUES (?, ?, ?, 'Penalty', ?, ?)"
+    )
+    .bind(&save_id)
+    .bind(team_id)
+    .bind(season_id)
+    .bind(-release_fee)
+    .bind(format!("解约{}，支付解约金{}万", game_id, release_fee / 10000))
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("记录解约交易失败: {}", e))?;
+
+    // 3. 选手变为自由球员
+    sqlx::query(
+        "UPDATE players SET team_id = NULL, is_starter = 0, satisfaction = MAX(satisfaction - 15, 0) WHERE id = ? AND save_id = ?"
+    )
+    .bind(player_id)
+    .bind(&save_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("释放选手失败: {}", e))?;
+
+    // 4. 合同失效
+    sqlx::query("UPDATE player_contracts SET is_active = 0 WHERE save_id = ? AND player_id = ? AND is_active = 1")
+        .bind(&save_id)
+        .bind(player_id)
+        .execute(&pool)
+        .await
+        .ok();
+
+    // 5. 记录转会事件（如果在转会窗口期间）
+    let window: Option<(i64,)> = sqlx::query_as(
+        "SELECT id FROM transfer_windows WHERE save_id = ? AND status = 'IN_PROGRESS' LIMIT 1"
+    )
+    .bind(&save_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| format!("查询转会窗口失败: {}", e))?;
+
+    if let Some((window_id,)) = window {
+        sqlx::query(
+            r#"INSERT INTO transfer_events (window_id, round, event_type, event_level, player_id, player_game_id, player_ability,
+               from_team_id, from_team_name, transfer_fee, salary, contract_years, description)
+               VALUES (?, 0, 'PLAYER_RELEASE', 'B', ?, ?, ?, ?, ?, ?, ?, 0, ?)"#
+        )
+        .bind(window_id)
+        .bind(player_id)
+        .bind(&game_id)
+        .bind(ability)
+        .bind(team_id)
+        .bind(&team_name)
+        .bind(release_fee)
+        .bind(player.get::<i64, _>("salary"))
+        .bind(format!("{}解约{}，支付解约金{}万", team_name, game_id, release_fee / 10000))
+        .execute(&pool)
+        .await
+        .ok();
+    }
+
+    log::info!("解约: {}从{}解约，解约金{}万", game_id, team_name, release_fee / 10000);
+
+    Ok(CommandResult::ok(ReleasePlayerResult {
+        player_id,
+        player_name: game_id,
+        team_id,
+        team_name,
+        release_fee,
+        remaining_balance: team_balance - release_fee,
+    }))
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ReleasePlayerResult {
+    pub player_id: i64,
+    pub player_name: String,
+    pub team_id: i64,
+    pub team_name: String,
+    pub release_fee: i64,
+    pub remaining_balance: i64,
+}

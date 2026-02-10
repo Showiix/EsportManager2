@@ -68,6 +68,7 @@ pub enum TransferEventType {
     EmergencySigning,
     DraftPickAuction,
     FinancialAdjustment,
+    PlayerRelease,
 }
 
 impl TransferEventType {
@@ -84,6 +85,7 @@ impl TransferEventType {
             TransferEventType::EmergencySigning => "EMERGENCY_SIGNING",
             TransferEventType::DraftPickAuction => "DRAFT_PICK_AUCTION",
             TransferEventType::FinancialAdjustment => "FINANCIAL_ADJUSTMENT",
+            TransferEventType::PlayerRelease => "PLAYER_RELEASE",
         }
     }
 
@@ -100,6 +102,7 @@ impl TransferEventType {
             "EMERGENCY_SIGNING" => TransferEventType::EmergencySigning,
             "DRAFT_PICK_AUCTION" => TransferEventType::DraftPickAuction,
             "FINANCIAL_ADJUSTMENT" => TransferEventType::FinancialAdjustment,
+            "PLAYER_RELEASE" => TransferEventType::PlayerRelease,
             _ => TransferEventType::SeasonSettlement,
         }
     }
@@ -397,6 +400,10 @@ pub struct TransferConfig {
     pub max_transfers_per_round: i64,
     pub max_transfers_per_window: i64,
     pub negotiation_max_rounds: i64,
+    /// 奢侈税起征人数（超过此数需缴税）
+    pub luxury_tax_threshold: i64,
+    /// 每超出1人的奢侈税金额（元/人）
+    pub luxury_tax_per_player: i64,
 }
 
 impl Default for TransferConfig {
@@ -406,6 +413,8 @@ impl Default for TransferConfig {
             max_transfers_per_round: 2,
             max_transfers_per_window: 10,
             negotiation_max_rounds: 3,
+            luxury_tax_threshold: 10,
+            luxury_tax_per_player: 5_000_000, // 500万/人
         }
     }
 }

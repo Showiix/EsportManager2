@@ -503,7 +503,7 @@ impl DraftAuctionEngine {
         let available_budget = (team_info.balance as f64 * budget_ratio) as i64;
         let min_bid = current_price + min_increment;
 
-        if available_budget < min_bid || team_info.roster_count >= 10 {
+        if available_budget < min_bid || team_info.roster_count >= 15 {
             return None;
         }
 
@@ -525,15 +525,18 @@ impl DraftAuctionEngine {
             _  => 20.0,
         };
 
-        // 3. 阵容需求
+        // 3. 阵容需求（超过10人奢侈税起征线后大幅降低）
         let need_score = if team_info.roster_count < 5 {
             1.00
         } else if team_info.roster_count < 7 {
             0.60
         } else if team_info.roster_count < 9 {
             0.30
-        } else {
+        } else if team_info.roster_count <= 10 {
             0.10
+        } else {
+            // 超过奢侈税起征线，急剧降低
+            (0.10 - (team_info.roster_count - 10) as f64 * 0.02).max(0.01)
         };
 
         // 4. 实力因素（弱队更需要新秀补强）

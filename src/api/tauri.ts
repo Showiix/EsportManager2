@@ -3102,6 +3102,16 @@ export interface PlayerBidAnalysis {
   outcome: string
 }
 
+/** 解约结果 */
+export interface ReleasePlayerResult {
+  player_id: number
+  player_name: string
+  team_id: number
+  team_name: string
+  release_fee: number
+  remaining_balance: number
+}
+
 /** 竞价总览 */
 export interface BidOverview {
   window_id: number
@@ -3271,6 +3281,12 @@ export const transferWindowApi = {
   // 获取单个选手的竞价记录
   getPlayerBids: (windowId: number, playerId: number) =>
     invokeCommand<PlayerBidAnalysis>('get_player_bids', { windowId, playerId }),
+
+  // ========== 解约 ==========
+
+  // 解约选手（支付身价50%作为解约金）
+  releasePlayer: (playerId: number) =>
+    invokeCommand<ReleasePlayerResult>('release_player', { playerId }),
 }
 
 // ========================================

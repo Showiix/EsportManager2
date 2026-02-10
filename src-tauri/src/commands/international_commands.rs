@@ -1285,10 +1285,6 @@ pub async fn generate_knockout_bracket(
             let fighter_a_winner = fighter_a.and_then(|g| g.teams.first()).map(|t| t.team_id);
             let fighter_b_winner = fighter_b.and_then(|g| g.teams.first()).map(|t| t.team_id);
 
-            if fighter_a_winner.is_none() || fighter_b_winner.is_none() {
-                return Ok(CommandResult::err("Fighter组积分榜数据不完整"));
-            }
-
             // 获取 save_id
             let current_save_id = state.current_save_id.read().await;
             let save_id = match current_save_id.as_ref() {
@@ -1307,39 +1303,42 @@ pub async fn generate_knockout_bracket(
                 Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
             };
 
-            // CHALLENGER_POSITIONING 比赛已在初始化时创建（定位赛：5 vs 8, 6 vs 7）
-            // 这里只需更新 CHALLENGER_PROMOTION 比赛，填入 Fighter 组胜者
+            // 如果 Fighter 积分榜数据完整，填入晋级赛的 home_team_id
+            if let (Some(fa), Some(fb)) = (fighter_a_winner, fighter_b_winner) {
+                sqlx::query(
+                    r#"
+                    UPDATE matches
+                    SET home_team_id = ?
+                    WHERE save_id = ? AND tournament_id = ? AND stage = 'CHALLENGER_PROMOTION' AND match_order = 1
+                    AND (home_team_id IS NULL OR home_team_id = 0)
+                    "#
+                )
+                .bind(fa as i64)
+                .bind(&save_id)
+                .bind(tournament_id as i64)
+                .execute(&pool)
+                .await
+                .map_err(|e| e.to_string())?;
 
-            // 更新 CHALLENGER_PROMOTION 比赛（晋级赛：Fighter胜者 vs 定位赛败者）
-            // 晋级赛1: Fighter A组第1 vs 定位赛1败者
-            sqlx::query(
-                r#"
-                UPDATE matches
-                SET home_team_id = ?
-                WHERE save_id = ? AND tournament_id = ? AND stage = 'CHALLENGER_PROMOTION' AND match_order = 1
-                "#
-            )
-            .bind(fighter_a_winner.unwrap() as i64)
-            .bind(&save_id)
-            .bind(tournament_id as i64)
-            .execute(&pool)
-            .await
-            .map_err(|e| e.to_string())?;
+                sqlx::query(
+                    r#"
+                    UPDATE matches
+                    SET home_team_id = ?
+                    WHERE save_id = ? AND tournament_id = ? AND stage = 'CHALLENGER_PROMOTION' AND match_order = 2
+                    AND (home_team_id IS NULL OR home_team_id = 0)
+                    "#
+                )
+                .bind(fb as i64)
+                .bind(&save_id)
+                .bind(tournament_id as i64)
+                .execute(&pool)
+                .await
+                .map_err(|e| e.to_string())?;
 
-            // 晋级赛2: Fighter B组第1 vs 定位赛2败者
-            sqlx::query(
-                r#"
-                UPDATE matches
-                SET home_team_id = ?
-                WHERE save_id = ? AND tournament_id = ? AND stage = 'CHALLENGER_PROMOTION' AND match_order = 2
-                "#
-            )
-            .bind(fighter_b_winner.unwrap() as i64)
-            .bind(&save_id)
-            .bind(tournament_id as i64)
-            .execute(&pool)
-            .await
-            .map_err(|e| e.to_string())?;
+                log::debug!("填入Fighter胜者: A={}, B={}", fa, fb);
+            } else {
+                log::debug!("Fighter积分榜不完整，跳过home_team_id填充，尝试补填定位赛败者");
+            }
 
             // 补填定位赛败者到晋级赛的 away_team_id（如果定位赛已完成但 advance_bracket 未正确执行）
             let positioning_matches = sqlx::query(
