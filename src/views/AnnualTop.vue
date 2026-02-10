@@ -8,13 +8,13 @@
           <p class="banner-subtitle">S{{ selectedSeason }} 赛季 年度最佳选手 TOP 20</p>
           <div class="scoring-rule">
             <el-tag type="warning" effect="dark" size="large">
-              评选标准: 影响力(35%) + 发挥(20%) + 稳定性(15%) + 出场(10%) + 冠军(20%)
+              评选标准: 影响力(45%) + 发挥(20%) + 稳定性(15%) + 出场(10%) + 荣誉(10%)
             </el-tag>
           </div>
           <div class="scoring-detail">
-            <span>国际赛冠军 +3分</span>
+            <span>国际赛冠军 +3 | 亚军 +2 | 季军 +1</span>
             <span class="divider">|</span>
-            <span>赛区冠军 +1分</span>
+            <span>赛区冠军 +1 | 亚军 +0.5 | 季军 +0.25</span>
             <span class="divider">|</span>
             <span>五维归一化加权评分</span>
           </div>

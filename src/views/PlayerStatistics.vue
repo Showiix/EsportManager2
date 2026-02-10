@@ -220,11 +220,11 @@
         <div class="algorithm-section">
           <h4>4. 年度Top得分计算（加权）</h4>
           <div class="formula">
-            <code>冠军加成 = 国际赛冠军 × 10 + 赛区冠军 × 5</code>
-            <code>年度Top得分 = 平均影响力 × 70% + 冠军加成 × 30%</code>
+            <code>荣誉加成 = 国际赛冠军×3 + 赛区冠军×1 + 国际亚军×2 + 赛区亚军×0.5 + 国际季军×1 + 赛区季军×0.25</code>
+            <code>年度Top得分 = 影响力(45%) + 发挥(20%) + 稳定性(15%) + 出场(10%) + 荣誉(10%)</code>
             <code>稳定性评分 = 100 - (最佳发挥 - 最差发挥) × 2</code>
           </div>
-          <p class="description">年度排名基于加权得分排序。平均影响力占70%权重，冠军因子占30%权重。</p>
+          <p class="description">年度排名基于五维归一化加权评分，影响力占最大权重。荣誉加成包含冠军、亚军、季军。</p>
         </div>
 
         <div class="algorithm-section">

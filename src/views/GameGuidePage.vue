@@ -530,7 +530,7 @@
         <div class="info-card">
           <h3>年度 Top20 评分</h3>
           <div class="formula-box compact">
-            <div class="formula">评分 = 影响力(35%) + 表现(20%) + 冠军(20%) + 稳定(15%) + 出场(10%)</div>
+            <div class="formula">评分 = 影响力(45%) + 表现(20%) + 荣誉(10%) + 稳定(15%) + 出场(10%)</div>
           </div>
           <div class="top20-tiers">
             <span class="tier t1">Top 1-5：身价 +20%</span>
