@@ -343,10 +343,13 @@ export const useMatchDetailStore = defineStore('matchDetail', () => {
   }
 
   // 保存比赛详情（同时保存到 localStorage 和数据库）
-  const saveMatchDetail = async (matchId: string | number, detail: MatchDetail) => {
+  // skipStorage: 批量模拟时跳过 localStorage 写入，最后统一调用 saveToStorage()
+  const saveMatchDetail = async (matchId: string | number, detail: MatchDetail, options?: { skipStorage?: boolean }) => {
     detail.matchId = matchId
     matchDetails.value.set(matchId, detail)
-    saveToStorage()
+    if (!options?.skipStorage) {
+      saveToStorage()
+    }
     logger.debug('保存比赛详情到本地', { matchId })
 
     // 同时保存到数据库

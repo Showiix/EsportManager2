@@ -236,11 +236,12 @@ export function useBatchSimulation() {
             result
           })
 
-          await matchDetailStore.saveMatchDetail(saveId, matchDetail)
+          // 批量模拟时跳过逐次 localStorage 写入，最后统一写一次
+          await matchDetailStore.saveMatchDetail(saveId, matchDetail, { skipStorage: true })
 
           if (match.backendMatchId) {
             const dbDetail = { ...matchDetail, matchId: String(match.backendMatchId) }
-            await matchDetailStore.saveMatchDetail(match.backendMatchId, dbDetail)
+            await matchDetailStore.saveMatchDetail(match.backendMatchId, dbDetail, { skipStorage: true })
           }
 
           recordMatchPerformances(
@@ -256,6 +257,9 @@ export function useBatchSimulation() {
 
           simulationProgress.value = Math.floor(((i + 1) / batchResult.results.length) * 100)
         }
+
+        // 批量完成后统一写入 localStorage
+        matchDetailStore.saveToStorage()
       } else {
         // 原有逐场模拟路径
         for (let i = 0; i < matches.length; i++) {
@@ -276,11 +280,12 @@ export function useBatchSimulation() {
               result
             })
 
-            await matchDetailStore.saveMatchDetail(saveId, matchDetail)
+            // 跳过逐次 localStorage 写入
+            await matchDetailStore.saveMatchDetail(saveId, matchDetail, { skipStorage: true })
 
             if (match.backendMatchId) {
               const dbDetail = { ...matchDetail, matchId: String(match.backendMatchId) }
-              await matchDetailStore.saveMatchDetail(match.backendMatchId, dbDetail)
+              await matchDetailStore.saveMatchDetail(match.backendMatchId, dbDetail, { skipStorage: true })
             }
 
             recordMatchPerformances(
@@ -300,6 +305,9 @@ export function useBatchSimulation() {
           simulationProgress.value = Math.floor(((i + 1) / matches.length) * 100)
           await new Promise(resolve => setTimeout(resolve, options.delayMs ?? 50))
         }
+
+        // 逐场模拟完成后统一写入 localStorage
+        matchDetailStore.saveToStorage()
       }
 
       playerStore.saveToStorage()
