@@ -1279,8 +1279,10 @@ pub async fn generate_knockout_bracket(
         "SuperIntercontinental" => {
             // Super赛事：从 Fighter 组积分榜获取每组第1名
             // 查找 FIGHTER_GROUP_A 和 FIGHTER_GROUP_B 组
-            let fighter_a = standings.iter().find(|g| g.group_name == "FIGHTER_GROUP_A");
-            let fighter_b = standings.iter().find(|g| g.group_name == "FIGHTER_GROUP_B");
+            // 注意: get_group_standings 返回的 group_name 已经被 replace("GROUP_", "") 处理过
+            // FIGHTER_GROUP_A → FIGHTER_A, FIGHTER_GROUP_B → FIGHTER_B
+            let fighter_a = standings.iter().find(|g| g.group_name == "FIGHTER_A");
+            let fighter_b = standings.iter().find(|g| g.group_name == "FIGHTER_B");
 
             let fighter_a_winner = fighter_a.and_then(|g| g.teams.first()).map(|t| t.team_id);
             let fighter_b_winner = fighter_b.and_then(|g| g.teams.first()).map(|t| t.team_id);

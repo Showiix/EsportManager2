@@ -126,13 +126,22 @@ impl GameFlowService {
 
                 if all_have_matches && total_matches > 0 {
                     log::debug!("所有赛事都有比赛，跳过初始化");
+                    // 预加载赛区名称，避免硬编码ID映射
+                    let region_rows = sqlx::query("SELECT id, name FROM regions WHERE save_id = ?")
+                        .bind(save_id)
+                        .fetch_all(pool)
+                        .await
+                        .unwrap_or_default();
+                    let region_map: std::collections::HashMap<u64, String> = region_rows.iter()
+                        .map(|r| (r.get::<i64, _>("id") as u64, r.get::<String, _>("name")))
+                        .collect();
                     return Ok(PhaseInitResult {
                         phase: format!("{:?}", phase),
                         tournaments_created: existing.iter().map(|t| TournamentCreated {
                             id: t.id,
                             name: t.name.clone(),
                             tournament_type: format!("{:?}", t.tournament_type),
-                            region: t.region_id.map(|r| get_region_name(r).to_string()),
+                            region: t.region_id.map(|r| region_map.get(&r).cloned().unwrap_or_else(|| get_region_name(r).to_string())),
                         }).collect(),
                         message: format!("阶段 {:?} 的赛事已存在，跳过初始化", phase),
                     });
@@ -1454,8 +1463,18 @@ impl GameFlowService {
         let region_ids = self.get_all_region_ids(pool, save_id).await?;
         log::debug!("实际赛区ID: {:?}", region_ids);
 
+        // 预加载赛区名称映射
+        let region_rows = sqlx::query("SELECT id, name FROM regions WHERE save_id = ?")
+            .bind(save_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+        let region_name_map: std::collections::HashMap<u64, String> = region_rows.iter()
+            .map(|r| (r.get::<i64, _>("id") as u64, r.get::<String, _>("name")))
+            .collect();
+
         for region_id in region_ids {
-            let region_name = get_region_name(region_id);
+            let region_name = region_name_map.get(&region_id).map(|s| s.as_str()).unwrap_or(get_region_name(region_id));
             log::debug!("处理赛区: {} (region_id={})", region_name, region_id);
 
             // 检查该赛区的赛事是否已存在
@@ -1567,12 +1586,22 @@ impl GameFlowService {
         ).await.map_err(|e| e.to_string())?;
         log::debug!("常规赛数量: {}", regular_tournaments.len());
 
+        // 预加载赛区名称映射
+        let region_rows = sqlx::query("SELECT id, name FROM regions WHERE save_id = ?")
+            .bind(save_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+        let region_name_map: std::collections::HashMap<u64, String> = region_rows.iter()
+            .map(|r| (r.get::<i64, _>("id") as u64, r.get::<String, _>("name")))
+            .collect();
+
         for regular_tournament in &regular_tournaments {
             let region_id = match regular_tournament.region_id {
                 Some(id) => id,
                 None => continue,
             };
-            let region_name = get_region_name(region_id);
+            let region_name = region_name_map.get(&region_id).map(|s| s.as_str()).unwrap_or(get_region_name(region_id));
             log::debug!("处理赛区: {} (region_id={})", region_name, region_id);
 
             // 检查该赛区的季后赛是否已存在
@@ -3158,6 +3187,16 @@ impl GameFlowService {
         if let Some(t_type) = tournament_type {
             let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
 
+            // 预加载赛区名称映射（避免硬编码ID）
+            let region_rows = sqlx::query("SELECT id, name FROM regions WHERE save_id = ?")
+                .bind(save_id)
+                .fetch_all(pool)
+                .await
+                .unwrap_or_default();
+            let region_map: std::collections::HashMap<u64, String> = region_rows.iter()
+                .map(|r| (r.get::<i64, _>("id") as u64, r.get::<String, _>("name")))
+                .collect();
+
             let mut tournament_progress_list = Vec::new();
             let mut total_matches = 0u32;
             let mut completed_matches = 0u32;
@@ -3196,7 +3235,7 @@ impl GameFlowService {
                 tournament_progress_list.push(TournamentProgress {
                     tournament_id: tournament.id,
                     tournament_name: tournament.name.clone(),
-                    region: tournament.region_id.map(|r| get_region_name(r).to_string()),
+                    region: tournament.region_id.map(|r| region_map.get(&r).cloned().unwrap_or_else(|| get_region_name(r).to_string())),
                     total_matches: t_total as u32,
                     completed_matches: t_completed as u32,
                     status: status.to_string(),
