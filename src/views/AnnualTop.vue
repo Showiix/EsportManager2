@@ -8,7 +8,7 @@
           <p class="banner-subtitle">S{{ selectedSeason }} 赛季 年度最佳选手 TOP 20</p>
           <div class="scoring-rule">
             <el-tag type="warning" effect="dark" size="large">
-              评选标准: 影响力(45%) + 发挥(20%) + 稳定性(15%) + 出场(10%) + 荣誉(10%)
+              评选标准: 影响力(40%) + 发挥(18%) + 大赛表现(15%) + 稳定性(12%) + 出场(10%) + 荣誉(5%)
             </el-tag>
           </div>
           <div class="scoring-detail">
@@ -16,7 +16,7 @@
             <span class="divider">|</span>
             <span>赛区冠军 +1 | 亚军 +0.5 | 季军 +0.25</span>
             <span class="divider">|</span>
-            <span>五维归一化加权评分</span>
+            <span>赛事权重: 世界赛1.5x | Super1.4x | MSI1.3x</span>
           </div>
         </div>
         <div class="header-actions">
@@ -111,7 +111,7 @@
       <!-- 雷达图对比 -->
       <el-card class="radar-card" v-if="top20.length >= 3">
         <template #header>
-          <span class="card-title">Top3 五维对比</span>
+          <span class="card-title">Top3 六维对比</span>
         </template>
         <div class="chart-container">
           <v-chart class="chart" :option="radarOption" autoresize />
@@ -123,21 +123,68 @@
     <el-card class="ranking-list" v-if="top20.length > 0">
       <template #header>
         <span class="card-title">年度 Top 20 完整排行</span>
+        <span class="card-hint">点击行展开赛事明细 · 双击跳转选手详情</span>
       </template>
-      <el-table :data="top20" stripe style="width: 100%" @row-click="goToDetail">
-        <el-table-column label="#" width="55" align="center">
+      <el-table ref="tableRef" :data="top20" stripe style="width: 100%" :row-key="(row: Top20Player) => row.player_id" @row-click="toggleExpand" @row-dblclick="goToDetail">
+        <el-table-column type="expand">
+          <template #default="{ row }">
+            <div class="tournament-breakdown" v-if="row.tournament_details && row.tournament_details.length > 0">
+              <div class="breakdown-header">
+                <span class="breakdown-title">各赛事表现明细</span>
+                <span class="big-stage-badge" :class="row.big_stage_score >= 0 ? 'positive' : 'negative'">
+                  大赛影响力 {{ row.big_stage_score >= 0 ? '+' : '' }}{{ row.big_stage_score.toFixed(1) }}
+                </span>
+              </div>
+              <div class="breakdown-grid">
+                <div class="tournament-item" v-for="td in row.tournament_details" :key="td.tournament_type">
+                  <div class="td-header">
+                    <span class="td-name">{{ td.tournament_name }}</span>
+                    <span class="td-weight" :class="getWeightClass(td.weight)">×{{ td.weight.toFixed(1) }}</span>
+                  </div>
+                  <div class="td-stats">
+                    <div class="td-stat">
+                      <span class="td-label">场次</span>
+                      <span class="td-value">{{ td.games_played }}</span>
+                    </div>
+                    <div class="td-stat">
+                      <span class="td-label">影响力</span>
+                      <span class="td-value" :class="{ 'positive-val': td.avg_impact > 0, 'negative-val': td.avg_impact < 0 }">
+                        {{ td.avg_impact > 0 ? '+' : '' }}{{ td.avg_impact.toFixed(1) }}
+                      </span>
+                    </div>
+                    <div class="td-stat">
+                      <span class="td-label">发挥</span>
+                      <span class="td-value">{{ td.avg_performance.toFixed(1) }}</span>
+                    </div>
+                    <div class="td-stat">
+                      <span class="td-label">巅峰</span>
+                      <span class="td-value">{{ td.best_performance.toFixed(1) }}</span>
+                    </div>
+                    <div class="td-stat" v-if="td.mvp_count > 0">
+                      <span class="td-label">MVP</span>
+                      <span class="td-value mvp-val">{{ td.mvp_count }}次</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="no-breakdown">暂无赛事明细数据</div>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="#" width="45" align="center">
           <template #default="{ row }">
             <span class="rank-number" :class="{ 'top-rank': row.rank <= 3 }">{{ row.rank }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="player_name" label="选手" min-width="120">
+        <el-table-column prop="player_name" label="选手" min-width="100">
           <template #default="{ row }">
             <span class="player-link">{{ row.player_name }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="position" label="位置" width="80" align="center">
+        <el-table-column prop="position" label="位置" width="65" align="center">
           <template #default="{ row }">
             <el-tag :type="getPositionTagType(row.position)" size="small">
               {{ getPositionName(row.position) }}
@@ -145,9 +192,9 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="team_name" label="战队" width="90" />
+        <el-table-column prop="team_name" label="战队" width="80" />
 
-        <el-table-column label="影响力" width="100" align="center">
+        <el-table-column label="影响力" width="85" align="center">
           <template #default="{ row }">
             <div class="mini-bar-cell">
               <div class="mini-bar"><div class="mini-fill impact" :style="{ width: row.dimensions.impact_norm + '%' }"></div></div>
@@ -156,7 +203,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="发挥" width="90" align="center">
+        <el-table-column label="发挥" width="80" align="center">
           <template #default="{ row }">
             <div class="mini-bar-cell">
               <div class="mini-bar"><div class="mini-fill perf" :style="{ width: row.dimensions.performance_norm + '%' }"></div></div>
@@ -165,7 +212,18 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="稳定" width="80" align="center">
+        <el-table-column label="大赛" width="80" align="center">
+          <template #default="{ row }">
+            <div class="mini-bar-cell">
+              <div class="mini-bar"><div class="mini-fill big-stage" :style="{ width: row.dimensions.big_stage_norm + '%' }"></div></div>
+              <span :class="{ 'positive-val': row.big_stage_score > 0, 'negative-val': row.big_stage_score < 0 }">
+                {{ row.big_stage_score > 0 ? '+' : '' }}{{ row.big_stage_score.toFixed(1) }}
+              </span>
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="稳定" width="70" align="center">
           <template #default="{ row }">
             <div class="mini-bar-cell">
               <div class="mini-bar"><div class="mini-fill stab" :style="{ width: row.dimensions.stability_norm + '%' }"></div></div>
@@ -174,27 +232,27 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="出场" width="70" align="center">
+        <el-table-column label="出场" width="55" align="center">
           <template #default="{ row }">
             <span class="games-value">{{ row.games_played }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column label="荣誉" width="80" align="center">
+        <el-table-column label="荣誉" width="60" align="center">
           <template #default="{ row }">
             <span class="bonus-value" v-if="row.champion_bonus > 0">+{{ row.champion_bonus.toFixed(0) }}</span>
             <span v-else>-</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="yearly_score" label="总分" width="80" align="center" sortable>
+        <el-table-column prop="yearly_score" label="总分" width="70" align="center" sortable>
           <template #default="{ row }">
             <span class="score-value">{{ row.yearly_score.toFixed(1) }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column label="标签" min-width="140">
-          <template #default="{ row }">
+        <el-table-column label="标签" min-width="120">
+           <template #default="{ row }">
             <div class="tags-cell">
               <el-tag
                 v-for="tag in row.commentary.tags.slice(0, 3)"
@@ -202,6 +260,7 @@
                 size="small"
                 effect="plain"
                 round
+                :type="tag === '未参加国际赛' ? 'warning' : ''"
               >{{ tag }}</el-tag>
             </div>
           </template>
@@ -392,17 +451,17 @@ const fetchData = async () => {
 const getDimBars = (player: Top20Player) => [
   { label: '影响', value: player.dimensions.impact_norm, color: '#3b82f6' },
   { label: '发挥', value: player.dimensions.performance_norm, color: '#10b981' },
+  { label: '大赛', value: player.dimensions.big_stage_norm, color: '#ec4899' },
   { label: '稳定', value: player.dimensions.stability_norm, color: '#8b5cf6' },
   { label: '出场', value: player.dimensions.appearance_norm, color: '#f59e0b' },
   { label: '荣誉', value: player.dimensions.honor_norm, color: '#ef4444' },
 ]
 
-// 雷达图配置
 const radarOption = computed(() => {
   if (top20.value.length < 3) return {}
 
   const colors = ['#fbbf24', '#94a3b8', '#cd7f32']
-  const names = ['影响力', '发挥', '稳定性', '出场', '荣誉']
+  const names = ['影响力', '发挥', '大赛表现', '稳定性', '出场', '荣誉']
 
   return {
     tooltip: {},
@@ -427,6 +486,7 @@ const radarOption = computed(() => {
         value: [
           p.dimensions.impact_norm,
           p.dimensions.performance_norm,
+          p.dimensions.big_stage_norm,
           p.dimensions.stability_norm,
           p.dimensions.appearance_norm,
           p.dimensions.honor_norm,
@@ -473,6 +533,18 @@ const teamDistribution = computed(() => {
 })
 
 // 方法
+const tableRef = ref()
+
+const toggleExpand = (row: Top20Player) => {
+  tableRef.value?.toggleRowExpansion(row)
+}
+
+const getWeightClass = (weight: number) => {
+  if (weight >= 1.4) return 'weight-high'
+  if (weight >= 1.1) return 'weight-mid'
+  return 'weight-low'
+}
+
 const goToDetail = (row: Top20Player) => {
   router.push(`/data-center/player/${row.player_id}?season=S${selectedSeason.value}`)
 }
@@ -672,6 +744,7 @@ watch(selectedSeason, () => { fetchData() })
     border-radius: 16px;
 
     .card-title { font-size: 18px; font-weight: 600; color: #1f2937; }
+    .card-hint { font-size: 12px; color: #9ca3af; margin-left: 12px; }
 
     .rank-number {
       font-weight: 600; color: #6b7280;
@@ -684,6 +757,8 @@ watch(selectedSeason, () => { fetchData() })
     .games-value { color: #6b7280; }
     .bonus-value { color: #f59e0b; font-weight: 500; }
     .score-value { font-weight: 700; color: #7c3aed; font-size: 16px; }
+    .positive-val { color: #10b981; font-weight: 600; }
+    .negative-val { color: #ef4444; font-weight: 600; }
 
     .mini-bar-cell {
       display: flex; align-items: center; gap: 4px;
@@ -694,6 +769,7 @@ watch(selectedSeason, () => { fetchData() })
           height: 100%; border-radius: 2px;
           &.impact { background: #3b82f6; }
           &.perf { background: #10b981; }
+          &.big-stage { background: #ec4899; }
           &.stab { background: #8b5cf6; }
         }
       }
@@ -706,6 +782,81 @@ watch(selectedSeason, () => { fetchData() })
     :deep(.el-table__row) {
       cursor: pointer;
       &:hover { background-color: #f0f9ff !important; }
+    }
+
+    .tournament-breakdown {
+      padding: 16px 24px;
+      background: #f8fafc;
+
+      .breakdown-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      .breakdown-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #374151;
+      }
+
+      .big-stage-badge {
+        font-size: 12px;
+        font-weight: 700;
+        padding: 3px 10px;
+        border-radius: 6px;
+        &.positive { background: #d1fae5; color: #059669; }
+        &.negative { background: #fee2e2; color: #dc2626; }
+      }
+
+      .breakdown-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 10px;
+      }
+
+      .tournament-item {
+        padding: 12px;
+        background: white;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+
+        .td-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 8px;
+
+          .td-name { font-size: 13px; font-weight: 600; color: #1f2937; }
+          .td-weight {
+            font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+            &.weight-high { background: #fef3c7; color: #d97706; }
+            &.weight-mid { background: #e0e7ff; color: #4f46e5; }
+            &.weight-low { background: #f3f4f6; color: #6b7280; }
+          }
+        }
+
+        .td-stats {
+          display: flex; flex-wrap: wrap; gap: 10px;
+          .td-stat {
+            display: flex; flex-direction: column;
+            .td-label { font-size: 11px; color: #9ca3af; }
+            .td-value {
+              font-size: 13px; font-weight: 600; color: #374151;
+              &.positive-val { color: #10b981; }
+              &.negative-val { color: #ef4444; }
+              &.mvp-val { color: #f59e0b; }
+            }
+          }
+        }
+      }
+    }
+
+    .no-breakdown {
+      padding: 16px; text-align: center; color: #9ca3af; font-size: 13px;
     }
   }
 

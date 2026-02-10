@@ -74,34 +74,69 @@
 
           <!-- 数据行 -->
           <TransitionGroup name="reveal" tag="div" class="top20-body">
-            <div
-              v-for="player in visibleTop20"
-              :key="player.player_id"
-              class="top20-row"
-              :class="{ 'is-mvp': player.rank === 1, 'is-top3': player.rank <= 3 && player.rank > 1 }"
-              @click="goToPlayer(player.player_id)"
-            >
-              <div class="col-rank">
-                <span class="rank-badge" :class="getRankClass(player.rank)">{{ player.rank }}</span>
-              </div>
-              <div class="col-player">
-                <span class="name">{{ player.player_name }}</span>
-                <span class="meta">
-                  <el-tag :type="getPositionTagType(player.position)" size="small" effect="dark">{{ getPositionName(player.position) }}</el-tag>
-                  <span class="team">{{ player.team_name }}</span>
-                </span>
-              </div>
-              <div class="col-dim" v-for="dim in getDimBars(player)" :key="dim.label">
-                <span class="dim-val">{{ dim.value.toFixed(0) }}</span>
-                <div class="dim-bar">
-                  <div class="dim-fill" :style="{ width: dim.value + '%', background: dim.color }"></div>
+            <template v-for="player in visibleTop20" :key="player.player_id">
+              <div
+                class="top20-row"
+                :class="{ 'is-mvp': player.rank === 1, 'is-top3': player.rank <= 3 && player.rank > 1, 'is-expanded': expandedPlayerId === player.player_id }"
+                @click="togglePlayerExpand(player.player_id)"
+                @dblclick="goToPlayer(player.player_id)"
+              >
+                <div class="col-rank">
+                  <span class="rank-badge" :class="getRankClass(player.rank)">{{ player.rank }}</span>
+                </div>
+                <div class="col-player">
+                  <span class="name">{{ player.player_name }}</span>
+                  <span class="meta">
+                    <el-tag :type="getPositionTagType(player.position)" size="small" effect="dark">{{ getPositionName(player.position) }}</el-tag>
+                    <span class="team">{{ player.team_name }}</span>
+                  </span>
+                </div>
+                <div class="col-dim" v-for="dim in getDimBars(player)" :key="dim.label">
+                  <span class="dim-val">{{ dim.value.toFixed(0) }}</span>
+                  <div class="dim-bar">
+                    <div class="dim-fill" :style="{ width: dim.value + '%', background: dim.color }"></div>
+                  </div>
+                </div>
+                <div class="col-score">{{ player.yearly_score.toFixed(1) }}</div>
+                <div class="col-tags">
+                  <span v-for="tag in player.commentary.tags.slice(0, 2)" :key="tag" class="tag-chip" :class="{ 'tag-warning': tag === '未参加国际赛' }">{{ tag }}</span>
                 </div>
               </div>
-              <div class="col-score">{{ player.yearly_score.toFixed(1) }}</div>
-              <div class="col-tags">
-                <span v-for="tag in player.commentary.tags.slice(0, 2)" :key="tag" class="tag-chip">{{ tag }}</span>
-              </div>
-            </div>
+              <Transition name="expand-panel">
+                <div
+                  v-if="expandedPlayerId === player.player_id && player.tournament_details && player.tournament_details.length > 0"
+                  class="player-expand-panel"
+                >
+                  <div class="expand-header">
+                    <span class="expand-title">各赛事表现明细</span>
+                    <span class="expand-big-stage" :class="player.big_stage_score >= 0 ? 'pos' : 'neg'">
+                      大赛影响力 {{ player.big_stage_score >= 0 ? '+' : '' }}{{ player.big_stage_score.toFixed(1) }}
+                    </span>
+                  </div>
+                  <div class="expand-grid">
+                    <div class="expand-item" v-for="td in player.tournament_details" :key="td.tournament_type">
+                      <div class="expand-item-header">
+                        <span class="expand-name">{{ td.tournament_name }}</span>
+                        <span class="expand-weight" :class="getWeightClass(td.weight)">×{{ td.weight.toFixed(1) }}</span>
+                      </div>
+                      <div class="expand-item-stats">
+                        <span>{{ td.games_played }}场</span>
+                        <span :style="{ color: td.avg_impact >= 0 ? '#34d399' : '#f87171' }">
+                          影响力 {{ td.avg_impact >= 0 ? '+' : '' }}{{ td.avg_impact.toFixed(1) }}
+                        </span>
+                        <span>发挥 {{ td.avg_performance.toFixed(1) }}</span>
+                        <span v-if="td.mvp_count > 0" style="color: #fbbf24">MVP ×{{ td.mvp_count }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="expand-footer">
+                    <el-button size="small" type="primary" text @click.stop="goToPlayer(player.player_id)">
+                      查看选手详情 →
+                    </el-button>
+                  </div>
+                </div>
+              </Transition>
+            </template>
           </TransitionGroup>
         </div>
 
@@ -354,6 +389,7 @@ const sectionPassed = (section: string) => {
 const dimLabels = [
   { key: 'impact', label: '影响力', color: '#60a5fa' },
   { key: 'performance', label: '发挥', color: '#34d399' },
+  { key: 'big_stage', label: '大赛', color: '#ec4899' },
   { key: 'stability', label: '稳定', color: '#a78bfa' },
   { key: 'appearance', label: '出场', color: '#fbbf24' },
   { key: 'honor', label: '荣誉', color: '#f87171' },
@@ -362,6 +398,7 @@ const dimLabels = [
 const getDimBars = (player: Top20Player) => [
   { label: '影响力', value: player.dimensions.impact_norm, color: '#60a5fa' },
   { label: '发挥', value: player.dimensions.performance_norm, color: '#34d399' },
+  { label: '大赛', value: player.dimensions.big_stage_norm, color: '#ec4899' },
   { label: '稳定', value: player.dimensions.stability_norm, color: '#a78bfa' },
   { label: '出场', value: player.dimensions.appearance_norm, color: '#fbbf24' },
   { label: '荣誉', value: player.dimensions.honor_norm, color: '#f87171' },
@@ -432,6 +469,19 @@ const completeCeremony = () => {
 }
 
 const goToPlayer = (id: number) => router.push(`/data-center/player/${id}?season=S${selectedSeason.value}`)
+
+const expandedPlayerId = ref<number | null>(null)
+
+const togglePlayerExpand = (playerId: number) => {
+  expandedPlayerId.value = expandedPlayerId.value === playerId ? null : playerId
+}
+
+const getWeightClass = (weight: number) => {
+  if (weight >= 1.4) return 'weight-high'
+  if (weight >= 1.1) return 'weight-mid'
+  return 'weight-low'
+}
+
 const goBack = () => router.push('/time')
 
 const getPositionName = (pos: string) => POSITION_NAMES[pos as PlayerPosition] || pos
@@ -577,7 +627,7 @@ watch(selectedSeason, (s) => {
 }
 
 /* ========== Top20 表格 (CSS Grid) ========== */
-$grid-cols: 40px 1fr 72px 72px 72px 72px 72px 56px 120px;
+$grid-cols: 36px 1fr 64px 64px 64px 64px 64px 64px 50px 110px;
 
 .top20-table {
   overflow-x: auto;
@@ -723,9 +773,95 @@ $grid-cols: 40px 1fr 72px 72px 72px 72px 72px 56px 120px;
       font-size: 11px;
       background: #1e293b;
       color: #94a3b8;
+      &.tag-warning {
+        background: #44370a;
+        color: #fbbf24;
+      }
     }
   }
 }
+
+.top20-row.is-expanded {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(251, 191, 36, 0.1);
+}
+
+.player-expand-panel {
+  padding: 14px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid #1e293b;
+
+  .expand-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .expand-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    letter-spacing: 1px;
+  }
+
+  .expand-big-stage {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    &.pos { background: rgba(52, 211, 153, 0.15); color: #34d399; }
+    &.neg { background: rgba(248, 113, 113, 0.15); color: #f87171; }
+  }
+
+  .expand-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .expand-item {
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid #1e293b;
+
+    .expand-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+
+      .expand-name { font-size: 12px; font-weight: 600; color: #cbd5e1; }
+      .expand-weight {
+        font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+        &.weight-high { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+        &.weight-mid { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
+        &.weight-low { background: rgba(100, 116, 139, 0.15); color: #64748b; }
+      }
+    }
+
+    .expand-item-stats {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      font-size: 11px; color: #94a3b8;
+    }
+  }
+
+  .expand-footer {
+    display: flex;
+    justify-content: flex-end;
+  }
+}
+
+.expand-panel-enter-active { transition: all 0.25s ease; }
+.expand-panel-leave-active { transition: all 0.15s ease; }
+.expand-panel-enter-from,
+.expand-panel-leave-to { opacity: 0; max-height: 0; overflow: hidden; }
+.expand-panel-enter-to,
+.expand-panel-leave-from { opacity: 1; max-height: 500px; }
 
 /* ========== 揭晓动画 ========== */
 .reveal-enter-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
