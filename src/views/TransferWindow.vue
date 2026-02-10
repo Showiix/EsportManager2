@@ -237,18 +237,19 @@
             />
           </el-select>
 
-          <!-- 等级筛选 -->
-          <el-radio-group v-model="filterLevel" size="small">
+          <!-- 类型筛选 -->
+          <el-radio-group v-model="filterType" size="small">
             <el-radio-button value="all">全部</el-radio-button>
-            <el-radio-button value="S">重磅</el-radio-button>
-            <el-radio-button value="A">头条</el-radio-button>
-            <el-radio-button value="B">要闻</el-radio-button>
-            <el-radio-button value="data">数据</el-radio-button>
+            <el-radio-button value="settlement">能力变化</el-radio-button>
+            <el-radio-button value="renewal">续约</el-radio-button>
+            <el-radio-button value="transfer">转会签约</el-radio-button>
+            <el-radio-button value="listed">挂牌/求转</el-radio-button>
+            <el-radio-button value="retirement">退役</el-radio-button>
           </el-radio-group>
         </div>
       </div>
 
-      <el-empty v-if="paginatedEvents.length === 0" description="暂无转会动态，点击「开始转会期」开始" />
+      <el-empty v-if="filteredEvents.length === 0" description="暂无转会动态，点击「开始转会期」开始" />
 
       <div class="events-list">
         <div v-for="group in groupedEvents" :key="group.round" class="round-group">
@@ -260,15 +261,18 @@
             <span class="round-group-title">第{{ group.round }}轮 · {{ group.name }}</span>
             <span class="round-event-count">{{ group.events.length }} 条</span>
             <span class="round-group-summary">
-              <span v-if="group.sCount" class="summary-tag s">{{ group.sCount }}重磅</span>
-              <span v-if="group.transferCount" class="summary-tag transfer">{{ group.transferCount }}转会</span>
+              <span v-if="group.settlementCount" class="summary-tag settlement">{{ group.settlementCount }}结算</span>
               <span v-if="group.renewalCount" class="summary-tag renewal">{{ group.renewalCount }}续约</span>
+              <span v-if="group.terminationCount" class="summary-tag termination">{{ group.terminationCount }}失败</span>
+              <span v-if="group.transferCount" class="summary-tag transfer">{{ group.transferCount }}签约</span>
+              <span v-if="group.listedCount" class="summary-tag listed">{{ group.listedCount }}挂牌</span>
+              <span v-if="group.retirementCount" class="summary-tag retirement">{{ group.retirementCount }}退役</span>
             </span>
           </div>
 
           <!-- 轮次事件内容 -->
           <transition name="round-collapse">
-            <div v-show="isRoundExpanded(group.round)" class="round-group-body">
+            <div v-if="isRoundExpanded(group.round)" class="round-group-body">
               <template v-for="event in group.events" :key="event.id">
                 <!-- S级：大卡片 -->
                 <div
@@ -332,6 +336,7 @@
                   </span>
                   <span class="compact-headline">{{ getEventHeadline(event) }}</span>
                   <span class="compact-badges">
+                    <span v-if="event.reason && event.event_type === 'SEASON_SETTLEMENT'" class="badge settlement-detail">{{ event.reason }}</span>
                     <span v-if="event.transfer_fee > 0" class="badge fee">{{ formatAmount(event.transfer_fee) }}</span>
                     <span v-if="event.salary > 0" class="badge salary">{{ formatAmount(event.salary) }}/年</span>
                     <span v-if="event.contract_years > 0" class="badge contract">{{ event.contract_years }}年</span>
@@ -341,19 +346,6 @@
             </div>
           </transition>
         </div>
-      </div>
-
-      <!-- 分页 -->
-      <div v-if="filteredEvents.length > pageSize" class="pagination-wrapper">
-        <el-pagination
-          v-model:current-page="currentPage"
-          :page-size="pageSize"
-          :page-sizes="[20, 50, 100]"
-          :total="filteredEvents.length"
-          layout="total, sizes, prev, pager, next, jumper"
-          @size-change="handleSizeChange"
-          @current-change="handlePageChange"
-        />
       </div>
     </div>
   </div>
@@ -417,11 +409,9 @@ const {
 } = storeToRefs(transferStore)
 
 // 本地状态
-const filterLevel = ref('all')
+const filterType = ref('all')
 const filterRegion = ref('')
 const filterTeam = ref('')
-const currentPage = ref(1)
-const pageSize = ref(20)
 
 // 计算属性
 const statusTagType = computed(() => {
@@ -483,14 +473,17 @@ const availableTeams = computed(() => {
 const filteredEvents = computed(() => {
   let result = [...events.value].reverse()
 
-  // 按等级筛选
-  if (filterLevel.value !== 'all') {
-    if (filterLevel.value === 'data') {
-      // 数据报告：筛选赛季结算事件
-      result = result.filter(e => e.event_type === 'SEASON_SETTLEMENT')
-    } else {
-      result = result.filter(e => e.level === filterLevel.value)
+  // 按事件类型分类筛选
+  if (filterType.value !== 'all') {
+    const typeGroups: Record<string, string[]> = {
+      settlement: ['SEASON_SETTLEMENT'],
+      renewal: ['CONTRACT_RENEWAL', 'CONTRACT_TERMINATION'],
+      transfer: ['FREE_AGENT_SIGNING', 'TRANSFER_PURCHASE', 'EMERGENCY_SIGNING'],
+      listed: ['PLAYER_LISTED', 'PLAYER_REQUEST_TRANSFER', 'PLAYER_RELEASE'],
+      retirement: ['PLAYER_RETIREMENT'],
     }
+    const allowedTypes = typeGroups[filterType.value] ?? []
+    result = result.filter(e => allowedTypes.includes(e.event_type))
   }
 
   // 按战队筛选
@@ -539,26 +532,22 @@ const filteredEvents = computed(() => {
   return result
 })
 
-// 分页后的事件
-const paginatedEvents = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  const end = start + pageSize.value
-  return filteredEvents.value.slice(start, end)
-})
-
-// 按轮次分组（在分页后分组）
+// 按轮次分组
 interface EventGroup {
   round: number
   name: string
   events: TransferEvent[]
-  sCount: number
-  transferCount: number
+  settlementCount: number
   renewalCount: number
+  terminationCount: number
+  transferCount: number
+  listedCount: number
+  retirementCount: number
 }
 
 const groupedEvents = computed<EventGroup[]>(() => {
   const groups = new Map<number, TransferEvent[]>()
-  for (const event of paginatedEvents.value) {
+  for (const event of filteredEvents.value) {
     if (!groups.has(event.round)) groups.set(event.round, [])
     groups.get(event.round)!.push(event)
   }
@@ -568,9 +557,12 @@ const groupedEvents = computed<EventGroup[]>(() => {
       round,
       name: getRoundName(round),
       events: evts,
-      sCount: evts.filter(e => e.level === 'S').length,
-      transferCount: evts.filter(e => e.event_type === 'TRANSFER_PURCHASE' || e.event_type === 'FREE_AGENT_SIGNING').length,
+      settlementCount: evts.filter(e => e.event_type === 'SEASON_SETTLEMENT').length,
       renewalCount: evts.filter(e => e.event_type === 'CONTRACT_RENEWAL').length,
+      terminationCount: evts.filter(e => e.event_type === 'CONTRACT_TERMINATION').length,
+      transferCount: evts.filter(e => e.event_type === 'FREE_AGENT_SIGNING' || e.event_type === 'TRANSFER_PURCHASE' || e.event_type === 'EMERGENCY_SIGNING').length,
+      listedCount: evts.filter(e => e.event_type === 'PLAYER_LISTED' || e.event_type === 'PLAYER_REQUEST_TRANSFER' || e.event_type === 'PLAYER_RELEASE').length,
+      retirementCount: evts.filter(e => e.event_type === 'PLAYER_RETIREMENT').length,
     }))
 })
 
@@ -598,20 +590,9 @@ function isRoundExpanded(round: number): boolean {
   return expandedRounds.value.has(round)
 }
 
-// 分页变化时重置页码
-watch([filterLevel, filterRegion, filterTeam], () => {
-  currentPage.value = 1
+watch([filterType, filterRegion, filterTeam], () => {
+  expandedRounds.value = new Set<number>()
 })
-
-// 分页处理函数
-function handleSizeChange(size: number) {
-  pageSize.value = size
-  currentPage.value = 1
-}
-
-function handlePageChange(page: number) {
-  currentPage.value = page
-}
 
 // 开始转会期
 async function handleStartWindow() {
@@ -1020,19 +1001,34 @@ onMounted(async () => {
   border-radius: 3px;
 }
 
-.summary-tag.s {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.summary-tag.transfer {
-  background: #dbeafe;
-  color: #2563eb;
+.summary-tag.settlement {
+  background: #e0f2fe;
+  color: #0284c7;
 }
 
 .summary-tag.renewal {
   background: #dcfce7;
   color: #16a34a;
+}
+
+.summary-tag.termination {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.summary-tag.transfer {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.summary-tag.listed {
+  background: #f3e8ff;
+  color: #7c3aed;
+}
+
+.summary-tag.retirement {
+  background: #f3f4f6;
+  color: #4b5563;
 }
 
 .round-group-body {
@@ -1235,6 +1231,16 @@ onMounted(async () => {
   color: #2563eb;
 }
 
+.badge.settlement-detail {
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 11px;
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ===== 保留的事件类型图标样式（S级用） ===== */
 .event-type-icon {
   display: flex;
@@ -1252,16 +1258,6 @@ onMounted(async () => {
 .event-type-icon.player_listed { background: linear-gradient(135deg, #f97316, #ea580c); }
 .event-type-icon.emergency_signing { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
 .event-type-icon.season_settlement { background: linear-gradient(135deg, #06b6d4, #0891b2); }
-
-/* 分页 */
-.pagination-wrapper {
-  display: flex;
-  justify-content: center;
-  margin-top: 20px;
-  padding: 16px;
-  background: white;
-  border-radius: 8px;
-}
 
 /* 事件数量 */
 .event-count {
