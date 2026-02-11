@@ -222,24 +222,37 @@ pub async fn run_draft_lottery(
         .map_err(|e| e.to_string())?;
     let current_season: i64 = save_row.get("current_season");
 
-    // 获取赛区队伍及其排名
+    // 获取赛区队伍及其夏季赛实际排名
     let team_rows = sqlx::query(
-        "SELECT id, name, power_rating FROM teams WHERE save_id = ? AND region_id = ? ORDER BY power_rating ASC"
+        r#"SELECT t.id, t.name,
+                  COALESCE(ls.rank, 99) as summer_rank
+           FROM teams t
+           LEFT JOIN (
+               SELECT ls2.team_id, ls2.rank
+               FROM league_standings ls2
+               JOIN tournaments tr ON ls2.tournament_id = tr.id
+               WHERE tr.save_id = ? AND tr.season_id = ?
+                 AND tr.region_id = ? AND tr.tournament_type = 'SummerRegular'
+           ) ls ON t.id = ls.team_id
+           WHERE t.save_id = ? AND t.region_id = ?
+           ORDER BY summer_rank ASC"#
     )
+    .bind(&save_id)
+    .bind(current_season)
+    .bind(region_id as i64)
     .bind(&save_id)
     .bind(region_id as i64)
     .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
-    // 构建排名 (team_id, team_name, summer_rank)
     let rankings: Vec<(u64, String, u32)> = team_rows
         .iter()
         .enumerate()
         .map(|(idx, row)| {
             let id: i64 = row.get("id");
             let name: String = row.get("name");
-            (id as u64, name, (team_rows.len() - idx) as u32)
+            (id as u64, name, (idx + 1) as u32)
         })
         .collect();
 

@@ -16,12 +16,12 @@ pub struct PlayerInitConfig {
 pub struct DraftPoolPlayerInitConfig {
     pub game_id: String,
     pub real_name: String,
-    pub position: String,   // "Top"/"Jungle"/"Mid"/"Bot"/"Support"
+    pub position: String, // "Top"/"Jug"/"Mid"/"Adc"/"Sup"
     pub ability: u8,
     pub potential: u8,
     pub stability: u8,
     pub age: u8,
-    pub tag: String,         // "Genius"/"Normal"/"Ordinary"
+    pub tag: String, // "Genius"/"Normal"/"Ordinary"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

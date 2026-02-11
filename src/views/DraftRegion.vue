@@ -392,7 +392,7 @@ import {
   Money,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { draftApi, draftAuctionApi, teamApi, queryApi } from '@/api/tauri'
+import { draftApi, draftAuctionApi, teamApi, queryApi, tournamentApi, internationalApi } from '@/api/tauri'
 import { useGameStore } from '@/stores/useGameStore'
 import { storeToRefs } from 'pinia'
 import { createLogger } from '@/utils/logger'
@@ -470,14 +470,35 @@ const getRegionId = async (regionCode: string): Promise<number> => {
   }
 }
 
-// 加载队伍数据
+// 加载队伍数据（按夏季赛实际排名排序）
 const loadTeams = async () => {
   isLoading.value = true
   try {
     const regionId = await getRegionId(selectedRegion.value)
     const teams = await teamApi.getTeamsByRegion(regionId)
 
-    lotteryResults.value = teams.map(team => ({
+    // 查夏季赛常规赛 standings，按实际排名排序
+    let rankMap = new Map<number, number>()
+    try {
+      const seasonId = gameSeason.value
+      const tournaments = await internationalApi.getTournamentsByType('SummerRegular', seasonId)
+      const summerTournament = tournaments.find(t => t.region_id === regionId)
+      if (summerTournament) {
+        const standings = await tournamentApi.getStandings(summerTournament.id)
+        standings.forEach(s => rankMap.set(s.team_id, s.rank))
+      }
+    } catch (e) {
+      logger.warn('Failed to load summer standings, fallback to default order:', e)
+    }
+
+    // 按夏季赛排名排序，没有排名的排最后
+    const sortedTeams = [...teams].sort((a, b) => {
+      const rankA = rankMap.get(a.id) ?? 999
+      const rankB = rankMap.get(b.id) ?? 999
+      return rankA - rankB
+    })
+
+    lotteryResults.value = sortedTeams.map(team => ({
       teamId: team.id,
       teamName: team.name,
       pickOrder: null as number | null,

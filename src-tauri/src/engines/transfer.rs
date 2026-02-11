@@ -13,6 +13,21 @@ use crate::models::team::FinancialStatus;
 use crate::engines::market_value::MarketValueEngine;
 use crate::engines::traits::{TraitType, TraitEngine};
 
+/// 归一化位置名称：Jungle→Jug, Bot→Adc, Support→Sup
+fn normalize_position(pos: &str) -> String {
+    match pos.to_lowercase().as_str() {
+        "jungle" => "Jug".to_string(),
+        "bot" => "Adc".to_string(),
+        "support" => "Sup".to_string(),
+        "top" => "Top".to_string(),
+        "jug" => "Jug".to_string(),
+        "mid" => "Mid".to_string(),
+        "adc" => "Adc".to_string(),
+        "sup" => "Sup".to_string(),
+        _ => pos.to_string(),
+    }
+}
+
 /// 缓存的选手信息（避免反复查询 SqliteRow）
 #[derive(Debug, Clone)]
 pub struct CachedPlayer {
@@ -47,7 +62,7 @@ impl CachedPlayer {
             salary: row.try_get("salary").unwrap_or(0),
             loyalty: row.try_get("loyalty").unwrap_or(70),
             satisfaction: row.try_get("satisfaction").unwrap_or(70),
-            position: row.try_get("position").unwrap_or_default(),
+            position: normalize_position(&row.try_get::<String, _>("position").unwrap_or_default()),
             tag: row.try_get("tag").unwrap_or_else(|_| "NORMAL".to_string()),
             team_id: row.try_get("team_id").ok(),
             is_starter: row.try_get("is_starter").unwrap_or(false),
@@ -655,6 +670,11 @@ impl TransferEngine {
             7 => self.execute_final_remedy(pool, window_id, save_id, window.season_id, &mut cache).await?,
             _ => return Err(format!("无效轮次: {}", round)),
         };
+
+        // R4-R7 会改变阵容，需要重算首发（避免新签选手一直是替补、旧弱选手一直是首发）
+        if round >= 4 {
+            Self::recalculate_starters_for_save(pool, save_id).await?;
+        }
 
         // 更新转会期轮次（不再自动标记 COMPLETED，需要手动确认关闭）
         sqlx::query("UPDATE transfer_windows SET current_round = ? WHERE id = ?")
@@ -2576,7 +2596,7 @@ impl TransferEngine {
             let game_id: String = free_agent.get("game_id");
             let ability: i64 = free_agent.get("ability");
             let age: i64 = free_agent.get("age");
-            let position: String = free_agent.get("position");
+            let position: String = normalize_position(&free_agent.get::<String, _>("position"));
             let loyalty: i64 = free_agent.get("loyalty");
             let home_region_id: Option<i64> = free_agent.try_get("home_region_id").ok();
             let region_loyalty: i64 = free_agent.try_get("region_loyalty").unwrap_or(70);
@@ -2939,7 +2959,7 @@ impl TransferEngine {
             let game_id: String = listing.get("game_id");
             let ability: i64 = listing.get("ability");
             let age: i64 = listing.get("age");
-            let position: String = listing.get("position");
+            let position: String = normalize_position(&listing.get::<String, _>("position"));
             let salary: i64 = listing.get("salary");
             let loyalty: i64 = listing.get("loyalty");
             let from_team_name: String = listing.get("from_team_name");
@@ -3268,6 +3288,20 @@ impl TransferEngine {
             let team_id: i64 = team.get("id");
             let _team_name: String = team.get("name");
 
+            let already_paid: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM financial_transactions WHERE team_id = ? AND save_id = ? AND season_id = ? AND transaction_type = 'Salary'"
+            )
+            .bind(team_id)
+            .bind(save_id)
+            .bind(season_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+
+            if already_paid > 0 {
+                continue;
+            }
+
             // 计算该队年薪总额（优先从合同表查 annual_salary）
             let team_annual_salary: i64 = sqlx::query_scalar(
                 r#"SELECT COALESCE(SUM(pc.annual_salary), 0)
@@ -3336,6 +3370,20 @@ impl TransferEngine {
             let team_id: i64 = team.get("id");
             let team_name: String = team.get("name");
 
+            let already_taxed: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM financial_transactions WHERE team_id = ? AND save_id = ? AND season_id = ? AND transaction_type = 'LuxuryTax'"
+            )
+            .bind(team_id)
+            .bind(save_id)
+            .bind(season_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+
+            if already_taxed > 0 {
+                continue;
+            }
+
             let roster_count: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM players WHERE team_id = ? AND save_id = ? AND status = 'Active'"
             )
@@ -3377,11 +3425,20 @@ impl TransferEngine {
 
             log::info!("R6奢侈税: {}阵容{}人，超出{}人，缴税{}万", team_name, roster_count, over_count, tax_amount / 10000);
             
+            let representative_id: i64 = sqlx::query_scalar(
+                "SELECT id FROM players WHERE team_id = ? AND save_id = ? AND status = 'Active' ORDER BY ability DESC LIMIT 1"
+            )
+            .bind(team_id)
+            .bind(save_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("查询代表选手失败: {}", e))?;
+
             let event = self.record_event(
                 pool, window_id, 6,
                 TransferEventType::FinancialAdjustment,
                 EventLevel::B,
-                0, "", 0,
+                representative_id, &team_name, 0,
                 Some(team_id), Some(&team_name),
                 None, None,
                 tax_amount, 0, 0,
@@ -3452,7 +3509,7 @@ impl TransferEngine {
                 let age: i64 = candidate.get("age");
                 let potential: i64 = candidate.get("potential");
                 let tag: String = candidate.get("tag");
-                let position: String = candidate.get("position");
+                let position: String = normalize_position(&candidate.get::<String, _>("position"));
                 let calculated_market_value: i64 = candidate.try_get("calculated_market_value").unwrap_or(0);
 
                 // 保护有培养价值的年轻选手（23岁以下 + 能力≥55）
@@ -4169,6 +4226,33 @@ impl TransferEngine {
     // ============================================
     // 辅助方法
     // ============================================
+
+    async fn recalculate_starters_for_save(pool: &Pool<Sqlite>, save_id: &str) -> Result<(), String> {
+        sqlx::query("UPDATE players SET is_starter = 0 WHERE save_id = ? AND status = 'Active'")
+            .bind(save_id)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("清除首发失败: {}", e))?;
+
+        sqlx::query(
+            r#"UPDATE players SET is_starter = 1 WHERE id IN (
+                SELECT id FROM (
+                    SELECT id, ROW_NUMBER() OVER (
+                        PARTITION BY team_id, UPPER(position)
+                        ORDER BY ability DESC
+                    ) as rn
+                    FROM players
+                    WHERE save_id = ? AND status = 'Active' AND team_id IS NOT NULL
+                ) WHERE rn = 1
+            )"#,
+        )
+        .bind(save_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("重算首发失败: {}", e))?;
+
+        Ok(())
+    }
 
     async fn get_window(&self, pool: &Pool<Sqlite>, window_id: i64) -> Result<TransferWindow, String> {
         let row: sqlx::sqlite::SqliteRow = sqlx::query(

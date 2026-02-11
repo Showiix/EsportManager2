@@ -75,7 +75,7 @@ impl RookieGenerator {
         let mut used_ids: HashSet<String> = existing_ids.clone();
 
         let game_id_pool = get_game_id_pool(region_id);
-        let positions = ["Top", "Jungle", "Mid", "Bot", "Support"];
+        let positions = ["Top", "Jug", "Mid", "Adc", "Sup"];
 
         for i in 0..count {
             let game_id = self.pick_unique_game_id(&game_id_pool, &mut used_ids);
@@ -135,7 +135,6 @@ impl RookieGenerator {
 
     /// 从池中挑选唯一 game_id，若全部占用则追加数字后缀
     fn pick_unique_game_id(&mut self, pool: &[&str], used: &mut HashSet<String>) -> String {
-        // 先收集未使用的 ID
         let available: Vec<&&str> = pool.iter().filter(|id| !used.contains(**id)).collect();
 
         if !available.is_empty() {
@@ -145,11 +144,14 @@ impl RookieGenerator {
             return id;
         }
 
-        // 所有池内 ID 都被占用，追加数字后缀
+        let suffixes: &[char] = &[
+            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+            'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+        ];
         loop {
             let base = pool[self.rng.gen_range(0..pool.len())];
-            let suffix = self.rng.gen_range(2..100);
-            let candidate = format!("{}{}", base, suffix);
+            let s1 = suffixes[self.rng.gen_range(0..suffixes.len())];
+            let candidate = format!("{}{}", base, s1);
             if !used.contains(&candidate) {
                 used.insert(candidate.clone());
                 return candidate;

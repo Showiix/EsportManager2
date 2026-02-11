@@ -864,7 +864,7 @@ impl DraftAuctionEngine {
         let already_wanted: std::collections::HashSet<(u64, u64, u32)> = self
             .wanted_requests
             .iter()
-            .filter(|w| w.status == WantedStatus::Active)
+            .filter(|w| w.status != WantedStatus::Expired)
             .map(|w| (w.buyer_team_id, w.holder_team_id, w.target_position))
             .collect();
 

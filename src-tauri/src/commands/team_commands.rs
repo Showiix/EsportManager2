@@ -360,7 +360,7 @@ pub async fn get_team_synergy(
         r#"
         SELECT id, game_id, position, join_season
         FROM players
-        WHERE team_id = ? AND save_id = ? AND status = 'Active'
+        WHERE team_id = ? AND save_id = ? AND status = 'Active' AND is_starter = 1
         ORDER BY CASE position
             WHEN 'top' THEN 1 WHEN 'jungle' THEN 2 WHEN 'mid' THEN 3
             WHEN 'bot' THEN 4 WHEN 'support' THEN 5 ELSE 6 END

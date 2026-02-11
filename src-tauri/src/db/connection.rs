@@ -1961,6 +1961,62 @@ impl DatabaseManager {
             log::info!("✅ players 添加 growth_accumulator 列成功");
         }
 
+        // 迁移15: 归一化位置名称 (Jungle→Jug, Bot→Adc, Support→Sup)
+        let bad_pos_count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM players WHERE position IN ('Jungle', 'Bot', 'Support')"
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if bad_pos_count.0 > 0 {
+            sqlx::query("UPDATE players SET position = 'Jug' WHERE position = 'Jungle'")
+                .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            sqlx::query("UPDATE players SET position = 'Adc' WHERE position = 'Bot'")
+                .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            sqlx::query("UPDATE players SET position = 'Sup' WHERE position = 'Support'")
+                .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            log::info!("✅ 位置名称归一化完成 ({}条记录)", bad_pos_count.0);
+        }
+
+        let bad_draft_pos: Result<(i64,), _> = sqlx::query_as(
+            "SELECT COUNT(*) FROM draft_pool WHERE position IN ('Jungle', 'Bot', 'Support')"
+        )
+        .fetch_one(pool)
+        .await;
+
+        if let Ok((count,)) = bad_draft_pos {
+            if count > 0 {
+                sqlx::query("UPDATE draft_pool SET position = 'Jug' WHERE position = 'Jungle'")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                sqlx::query("UPDATE draft_pool SET position = 'Adc' WHERE position = 'Bot'")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                sqlx::query("UPDATE draft_pool SET position = 'Sup' WHERE position = 'Support'")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                log::info!("✅ draft_pool 位置名称归一化完成 ({}条记录)", count);
+            }
+        }
+
+        // 位置归一化后重算首发
+        if bad_pos_count.0 > 0 {
+            sqlx::query("UPDATE players SET is_starter = 0 WHERE status = 'Active'")
+                .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            sqlx::query(
+                r#"UPDATE players SET is_starter = 1 WHERE id IN (
+                    SELECT id FROM (
+                        SELECT id, ROW_NUMBER() OVER (
+                            PARTITION BY save_id, team_id, UPPER(position)
+                            ORDER BY ability DESC
+                        ) as rn
+                        FROM players
+                        WHERE status = 'Active' AND team_id IS NOT NULL
+                    ) WHERE rn = 1
+                )"#,
+            )
+            .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            log::info!("✅ 首发重算完成");
+        }
+
         Ok(())
     }
 }
