@@ -325,28 +325,32 @@ pub async fn start_draft_auction(
         .map_err(|e| e.to_string())?;
     }
 
-    // 保存事件到数据库
-    for event in &events {
+    // 保存求购请求
+    for wanted in &engine.wanted_requests {
         sqlx::query(
             r#"
-            INSERT INTO draft_pick_auction_events (
-                save_id, auction_id, listing_id, event_type, team_id, team_name,
-                draft_position, amount, headline, description, importance, round
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO draft_pick_wanted (
+                save_id, season_id, region_id, auction_id, buyer_team_id, buyer_team_name,
+                target_position, offer_price, reason, status, holder_team_id, holder_team_name,
+                response_reason, final_price, resolved_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
         .bind(&save_id)
+        .bind(wanted.season_id as i64)
+        .bind(wanted.region_id as i64)
         .bind(auction_id)
-        .bind(event.listing_id.map(|id| id as i64))
-        .bind(event.event_type.to_string())
-        .bind(event.team_id.map(|id| id as i64))
-        .bind(&event.team_name)
-        .bind(event.draft_position.map(|p| p as i64))
-        .bind(event.amount)
-        .bind(&event.headline)
-        .bind(&event.description)
-        .bind(event.importance.to_string())
-        .bind(event.round as i64)
+        .bind(wanted.buyer_team_id as i64)
+        .bind(&wanted.buyer_team_name)
+        .bind(wanted.target_position as i64)
+        .bind(wanted.offer_price)
+        .bind(&wanted.reason)
+        .bind(wanted.status.to_string())
+        .bind(wanted.holder_team_id as i64)
+        .bind(&wanted.holder_team_name)
+        .bind(&wanted.response_reason)
+        .bind(wanted.final_price)
+        .bind(&wanted.resolved_at)
         .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
@@ -1057,4 +1061,87 @@ fn build_auction_status_info(engine: &DraftAuctionEngine, auction_id: u64) -> Au
         total_commission: engine.auction.total_commission,
         listings,
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WantedRequestInfo {
+    pub id: i64,
+    pub buyer_team_id: i64,
+    pub buyer_team_name: String,
+    pub target_position: i32,
+    pub offer_price: i64,
+    pub reason: String,
+    pub status: String,
+    pub holder_team_id: i64,
+    pub holder_team_name: String,
+    pub response_reason: Option<String>,
+    pub final_price: Option<i64>,
+}
+
+#[tauri::command]
+pub async fn get_auction_wanted_requests(
+    state: State<'_, AppState>,
+    region_id: u64,
+    season_id: Option<i64>,
+) -> Result<CommandResult<Vec<WantedRequestInfo>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let target_season: i64 = match season_id {
+        Some(s) => s,
+        None => {
+            let save_row = sqlx::query("SELECT current_season FROM saves WHERE id = ?")
+                .bind(&save_id)
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            save_row.get("current_season")
+        }
+    };
+
+    let rows = sqlx::query(
+        r#"
+        SELECT id, buyer_team_id, buyer_team_name, target_position, offer_price,
+               reason, status, holder_team_id, holder_team_name, response_reason, final_price
+        FROM draft_pick_wanted
+        WHERE save_id = ? AND season_id = ? AND region_id = ?
+        ORDER BY target_position ASC
+        "#
+    )
+    .bind(&save_id)
+    .bind(target_season)
+    .bind(region_id as i64)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let results: Vec<WantedRequestInfo> = rows.iter().map(|row| WantedRequestInfo {
+        id: row.get("id"),
+        buyer_team_id: row.get("buyer_team_id"),
+        buyer_team_name: row.get("buyer_team_name"),
+        target_position: row.get("target_position"),
+        offer_price: row.get("offer_price"),
+        reason: row.get("reason"),
+        status: row.get("status"),
+        holder_team_id: row.get("holder_team_id"),
+        holder_team_name: row.get("holder_team_name"),
+        response_reason: row.try_get("response_reason").ok(),
+        final_price: row.try_get("final_price").ok(),
+    }).collect();
+
+    Ok(CommandResult::ok(results))
 }

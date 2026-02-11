@@ -11,7 +11,7 @@ use crate::models::transfer::*;
 use crate::models::player::Position;
 use crate::models::team::FinancialStatus;
 use crate::engines::market_value::MarketValueEngine;
-use crate::engines::traits::TraitType;
+use crate::engines::traits::{TraitType, TraitEngine};
 
 /// 缓存的选手信息（避免反复查询 SqliteRow）
 #[derive(Debug, Clone)]
@@ -61,6 +61,22 @@ impl CachedPlayer {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct CachedPlayerStats {
+    pub avg_impact: f64,
+    pub avg_performance: f64,
+    pub consistency_score: f64,
+    pub dominance_score: f64,
+    pub games_played: i32,
+    // 国际赛表现（来自 player_tournament_stats）
+    pub international_avg_impact: f64,
+    pub international_games: i32,
+    // MVP 次数（来自 player_tournament_stats，当赛季所有赛事合计）
+    pub total_mvp_count: i32,
+    // 选手状态动量（来自 player_form_factors）
+    pub momentum: i32,
+}
+
 /// 转会期间的内存缓存，避免 N+1 查询
 pub struct TransferCache {
     pub team_names: HashMap<i64, String>,
@@ -72,6 +88,11 @@ pub struct TransferCache {
     pub team_annual_ranks: HashMap<i64, i32>,
     pub team_last_season_ranks: HashMap<i64, i32>,
     pub team_reputations: HashMap<i64, i64>,
+    /// 续约破裂黑名单：(player_id, team_id)，同窗口内原队不能再签回
+    pub renewal_failed_pairs: HashSet<(i64, i64)>,
+    pub team_spring_ranks: HashMap<i64, i32>,
+    pub team_summer_ranks: HashMap<i64, i32>,
+    pub player_season_stats: HashMap<i64, CachedPlayerStats>,
 }
 
 impl TransferCache {
@@ -202,6 +223,117 @@ impl TransferCache {
             team_last_season_ranks.entry(team_id).or_insert(rank);
         }
 
+        // 5.6 当季春季赛/夏季赛排名
+        let current_season_standings: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            r#"SELECT ls.team_id, ls.rank, t.tournament_type
+               FROM league_standings ls
+               JOIN tournaments t ON ls.tournament_id = t.id
+               WHERE t.save_id = ? AND t.season_id = ?
+               AND t.tournament_type IN ('SpringRegular', 'SummerRegular')"#
+        )
+        .bind(save_id)
+        .bind(season_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let mut team_spring_ranks: HashMap<i64, i32> = HashMap::new();
+        let mut team_summer_ranks: HashMap<i64, i32> = HashMap::new();
+        for r in &current_season_standings {
+            let team_id: i64 = r.get("team_id");
+            let rank: i32 = r.try_get("rank").unwrap_or(99);
+            let t_type: String = r.get("tournament_type");
+            match t_type.as_str() {
+                "SpringRegular" => { team_spring_ranks.entry(team_id).or_insert(rank); },
+                "SummerRegular" => { team_summer_ranks.entry(team_id).or_insert(rank); },
+                _ => {}
+            }
+        }
+
+        // 5.7 加载选手赛季统计数据（用于转会评估）
+        let player_stats_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            r#"SELECT player_id, avg_impact, avg_performance, consistency_score,
+                      dominance_score, games_played
+               FROM player_season_stats
+               WHERE save_id = ? AND season_id = ?"#
+        )
+        .bind(save_id)
+        .bind(season_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let mut player_season_stats: HashMap<i64, CachedPlayerStats> = HashMap::new();
+        for r in &player_stats_rows {
+            let pid: i64 = r.get("player_id");
+            player_season_stats.insert(pid, CachedPlayerStats {
+                avg_impact: r.try_get("avg_impact").unwrap_or(0.0),
+                avg_performance: r.try_get("avg_performance").unwrap_or(0.0),
+                consistency_score: r.try_get("consistency_score").unwrap_or(50.0),
+                dominance_score: r.try_get("dominance_score").unwrap_or(0.0),
+                games_played: r.try_get("games_played").unwrap_or(0),
+                ..Default::default()
+            });
+        }
+
+        // 5.8 从 player_tournament_stats 加载国际赛表现 + MVP 次数
+        let intl_types = "('Msi','WorldChampionship','MadridMasters','ShanghaiMasters','ClaudeIntercontinental','IcpIntercontinental','SuperIntercontinental')";
+        let intl_query = format!(
+            r#"SELECT player_id,
+                      AVG(avg_impact) as intl_avg_impact,
+                      SUM(games_played) as intl_games
+               FROM player_tournament_stats
+               WHERE save_id = ? AND season_id = ?
+               AND tournament_type IN {}
+               GROUP BY player_id"#,
+            intl_types
+        );
+        let intl_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(&intl_query)
+            .bind(save_id)
+            .bind(season_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+        for r in &intl_rows {
+            let pid: i64 = r.get("player_id");
+            let entry = player_season_stats.entry(pid).or_default();
+            entry.international_avg_impact = r.try_get("intl_avg_impact").unwrap_or(0.0);
+            entry.international_games = r.try_get::<i64, _>("intl_games").unwrap_or(0) as i32;
+        }
+
+        let mvp_query = r#"SELECT player_id, SUM(game_mvp_count) as total_mvps
+               FROM player_tournament_stats
+               WHERE save_id = ? AND season_id = ?
+               GROUP BY player_id"#;
+        let mvp_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(mvp_query)
+            .bind(save_id)
+            .bind(season_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+        for r in &mvp_rows {
+            let pid: i64 = r.get("player_id");
+            let entry = player_season_stats.entry(pid).or_default();
+            entry.total_mvp_count = r.try_get::<i64, _>("total_mvps").unwrap_or(0) as i32;
+        }
+
+        // 5.9 从 player_form_factors 加载 momentum
+        let momentum_rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            "SELECT player_id, momentum FROM player_form_factors WHERE save_id = ?"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        for r in &momentum_rows {
+            let pid: i64 = r.get("player_id");
+            let entry = player_season_stats.entry(pid).or_default();
+            entry.momentum = r.try_get("momentum").unwrap_or(0);
+        }
+
         // 6. 批量计算球队声望（简化版：基于荣誉+近期积分）
         let mut team_reputations = HashMap::new();
         for &team_id in team_names.keys() {
@@ -259,6 +391,10 @@ impl TransferCache {
             team_annual_ranks,
             team_last_season_ranks,
             team_reputations,
+            renewal_failed_pairs: HashSet::new(),
+            team_spring_ranks,
+            team_summer_ranks,
+            player_season_stats,
         })
     }
 
@@ -290,6 +426,26 @@ impl TransferCache {
         self.team_annual_ranks.get(&team_id).copied().unwrap_or(99)
     }
 
+    /// 综合排名：春季赛(0.3) + 夏季赛(0.3) + 年度积分(0.4)，无数据的维度权重重分配
+    pub fn get_composite_rank(&self, team_id: i64) -> i32 {
+        let spring = self.team_spring_ranks.get(&team_id).copied();
+        let summer = self.team_summer_ranks.get(&team_id).copied();
+        let annual = self.team_annual_ranks.get(&team_id).copied();
+
+        let mut total_weight = 0.0f64;
+        let mut weighted_rank = 0.0f64;
+
+        if let Some(r) = spring { total_weight += 0.3; weighted_rank += r as f64 * 0.3; }
+        if let Some(r) = summer { total_weight += 0.3; weighted_rank += r as f64 * 0.3; }
+        if let Some(r) = annual { total_weight += 0.4; weighted_rank += r as f64 * 0.4; }
+
+        if total_weight > 0.0 {
+            (weighted_rank / total_weight).round() as i32
+        } else {
+            99
+        }
+    }
+
     pub fn get_team_last_rank(&self, team_id: i64) -> i32 {
         self.team_last_season_ranks.get(&team_id).copied()
             .unwrap_or_else(|| self.get_team_rank(team_id))
@@ -298,6 +454,10 @@ impl TransferCache {
     /// 获取球队综合声望（0-100）
     pub fn get_team_reputation(&self, team_id: i64) -> i64 {
         *self.team_reputations.get(&team_id).unwrap_or(&30)
+    }
+
+    pub fn get_player_stats(&self, player_id: i64) -> Option<&CachedPlayerStats> {
+        self.player_season_stats.get(&player_id)
     }
 
     /// 转会后更新缓存：将选手从旧队移到新队
@@ -1166,6 +1326,100 @@ impl TransferEngine {
 
         log::info!("✅ 满意度/忠诚度赛季结算完成，更新了 {} 名选手", active_players.len());
 
+        // === 特性觉醒/退化评估 ===
+        let join_season_rows = sqlx::query(
+            "SELECT id, join_season FROM players WHERE save_id = ? AND status = 'Active'"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("查询join_season失败: {}", e))?;
+
+        let join_season_map: HashMap<i64, i64> = join_season_rows.iter()
+            .map(|row| (row.get::<i64, _>("id"), row.get::<i64, _>("join_season")))
+            .collect();
+
+        let mut awakening_count = 0u32;
+        let mut decay_count = 0u32;
+
+        for player in &all_players {
+            let player_traits = traits_map.get(&player.id).cloned().unwrap_or_default();
+            let (gp, avg_perf) = stats_map.get(&player.id).copied().unwrap_or((0, 0.0));
+            let join_s = join_season_map.get(&player.id).copied().unwrap_or(season_id);
+            let seasons_in_team = (season_id - join_s).max(0);
+
+            let (gained, lost) = TraitEngine::evaluate_trait_awakening(
+                player.ability as u8,
+                player.age as u8,
+                gp,
+                avg_perf,
+                &player_traits,
+                seasons_in_team,
+                &mut rng,
+            );
+
+            for new_trait in &gained {
+                let trait_name = format!("{:?}", new_trait);
+                let _ = sqlx::query(
+                    "INSERT OR IGNORE INTO player_traits (save_id, player_id, trait_type, acquired_season) VALUES (?, ?, ?, ?)"
+                )
+                .bind(save_id)
+                .bind(player.id)
+                .bind(&trait_name.to_lowercase())
+                .bind(season_id)
+                .execute(pool)
+                .await;
+
+                let team_name = player.team_id.and_then(|tid| {
+                    cache.team_names.get(&tid).map(|s| s.as_str())
+                });
+                let event = self.record_event(
+                    pool, window_id, 1,
+                    TransferEventType::SeasonSettlement,
+                    EventLevel::B,
+                    player.id, &player.game_id, player.ability,
+                    player.team_id, team_name,
+                    player.team_id, team_name,
+                    0, 0, 0,
+                    &format!("特性觉醒：获得「{}」", new_trait.display_name()),
+                ).await?;
+                events.push(event);
+                awakening_count += 1;
+            }
+
+            for lost_trait in &lost {
+                let trait_name = format!("{:?}", lost_trait);
+                let _ = sqlx::query(
+                    "DELETE FROM player_traits WHERE save_id = ? AND player_id = ? AND trait_type = ?"
+                )
+                .bind(save_id)
+                .bind(player.id)
+                .bind(&trait_name.to_lowercase())
+                .execute(pool)
+                .await;
+
+                let team_name = player.team_id.and_then(|tid| {
+                    cache.team_names.get(&tid).map(|s| s.as_str())
+                });
+                let event = self.record_event(
+                    pool, window_id, 1,
+                    TransferEventType::SeasonSettlement,
+                    EventLevel::B,
+                    player.id, &player.game_id, player.ability,
+                    player.team_id, team_name,
+                    player.team_id, team_name,
+                    0, 0, 0,
+                    &format!("特性退化：失去「{}」", lost_trait.display_name()),
+                ).await?;
+                events.push(event);
+                decay_count += 1;
+            }
+        }
+
+        if awakening_count > 0 || decay_count > 0 {
+            log::info!("✅ 特性觉醒/退化完成：{} 次觉醒，{} 次退化", awakening_count, decay_count);
+        }
+
         // 更新所有球队战力
         self.recalculate_team_powers_optimized(pool, save_id).await?;
 
@@ -1232,7 +1486,7 @@ impl TransferEngine {
             };
             let expected_salary = MarketValueEngine::estimate_salary(market_value, ability as u8, age as u8) as i64;
 
-            let team_rank = cache.get_team_rank(team_id);
+            let team_rank = cache.get_composite_rank(team_id);
             let team_rank_bonus: f64 = match team_rank {
                 1..=3 => 0.15,
                 4..=7 => 0.08,
@@ -1285,6 +1539,10 @@ impl TransferEngine {
                     .await
                     .map_err(|e| format!("续约更新失败: {}", e))?;
 
+                    // 续约成功后清理R2可能生成的挂牌记录
+                    sqlx::query("UPDATE player_listings SET status = 'CANCELLED' WHERE player_id = ? AND window_id = ? AND status = 'ACTIVE'")
+                        .bind(player_id).bind(window_id).execute(pool).await.ok();
+
                     // 记录合同历史
                     Self::insert_contract(pool, save_id, player_id, team_id, "RENEWAL", new_salary * new_contract_years, new_contract_years, season_id, 0, 0).await?;
 
@@ -1306,6 +1564,7 @@ impl TransferEngine {
 
             if !renewed {
                 // 续约失败，成为自由球员
+                cache.renewal_failed_pairs.insert((player_id, team_id));
                 sqlx::query(
                     "UPDATE players SET team_id = NULL, satisfaction = MAX(satisfaction - 10, 0) WHERE id = ?"
                 )
@@ -1691,7 +1950,7 @@ impl TransferEngine {
         let roster_age_avg = if roster_count > 0 { total_age / roster_count as f64 } else { 0.0 };
 
         // 使用缓存获取排名
-        let current_rank = cache.get_team_rank(team_id);
+        let current_rank = cache.get_composite_rank(team_id);
         let last_rank = cache.get_team_last_rank(team_id);
 
         let rank_change = current_rank - last_rank;
@@ -1767,7 +2026,7 @@ impl TransferEngine {
         roster_power: f64,
         budget: i64,
     ) -> Result<(), String> {
-        let positions = ["TOP", "JUG", "MID", "ADC", "SUP"];
+        let positions = ["Top", "Jug", "Mid", "Adc", "Sup"];
 
         for pos in &positions {
             let starter = roster.iter()
@@ -1871,14 +2130,15 @@ impl TransferEngine {
         _season_id: i64,
         cache: &TransferCache,
     ) -> Result<PlayerEvaluation, String> {
-        let mut stay_score: f64 = 50.0;
+        let mut stay_score: f64 = 60.0;
 
-        // 1. 战队排名评分
+        // 1. 战队排名评分（基础分提高，排名惩罚梯度更平滑）
         let team_rank_score = match team_eval.current_rank {
-            1..=4 => 20.0,
-            5..=8 => 10.0,
-            9..=12 => -5.0,
-            _ => -15.0,
+            1..=4 => 10.0,
+            5..=8 => 5.0,
+            9..=11 => -3.0,
+            12..=13 => -6.0,
+            _ => -8.0,
         };
         stay_score += team_rank_score;
 
@@ -1894,7 +2154,7 @@ impl TransferEngine {
             .sum::<f64>() / (roster.len() - 1).max(1) as f64;
 
         let teammate_score = if ability > teammate_avg as i64 + 10 {
-            -15.0
+            -8.0
         } else if ability < teammate_avg as i64 - 5 {
             10.0
         } else {
@@ -1906,96 +2166,159 @@ impl TransferEngine {
         let estimated_salary = MarketValueEngine::estimate_salary(MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", position), ability as u8, age as u8) as i64;
         let salary_ratio = if estimated_salary > 0 { salary as f64 / estimated_salary as f64 } else { 1.0 };
         let salary_score = if salary_ratio < 0.7 {
-            -20.0
+            -12.0
         } else if salary_ratio < 0.9 {
-            -10.0
+            -6.0
         } else if salary_ratio > 1.2 {
-            15.0
+            10.0
         } else {
             0.0
         };
         stay_score += salary_score;
 
-        // 5. 荣誉评分（使用缓存）
+        // 5. 荣誉渴望：只有真正的高水平选手在弱队才会感到屈才
         let has_recent_honor = cache.has_recent_honor(player_id);
         let honor_score = if has_recent_honor {
             5.0
-        } else if ability >= 61 && team_eval.current_rank > 8 {
-            -10.0
+        } else if ability >= 70 && team_eval.current_rank > 8 {
+            -8.0
         } else {
             0.0
         };
         stay_score += honor_score;
 
         // 6. 满意度评分
-        let satisfaction_score = (satisfaction as f64 - 70.0) * 0.5;
+        let satisfaction_score = (satisfaction as f64 - 70.0) * 0.3;
         stay_score += satisfaction_score;
 
         // 7. 年龄因素
         if age >= 28 && team_eval.current_rank > 8 {
-            stay_score -= 20.0;
+            stay_score -= 12.0;
         }
 
         // 8. 忠诚度加成
-        stay_score += (loyalty as f64 - 70.0) * 0.3;
+        stay_score += (loyalty as f64 - 70.0) * 0.5;
+
+        // 9. 数据中心统计：个人表现 vs 队伍实力
+        let performance_score = if let Some(stats) = cache.get_player_stats(player_id) {
+            if stats.games_played >= 10 {
+                let impact = stats.avg_impact;
+                if impact > 3.0 && team_eval.current_rank > 8 {
+                    -6.0
+                } else if impact > 1.5 && team_eval.current_rank > 10 {
+                    -3.0
+                } else if impact < -2.0 {
+                    3.0
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+        stay_score += performance_score;
+
+        // 10. 国际赛表现：大赛型选手在弱队更想走
+        let intl_score = if let Some(stats) = cache.get_player_stats(player_id) {
+            if stats.international_games >= 5 {
+                let intl_impact = stats.international_avg_impact;
+                if intl_impact > 2.0 && team_eval.current_rank > 8 {
+                    -8.0
+                } else if intl_impact > 1.0 && team_eval.current_rank > 10 {
+                    -4.0
+                } else if intl_impact < -1.0 && team_eval.current_rank <= 6 {
+                    3.0
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+        stay_score += intl_score;
+
+        // 11. 状态动量：连胜/连败影响留队意愿
+        let momentum_score = if let Some(stats) = cache.get_player_stats(player_id) {
+            let m = stats.momentum;
+            if m >= 3 {
+                3.0
+            } else if m <= -3 {
+                -5.0
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+        stay_score += momentum_score;
 
         let stay_score = stay_score.clamp(0.0, 100.0);
         let wants_to_leave = stay_score < 40.0;
 
         let leave_reason = if wants_to_leave {
-            // 收集所有负面因素，按影响程度排序，取最严重的作为离队原因
             let mut factors: Vec<(f64, &str)> = Vec::new();
 
-            // 薪资因素
-            if salary_score <= -15.0 {
+            if salary_score <= -10.0 {
                 factors.push((salary_score, "薪资被严重低估"));
             } else if salary_score < 0.0 {
                 factors.push((salary_score, "对薪资待遇不满"));
             }
 
-            // 战队排名因素
-            if team_rank_score <= -10.0 {
+            if team_rank_score <= -6.0 {
                 factors.push((team_rank_score, "战队战绩太差"));
             } else if team_rank_score < 0.0 {
                 factors.push((team_rank_score, "战队缺乏竞争力"));
             }
 
-            // 战绩趋势因素
             if team_trend_score <= -9.0 {
                 factors.push((team_trend_score, "战队成绩大幅下滑"));
             } else if team_trend_score < -3.0 {
                 factors.push((team_trend_score, "战队近期状态下滑"));
             }
 
-            // 队友水平因素
             if teammate_score < 0.0 {
                 factors.push((teammate_score, "队友水平跟不上"));
             }
 
-            // 荣誉渴望因素
             if honor_score < 0.0 {
                 factors.push((honor_score, "渴望在强队证明自己"));
             }
 
-            // 满意度因素
-            if satisfaction_score <= -10.0 {
+            if satisfaction_score <= -6.0 {
                 factors.push((satisfaction_score, "对球队管理非常不满"));
-            } else if satisfaction_score < -3.0 {
+            } else if satisfaction_score < -2.0 {
                 factors.push((satisfaction_score, "对球队现状不太满意"));
             }
 
-            // 年龄+弱队因素
             if age >= 28 && team_eval.current_rank > 8 {
-                factors.push((-20.0, "想去强队冲击荣誉"));
+                factors.push((-12.0, "想去强队冲击荣誉"));
             }
 
-            // 忠诚度因素
-            let loyalty_contribution = (loyalty as f64 - 70.0) * 0.3;
-            if loyalty_contribution <= -6.0 {
+            let loyalty_contribution = (loyalty as f64 - 70.0) * 0.5;
+            if loyalty_contribution <= -5.0 {
                 factors.push((loyalty_contribution, "缺乏归属感"));
             }
 
-            // 按负面程度排序（最负面的排最前）
+            if performance_score <= -5.0 {
+                factors.push((performance_score, "个人表现出色但队伍拖后腿"));
+            } else if performance_score < 0.0 {
+                factors.push((performance_score, "觉得自己能力在队伍中被浪费"));
+            }
+
+            if intl_score <= -6.0 {
+                factors.push((intl_score, "国际赛表现出色，不甘于弱队"));
+            } else if intl_score < 0.0 {
+                factors.push((intl_score, "大赛经验丰富，渴望更高舞台"));
+            }
+
+            if momentum_score < 0.0 {
+                factors.push((momentum_score, "近期状态低迷想换环境"));
+            }
+
             factors.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
             factors.first().map_or("对现状不满意".to_string(), |(_, reason)| reason.to_string())
@@ -2004,8 +2327,9 @@ impl TransferEngine {
         };
 
         // 战队评估选手是否应该挂牌（使用缓存版本）
+        let player_stats = cache.get_player_stats(player_id);
         let (should_list, list_reason, protect_reason) = self.evaluate_player_for_listing_cached(
-            ability, age, salary, team_eval, has_recent_honor, position, roster
+            ability, age, salary, team_eval, has_recent_honor, position, roster, player_stats
         );
 
         // 保存选手评估到数据库
@@ -2090,13 +2414,12 @@ impl TransferEngine {
         has_recent_honor: bool,
         _position: &str,
         roster: &[CachedPlayer],
+        player_stats: Option<&CachedPlayerStats>,
     ) -> (bool, String, String) {
-        // 荣誉保护
         if has_recent_honor && ability >= 58 {
             return (false, "".to_string(), "近2赛季有荣誉".to_string());
         }
 
-        // 王朝模式几乎不挂牌
         if team_eval.strategy == "DYNASTY" {
             if ability < 60 || age >= 34 {
                 return (true, "能力过低或年龄过大".to_string(), "".to_string());
@@ -2104,12 +2427,34 @@ impl TransferEngine {
             return (false, "".to_string(), "战队处于王朝期".to_string());
         }
 
-        // 核心选手保护
-        if ability > team_eval.roster_power as i64 + 5 && ability >= 61 {
+        let has_strong_performance = player_stats
+            .map(|s| s.games_played >= 10 && s.avg_performance >= ability as f64 - 2.0 && s.avg_impact > 0.5)
+            .unwrap_or(false);
+
+        let has_mvp_presence = player_stats
+            .map(|s| s.total_mvp_count >= 3)
+            .unwrap_or(false);
+
+        let has_intl_impact = player_stats
+            .map(|s| s.international_games >= 5 && s.international_avg_impact > 1.0)
+            .unwrap_or(false);
+
+        if has_mvp_presence && ability >= 60 {
+            return (false, "".to_string(), "赛季MVP表现突出".to_string());
+        }
+
+        if has_intl_impact && ability >= 62 {
+            return (false, "".to_string(), "国际赛表现出色".to_string());
+        }
+
+        if ability >= team_eval.roster_power as i64 + 3 && ability >= 65 {
             return (false, "".to_string(), "核心选手".to_string());
         }
 
-        // 维持模式
+        if has_strong_performance && ability >= 60 {
+            return (false, "".to_string(), "赛季表现优秀".to_string());
+        }
+
         if team_eval.strategy == "MAINTAIN" {
             if ability < 54 || (age >= 32 && ability < 58) {
                 return (true, "能力不足".to_string(), "".to_string());
@@ -2117,17 +2462,20 @@ impl TransferEngine {
             return (false, "".to_string(), "阵容稳定".to_string());
         }
 
-        // 补强/重建模式
-        let roster_count = roster.len() as i32;
-
-        let value_ratio = if salary > 0 { ability as f64 / (salary as f64 / 10000.0) } else { 100.0 };
-        if value_ratio < 0.40 && salary > 100_0000 {
+        let estimated_salary = MarketValueEngine::estimate_salary(
+            MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", _position),
+            ability as u8, age as u8,
+        ) as i64;
+        let overpaid_ratio = if estimated_salary > 0 { salary as f64 / estimated_salary as f64 } else { 1.0 };
+        if overpaid_ratio > 1.8 && salary > 150_0000 && !has_strong_performance && !has_mvp_presence && !has_intl_impact {
             return (true, "高薪低能".to_string(), "".to_string());
         }
 
-        if age >= 30 && ability < 78 {
+        if age >= 32 && ability < 65 {
             return (true, "年龄偏大且能力一般".to_string(), "".to_string());
         }
+
+        let roster_count = roster.len() as i32;
 
         if roster_count >= 7 && ability < team_eval.roster_power as i64 - 5 {
             return (true, "能力低于队伍均值".to_string(), "".to_string());
@@ -2137,7 +2485,6 @@ impl TransferEngine {
             return (true, "能力过低".to_string(), "".to_string());
         }
 
-        // 同位置超过2人时，挂牌该位置能力最低的选手
         let same_pos_players: Vec<&CachedPlayer> = roster.iter()
             .filter(|p| p.position == _position)
             .collect();
@@ -2148,15 +2495,12 @@ impl TransferEngine {
             }
         }
 
-        // 阵容超出奢侈税起征线时，更积极挂牌非首发且无培养价值的选手
         let over_threshold = roster_count as i64 - self.config.luxury_tax_threshold;
         if over_threshold > 0 {
-            // 找到该选手在同位置的排名
             let is_starter_level = roster.iter()
                 .filter(|p| p.position == _position)
                 .any(|p| p.ability <= ability && p.is_starter);
 
-            // 不是首发水平
             if !is_starter_level {
                 let has_youth_value = age <= 23 && ability >= 55;
                 if !has_youth_value {
@@ -2239,12 +2583,15 @@ impl TransferEngine {
             let mut offers: Vec<TransferOffer> = Vec::new();
 
             for &team_id in &team_ids {
+                if cache.renewal_failed_pairs.contains(&(player_id, team_id)) {
+                    continue;
+                }
                 let balance = cache.team_balances.get(&team_id).copied().unwrap_or(0);
 
                 // 检查转会次数限制（基础2个，空缺位置额外放宽）
                 let count = team_transfer_counts.get(&team_id).copied().unwrap_or(0);
                 let roster = cache.get_roster(team_id);
-                let positions = ["TOP", "JUG", "MID", "ADC", "SUP"];
+                let positions = ["Top", "Jug", "Mid", "Adc", "Sup"];
                 let vacant_positions = positions.iter()
                     .filter(|pos| !roster.iter().any(|p| p.position == **pos))
                     .count() as i64;
@@ -2296,7 +2643,7 @@ impl TransferEngine {
                 // 使用缓存获取AI性格权重
                 let weights = cache.get_weights(team_id);
                 let roster = cache.get_roster(team_id);
-                let team_rank = cache.get_team_rank(team_id);
+                let team_rank = cache.get_composite_rank(team_id);
 
                 // 计算匹配度和报价
                 let match_score = self.calculate_match_score(
@@ -2362,11 +2709,10 @@ impl TransferEngine {
             // 市场竞争效应：多个球队竞争时，选手提高薪资期望基准
             let offer_count = offers.len();
             let market_premium = if offer_count >= 3 {
-                1.0 + (offer_count as f64 - 2.0) * 0.05  // 每多一个竞争者+5%
+                1.0 + ((offer_count as f64 - 2.0) * 0.01).min(0.15)
             } else {
                 1.0
             };
-            // 调整薪资比较基准（选手期望更高）
             let adjusted_expected_salary = (expected_salary as f64 * market_premium) as i64;
 
             // 对所有 offers 计算 willingness，收集竞价数据
@@ -2380,7 +2726,7 @@ impl TransferEngine {
 
             for (idx, offer) in offers.iter().enumerate() {
                 let target_roster = cache.get_roster(offer.team_id);
-                let target_team_rank = cache.get_team_rank(offer.team_id);
+                let target_team_rank = cache.get_composite_rank(offer.team_id);
                 let target_team_reputation = cache.get_team_reputation(offer.team_id);
                 let willingness = self.calculate_willingness(
                     ability as u8, loyalty as u8, age as u8,
@@ -2388,8 +2734,10 @@ impl TransferEngine {
                     home_region_id, offer.target_region_id, region_loyalty,
                     target_team_rank, target_team_reputation,
                     &target_roster, &position,
+                    cache.get_player_stats(player_id),
                     &mut rng,
                 );
+                let willingness = (willingness + 15.0).min(100.0);
                 let team_name = cache.get_team_name(offer.team_id);
                 bid_records.push(BidRecord {
                     offer_idx: idx,
@@ -2639,7 +2987,7 @@ impl TransferEngine {
 
                 // 使用缓存获取AI性格权重
                 let weights = cache.get_weights(team_id);
-                let team_rank = cache.get_team_rank(team_id);
+                let team_rank = cache.get_composite_rank(team_id);
 
                 let match_score = self.calculate_match_score(
                     ability as u8, age as u8, &position, &weights, balance,
@@ -2731,16 +3079,25 @@ impl TransferEngine {
             }
             let mut bid_records: Vec<R5BidRecord> = Vec::new();
 
+            let market_value_for_willingness = if calculated_market_value > 0 {
+                calculated_market_value as u64
+            } else {
+                MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, potential as u8, &tag, &position)
+            };
+            let reference_salary = MarketValueEngine::estimate_salary(market_value_for_willingness, ability as u8, age as u8) as i64;
+            let willingness_salary_base = reference_salary.max(salary);
+
             for (idx, bid) in all_bids.iter().enumerate() {
                 let target_roster = cache.get_roster(bid.0);
-                let target_team_rank = cache.get_team_rank(bid.0);
+                let target_team_rank = cache.get_composite_rank(bid.0);
                 let target_team_reputation = cache.get_team_reputation(bid.0);
                 let willingness = self.calculate_willingness(
                     ability as u8, loyalty as u8, age as u8,
-                    bid.3, salary,
+                    bid.3, willingness_salary_base,
                     home_region_id, bid.5, region_loyalty,
                     target_team_rank, target_team_reputation,
                     &target_roster, &position,
+                    cache.get_player_stats(player_id),
                     &mut rng,
                 );
                 bid_records.push(R5BidRecord { idx, willingness });
@@ -3311,7 +3668,7 @@ impl TransferEngine {
             ];
 
             let mut rng = rand::rngs::StdRng::from_entropy();
-            let team_rank = cache.get_team_rank(team_id);
+            let team_rank = cache.get_composite_rank(team_id);
             let team_reputation = cache.get_team_reputation(team_id);
             let team_region_id = cache.team_region_ids.get(&team_id).copied().flatten();
 
@@ -3339,6 +3696,9 @@ impl TransferEngine {
 
                 for candidate in &candidates {
                     let c_id: i64 = candidate.get("id");
+                    if cache.renewal_failed_pairs.contains(&(c_id, team_id)) {
+                        continue;
+                    }
                     let c_game_id: String = candidate.get("game_id");
                     let c_ability: i64 = candidate.get("ability");
                     let c_age: i64 = candidate.get("age");
@@ -3357,6 +3717,7 @@ impl TransferEngine {
                         c_home_region_id, team_region_id, c_region_loyalty,
                         team_rank, team_reputation,
                         &target_roster, pos_str,
+                        cache.get_player_stats(c_id),
                         &mut rng,
                     );
 
@@ -4237,6 +4598,7 @@ impl TransferEngine {
         target_team_reputation: i64,
         target_roster: &[CachedPlayer],
         position: &str,
+        player_stats: Option<&CachedPlayerStats>,
         rng: &mut impl Rng,
     ) -> f64 {
         // 1. 薪资满意度（20-100）
@@ -4332,6 +4694,35 @@ impl TransferEngine {
 
         let base_willingness = weighted_score.clamp(0.0, 100.0);
 
+        // 国际赛表现加成：大赛型选手更受强队吸引
+        let intl_bonus = if let Some(stats) = player_stats {
+            if stats.international_games >= 5 && stats.international_avg_impact > 1.0 {
+                if target_team_rank <= 4 { 8.0 }
+                else if target_team_rank <= 8 { 4.0 }
+                else { -3.0 }
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+
+        // momentum 加成：状态好的选手更自信（要价更高，对弱队更挑剔）
+        let momentum_bonus = if let Some(stats) = player_stats {
+            let m = stats.momentum;
+            if m >= 3 {
+                if target_team_rank <= 6 { 5.0 } else { -3.0 }
+            } else if m <= -3 {
+                3.0
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+
+        let adjusted_willingness = (base_willingness + intl_bonus + momentum_bonus).clamp(0.0, 100.0);
+
         // 跨赛区惩罚
         let cross_region_factor = match (home_region_id, target_region_id) {
             (Some(home), Some(target)) if home != target => {
@@ -4340,7 +4731,7 @@ impl TransferEngine {
             _ => 1.0
         };
 
-        (base_willingness * cross_region_factor).clamp(0.0, 100.0)
+        (adjusted_willingness * cross_region_factor).clamp(0.0, 100.0)
     }
 }
 
@@ -4394,10 +4785,12 @@ mod tests {
             team_annual_ranks: HashMap::new(),
             team_last_season_ranks: HashMap::new(),
             team_reputations: HashMap::new(),
+            renewal_failed_pairs: HashSet::new(),
+            team_spring_ranks: HashMap::new(),
+            team_summer_ranks: HashMap::new(),
+            player_season_stats: HashMap::new(),
         }
     }
-
-    // ==================== probabilistic_round ====================
 
     #[test]
     fn test_probabilistic_round_integer_returns_self() {
@@ -4521,6 +4914,7 @@ mod tests {
             80,          // target_team_reputation
             &roster,
             "JUG",
+            None,
             &mut rng,
         );
         assert!(w > 60.0, "same region high offer should yield high willingness, got {}", w);
@@ -4535,11 +4929,11 @@ mod tests {
 
         let same_region = engine.calculate_willingness(
             75, 50, 26, 7_000_000, 5_000_000,
-            Some(1), Some(1), 85, 3, 70, &roster, "JUG", &mut rng1,
+            Some(1), Some(1), 85, 3, 70, &roster, "JUG", None, &mut rng1,
         );
         let cross_region = engine.calculate_willingness(
             75, 50, 26, 7_000_000, 5_000_000,
-            Some(1), Some(2), 85, 3, 70, &roster, "JUG", &mut rng2,
+            Some(1), Some(2), 85, 3, 70, &roster, "JUG", None, &mut rng2,
         );
         assert!(
             cross_region < same_region,
@@ -4572,11 +4966,11 @@ mod tests {
 
         let w_mentor = engine.calculate_willingness(
             65, 50, 20, 4_000_000, 3_000_000,
-            Some(1), Some(1), 50, 5, 60, &roster_with_mentor, "MID", &mut rng1,
+            Some(1), Some(1), 50, 5, 60, &roster_with_mentor, "MID", None, &mut rng1,
         );
         let w_no_mentor = engine.calculate_willingness(
             65, 50, 20, 4_000_000, 3_000_000,
-            Some(1), Some(1), 50, 12, 30, &roster_no_mentor, "MID", &mut rng2,
+            Some(1), Some(1), 50, 12, 30, &roster_no_mentor, "MID", None, &mut rng2,
         );
         assert!(
             w_mentor > w_no_mentor,

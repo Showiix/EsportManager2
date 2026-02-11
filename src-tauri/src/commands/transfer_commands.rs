@@ -626,6 +626,8 @@ pub struct TeamSeasonEvaluationInfo {
     pub season_id: i64,
     pub current_rank: i32,
     pub last_rank: i32,
+    pub spring_rank: Option<i32>,
+    pub summer_rank: Option<i32>,
     pub stability_score: i32,
     pub strategy: String,
     pub urgency_level: String,
@@ -735,6 +737,16 @@ pub async fn get_team_evaluations(
             e.season_id,
             e.current_rank,
             COALESCE(e.last_season_rank, e.current_rank) as last_rank,
+            (SELECT ls.rank FROM league_standings ls
+             JOIN tournaments tr ON ls.tournament_id = tr.id
+             WHERE tr.save_id = e.save_id AND tr.season_id = e.season_id
+             AND tr.tournament_type = 'SpringRegular' AND ls.team_id = e.team_id
+             LIMIT 1) as spring_rank,
+            (SELECT ls.rank FROM league_standings ls
+             JOIN tournaments tr ON ls.tournament_id = tr.id
+             WHERE tr.save_id = e.save_id AND tr.season_id = e.season_id
+             AND tr.tournament_type = 'SummerRegular' AND ls.team_id = e.team_id
+             LIMIT 1) as summer_rank,
             e.stability_score,
             e.strategy,
             e.urgency_level,
@@ -773,6 +785,8 @@ pub async fn get_team_evaluations(
             season_id: row.get("season_id"),
             current_rank: row.get("current_rank"),
             last_rank: row.get("last_rank"),
+            spring_rank: row.try_get("spring_rank").ok(),
+            summer_rank: row.try_get("summer_rank").ok(),
             stability_score: row.get("stability_score"),
             strategy: row.get("strategy"),
             urgency_level: row.get("urgency_level"),

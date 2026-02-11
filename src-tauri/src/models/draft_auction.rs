@@ -104,6 +104,9 @@ pub enum AuctionEventType {
     Withdrawn,
     Expired,
     AuctionEnd,
+    WantedCreated,
+    WantedAccepted,
+    WantedRejected,
 }
 
 impl From<&str> for AuctionEventType {
@@ -117,6 +120,9 @@ impl From<&str> for AuctionEventType {
             "WITHDRAWN" => AuctionEventType::Withdrawn,
             "EXPIRED" => AuctionEventType::Expired,
             "AUCTION_END" => AuctionEventType::AuctionEnd,
+            "WANTED_CREATED" => AuctionEventType::WantedCreated,
+            "WANTED_ACCEPTED" => AuctionEventType::WantedAccepted,
+            "WANTED_REJECTED" => AuctionEventType::WantedRejected,
             _ => AuctionEventType::AuctionStart,
         }
     }
@@ -133,6 +139,9 @@ impl ToString for AuctionEventType {
             AuctionEventType::Withdrawn => "WITHDRAWN".to_string(),
             AuctionEventType::Expired => "EXPIRED".to_string(),
             AuctionEventType::AuctionEnd => "AUCTION_END".to_string(),
+            AuctionEventType::WantedCreated => "WANTED_CREATED".to_string(),
+            AuctionEventType::WantedAccepted => "WANTED_ACCEPTED".to_string(),
+            AuctionEventType::WantedRejected => "WANTED_REJECTED".to_string(),
         }
     }
 }
@@ -258,20 +267,90 @@ pub struct DraftPickPricing {
 /// 价格单位: 万
 pub fn get_draft_pick_pricing() -> Vec<DraftPickPricing> {
     vec![
-        DraftPickPricing { position: 1, name: "状元签".to_string(), starting_price: 2000_0000, min_increment: 200_0000 },
-        DraftPickPricing { position: 2, name: "榜眼签".to_string(), starting_price: 1500_0000, min_increment: 150_0000 },
-        DraftPickPricing { position: 3, name: "探花签".to_string(), starting_price: 1000_0000, min_increment: 100_0000 },
-        DraftPickPricing { position: 4, name: "第4签".to_string(), starting_price: 700_0000, min_increment: 80_0000 },
-        DraftPickPricing { position: 5, name: "第5签".to_string(), starting_price: 500_0000, min_increment: 60_0000 },
-        DraftPickPricing { position: 6, name: "第6签".to_string(), starting_price: 400_0000, min_increment: 50_0000 },
-        DraftPickPricing { position: 7, name: "第7签".to_string(), starting_price: 300_0000, min_increment: 40_0000 },
-        DraftPickPricing { position: 8, name: "第8签".to_string(), starting_price: 250_0000, min_increment: 30_0000 },
-        DraftPickPricing { position: 9, name: "第9签".to_string(), starting_price: 200_0000, min_increment: 25_0000 },
-        DraftPickPricing { position: 10, name: "第10签".to_string(), starting_price: 150_0000, min_increment: 20_0000 },
-        DraftPickPricing { position: 11, name: "第11签".to_string(), starting_price: 120_0000, min_increment: 15_0000 },
-        DraftPickPricing { position: 12, name: "第12签".to_string(), starting_price: 100_0000, min_increment: 15_0000 },
-        DraftPickPricing { position: 13, name: "第13签".to_string(), starting_price: 80_0000, min_increment: 10_0000 },
-        DraftPickPricing { position: 14, name: "第14签".to_string(), starting_price: 60_0000, min_increment: 10_0000 },
+        DraftPickPricing {
+            position: 1,
+            name: "状元签".to_string(),
+            starting_price: 2000_0000,
+            min_increment: 200_0000,
+        },
+        DraftPickPricing {
+            position: 2,
+            name: "榜眼签".to_string(),
+            starting_price: 1500_0000,
+            min_increment: 150_0000,
+        },
+        DraftPickPricing {
+            position: 3,
+            name: "探花签".to_string(),
+            starting_price: 1000_0000,
+            min_increment: 100_0000,
+        },
+        DraftPickPricing {
+            position: 4,
+            name: "第4签".to_string(),
+            starting_price: 700_0000,
+            min_increment: 80_0000,
+        },
+        DraftPickPricing {
+            position: 5,
+            name: "第5签".to_string(),
+            starting_price: 500_0000,
+            min_increment: 60_0000,
+        },
+        DraftPickPricing {
+            position: 6,
+            name: "第6签".to_string(),
+            starting_price: 400_0000,
+            min_increment: 50_0000,
+        },
+        DraftPickPricing {
+            position: 7,
+            name: "第7签".to_string(),
+            starting_price: 300_0000,
+            min_increment: 40_0000,
+        },
+        DraftPickPricing {
+            position: 8,
+            name: "第8签".to_string(),
+            starting_price: 250_0000,
+            min_increment: 30_0000,
+        },
+        DraftPickPricing {
+            position: 9,
+            name: "第9签".to_string(),
+            starting_price: 200_0000,
+            min_increment: 25_0000,
+        },
+        DraftPickPricing {
+            position: 10,
+            name: "第10签".to_string(),
+            starting_price: 150_0000,
+            min_increment: 20_0000,
+        },
+        DraftPickPricing {
+            position: 11,
+            name: "第11签".to_string(),
+            starting_price: 120_0000,
+            min_increment: 15_0000,
+        },
+        DraftPickPricing {
+            position: 12,
+            name: "第12签".to_string(),
+            starting_price: 100_0000,
+            min_increment: 15_0000,
+        },
+        DraftPickPricing {
+            position: 13,
+            name: "第13签".to_string(),
+            starting_price: 80_0000,
+            min_increment: 10_0000,
+        },
+        DraftPickPricing {
+            position: 14,
+            name: "第14签".to_string(),
+            starting_price: 60_0000,
+            min_increment: 10_0000,
+        },
     ]
 }
 
@@ -303,4 +382,57 @@ pub fn get_position_name(position: u32) -> String {
         3 => "探花签".to_string(),
         _ => format!("第{}签", position),
     }
+}
+
+/// 求购状态
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WantedStatus {
+    Active,
+    Fulfilled,
+    Rejected,
+    Expired,
+}
+
+impl From<&str> for WantedStatus {
+    fn from(s: &str) -> Self {
+        match s.to_uppercase().as_str() {
+            "FULFILLED" => WantedStatus::Fulfilled,
+            "REJECTED" => WantedStatus::Rejected,
+            "EXPIRED" => WantedStatus::Expired,
+            _ => WantedStatus::Active,
+        }
+    }
+}
+
+impl ToString for WantedStatus {
+    fn to_string(&self) -> String {
+        match self {
+            WantedStatus::Active => "ACTIVE".to_string(),
+            WantedStatus::Fulfilled => "FULFILLED".to_string(),
+            WantedStatus::Rejected => "REJECTED".to_string(),
+            WantedStatus::Expired => "EXPIRED".to_string(),
+        }
+    }
+}
+
+/// 选秀权求购请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DraftPickWanted {
+    pub id: u64,
+    pub save_id: String,
+    pub season_id: u64,
+    pub region_id: u64,
+    pub auction_id: u64,
+    pub buyer_team_id: u64,
+    pub buyer_team_name: String,
+    pub target_position: u32,
+    pub offer_price: i64,
+    pub reason: String,
+    pub status: WantedStatus,
+    pub holder_team_id: u64,
+    pub holder_team_name: String,
+    pub response_reason: Option<String>,
+    pub final_price: Option<i64>,
+    pub created_at: String,
+    pub resolved_at: Option<String>,
 }

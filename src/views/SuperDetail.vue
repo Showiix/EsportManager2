@@ -1020,7 +1020,14 @@ const batchSimulateChallengerStage = async () => {
       matches: mapMatches(positioningMatches),
       onMatchSimulated,
       onComplete: async () => {
-        // 定位赛完成后重新加载数据，让晋级赛获取到定位赛败者
+        // 定位赛完成后重新生成对阵数据（补填晋级赛队伍），再加载
+        if (tournamentId.value) {
+          try {
+            await internationalApi.generateKnockoutBracket(tournamentId.value)
+          } catch (e) {
+            logger.warn('[Super] 定位赛后补填对阵数据失败，继续执行:', e)
+          }
+        }
         await loadTournamentData()
       }
     })

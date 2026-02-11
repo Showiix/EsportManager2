@@ -274,73 +274,59 @@
           <transition name="round-collapse">
             <div v-if="isRoundExpanded(group.round)" class="round-group-body">
               <template v-for="event in group.events" :key="event.id">
-                <!-- S级：大卡片 -->
                 <div
-                  v-if="event.level === 'S'"
-                  class="event-featured"
-                  :class="`type-${event.event_type.toLowerCase()}`"
+                  class="event-row"
+                  :class="[`level-${event.level.toLowerCase()}`, `type-${event.event_type.toLowerCase()}`, { expanded: isEventExpanded(event.id) }]"
+                  @click="toggleEvent(event.id)"
                 >
-                  <div class="featured-level">
-                    {{ getLevelLabel(event.level) }}
-                  </div>
-                  <div class="event-type-icon" :class="event.event_type.toLowerCase()">
-                    <el-icon v-if="event.event_type === 'CONTRACT_RENEWAL'"><Check /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'CONTRACT_TERMINATION'"><Close /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'FREE_AGENT_SIGNING'"><EditPen /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'TRANSFER_PURCHASE'"><Money /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'PLAYER_RETIREMENT'"><Trophy /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'PLAYER_LISTED'"><Sell /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'EMERGENCY_SIGNING'"><Lightning /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'SEASON_SETTLEMENT'"><Calendar /></el-icon>
-                    <el-icon v-else><Bell /></el-icon>
-                  </div>
-                  <div class="event-content">
-                    <div class="event-headline">{{ getEventHeadline(event) }}</div>
-                    <div class="event-description">{{ getEventDescription(event) }}</div>
-                    <div class="event-details">
-                      <span v-if="event.transfer_fee > 0" class="detail-item fee">
-                        <el-icon><Money /></el-icon>
-                        转会费 {{ formatAmount(event.transfer_fee) }}
-                      </span>
-                      <span v-if="event.salary > 0" class="detail-item salary">
-                        <el-icon><Wallet /></el-icon>
-                        年薪 {{ formatAmount(event.salary) }}
-                      </span>
-                      <span v-if="event.contract_years > 0" class="detail-item contract">
-                        <el-icon><Calendar /></el-icon>
-                        {{ event.contract_years }}年合同
-                      </span>
+                  <div class="event-row-compact">
+                    <div class="compact-icon" :class="event.event_type.toLowerCase()">
+                      <el-icon v-if="event.event_type === 'CONTRACT_RENEWAL'"><Check /></el-icon>
+                      <el-icon v-else-if="event.event_type === 'CONTRACT_TERMINATION'"><Close /></el-icon>
+                      <el-icon v-else-if="event.event_type === 'FREE_AGENT_SIGNING'"><EditPen /></el-icon>
+                      <el-icon v-else-if="event.event_type === 'TRANSFER_PURCHASE'"><Money /></el-icon>
+                      <el-icon v-else-if="event.event_type === 'PLAYER_RETIREMENT'"><Trophy /></el-icon>
+                      <el-icon v-else-if="event.event_type === 'PLAYER_LISTED'"><Sell /></el-icon>
+                      <el-icon v-else-if="event.event_type === 'EMERGENCY_SIGNING'"><Lightning /></el-icon>
+                      <el-icon v-else-if="event.event_type === 'SEASON_SETTLEMENT'"><Calendar /></el-icon>
+                      <el-icon v-else><Bell /></el-icon>
                     </div>
+                    <span class="compact-level" :class="event.level.toLowerCase()">
+                      {{ getLevelLabel(event.level) }}
+                    </span>
+                    <span class="compact-headline">{{ getEventHeadline(event) }}</span>
+                    <span class="compact-badges">
+                      <span v-if="event.reason && event.event_type === 'SEASON_SETTLEMENT'" class="badge settlement-detail">{{ event.reason }}</span>
+                      <span v-if="event.transfer_fee > 0" class="badge fee">{{ formatAmount(event.transfer_fee) }}</span>
+                      <span v-if="event.salary > 0" class="badge salary">{{ formatAmount(event.salary) }}/年</span>
+                      <span v-if="event.contract_years > 0" class="badge contract">{{ event.contract_years }}年</span>
+                    </span>
+                    <el-icon class="expand-arrow" :class="{ opened: isEventExpanded(event.id) }">
+                      <ArrowRight />
+                    </el-icon>
                   </div>
-                </div>
-
-                <!-- A/B/C级：紧凑行 -->
-                <div
-                  v-else
-                  class="event-compact"
-                  :class="[`level-${event.level.toLowerCase()}`, `type-${event.event_type.toLowerCase()}`]"
-                >
-                  <div class="compact-icon" :class="event.event_type.toLowerCase()">
-                    <el-icon v-if="event.event_type === 'CONTRACT_RENEWAL'"><Check /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'CONTRACT_TERMINATION'"><Close /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'FREE_AGENT_SIGNING'"><EditPen /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'TRANSFER_PURCHASE'"><Money /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'PLAYER_RETIREMENT'"><Trophy /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'PLAYER_LISTED'"><Sell /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'EMERGENCY_SIGNING'"><Lightning /></el-icon>
-                    <el-icon v-else-if="event.event_type === 'SEASON_SETTLEMENT'"><Calendar /></el-icon>
-                    <el-icon v-else><Bell /></el-icon>
-                  </div>
-                  <span class="compact-level" :class="event.level.toLowerCase()">
-                    {{ getLevelLabel(event.level) }}
-                  </span>
-                  <span class="compact-headline">{{ getEventHeadline(event) }}</span>
-                  <span class="compact-badges">
-                    <span v-if="event.reason && event.event_type === 'SEASON_SETTLEMENT'" class="badge settlement-detail">{{ event.reason }}</span>
-                    <span v-if="event.transfer_fee > 0" class="badge fee">{{ formatAmount(event.transfer_fee) }}</span>
-                    <span v-if="event.salary > 0" class="badge salary">{{ formatAmount(event.salary) }}/年</span>
-                    <span v-if="event.contract_years > 0" class="badge contract">{{ event.contract_years }}年</span>
-                  </span>
+                  <transition name="event-detail">
+                    <div v-if="isEventExpanded(event.id)" class="event-row-detail" @click.stop>
+                      <div class="detail-description">{{ getEventDescription(event) }}</div>
+                      <div class="detail-tags">
+                        <span v-if="event.transfer_fee > 0" class="detail-item fee">
+                          <el-icon><Money /></el-icon>
+                          转会费 {{ formatAmount(event.transfer_fee) }}
+                        </span>
+                        <span v-if="event.salary > 0" class="detail-item salary">
+                          <el-icon><Wallet /></el-icon>
+                          年薪 {{ formatAmount(event.salary) }}
+                        </span>
+                        <span v-if="event.contract_years > 0" class="detail-item contract">
+                          <el-icon><Calendar /></el-icon>
+                          {{ event.contract_years }}年合同
+                        </span>
+                        <span v-if="event.reason && event.event_type !== 'SEASON_SETTLEMENT'" class="detail-item reason">
+                          {{ event.reason }}
+                        </span>
+                      </div>
+                    </div>
+                  </transition>
                 </div>
               </template>
             </div>
@@ -568,6 +554,7 @@ const groupedEvents = computed<EventGroup[]>(() => {
 
 // 轮次折叠状态
 const expandedRounds = ref(new Set<number>())
+const expandedEvents = ref(new Set<number>())
 
 // 初始展开最新轮次
 watch(groupedEvents, (groups) => {
@@ -588,6 +575,20 @@ function toggleRound(round: number) {
 
 function isRoundExpanded(round: number): boolean {
   return expandedRounds.value.has(round)
+}
+
+function toggleEvent(eventId: number) {
+  const newSet = new Set(expandedEvents.value)
+  if (newSet.has(eventId)) {
+    newSet.delete(eventId)
+  } else {
+    newSet.add(eventId)
+  }
+  expandedEvents.value = newSet
+}
+
+function isEventExpanded(eventId: number): boolean {
+  return expandedEvents.value.has(eventId)
 }
 
 watch([filterType, filterRegion, filterTeam], () => {
@@ -1049,67 +1050,76 @@ onMounted(async () => {
   max-height: 0;
 }
 
-/* ===== S级大卡片 ===== */
-.event-featured {
-  background: linear-gradient(135deg, #fffbeb, #ffffff);
+/* ===== 统一折叠行 ===== */
+.event-row {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.event-row:hover {
+  background: #fafafa;
+}
+
+.event-row.level-s {
   border-left: 4px solid #f59e0b;
-  padding: 12px 16px;
+  background: linear-gradient(90deg, #fffdf5, white);
+}
+
+.event-row.level-a {
+  border-left: 3px solid #8b5cf6;
+}
+
+.event-row.level-b {
+  border-left: 3px solid #3b82f6;
+}
+
+.event-row.level-c {
+  border-left: 3px solid #e5e7eb;
+}
+
+.event-row.expanded {
+  background: #f9fafb;
+}
+
+.event-row-compact {
   display: flex;
-  gap: 12px;
-  position: relative;
-  transition: background 0.2s;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  min-height: 40px;
 }
 
-.event-featured:hover {
-  background: linear-gradient(135deg, #fef9c3, #fffbeb);
+.expand-arrow {
+  font-size: 12px;
+  color: #c0c4cc;
+  transition: transform 0.25s ease;
+  flex-shrink: 0;
 }
 
-.featured-level {
-  position: absolute;
-  top: 8px;
-  right: 12px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 4px;
-  color: white;
-  background: #f59e0b;
+.expand-arrow.opened {
+  transform: rotate(90deg);
+  color: #409eff;
 }
 
-.event-featured .event-type-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  font-size: 20px;
+.event-row-detail {
+  padding: 0 16px 12px 52px;
 }
 
-.event-featured .event-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.event-featured .event-headline {
-  font-size: 15px;
-  font-weight: 700;
-  color: #303133;
-  margin-bottom: 4px;
-  padding-right: 50px;
-}
-
-.event-featured .event-description {
+.detail-description {
   font-size: 13px;
   color: #606266;
+  line-height: 1.5;
   margin-bottom: 8px;
-  line-height: 1.4;
 }
 
-.event-featured .event-details {
+.detail-tags {
   display: flex;
   gap: 12px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
-.event-featured .detail-item {
+.detail-item {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1117,44 +1127,42 @@ onMounted(async () => {
   color: #606266;
 }
 
-.event-featured .detail-item.fee {
+.detail-item.fee {
   font-weight: 600;
   color: #f59e0b;
 }
 
-.event-featured .detail-item.salary {
+.detail-item.salary {
   color: #22c55e;
 }
 
-.event-featured .detail-item.contract {
+.detail-item.contract {
   color: #3b82f6;
 }
 
-/* ===== A/B/C级紧凑行 ===== */
-.event-compact {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: white;
-  transition: background 0.15s;
-  min-height: 40px;
+.detail-item.reason {
+  color: #909399;
+  font-style: italic;
 }
 
-.event-compact:hover {
-  background: #fafafa;
+.event-detail-enter-active,
+.event-detail-leave-active {
+  transition: all 0.25s ease;
+  overflow: hidden;
 }
 
-.event-compact.level-a {
-  border-left: 3px solid #8b5cf6;
+.event-detail-enter-from,
+.event-detail-leave-to {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
-.event-compact.level-b {
-  border-left: 3px solid #3b82f6;
-}
-
-.event-compact.level-c {
-  border-left: 3px solid #e5e7eb;
+.event-detail-enter-to,
+.event-detail-leave-from {
+  opacity: 1;
+  max-height: 200px;
 }
 
 .compact-icon {
@@ -1240,24 +1248,6 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-/* ===== 保留的事件类型图标样式（S级用） ===== */
-.event-type-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  flex-shrink: 0;
-}
-
-.event-type-icon.contract_renewal { background: linear-gradient(135deg, #22c55e, #16a34a); }
-.event-type-icon.contract_termination { background: linear-gradient(135deg, #ef4444, #dc2626); }
-.event-type-icon.free_agent_signing { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.event-type-icon.transfer_purchase { background: linear-gradient(135deg, #f59e0b, #d97706); }
-.event-type-icon.player_retirement { background: linear-gradient(135deg, #6b7280, #4b5563); }
-.event-type-icon.player_listed { background: linear-gradient(135deg, #f97316, #ea580c); }
-.event-type-icon.emergency_signing { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
-.event-type-icon.season_settlement { background: linear-gradient(135deg, #06b6d4, #0891b2); }
 
 /* 事件数量 */
 .event-count {

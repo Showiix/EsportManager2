@@ -1,5 +1,6 @@
 use crate::commands::save_commands::{AppState, CommandResult};
-use crate::engines::{DraftEngine, MarketValueEngine, RookieGenerator};
+use crate::engines::{DraftEngine, MarketValueEngine, RookieGenerator, TraitEngine};
+use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::collections::HashSet;
@@ -595,6 +596,24 @@ pub async fn make_draft_pick(
     .execute(&pool)
     .await
     .map_err(|e| format!("记录选秀合同失败: {}", e))?;
+
+    // 为新秀生成特性
+    {
+        let mut rng = rand::rngs::StdRng::from_entropy();
+        let traits = TraitEngine::generate_random_traits(draft_ability, draft_age, &mut rng);
+        for t in &traits {
+            let trait_name = format!("{:?}", t).to_lowercase();
+            let _ = sqlx::query(
+                "INSERT OR IGNORE INTO player_traits (save_id, player_id, trait_type, acquired_season) VALUES (?, ?, ?, ?)"
+            )
+            .bind(&save_id)
+            .bind(new_player_id)
+            .bind(&trait_name)
+            .bind(current_season)
+            .execute(&pool)
+            .await;
+        }
+    }
 
     // 获取队伍名称
     let team_row = sqlx::query("SELECT name FROM teams WHERE id = ?")

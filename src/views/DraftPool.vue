@@ -732,7 +732,7 @@ const savePlayer = async () => {
   try {
     const playerId = Number(editForm.value.id)
     await draftApi.updateDraftPoolPlayer(playerId, {
-      game_id: editForm.value.gameId,
+      gameId: editForm.value.gameId,
       ability: editForm.value.ability,
       potential: editForm.value.potential,
       position: editForm.value.position,

@@ -19,22 +19,348 @@ pub struct TeamInfo {
     pub win_rate: f64,
     pub annual_points: u32,
     pub balance: i64,
+    }
 }
 
-impl From<Team> for TeamInfo {
-    fn from(t: Team) -> Self {
-        Self {
-            id: t.id,
-            region_id: t.region_id,
-            name: t.name,
-            short_name: t.short_name,
-            power_rating: t.power_rating,
-            total_matches: t.total_matches,
-            wins: t.wins,
-            win_rate: t.win_rate,
-            annual_points: t.annual_points,
-            balance: t.balance,
+// ==================== 特性中心 API ====================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerTraitEntry {
+    pub player_id: u64,
+    pub player_name: String,
+    pub team_id: u64,
+    pub team_name: String,
+    pub region: String,
+    pub position: String,
+    pub ability: u8,
+    pub age: u8,
+    pub traits: Vec<TraitInfo>,
+}
+
+#[tauri::command]
+pub async fn get_all_player_traits(
+    state: State<'_, AppState>,
+    region: Option<String>,
+) -> Result<CommandResult<Vec<PlayerTraitEntry>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let query = if let Some(ref r) = region {
+        sqlx::query(
+            r#"
+            SELECT p.id as player_id, p.game_id as player_name, p.team_id,
+                   t.name as team_name, r.short_name as region,
+                   p.position, p.ability, p.age
+            FROM players p
+            JOIN teams t ON p.team_id = t.id
+            JOIN regions r ON t.region_id = r.id
+            WHERE r.short_name = ?
+            ORDER BY p.ability DESC
+            "#
+        )
+        .bind(r)
+        .fetch_all(&pool)
+        .await
+    } else {
+        sqlx::query(
+            r#"
+            SELECT p.id as player_id, p.game_id as player_name, p.team_id,
+                   t.name as team_name, r.short_name as region,
+                   p.position, p.ability, p.age
+            FROM players p
+            JOIN teams t ON p.team_id = t.id
+            JOIN regions r ON t.region_id = r.id
+            ORDER BY p.ability DESC
+            "#
+        )
+        .fetch_all(&pool)
+        .await
+    };
+
+    let players = match query {
+        Ok(rows) => rows,
+        Err(e) => return Ok(CommandResult::err(format!("Query failed: {}", e))),
+    };
+
+    let trait_rows = sqlx::query(
+        r#"SELECT player_id, trait_type FROM player_traits"#
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let mut player_traits_map: std::collections::HashMap<u64, Vec<TraitInfo>> = std::collections::HashMap::new();
+    for row in &trait_rows {
+        let pid = row.get::<i64, _>("player_id") as u64;
+        let trait_str: String = row.get("trait_type");
+        if let Some(t) = parse_trait_type(&trait_str) {
+            player_traits_map.entry(pid).or_default().push(t.into());
         }
+    }
+
+    let entries: Vec<PlayerTraitEntry> = players
+        .into_iter()
+        .map(|row| {
+            let pid = row.get::<i64, _>("player_id") as u64;
+            PlayerTraitEntry {
+                player_id: pid,
+                player_name: row.get("player_name"),
+                team_id: row.get::<i64, _>("team_id") as u64,
+                team_name: row.get("team_name"),
+                region: row.get("region"),
+                position: row.get("position"),
+                ability: row.get::<i64, _>("ability") as u8,
+                age: row.get::<i64, _>("age") as u8,
+                traits: player_traits_map.remove(&pid).unwrap_or_default(),
+            }
+        })
+        .collect();
+
+    Ok(CommandResult::ok(entries))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraitCatalogEntry {
+    pub trait_type: String,
+    pub name: String,
+    pub description: String,
+    pub rarity: u8,
+    pub is_negative: bool,
+    pub category: String,
+    pub awakening_conditions: String,
+    pub decay_conditions: String,
+}
+
+#[tauri::command]
+pub fn get_trait_catalog() -> CommandResult<Vec<TraitCatalogEntry>> {
+    use TraitType::*;
+
+    let all_traits = vec![
+        (Clutch, "big_game"),
+        (SlowStarter, "big_game"),
+        (FastStarter, "big_game"),
+        (FinalsKiller, "big_game"),
+        (RegularKing, "big_game"),
+        (WinStreak, "big_game"),
+        (ComebackKing, "mentality"),
+        (Tilter, "mentality"),
+        (MentalFortress, "mentality"),
+        (Fragile, "mentality"),
+        (Gambler, "mentality"),
+        (PressurePlayer, "mentality"),
+        (Complacent, "mentality"),
+        (Explosive, "stability"),
+        (Consistent, "stability"),
+        (Streaky, "stability"),
+        (BigGame, "stability"),
+        (Choker, "stability"),
+        (Ironman, "stamina"),
+        (Volatile, "stamina"),
+        (Endurance, "stamina"),
+        (Sprinter, "stamina"),
+        (NightOwl, "stamina"),
+        (PeakForm, "stamina"),
+        (TeamLeader, "team"),
+        (LoneWolf, "team"),
+        (Supportive, "team"),
+        (Troublemaker, "team"),
+        (Mentor, "team"),
+        (LateBlocker, "growth"),
+        (Prodigy, "growth"),
+        (Resilient, "growth"),
+        (GlassCannon, "growth"),
+        (LowCeiling, "growth"),
+        (Limitless, "growth"),
+        (BattleTested, "growth"),
+        (PeakAge, "growth"),
+        (EarlyDecline, "growth"),
+        (RisingStar, "special"),
+        (Veteran, "special"),
+        (Perfectionist, "special"),
+        (Adaptable, "special"),
+        (WorldStage, "international"),
+        (GroupStageExpert, "international"),
+        (KnockoutSpecialist, "international"),
+        (CrossRegion, "international"),
+        (TournamentHorse, "international"),
+    ];
+
+    let entries: Vec<TraitCatalogEntry> = all_traits
+        .into_iter()
+        .map(|(t, cat)| {
+            let (awaken, decay) = get_trait_conditions(t);
+            TraitCatalogEntry {
+                trait_type: format!("{:?}", t).to_lowercase(),
+                name: t.display_name().to_string(),
+                description: t.description().to_string(),
+                rarity: t.rarity(),
+                is_negative: t.is_negative(),
+                category: cat.to_string(),
+                awakening_conditions: awaken.to_string(),
+                decay_conditions: decay.to_string(),
+            }
+        })
+        .collect();
+
+    CommandResult::ok(entries)
+}
+
+fn get_trait_conditions(t: TraitType) -> (&'static str, &'static str) {
+    use TraitType::*;
+    match t {
+        Clutch => ("能力>=70, 比赛>=30场, 表现>0.5", "表现<-0.5"),
+        SlowStarter => ("随机生成", "无"),
+        FastStarter => ("随机生成", "无"),
+        FinalsKiller => ("能力>=75, 表现>1.0", "表现<-0.5"),
+        RegularKing => ("比赛>=35场, 表现稳定(0~0.8)", "无"),
+        WinStreak => ("表现>0.8, 比赛>=25场", "无"),
+        ComebackKing => ("表现>0.5, 能力>=65", "无"),
+        Tilter => ("表现<-0.5, 比赛>=20场", "表现>0.5且比赛>=25场"),
+        MentalFortress => ("能力>=70, 表现>0, 比赛>=30场", "表现<-0.8"),
+        Fragile => ("表现<-0.5, 比赛>=20场", "表现>0.5且比赛>=25场"),
+        Gambler => ("能力>=60", "无"),
+        PressurePlayer => ("表现>0.5, 能力>=65", "无"),
+        Complacent => ("随机生成", "表现>0.3"),
+        Explosive => ("能力>=65, 表现>0.3", "无"),
+        Consistent => ("比赛>=30场, 表现稳定(-0.2~0.5)", "表现<-0.3或>1.0"),
+        Streaky => ("随机生成", "表现>0.3且比赛>=30场"),
+        BigGame => ("能力>=65, 比赛>=30场, 表现>0.5", "表现<-0.5"),
+        Choker => ("表现<-0.5, 比赛>=20场", "表现>0.8"),
+        Ironman => ("比赛>=40场", "无"),
+        Volatile => ("随机生成", "无"),
+        Endurance => ("比赛>=40场", "无"),
+        Sprinter => ("随机生成", "无"),
+        NightOwl => ("随机生成", "无"),
+        PeakForm => ("年龄24-28, 能力>=70", "年龄>=30或<24"),
+        TeamLeader => ("效力同队>=3赛季, 能力>=65", "表现<-0.5"),
+        LoneWolf => ("能力>=70, 表现>0.5, 效力<=2赛季", "无"),
+        Supportive => ("效力同队>=3赛季, 能力>=65", "表现<-0.5"),
+        Troublemaker => ("表现<-0.3, 能力>=65", "表现>0.5"),
+        Mentor => ("年龄>=30, 能力>=65", "无"),
+        LateBlocker => ("年龄>=25, 能力>=68, 表现>0.5", "无"),
+        Prodigy => ("年龄<=20, 能力>=65", "年龄>=25"),
+        Resilient => ("年龄>=29, 能力>=65", "无"),
+        GlassCannon => ("随机生成", "年龄<=26且表现>0.3"),
+        LowCeiling => ("年龄>=24, 能力<60", "能力>=68"),
+        Limitless => ("年龄<=22, 能力>=68, 表现>0.5", "无"),
+        BattleTested => ("年龄>=28", "无"),
+        PeakAge => ("年龄24-28, 能力>=70", "年龄>=30"),
+        EarlyDecline => ("年龄>=26, 表现<-0.3", "能力>=70且年龄<=27"),
+        RisingStar => ("年龄<=20, 能力>=65", "年龄>=22(50%概率)"),
+        Veteran => ("年龄>=28", "无"),
+        Perfectionist => ("效力同队>=3赛季, 表现>0.3, 能力>=65", "无"),
+        Adaptable => ("效力<=1赛季, 表现>0.3", "无"),
+        WorldStage => ("能力>=75, 表现>1.0", "无"),
+        GroupStageExpert => ("比赛>=25场, 表现>0.3", "无"),
+        KnockoutSpecialist => ("能力>=75, 表现>1.0", "无"),
+        CrossRegion => ("比赛>=25场, 表现>0.3", "无"),
+        TournamentHorse => ("比赛>=40场", "无"),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamSynergyInfo {
+    pub team_id: u64,
+    pub team_name: String,
+    pub avg_tenure: f64,
+    pub synergy_bonus: f64,
+    pub players: Vec<PlayerSynergyDetail>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerSynergyDetail {
+    pub player_id: u64,
+    pub player_name: String,
+    pub position: String,
+    pub join_season: i64,
+    pub tenure: i64,
+}
+
+#[tauri::command]
+pub async fn get_team_synergy(
+    state: State<'_, AppState>,
+    team_id: u64,
+) -> Result<CommandResult<TeamSynergyInfo>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let current_season: i64 = sqlx::query_scalar("SELECT current_season FROM saves LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(1);
+
+    let team_row = sqlx::query("SELECT name FROM teams WHERE id = ?")
+        .bind(team_id as i64)
+        .fetch_optional(&pool)
+        .await
+        .ok()
+        .flatten();
+
+    let team_name: String = team_row
+        .map(|r| r.get("name"))
+        .unwrap_or_else(|| "Unknown".to_string());
+
+    let rows = sqlx::query(
+        r#"
+        SELECT id, game_id, position, join_season
+        FROM players
+        WHERE team_id = ? AND is_active = 1
+        ORDER BY CASE position
+            WHEN 'top' THEN 1 WHEN 'jungle' THEN 2 WHEN 'mid' THEN 3
+            WHEN 'bot' THEN 4 WHEN 'support' THEN 5 ELSE 6 END
+        "#
+    )
+    .bind(team_id as i64)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    let mut players = Vec::new();
+    let mut total_tenure: f64 = 0.0;
+
+    for row in &rows {
+        let join_season: i64 = row.get("join_season");
+        let tenure = (current_season - join_season).max(0);
+        total_tenure += tenure as f64;
+
+        players.push(PlayerSynergyDetail {
+            player_id: row.get::<i64, _>("id") as u64,
+            player_name: row.get("game_id"),
+            position: row.get("position"),
+            join_season,
+            tenure,
+        });
+    }
+
+    let count = players.len().max(1) as f64;
+    let avg_tenure = total_tenure / count;
+    let synergy_bonus = (avg_tenure * 0.4).min(2.0);
+
+    Ok(CommandResult::ok(TeamSynergyInfo {
+        team_id,
+        team_name,
+        avg_tenure,
+        synergy_bonus,
+        players,
+    }))
+}
+
     }
 }
 
@@ -888,25 +1214,9 @@ pub async fn get_player_full_detail(
     }))
 }
 
-/// 解析特性类型字符串
+/// 解析特性类型字符串（委托给 TraitType::from_str，覆盖全部50个特性）
 fn parse_trait_type(s: &str) -> Option<TraitType> {
-    match s.to_lowercase().as_str() {
-        "clutch" => Some(TraitType::Clutch),
-        "slowstarter" | "slow_starter" => Some(TraitType::SlowStarter),
-        "faststarter" | "fast_starter" => Some(TraitType::FastStarter),
-        "explosive" => Some(TraitType::Explosive),
-        "consistent" => Some(TraitType::Consistent),
-        "comebackking" | "comeback_king" => Some(TraitType::ComebackKing),
-        "tilter" => Some(TraitType::Tilter),
-        "mentalfortress" | "mental_fortress" => Some(TraitType::MentalFortress),
-        "fragile" => Some(TraitType::Fragile),
-        "ironman" => Some(TraitType::Ironman),
-        "volatile" => Some(TraitType::Volatile),
-        "risingstar" | "rising_star" => Some(TraitType::RisingStar),
-        "veteran" => Some(TraitType::Veteran),
-        "teamleader" | "team_leader" => Some(TraitType::TeamLeader),
-        _ => None,
-    }
+    TraitType::from_str(s)
 }
 
 /// 选手属性更新请求

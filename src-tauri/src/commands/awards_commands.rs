@@ -162,6 +162,7 @@ fn calculate_dimensions(
     }
 }
 
+#[allow(dead_code)]
 fn calculate_final_yearly_score(dims: &ScoreDimensions, has_international: bool) -> f64 {
     let base = dims.impact_norm * 0.40
         + dims.performance_norm * 0.18
@@ -452,7 +453,6 @@ async fn get_top20_players(
                 player.avg_impact, player.avg_performance, player.consistency_score,
                 player.games_played, player.champion_bonus, *big_stage, *has_intl,
             );
-            player.yearly_score = calculate_final_yearly_score(&player.dimensions, *has_intl);
             if !has_intl {
                 player.commentary.tags.push("未参加国际赛".to_string());
             }
@@ -507,7 +507,7 @@ async fn get_all_pro_teams(
                 WHERE gpp.save_id = ? AND tr.season_id = ?
                 GROUP BY gpp.save_id, gpp.player_id
             ) gpp_count ON pss.save_id = gpp_count.save_id AND pss.player_id = gpp_count.player_id
-            WHERE pss.save_id = ? AND pss.season_id = ? AND pss.position = ?
+            WHERE pss.save_id = ? AND pss.season_id = ? AND UPPER(pss.position) = UPPER(?)
               AND (pss.games_played > 0 OR COALESCE(gpp_count.real_games_played, 0) > 0)
             ORDER BY pss.yearly_top_score DESC
             LIMIT 3
@@ -908,7 +908,8 @@ async fn get_all_tournament_breakdowns(
 
     Ok(result.into_iter().map(|(pid, (details, intl_sum, intl_games))| {
         let has_intl = intl_games > 0.0;
-        let big_stage = if has_intl { intl_sum / intl_games } else { 0.0 };
-        (pid, (details, big_stage, has_intl))
+        let raw_score = if has_intl { intl_sum / intl_games } else { 0.0 };
+        let confidence = (intl_games / 70.0).min(1.0);
+        (pid, (details, raw_score * confidence, has_intl))
     }).collect())
 }

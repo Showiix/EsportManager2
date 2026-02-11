@@ -22,7 +22,7 @@ export interface ICPMatch {
   scoreA?: number
   scoreB?: number
   winnerId?: string | number | null
-  status: 'scheduled' | 'in_progress' | 'completed'
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
   bestOf: number // BO3或BO5
   stage: 'group' | 'semifinal' | 'final'
   groupName?: string // A/B/C/D组

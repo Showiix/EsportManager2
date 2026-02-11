@@ -245,10 +245,6 @@ pub async fn get_season_impact_ranking(
         let (bs_score, bs_intl) = big_stage_map.get(&player.player_id).copied().unwrap_or((0.0, false));
         player.big_stage_score = bs_score;
         player.has_international = bs_intl;
-        player.yearly_top_score = calc_6dim_score(
-            player.avg_impact, player.avg_performance, player.consistency_score,
-            player.games_played, player.champion_bonus, bs_score, bs_intl,
-        );
     }
     ranking.sort_by(|a, b| b.yearly_top_score.partial_cmp(&a.yearly_top_score).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -293,10 +289,6 @@ pub async fn get_position_ranking(
         let (bs_score, bs_intl) = big_stage_map.get(&player.player_id).copied().unwrap_or((0.0, false));
         player.big_stage_score = bs_score;
         player.has_international = bs_intl;
-        player.yearly_top_score = calc_6dim_score(
-            player.avg_impact, player.avg_performance, player.consistency_score,
-            player.games_played, player.champion_bonus, bs_score, bs_intl,
-        );
     }
     ranking.sort_by(|a, b| b.yearly_top_score.partial_cmp(&a.yearly_top_score).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -990,12 +982,12 @@ pub async fn get_player_yearly_top_history(
         let season_id: i64 = row.get("season_id");
         let score: f64 = row.get("yearly_top_score");
 
-        // 查该赛季所有选手的排名（按 yearly_top_score DESC）
+        // 查该赛季所有选手的排名（按 yearly_top_score DESC，只计有比赛记录的选手）
         let rank_row = sqlx::query(
             r#"
             SELECT COUNT(*) as rank
             FROM player_season_stats
-            WHERE save_id = ? AND season_id = ? AND season_id <= 100 AND yearly_top_score > ?
+            WHERE save_id = ? AND season_id = ? AND season_id <= 100 AND games_played > 0 AND yearly_top_score > ?
             "#
         )
         .bind(&save_id)
@@ -1069,11 +1061,13 @@ async fn query_all_players_big_stage(
     }
 
     player_intl.into_iter().map(|(pid, (impact_sum, games))| {
-        let score = if games > 0.0 { impact_sum / games } else { 0.0 };
-        (pid, (score, true))
+        let raw_score = if games > 0.0 { impact_sum / games } else { 0.0 };
+        let confidence = (games / 70.0).min(1.0);
+        (pid, (raw_score * confidence, true))
     }).collect()
 }
 
+#[allow(dead_code)]
 fn calc_6dim_score(
     avg_impact: f64,
     avg_performance: f64,
@@ -1083,28 +1077,8 @@ fn calc_6dim_score(
     big_stage_score: f64,
     has_international: bool,
 ) -> f64 {
-    let impact_norm = ((avg_impact + 5.0) * 5.0).clamp(0.0, 100.0);
-    let perf_norm = ((avg_performance - 50.0) * 2.0).clamp(0.0, 100.0);
-    let stability_norm = consistency_score.clamp(0.0, 100.0);
-    let appearance_norm = (games_played as f64 * 0.83).clamp(0.0, 100.0);
-    let honor_raw = (champion_bonus * 6.67).clamp(0.0, 100.0);
-    let honor_discount = if avg_impact >= 0.0 {
-        1.0
-    } else {
-        ((avg_impact + 5.0) / 5.0).clamp(0.2, 1.0)
-    };
-    let honor_norm = honor_raw * honor_discount;
-    let big_stage_norm = if has_international {
-        ((big_stage_score + 5.0) * 5.0).clamp(0.0, 100.0)
-    } else {
-        0.0
-    };
-
-    let base = impact_norm * 0.40
-        + perf_norm * 0.18
-        + stability_norm * 0.12
-        + appearance_norm * 0.10
-        + honor_norm * 0.05
-        + big_stage_norm * 0.15;
-    if has_international { base } else { base * 0.95 }
+    PlayerSeasonStatistics::calculate_yearly_top_score_6dim(
+        avg_impact, avg_performance, consistency_score,
+        games_played, champion_bonus, big_stage_score, has_international,
+    )
 }

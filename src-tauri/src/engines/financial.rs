@@ -285,8 +285,8 @@ impl FinancialEngine {
         let gap = league_avg_balance - team_balance;
         if gap > 2_000_000 {
             // 差距超过200万才触发
-            let balance_subsidy = (gap as f64 * 0.20) as u64; // 差距的20%
-            subsidy += balance_subsidy.min(5_000_000); // 上限500万
+            let balance_subsidy = (gap as f64 * 0.30) as u64; // 差距的30%
+            subsidy += balance_subsidy.min(15_000_000); // 上限1500万
         }
 
         // 2. 排名补贴：赛区倒数4名额外补贴
@@ -294,16 +294,19 @@ impl FinancialEngine {
             let bottom_threshold = total_teams.saturating_sub(3); // 倒数4名
             if r >= bottom_threshold {
                 subsidy += if r >= total_teams {
-                    1_000_000
+                    3_000_000
                 }
-                // 末位 +100万
+                // 末位 +300万
                 else if r >= total_teams - 1 {
-                    750_000
+                    2_500_000
                 }
-                // 倒数第2 +75万
+                // 倒数第2 +250万
                 else {
-                    500_000
-                }; // 倒数第3-4 +50万
+                    2_000_000
+                }; // 倒数第3-4 +200万
+
+                // 3. 选秀奖金：倒数4名额外500万用于选秀竞拍
+                subsidy += 5_000_000; // +500万选秀奖金
             }
         }
 

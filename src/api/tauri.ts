@@ -704,7 +704,7 @@ export interface NewDraftPoolPlayer {
 }
 
 export interface UpdateDraftPoolPlayer {
-  game_id: string
+  gameId: string
   ability: number
   potential: number
   position: string
@@ -840,6 +840,23 @@ export const draftAuctionApi = {
   // 完成拍卖并更新选秀顺位
   finalizeAuction: (regionId: number) =>
     invokeCommand<boolean>('finalize_auction', { regionId }),
+
+  getWantedRequests: (regionId: number, seasonId?: number) =>
+    invokeCommand<WantedRequestInfo[]>('get_auction_wanted_requests', { regionId, seasonId }),
+}
+
+export interface WantedRequestInfo {
+  id: number
+  buyer_team_id: number
+  buyer_team_name: string
+  target_position: number
+  offer_price: number
+  reason: string
+  status: string
+  holder_team_id: number
+  holder_team_name: string
+  response_reason: string | null
+  final_price: number | null
 }
 
 // ========================================
@@ -3201,6 +3218,8 @@ export interface TeamSeasonEvaluationInfo {
   season_id: number
   current_rank: number
   last_rank: number
+  spring_rank: number | null
+  summer_rank: number | null
   stability_score: number
   strategy: string
   urgency_level: string

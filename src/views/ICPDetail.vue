@@ -1267,6 +1267,7 @@ const checkRegionBattleCompletion = async (battle: ICPRegionMatch) => {
   if (battle.regionAWins >= 3) {
     battle.winnerId = battle.regionA
     battle.status = 'completed'
+    await cancelUnusedMatches_battle(battle)
     await cancelUnusedTiebreaker(battle)
     await checkTournamentCompletion()
     return
@@ -1274,6 +1275,7 @@ const checkRegionBattleCompletion = async (battle: ICPRegionMatch) => {
   if (battle.regionBWins >= 3) {
     battle.winnerId = battle.regionB
     battle.status = 'completed'
+    await cancelUnusedMatches_battle(battle)
     await cancelUnusedTiebreaker(battle)
     await checkTournamentCompletion()
     return
@@ -1297,6 +1299,31 @@ const checkRegionBattleCompletion = async (battle: ICPRegionMatch) => {
     } else {
       // 2:2 平局，需要进行一号种子加赛
       await setupTiebreakerMatch(battle)
+    }
+  }
+}
+
+/**
+ * 取消赛区对决中未完成的剩余种子对决（3:0 提前结束时调用）
+ */
+const cancelUnusedMatches_battle = async (battle: ICPRegionMatch) => {
+  if (!bracketData.value) return
+
+  const stagePrefix = battle.stage === 'semifinal' ? 'ICP_SEMI' : 'ICP_FINAL'
+
+  for (const match of battle.matches) {
+    if (match.status !== 'completed') {
+      // 尝试找到后端比赛 ID 并取消
+      const backendMatchId = match.backendMatchId || findBackendMatchId(match, stagePrefix)
+      if (backendMatchId) {
+        try {
+          await matchApi.cancelMatch(backendMatchId)
+          match.status = 'cancelled'
+          logger.debug(`[ICP] 已取消不需要的种子对决: ${match.id} (backendId: ${backendMatchId})`)
+        } catch (error) {
+          logger.warn(`[ICP] 取消种子对决失败: ${match.id}`, error)
+        }
+      }
     }
   }
 }
@@ -1756,11 +1783,13 @@ const simulateRegionBattleInternal = async (battle: ICPRegionMatch) => {
   if (battle.regionAWins >= 3 || battle.regionAWins > battle.regionBWins) {
     battle.winnerId = battle.regionA
     battle.status = 'completed'
+    await cancelUnusedMatches_battle(battle)
     await cancelUnusedTiebreaker(battle)
     await checkTournamentCompletion()
   } else if (battle.regionBWins >= 3 || battle.regionBWins > battle.regionAWins) {
     battle.winnerId = battle.regionB
     battle.status = 'completed'
+    await cancelUnusedMatches_battle(battle)
     await cancelUnusedTiebreaker(battle)
     await checkTournamentCompletion()
   } else {
@@ -2275,6 +2304,7 @@ const restoreRegionBattleFromBackend = (bracket: BracketInfo) => {
 
           const matchStatus = (m.status || '').toUpperCase()
           const isCompleted = matchStatus === 'COMPLETED'
+          const isCancelled = matchStatus === 'CANCELLED'
 
           semifinalMatches.push({
             id: `semifinal-seed${idx + 1}`,
@@ -2288,7 +2318,7 @@ const restoreRegionBattleFromBackend = (bracket: BracketInfo) => {
             scoreA: m.home_score || 0,
             scoreB: m.away_score || 0,
             winnerId: m.winner_id ? String(m.winner_id) : null,
-            status: isCompleted ? 'completed' : 'scheduled',
+            status: isCompleted ? 'completed' : isCancelled ? 'cancelled' : 'scheduled',
             bestOf: 5,
             stage: 'semifinal'
           })
@@ -2418,6 +2448,7 @@ const restoreRegionBattleFromBackend = (bracket: BracketInfo) => {
 
           const matchStatus = (m.status || '').toUpperCase()
           const isCompleted = matchStatus === 'COMPLETED'
+          const isCancelled = matchStatus === 'CANCELLED'
 
           finalBattleMatches.push({
             id: `final-seed${idx + 1}`,
@@ -2431,7 +2462,7 @@ const restoreRegionBattleFromBackend = (bracket: BracketInfo) => {
             scoreA: m.home_score || 0,
             scoreB: m.away_score || 0,
             winnerId: m.winner_id ? String(m.winner_id) : null,
-            status: isCompleted ? 'completed' : 'scheduled',
+            status: isCompleted ? 'completed' : isCancelled ? 'cancelled' : 'scheduled',
             bestOf: 5,
             stage: 'final'
           })

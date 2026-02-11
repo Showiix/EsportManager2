@@ -129,6 +129,22 @@
           </template>
         </el-table-column>
 
+        <!-- 春季赛排名 -->
+        <el-table-column prop="spring_rank" label="春季赛" width="90" sortable align="center">
+          <template #default="{ row }">
+            <span v-if="row.spring_rank" class="season-rank">{{ row.spring_rank }}</span>
+            <span v-else class="rank-na">-</span>
+          </template>
+        </el-table-column>
+
+        <!-- 夏季赛排名 -->
+        <el-table-column prop="summer_rank" label="夏季赛" width="90" sortable align="center">
+          <template #default="{ row }">
+            <span v-if="row.summer_rank" class="season-rank">{{ row.summer_rank }}</span>
+            <span v-else class="rank-na">-</span>
+          </template>
+        </el-table-column>
+
         <!-- 稳定性评分 -->
         <el-table-column prop="stability_score" label="稳定性" width="120" sortable align="center">
           <template #default="{ row }">
@@ -264,6 +280,11 @@
               <span class="metric-label">当前排名</span>
               <span class="metric-change" :class="getRankChangeClass(selectedTeam.current_rank, selectedTeam.last_rank)">
                 {{ getRankChangeText(selectedTeam.current_rank, selectedTeam.last_rank) }} 上赛季第{{ selectedTeam.last_rank }}名
+              </span>
+              <span class="metric-sub" v-if="selectedTeam.spring_rank || selectedTeam.summer_rank">
+                <template v-if="selectedTeam.spring_rank">春{{ selectedTeam.spring_rank }}</template>
+                <template v-if="selectedTeam.spring_rank && selectedTeam.summer_rank"> · </template>
+                <template v-if="selectedTeam.summer_rank">夏{{ selectedTeam.summer_rank }}</template>
               </span>
             </div>
           </div>
@@ -918,6 +939,15 @@ onMounted(async () => {
 .rank-same {
   color: #94a3b8;
   font-size: 12px;
+}
+
+.season-rank {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.rank-na {
+  color: #cbd5e1;
 }
 
 /* ===== Stability ===== */

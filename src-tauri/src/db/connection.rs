@@ -684,6 +684,50 @@ impl DatabaseManager {
                 .map_err(|e| DatabaseError::Migration(e.to_string()))?;
         }
 
+        // draft_pick_wanted 表迁移
+        let wanted_tables: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='draft_pick_wanted'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if wanted_tables.is_empty() {
+            sqlx::query(r#"
+                CREATE TABLE IF NOT EXISTS draft_pick_wanted (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id TEXT NOT NULL,
+                    season_id INTEGER NOT NULL,
+                    region_id INTEGER NOT NULL,
+                    auction_id INTEGER NOT NULL,
+                    buyer_team_id INTEGER NOT NULL,
+                    buyer_team_name TEXT NOT NULL,
+                    target_position INTEGER NOT NULL,
+                    offer_price INTEGER NOT NULL,
+                    reason TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'ACTIVE',
+                    holder_team_id INTEGER NOT NULL,
+                    holder_team_name TEXT NOT NULL,
+                    response_reason TEXT,
+                    final_price INTEGER,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    resolved_at TEXT,
+                    FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                    FOREIGN KEY (auction_id) REFERENCES draft_pick_auctions(id) ON DELETE CASCADE,
+                    FOREIGN KEY (buyer_team_id) REFERENCES teams(id) ON DELETE CASCADE,
+                    FOREIGN KEY (holder_team_id) REFERENCES teams(id) ON DELETE CASCADE
+                )
+            "#)
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pick_wanted_auction ON draft_pick_wanted(auction_id)")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
         // 检查 draft_orders 表是否需要添加新字段
         let order_columns: Vec<(String,)> = sqlx::query_as(
             "SELECT name FROM pragma_table_info('draft_orders')"

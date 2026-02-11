@@ -567,7 +567,10 @@ const bigStageScore = computed(() => {
       intlGames += t.games_played
     }
   }
-  return intlGames > 0 ? intlImpactSum / intlGames : 0
+  if (intlGames <= 0) return 0
+  const rawScore = intlImpactSum / intlGames
+  const confidence = Math.min(1.0, intlGames / 70)
+  return rawScore * confidence
 })
 
 const hasInternational = computed(() => {

@@ -926,7 +926,7 @@ const handleSimulateSwissMatch = async (match: WorldsSwissMatch) => {
       ElMessage.success(`比赛完成: ${match.teamAName} ${result.home_score} - ${result.away_score} ${match.teamBName}`)
 
       // 检查当前轮是否完成，生成下一轮
-      checkSwissRoundCompletion()
+      await checkSwissRoundCompletion()
       return
     } catch (error) {
       logger.error('Backend simulation failed, falling back to local:', error)
@@ -1017,7 +1017,7 @@ const handleSimulateSwissMatch = async (match: WorldsSwissMatch) => {
   ElMessage.success(`比赛完成: ${match.teamAName} ${match.scoreA} - ${match.scoreB} ${match.teamBName}`)
 
   // 检查当前轮是否完成，生成下一轮
-  checkSwissRoundCompletion()
+  await checkSwissRoundCompletion()
 }
 
 /**
@@ -1405,6 +1405,18 @@ const batchSimulateSwissRound = async () => {
       const currentMatches = getSwissRoundMatches(currentSwissRound.value)
       const uncompletedMatches = currentMatches.filter(m => m.status !== 'completed')
 
+      // 安全退出：当前轮无未完成比赛，说明该轮已打完
+      if (uncompletedMatches.length === 0) {
+        const roundBefore = currentSwissRound.value
+        // 尝试生成下一轮
+        await checkSwissRoundCompletion()
+        // 如果轮次没推进（第3轮已完成或已有足够晋级/淘汰），退出循环
+        if (currentSwissRound.value === roundBefore) {
+          break
+        }
+        continue
+      }
+
       for (const match of uncompletedMatches) {
         // 使用完整的模拟引擎（与单场模拟相同的逻辑）
         await handleSimulateSwissMatch(match)
@@ -1415,7 +1427,7 @@ const batchSimulateSwissRound = async () => {
       }
 
       // 检查是否需要生成下一轮
-      checkSwissRoundCompletion()
+      await checkSwissRoundCompletion()
 
       // 更新总比赛数（可能有新生成的比赛）
       const newMatches = getSwissRoundMatches(currentSwissRound.value).filter(m => m.status !== 'completed').length

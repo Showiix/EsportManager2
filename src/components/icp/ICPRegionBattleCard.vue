@@ -37,7 +37,10 @@
         v-for="(match, index) in battle.matches"
         :key="match.id"
         class="battle-match"
-        :class="{ completed: match.status === 'completed' }"
+        :class="{
+          completed: match.status === 'completed',
+          skipped: isBattleDecided && match.status !== 'completed'
+        }"
       >
         <div class="seed-label">{{ getSeedLabel(index + 1) }}对决</div>
 
@@ -55,6 +58,9 @@
               <button class="btn btn-text" @click="$emit('view-match', match)">
                 详情
               </button>
+            </template>
+            <template v-else-if="isBattleDecided">
+              <span class="score skipped-text">未进行</span>
             </template>
             <template v-else>
               <button
@@ -97,18 +103,23 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { ICPRegionMatch, ICPMatch } from '@/types/icp'
 
 interface Props {
   battle: ICPRegionMatch
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 
 defineEmits<{
   (e: 'simulate-match', battle: ICPRegionMatch, match: ICPMatch): void
   (e: 'view-match', match: ICPMatch): void
 }>()
+
+const isBattleDecided = computed(() => {
+  return props.battle.regionAWins >= 3 || props.battle.regionBWins >= 3
+})
 
 const getSeedLabel = (seed: number) => {
   const labels: Record<number, string> = {
@@ -251,6 +262,18 @@ const getSeedLabel = (seed: number) => {
 .battle-match.completed {
   background: #f0fdf4;
   border-color: #bbf7d0;
+}
+
+.battle-match.skipped {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  opacity: 0.5;
+}
+
+.skipped-text {
+  font-size: 13px;
+  color: #94a3b8;
+  font-weight: 500;
 }
 
 .seed-label {

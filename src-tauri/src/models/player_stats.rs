@@ -87,6 +87,26 @@ impl PlayerSeasonStatistics {
         games_played: i32,
         champion_bonus: f64,
     ) -> f64 {
+        Self::calculate_yearly_top_score_6dim(
+            avg_impact,
+            avg_performance,
+            consistency_score,
+            games_played,
+            champion_bonus,
+            0.0,
+            false,
+        )
+    }
+
+    pub fn calculate_yearly_top_score_6dim(
+        avg_impact: f64,
+        avg_performance: f64,
+        consistency_score: f64,
+        games_played: i32,
+        champion_bonus: f64,
+        big_stage_score: f64,
+        has_international: bool,
+    ) -> f64 {
         let impact_norm = ((avg_impact + 5.0) * 5.0).clamp(0.0, 100.0);
         let perf_norm = ((avg_performance - 50.0) * 2.0).clamp(0.0, 100.0);
         let stability_norm = consistency_score.clamp(0.0, 100.0);
@@ -99,12 +119,23 @@ impl PlayerSeasonStatistics {
             ((avg_impact + 5.0) / 5.0).clamp(0.2, 1.0)
         };
         let honor_norm = honor_raw * honor_discount;
+        let big_stage_norm = if has_international {
+            ((big_stage_score + 5.0) * 5.0).clamp(0.0, 100.0)
+        } else {
+            0.0
+        };
 
-        impact_norm * 0.47
-            + perf_norm * 0.21
-            + stability_norm * 0.14
-            + appearance_norm * 0.12
-            + honor_norm * 0.06
+        let base = impact_norm * 0.40
+            + perf_norm * 0.18
+            + stability_norm * 0.12
+            + appearance_norm * 0.10
+            + honor_norm * 0.05
+            + big_stage_norm * 0.15;
+        if has_international {
+            base
+        } else {
+            base * 0.95
+        }
     }
 
     /// 统治力评分（独立公式）

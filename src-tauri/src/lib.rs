@@ -40,6 +40,7 @@ use commands::{
     // 选秀权拍卖命令
     get_draft_pick_prices, start_draft_auction, execute_auction_round, fast_forward_auction,
     get_auction_status, get_auction_events, finalize_auction,
+    get_auction_wanted_requests,
     // 财务命令
     get_team_finance_summary, get_all_teams_finance, get_team_transactions,
     record_transaction, get_season_finance_report, pay_team_salaries,
@@ -73,6 +74,7 @@ use commands::{
     get_player_tournament_history, get_player_yearly_top_history,
     // 选手特性和状态命令
     get_player_traits, get_player_condition, get_player_full_detail,
+    get_all_player_traits, get_trait_catalog, get_team_synergy,
     // 年度积分命令
     get_annual_points_ranking, get_team_points_detail, get_tournament_points, get_super_qualified_teams,
     // 比赛详情命令
@@ -211,6 +213,7 @@ pub fn run() {
             get_auction_status,
             get_auction_events,
             finalize_auction,
+            get_auction_wanted_requests,
             // 财务命令
             get_team_finance_summary,
             get_all_teams_finance,
@@ -293,6 +296,9 @@ pub fn run() {
             get_player_traits,
             get_player_condition,
             get_player_full_detail,
+            get_all_player_traits,
+            get_trait_catalog,
+            get_team_synergy,
             // 时间推进系统命令
             get_time_state,
             time_init_phase,
