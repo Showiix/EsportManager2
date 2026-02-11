@@ -5,6 +5,8 @@ use crate::models::{
     PlayerTournamentStats,
 };
 use crate::services::{GameFlowService, LeagueService};
+use crate::engines::match_simulation::{MatchSimulationEngine, MatchSimContext};
+use crate::engines::meta_engine::MetaEngine;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::State;
@@ -200,7 +202,6 @@ pub async fn time_simulate_all(
 
     // 使用快进到下一阶段的方式来模拟所有比赛
     let game_flow = GameFlowService::new();
-    let league_service = LeagueService::new();
 
     // 先获取当前状态
     let time_state = match game_flow.get_time_state(&pool, &save_id).await {
@@ -217,6 +218,28 @@ pub async fn time_simulate_all(
 
     // 检查是否是季后赛阶段
     let is_playoff_phase = save.current_phase.is_playoff();
+
+    // === 特性系统：预加载选手数据 ===
+    let game_flow = GameFlowService::new();
+    let league_service = LeagueService::new();
+    let (team_players, _form_factors) = game_flow
+        .load_team_players(&pool, &save_id, save.current_season as i64)
+        .await
+        .map_err(|e| format!("加载选手数据失败: {}", e))?;
+    let meta_weights = MetaEngine::get_current_weights(&pool, &save_id, save.current_season as i64)
+        .await
+        .unwrap_or_else(|_| crate::engines::MetaWeights::balanced());
+
+    let is_international = save.current_phase.is_international();
+    let tournament_type_str = save.current_phase.tournament_type_str()
+        .unwrap_or("regular")
+        .to_string();
+    let sim_ctx = MatchSimContext {
+        is_playoff: is_playoff_phase,
+        is_international,
+        tournament_type: tournament_type_str.clone(),
+    };
+    let match_engine = MatchSimulationEngine::default();
 
     if is_playoff_phase {
         // 季后赛：逐场模拟以确保正确生成后续对阵
@@ -241,7 +264,6 @@ pub async fn time_simulate_all(
             let mut found_pending = false;
 
             for tournament in &tournaments {
-                // 获取待进行的比赛
                 let pending = MatchRepository::get_pending(&pool, &save_id, tournament.id)
                     .await
                     .map_err(|e| e.to_string())?;
@@ -253,21 +275,23 @@ pub async fn time_simulate_all(
                 found_pending = true;
                 let match_info = &pending[0];
 
-                // 获取队伍并模拟比赛
-                let home_team = TeamRepository::get_by_id(&pool, match_info.home_team_id)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let away_team = TeamRepository::get_by_id(&pool, match_info.away_team_id)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                let home_players = team_players.get(&match_info.home_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+                let away_players = team_players.get(&match_info.away_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
 
-                let result = league_service.simulate_match(
-                    match_info,
-                    home_team.power_rating,
-                    away_team.power_rating,
-                );
+                let result = if !home_players.is_empty() && !away_players.is_empty() {
+                    match_engine.simulate_match_with_traits(
+                        match_info.id, match_info.tournament_id, &match_info.stage,
+                        match_info.format.clone(), match_info.home_team_id, match_info.away_team_id,
+                        home_players, away_players, &sim_ctx, &meta_weights,
+                    )
+                } else {
+                    let home_team = TeamRepository::get_by_id(&pool, match_info.home_team_id)
+                        .await.map_err(|e| e.to_string())?;
+                    let away_team = TeamRepository::get_by_id(&pool, match_info.away_team_id)
+                        .await.map_err(|e| e.to_string())?;
+                    league_service.simulate_match(match_info, home_team.power_rating, away_team.power_rating)
+                };
 
-                // 更新比赛结果
                 MatchRepository::update_result(
                     &pool,
                     match_info.id,
@@ -280,7 +304,6 @@ pub async fn time_simulate_all(
 
                 simulated_count += 1;
 
-                // 检查并生成下一轮对阵
                 let all_matches = MatchRepository::get_by_tournament(&pool, tournament.id)
                     .await
                     .map_err(|e| e.to_string())?;
@@ -298,7 +321,7 @@ pub async fn time_simulate_all(
                         .map_err(|e| e.to_string())?;
                 }
 
-                break; // 每次只模拟一场，然后重新检查
+                break;
             }
 
             if !found_pending {
@@ -308,8 +331,6 @@ pub async fn time_simulate_all(
 
         Ok(CommandResult::ok(simulated_count))
     } else {
-        // 非季后赛：直接批量更新
-        // 需要为每场比赛生成合理的比分
         let tournament_type = match save.current_phase.tournament_type_str() {
             Some(t) => t,
             None => return Ok(CommandResult::err("当前阶段没有比赛可模拟")),
@@ -332,18 +353,22 @@ pub async fn time_simulate_all(
                 .map_err(|e| e.to_string())?;
 
             for match_info in &pending {
-                let home_team = TeamRepository::get_by_id(&pool, match_info.home_team_id)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let away_team = TeamRepository::get_by_id(&pool, match_info.away_team_id)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                let home_players = team_players.get(&match_info.home_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+                let away_players = team_players.get(&match_info.away_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
 
-                let result = league_service.simulate_match(
-                    match_info,
-                    home_team.power_rating,
-                    away_team.power_rating,
-                );
+                let result = if !home_players.is_empty() && !away_players.is_empty() {
+                    match_engine.simulate_match_with_traits(
+                        match_info.id, match_info.tournament_id, &match_info.stage,
+                        match_info.format.clone(), match_info.home_team_id, match_info.away_team_id,
+                        home_players, away_players, &sim_ctx, &meta_weights,
+                    )
+                } else {
+                    let home_team = TeamRepository::get_by_id(&pool, match_info.home_team_id)
+                        .await.map_err(|e| e.to_string())?;
+                    let away_team = TeamRepository::get_by_id(&pool, match_info.away_team_id)
+                        .await.map_err(|e| e.to_string())?;
+                    league_service.simulate_match(match_info, home_team.power_rating, away_team.power_rating)
+                };
 
                 MatchRepository::update_result(
                     &pool,
@@ -481,9 +506,38 @@ pub async fn time_simulate_next(
         .await
         .map_err(|e| e.to_string())?;
 
-    // 模拟比赛
+    // 特性感知模拟
+    let game_flow_svc = GameFlowService::new();
+    let (team_players, _form_factors) = game_flow_svc
+        .load_team_players(&pool, &save_id, save.current_season as i64)
+        .await
+        .map_err(|e| format!("加载选手数据失败: {}", e))?;
+    let meta_weights = MetaEngine::get_current_weights(&pool, &save_id, save.current_season as i64)
+        .await
+        .unwrap_or_else(|_| crate::engines::MetaWeights::balanced());
+
+    let is_playoff = save.current_phase.is_playoff();
+    let is_international = save.current_phase.is_international();
+    let sim_ctx = MatchSimContext {
+        is_playoff,
+        is_international,
+        tournament_type: tournament_type.to_string(),
+    };
+    let match_engine = MatchSimulationEngine::default();
+
+    let home_players = team_players.get(&match_info.home_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+    let away_players = team_players.get(&match_info.away_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+
     let league_service = LeagueService::new();
-    let result = league_service.simulate_match(&match_info, home_team.power_rating, away_team.power_rating);
+    let result = if !home_players.is_empty() && !away_players.is_empty() {
+        match_engine.simulate_match_with_traits(
+            match_info.id, match_info.tournament_id, &match_info.stage,
+            match_info.format.clone(), match_info.home_team_id, match_info.away_team_id,
+            home_players, away_players, &sim_ctx, &meta_weights,
+        )
+    } else {
+        league_service.simulate_match(&match_info, home_team.power_rating, away_team.power_rating)
+    };
 
     // 更新比赛结果
     MatchRepository::update_result(

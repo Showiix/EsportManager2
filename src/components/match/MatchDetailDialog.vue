@@ -38,7 +38,7 @@
           ></span>
         </div>
 
-        <!-- MVP + 关键人物 -->
+        <!-- MVP + 关键人物 + 协同值 -->
         <div class="scoreboard-meta">
           <div v-if="matchDetail.mvpPlayerId" class="mvp-card-dark">
             <span class="mvp-trophy-dark">MVP</span>
@@ -52,6 +52,36 @@
               第{{ matchDetail.keyPlayer.gameNumber }}局{{ matchDetail.keyPlayer.reason }}
               ({{ formatBonus(matchDetail.keyPlayer.impactScore) }})
             </span>
+          </div>
+        </div>
+
+        <!-- 协同值展示 -->
+        <div v-if="synergyA || synergyB" class="synergy-section">
+          <div class="synergy-title-bar">
+            <span class="synergy-label">团队协同</span>
+          </div>
+          <div class="synergy-compare">
+            <div class="synergy-team">
+              <span class="synergy-team-name">{{ matchDetail.teamAName }}</span>
+              <div class="synergy-value-group">
+                <span class="synergy-value" :class="getSynergyClass(synergyA?.synergy_bonus)">
+                  +{{ (synergyA?.synergy_bonus ?? 0).toFixed(2) }}
+                </span>
+                <span class="synergy-sub">协同加成</span>
+              </div>
+              <span class="synergy-tenure">平均效力 {{ (synergyA?.avg_tenure ?? 0).toFixed(1) }} 赛季</span>
+            </div>
+            <div class="synergy-vs">VS</div>
+            <div class="synergy-team">
+              <span class="synergy-team-name">{{ matchDetail.teamBName }}</span>
+              <div class="synergy-value-group">
+                <span class="synergy-value" :class="getSynergyClass(synergyB?.synergy_bonus)">
+                  +{{ (synergyB?.synergy_bonus ?? 0).toFixed(2) }}
+                </span>
+                <span class="synergy-sub">协同加成</span>
+              </div>
+              <span class="synergy-tenure">平均效力 {{ (synergyB?.avg_tenure ?? 0).toFixed(1) }} 赛季</span>
+            </div>
           </div>
         </div>
       </div>
@@ -113,6 +143,7 @@ import { ref, computed, watch } from 'vue'
 import type { MatchDetail } from '@/types/matchDetail'
 import GameDetailView from './GameDetailView.vue'
 import { ElMessage } from 'element-plus'
+import { traitCenterApi, type TeamSynergyInfo } from '@/api/tauri'
 
 interface Props {
   visible: boolean
@@ -132,10 +163,35 @@ const dialogVisible = computed({
 
 const activeTab = ref('1')
 
+// 协同值数据
+const synergyA = ref<TeamSynergyInfo | null>(null)
+const synergyB = ref<TeamSynergyInfo | null>(null)
+
+// 加载协同值
+const loadSynergy = async () => {
+  if (!props.matchDetail) return
+  try {
+    const [a, b] = await Promise.all([
+      traitCenterApi.getTeamSynergy(Number(props.matchDetail.teamAId)),
+      traitCenterApi.getTeamSynergy(Number(props.matchDetail.teamBId)),
+    ])
+    synergyA.value = a
+    synergyB.value = b
+  } catch {
+    // 协同值加载失败不影响主流程
+    synergyA.value = null
+    synergyB.value = null
+  }
+}
+
 // 重置选项卡
 watch(() => props.matchDetail, (newVal) => {
   if (newVal) {
     activeTab.value = '1'
+    loadSynergy()
+  } else {
+    synergyA.value = null
+    synergyB.value = null
   }
 })
 
@@ -180,6 +236,14 @@ const formatBonus = (value: number | undefined): string => {
   if (value === undefined || value === null) return '-'
   const rounded = Number(value.toFixed(2))
   return rounded > 0 ? `+${rounded}` : String(rounded)
+}
+
+// 协同值等级样式
+const getSynergyClass = (bonus: number | undefined): string => {
+  if (!bonus) return 'synergy-low'
+  if (bonus >= 1.5) return 'synergy-high'
+  if (bonus >= 0.8) return 'synergy-mid'
+  return 'synergy-low'
 }
 
 // 格式化日期
@@ -426,6 +490,90 @@ const handleExport = () => {
 
 .key-negative .key-trophy-dark {
   background: rgba(239, 68, 68, 0.4);
+}
+
+/* 协同值展示 */
+.synergy-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.synergy-title-bar {
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.synergy-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.synergy-compare {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
+}
+
+.synergy-team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 140px;
+}
+
+.synergy-team-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.synergy-value-group {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.synergy-value {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.synergy-value.synergy-high {
+  color: #fbbf24;
+  text-shadow: 0 0 12px rgba(251, 191, 36, 0.4);
+}
+
+.synergy-value.synergy-mid {
+  color: #60a5fa;
+}
+
+.synergy-value.synergy-low {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.synergy-sub {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 500;
+}
+
+.synergy-tenure {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.synergy-vs {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.25);
+  letter-spacing: 2px;
 }
 
 /* 局数选择器 */

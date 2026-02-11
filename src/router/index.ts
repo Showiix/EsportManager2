@@ -229,6 +229,12 @@ const router = createRouter({
       meta: { title: '数据中心' }
     },
     {
+      path: '/trait-center',
+      name: 'TraitCenter',
+      component: () => import('@/views/TraitCenter.vue'),
+      meta: { title: '特性中心' }
+    },
+    {
       path: '/meta-version',
       name: 'MetaVersion',
       component: () => import('@/views/MetaVersion.vue'),

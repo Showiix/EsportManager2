@@ -19,6 +19,22 @@ pub struct TeamInfo {
     pub win_rate: f64,
     pub annual_points: u32,
     pub balance: i64,
+}
+
+impl From<Team> for TeamInfo {
+    fn from(t: Team) -> Self {
+        Self {
+            id: t.id,
+            region_id: t.region_id,
+            name: t.name,
+            short_name: t.short_name,
+            power_rating: t.power_rating,
+            total_matches: t.total_matches,
+            wins: t.wins,
+            win_rate: t.win_rate,
+            annual_points: t.annual_points,
+            balance: t.balance,
+        }
     }
 }
 
@@ -53,19 +69,29 @@ pub async fn get_all_player_traits(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
     };
 
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+    drop(current_save);
+
     let query = if let Some(ref r) = region {
         sqlx::query(
             r#"
             SELECT p.id as player_id, p.game_id as player_name, p.team_id,
-                   t.name as team_name, r.short_name as region,
+                   t.name as team_name, r.name as region,
                    p.position, p.ability, p.age
             FROM players p
-            JOIN teams t ON p.team_id = t.id
-            JOIN regions r ON t.region_id = r.id
-            WHERE r.short_name = ?
+            JOIN teams t ON p.team_id = t.id AND t.save_id = ?
+            JOIN regions r ON t.region_id = r.id AND r.save_id = ?
+            WHERE p.save_id = ? AND r.name = ?
             ORDER BY p.ability DESC
             "#
         )
+        .bind(&save_id)
+        .bind(&save_id)
+        .bind(&save_id)
         .bind(r)
         .fetch_all(&pool)
         .await
@@ -73,14 +99,18 @@ pub async fn get_all_player_traits(
         sqlx::query(
             r#"
             SELECT p.id as player_id, p.game_id as player_name, p.team_id,
-                   t.name as team_name, r.short_name as region,
+                   t.name as team_name, r.name as region,
                    p.position, p.ability, p.age
             FROM players p
-            JOIN teams t ON p.team_id = t.id
-            JOIN regions r ON t.region_id = r.id
+            JOIN teams t ON p.team_id = t.id AND t.save_id = ?
+            JOIN regions r ON t.region_id = r.id AND r.save_id = ?
+            WHERE p.save_id = ?
             ORDER BY p.ability DESC
             "#
         )
+        .bind(&save_id)
+        .bind(&save_id)
+        .bind(&save_id)
         .fetch_all(&pool)
         .await
     };
@@ -91,8 +121,9 @@ pub async fn get_all_player_traits(
     };
 
     let trait_rows = sqlx::query(
-        r#"SELECT player_id, trait_type FROM player_traits"#
+        r#"SELECT player_id, trait_type FROM player_traits WHERE save_id = ?"#
     )
+    .bind(&save_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
@@ -300,13 +331,22 @@ pub async fn get_team_synergy(
         Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
     };
 
-    let current_season: i64 = sqlx::query_scalar("SELECT current_season FROM saves LIMIT 1")
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+    drop(current_save);
+
+    let current_season: i64 = sqlx::query_scalar("SELECT current_season FROM saves WHERE id = ?")
+        .bind(&save_id)
         .fetch_one(&pool)
         .await
         .unwrap_or(1);
 
-    let team_row = sqlx::query("SELECT name FROM teams WHERE id = ?")
+    let team_row = sqlx::query("SELECT name FROM teams WHERE id = ? AND save_id = ?")
         .bind(team_id as i64)
+        .bind(&save_id)
         .fetch_optional(&pool)
         .await
         .ok()
@@ -320,13 +360,14 @@ pub async fn get_team_synergy(
         r#"
         SELECT id, game_id, position, join_season
         FROM players
-        WHERE team_id = ? AND is_active = 1
+        WHERE team_id = ? AND save_id = ? AND status = 'Active'
         ORDER BY CASE position
             WHEN 'top' THEN 1 WHEN 'jungle' THEN 2 WHEN 'mid' THEN 3
             WHEN 'bot' THEN 4 WHEN 'support' THEN 5 ELSE 6 END
         "#
     )
     .bind(team_id as i64)
+    .bind(&save_id)
     .fetch_all(&pool)
     .await
     .unwrap_or_default();
@@ -336,7 +377,8 @@ pub async fn get_team_synergy(
 
     for row in &rows {
         let join_season: i64 = row.get("join_season");
-        let tenure = (current_season - join_season).max(0);
+        // 至少算1赛季（当前赛季本身就在队里）
+        let tenure = (current_season - join_season).max(0) + 1;
         total_tenure += tenure as f64;
 
         players.push(PlayerSynergyDetail {
@@ -359,9 +401,6 @@ pub async fn get_team_synergy(
         synergy_bonus,
         players,
     }))
-}
-
-    }
 }
 
 /// 队伍阵容（包含首发和替补）

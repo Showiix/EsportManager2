@@ -3903,7 +3903,7 @@ impl GameFlowService {
     }
 
     /// 预加载所有队伍的首发选手数据（含特性+动态condition），用于特性感知模拟
-    async fn load_team_players(
+    pub async fn load_team_players(
         &self,
         pool: &Pool<Sqlite>,
         save_id: &str,

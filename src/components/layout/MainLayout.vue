@@ -128,6 +128,11 @@
             <span>数据中心</span>
           </el-menu-item>
 
+          <el-menu-item index="/trait-center" :disabled="isMenuDisabled('/trait-center')">
+            <el-icon><MagicStick /></el-icon>
+            <span>特性中心</span>
+          </el-menu-item>
+
           <el-menu-item index="/meta-version" :disabled="isMenuDisabled('/meta-version')">
             <el-icon><Refresh /></el-icon>
             <span>版本历史</span>
@@ -217,6 +222,7 @@ import {
   TrendCharts,
   Refresh,
   Reading,
+  MagicStick,
 } from '@element-plus/icons-vue'
 import { useGameStore } from '@/stores/useGameStore'
 import { useTimeStore } from '@/stores/useTimeStore'
@@ -314,6 +320,7 @@ const breadcrumbs = computed(() => {
     rankings: '积分排名',
     finance: '财政中心',
     'data-center': '数据中心',
+    'trait-center': '特性中心',
     'meta-version': '版本历史',
     'annual-top': 'IM年度评选',
     'annual-awards': '年度颁奖典礼',

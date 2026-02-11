@@ -123,6 +123,74 @@
       </el-col>
     </el-row>
 
+    <!-- 团队协同 -->
+    <el-card v-if="synergy" class="synergy-card">
+      <template #header>
+        <div class="card-header">
+          <h2>
+            <el-icon><Connection /></el-icon>
+            团队协同
+          </h2>
+          <el-tag :type="synergy.synergy_bonus >= 1.5 ? 'warning' : synergy.synergy_bonus >= 0.8 ? '' : 'info'" effect="dark" size="default">
+            协同加成 +{{ synergy.synergy_bonus.toFixed(2) }}
+          </el-tag>
+        </div>
+      </template>
+
+      <div class="synergy-overview">
+        <div class="synergy-stat-main">
+          <span class="synergy-bonus-value" :style="{ color: getSynergyColor(synergy.synergy_bonus) }">
+            +{{ synergy.synergy_bonus.toFixed(2) }}
+          </span>
+          <span class="synergy-bonus-label">协同加成值</span>
+        </div>
+        <div class="synergy-stat-sub">
+          <div class="synergy-stat-item">
+            <span class="synergy-stat-num">{{ synergy.avg_tenure.toFixed(1) }}</span>
+            <span class="synergy-stat-label">平均效力赛季</span>
+          </div>
+          <div class="synergy-stat-item">
+            <span class="synergy-stat-num">{{ synergy.players.length }}</span>
+            <span class="synergy-stat-label">选手人数</span>
+          </div>
+        </div>
+      </div>
+
+      <el-table :data="synergy.players" stripe size="small" class="synergy-table">
+        <el-table-column prop="player_name" label="选手" width="120" align="center">
+          <template #default="{ row }">
+            <span class="synergy-player-name">{{ row.player_name }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="position" label="位置" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="getPositionTagType(row.position)">{{ row.position }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="join_season" label="加入赛季" width="100" align="center">
+          <template #default="{ row }">
+            S{{ row.join_season }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="tenure" label="效力赛季数" width="120" align="center">
+          <template #default="{ row }">
+            <span :class="row.tenure >= 3 ? 'text-green' : row.tenure >= 1 ? 'text-blue' : 'text-gray'">
+              {{ row.tenure }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="协同贡献" min-width="160">
+          <template #default="{ row }">
+            <el-progress
+              :percentage="Math.min((row.tenure / 5) * 100, 100)"
+              :stroke-width="10"
+              :color="row.tenure >= 3 ? '#22c55e' : row.tenure >= 1 ? '#3b82f6' : '#d1d5db'"
+            />
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
     <!-- 首发阵容 -->
     <el-card class="roster-card">
       <template #header>
@@ -474,9 +542,10 @@ import {
   Aim,
   ChatDotSquare,
   Sunrise,
+  Connection,
 } from '@element-plus/icons-vue'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
-import { honorApi, formatHonorType, type HonorRecord } from '@/api/tauri'
+import { honorApi, formatHonorType, traitCenterApi, type HonorRecord, type TeamSynergyInfo } from '@/api/tauri'
 import { formatMoney } from '@/utils'
 import { createLogger } from '@/utils/logger'
 
@@ -493,6 +562,9 @@ const { selectedTeam, starters, substitutes, regions } = storeToRefs(teamStore)
 // 荣誉记录
 const honors = ref<HonorRecord[]>([])
 
+// 协同值数据
+const synergy = ref<TeamSynergyInfo | null>(null)
+
 // 加载数据
 onMounted(async () => {
   await teamStore.loadRegions()
@@ -504,6 +576,13 @@ onMounted(async () => {
   } catch (e) {
     logger.error('Failed to load team honors:', e)
   }
+
+  // 加载协同值
+  try {
+    synergy.value = await traitCenterApi.getTeamSynergy(teamId)
+  } catch (e) {
+    logger.error('Failed to load team synergy:', e)
+  }
 })
 
 // 监听路由参数变化
@@ -514,6 +593,11 @@ watch(() => route.params.id, async (newId) => {
       honors.value = await honorApi.getTeamHonors(Number(newId))
     } catch (e) {
       logger.error('Failed to load team honors:', e)
+    }
+    try {
+      synergy.value = await traitCenterApi.getTeamSynergy(Number(newId))
+    } catch (e) {
+      logger.error('Failed to load team synergy:', e)
     }
   }
 })
@@ -1116,6 +1200,20 @@ const getPositionClass = (position: string) => {
     Sup: 'sup',
   }
   return classes[position] || ''
+}
+
+const getSynergyColor = (bonus: number): string => {
+  if (bonus >= 1.5) return '#fbbf24'
+  if (bonus >= 0.8) return '#3b82f6'
+  return '#9ca3af'
+}
+
+const getPositionTagType = (position: string): string => {
+  const types: Record<string, string> = {
+    Top: 'danger', Jungle: 'success', Mid: '', Adc: 'warning', Support: 'info',
+    TOP: 'danger', JUG: 'success', MID: '', ADC: 'warning', SUP: 'info',
+  }
+  return types[position] || 'info'
 }
 
 const getHonorColor = (honorType: string) => {
@@ -1807,5 +1905,73 @@ const getAchievementType = (achievement: string) => {
   font-size: 16px;
   font-weight: 600;
   font-style: italic;
+}
+
+/* 协同值卡片 */
+.synergy-card {
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.synergy-overview {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  margin-bottom: 20px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 12px;
+}
+
+.synergy-stat-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.synergy-bonus-value {
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.synergy-bonus-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+.synergy-stat-sub {
+  display: flex;
+  gap: 24px;
+}
+
+.synergy-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.synergy-stat-num {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.synergy-stat-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+.synergy-table {
+  border-radius: 8px;
+}
+
+.synergy-player-name {
+  font-weight: 600;
+  color: var(--text-primary);
 }
 </style>
