@@ -240,7 +240,9 @@
           <!-- 类型筛选 -->
           <el-radio-group v-model="filterType" size="small">
             <el-radio-button value="all">全部</el-radio-button>
-            <el-radio-button value="settlement">能力变化</el-radio-button>
+            <el-radio-button value="growth">能力成长</el-radio-button>
+            <el-radio-button value="satisfaction">满意度</el-radio-button>
+            <el-radio-button value="trait">特性变化</el-radio-button>
             <el-radio-button value="renewal">续约</el-radio-button>
             <el-radio-button value="transfer">转会签约</el-radio-button>
             <el-radio-button value="listed">挂牌/求转</el-radio-button>
@@ -462,7 +464,9 @@ const filteredEvents = computed(() => {
   // 按事件类型分类筛选
   if (filterType.value !== 'all') {
     const typeGroups: Record<string, string[]> = {
-      settlement: ['SEASON_SETTLEMENT'],
+      growth: ['SEASON_SETTLEMENT'],
+      satisfaction: ['SEASON_SETTLEMENT'],
+      trait: ['SEASON_SETTLEMENT'],
       renewal: ['CONTRACT_RENEWAL', 'CONTRACT_TERMINATION'],
       transfer: ['FREE_AGENT_SIGNING', 'TRANSFER_PURCHASE', 'EMERGENCY_SIGNING'],
       listed: ['PLAYER_LISTED', 'PLAYER_REQUEST_TRANSFER', 'PLAYER_RELEASE'],
@@ -470,6 +474,15 @@ const filteredEvents = computed(() => {
     }
     const allowedTypes = typeGroups[filterType.value] ?? []
     result = result.filter(e => allowedTypes.includes(e.event_type))
+
+    // SEASON_SETTLEMENT 子类型按 reason 关键字细分
+    if (filterType.value === 'growth') {
+      result = result.filter(e => e.event_type !== 'SEASON_SETTLEMENT' || (e.reason && e.reason.includes('能力')))
+    } else if (filterType.value === 'satisfaction') {
+      result = result.filter(e => e.event_type !== 'SEASON_SETTLEMENT' || (e.reason && e.reason.includes('满意度')))
+    } else if (filterType.value === 'trait') {
+      result = result.filter(e => e.event_type !== 'SEASON_SETTLEMENT' || (e.reason && e.reason.includes('特性')))
+    }
   }
 
   // 按战队筛选

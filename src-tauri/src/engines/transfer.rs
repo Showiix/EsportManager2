@@ -2481,6 +2481,20 @@ impl TransferEngine {
             return (true, "能力低于队伍均值".to_string(), "".to_string());
         }
 
+        if roster_count > 8 {
+            let best_at_pos = roster.iter()
+                .filter(|p| p.position == _position)
+                .map(|p| p.ability)
+                .max()
+                .unwrap_or(0);
+            if ability < best_at_pos {
+                let has_youth_value = age <= 23 && ability >= 55;
+                if !has_youth_value {
+                    return (true, format!("阵容超额({}人)，非首发且无培养价值", roster_count), "".to_string());
+                }
+            }
+        }
+
         if ability < 51 {
             return (true, "能力过低".to_string(), "".to_string());
         }
@@ -2610,31 +2624,28 @@ impl TransferEngine {
 
                 let roster_count = roster.len();
 
-                // 超过奢侈税起征线时，AI大幅降低签人意愿（但不硬性禁止）
-                let over_threshold = roster_count as i64 - self.config.luxury_tax_threshold;
+                let over_threshold = roster_count as i64 - 8;
                 if over_threshold >= 5 {
-                    // 超出5人以上，几乎不会再签人
                     continue;
                 }
 
                 // 检查位置需求
                 let pos_count = roster.iter()
-                    .filter(|r| r.position == position)
+                    .filter(|r| r.position.eq_ignore_ascii_case(&position))
                     .count();
 
                 if pos_count >= 2 {
                     continue;
                 }
 
-                // pos_count == 1 时，只在实力升级或培养新人时才报价
                 if pos_count == 1 {
                     let best_ability_at_pos = roster.iter()
-                        .filter(|r| r.position == position)
+                        .filter(|r| r.position.eq_ignore_ascii_case(&position))
                         .map(|r| r.ability)
                         .max()
                         .unwrap_or(0);
                     let is_upgrade = ability > best_ability_at_pos;
-                    let is_youth_prospect = age <= 23 && potential >= 70;
+                    let is_youth_prospect = age <= 23 && potential >= 70 && potential > best_ability_at_pos;
                     if !is_upgrade && !is_youth_prospect {
                         continue;
                     }
@@ -2654,7 +2665,7 @@ impl TransferEngine {
 
                 // 超出奢侈税起征线时，降低匹配分数
                 let match_score = if over_threshold > 0 {
-                    match_score * (1.0 - over_threshold as f64 * 0.15)
+                    match_score * (1.0 - over_threshold as f64 * 0.25)
                 } else {
                     match_score
                 };
@@ -2784,11 +2795,12 @@ impl TransferEngine {
 
                 // 执行签约
                 sqlx::query(
-                    "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = 50, satisfaction = 60 WHERE id = ?"
+                    "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = 50, satisfaction = 60, join_season = ? WHERE id = ?"
                 )
                 .bind(to_team_id)
                 .bind(offer.offered_salary)
                 .bind(season_id + offer.contract_years)
+                .bind(season_id)
                 .bind(player_id)
                 .execute(pool)
                 .await
@@ -2964,22 +2976,22 @@ impl TransferEngine {
                 // 使用缓存检查位置需求
                 let roster = cache.get_roster(team_id);
                 let pos_count = roster.iter()
-                    .filter(|r| r.position == position)
+                    .filter(|r| r.position.eq_ignore_ascii_case(&position))
                     .count();
 
-                let over_threshold = roster.len() as i64 - self.config.luxury_tax_threshold;
+                let over_threshold = roster.len() as i64 - 8;
                 if pos_count >= 2 || over_threshold >= 5 {
                     continue;
                 }
 
                 if pos_count == 1 {
                     let best_ability_at_pos = roster.iter()
-                        .filter(|r| r.position == position)
+                        .filter(|r| r.position.eq_ignore_ascii_case(&position))
                         .map(|r| r.ability)
                         .max()
                         .unwrap_or(0);
                     let is_upgrade = ability > best_ability_at_pos;
-                    let is_youth_prospect = age <= 23 && potential >= 70;
+                    let is_youth_prospect = age <= 23 && potential >= 70 && potential > best_ability_at_pos;
                     if !is_upgrade && !is_youth_prospect {
                         continue;
                     }
@@ -2997,7 +3009,7 @@ impl TransferEngine {
 
                 // 超出奢侈税起征线时，降低匹配分数
                 let match_score = if over_threshold > 0 {
-                    match_score * (1.0 - over_threshold as f64 * 0.15)
+                    match_score * (1.0 - over_threshold as f64 * 0.25)
                 } else {
                     match_score
                 };
@@ -3134,11 +3146,12 @@ impl TransferEngine {
 
                 // 执行转会
                 sqlx::query(
-                    "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = 50, satisfaction = 55 WHERE id = ?"
+                    "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = 50, satisfaction = 55, join_season = ? WHERE id = ?"
                 )
                 .bind(to_team_id)
                 .bind(new_salary)
                 .bind(season_id + contract_years)
+                .bind(season_id)
                 .bind(player_id)
                 .execute(pool)
                 .await
@@ -3363,6 +3376,19 @@ impl TransferEngine {
             .map_err(|e| format!("记录奢侈税交易失败: {}", e))?;
 
             log::info!("R6奢侈税: {}阵容{}人，超出{}人，缴税{}万", team_name, roster_count, over_count, tax_amount / 10000);
+            
+            let event = self.record_event(
+                pool, window_id, 6,
+                TransferEventType::FinancialAdjustment,
+                EventLevel::B,
+                0, "", 0,
+                Some(team_id), Some(&team_name),
+                None, None,
+                tax_amount, 0, 0,
+                &format!("{}缴纳奢侈税{}万（阵容{}人，超出{}人，每人{}万）", team_name, tax_amount / 10000, roster_count, over_count, self.config.luxury_tax_per_player / 10000),
+            ).await?;
+            events.push(event);
+
             luxury_tax_count += 1;
             total_luxury_tax += tax_amount;
         }
@@ -3387,7 +3413,7 @@ impl TransferEngine {
             .await
             .map_err(|e| format!("查询阵容人数失败: {}", e))?;
 
-            let over_count = roster_count - self.config.luxury_tax_threshold;
+            let over_count = roster_count - 8;
             if over_count <= 0 {
                 continue;
             }
@@ -3642,7 +3668,10 @@ impl TransferEngine {
             let team_name = cache.get_team_name(team_id);
             let roster = cache.get_roster(team_id);
 
-            // 检查每个位置是否有人（不能只看总人数，可能有8人但缺某个位置）
+            if roster.len() >= 13 {
+                continue;
+            }
+
             let mut has_position = [false; 5];
             for player in &roster {
                 match player.position.to_uppercase().as_str() {
@@ -3736,11 +3765,12 @@ impl TransferEngine {
                     let contract_years: i64 = if age <= 25 && rng.gen::<f64>() < 0.4 { 2 } else { 1 };
 
                     sqlx::query(
-                        "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = 40, satisfaction = 50 WHERE id = ?"
+                        "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = 40, satisfaction = 50, join_season = ? WHERE id = ?"
                     )
                     .bind(team_id)
                     .bind(salary)
                     .bind(season_id + contract_years)
+                    .bind(season_id)
                     .bind(player_id)
                     .execute(pool)
                     .await
@@ -3900,12 +3930,12 @@ impl TransferEngine {
                 });
             }
 
-            if active_count > 10 {
+            if active_count > 15 {
                 issues.push(TransferCloseIssue {
                     team_id,
                     team_name: team_name.clone(),
                     issue_type: "ROSTER_TOO_LARGE".to_string(),
-                    detail: format!("{}有{}名活跃选手，最多允许10名", team_name, active_count),
+                    detail: format!("{}有{}名活跃选手，最多允许15名", team_name, active_count),
                 });
             }
 

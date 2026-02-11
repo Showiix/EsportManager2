@@ -396,6 +396,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'AnnualTop' })
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'

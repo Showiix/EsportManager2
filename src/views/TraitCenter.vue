@@ -89,7 +89,7 @@
           />
         </div>
 
-        <el-table :data="paginatedPlayers" stripe style="width: 100%" max-height="600" v-loading="loading">
+        <el-table :data="paginatedPlayers" stripe style="width: 100%" v-loading="loading">
           <el-table-column label="选手" width="150" sortable :sort-by="(row: PlayerTraitEntry) => row.player_name">
             <template #default="{ row }">
               <span class="player-name">{{ row.player_name }}</span>

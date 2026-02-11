@@ -263,6 +263,32 @@
             />
             <div class="form-hint">建议每赛区生成 10~20 名</div>
           </el-form-item>
+          <el-form-item label="能力范围">
+            <div class="ability-range-row">
+              <el-input-number
+                v-model="generateAbilityMin"
+                :min="30"
+                :max="generateAbilityMax"
+                :step="1"
+                controls-position="right"
+                style="width: 120px"
+              />
+              <span class="range-separator">~</span>
+              <el-input-number
+                v-model="generateAbilityMax"
+                :min="generateAbilityMin"
+                :max="80"
+                :step="1"
+                controls-position="right"
+                style="width: 120px"
+              />
+            </div>
+            <div class="form-hint">默认按天赋标签自动分配（天才 64-67，普通 61-64，平庸 59-61）</div>
+          </el-form-item>
+          <el-form-item label="自定义范围">
+            <el-switch v-model="useCustomAbility" />
+            <div class="form-hint">关闭时按天赋标签自动分配能力值</div>
+          </el-form-item>
         </el-form>
         <div class="generate-preview">
           <div class="preview-item">
@@ -527,6 +553,9 @@ const isLoading = ref(false)
 const showGenerateDialog = ref(false)
 const generateCount = ref(14)
 const isGenerating = ref(false)
+const generateAbilityMin = ref(59)
+const generateAbilityMax = ref(67)
+const useCustomAbility = ref(false)
 
 // 导入表单
 const importForm = ref({
@@ -980,7 +1009,9 @@ const handleGenerateRookies = async () => {
   isGenerating.value = true
   try {
     const regionId = await getRegionId(selectedRegion.value)
-    const generated = await draftApi.generateRookies(regionId, generateCount.value)
+    const abilityMin = useCustomAbility.value ? generateAbilityMin.value : undefined
+    const abilityMax = useCustomAbility.value ? generateAbilityMax.value : undefined
+    const generated = await draftApi.generateRookies(regionId, generateCount.value, undefined, abilityMin, abilityMax)
     showGenerateDialog.value = false
     await loadPoolData(selectedRegion.value)
     ElMessage.success(`成功生成 ${generated.length} 名 ${currentRegionName.value} 新秀`)
@@ -1400,6 +1431,18 @@ const handleGenerateRookies = async () => {
       font-size: 12px;
       color: #9ca3af;
       margin-top: 4px;
+    }
+
+    .ability-range-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      .range-separator {
+        font-size: 16px;
+        color: #6b7280;
+        font-weight: 500;
+      }
     }
   }
 

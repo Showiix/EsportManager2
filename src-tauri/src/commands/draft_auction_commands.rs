@@ -5,8 +5,8 @@
 use crate::commands::save_commands::{AppState, CommandResult};
 use crate::engines::{DraftAuctionEngine, DraftRookieInfo, TeamAuctionInfo, AuctionRoundResult};
 use crate::models::{
-    AuctionStatus, DraftPickListing,
-    DraftListingStatus, get_draft_pick_pricing,
+    AuctionStatus, DraftPickListing, DraftPickWanted,
+    DraftListingStatus, WantedStatus, get_draft_pick_pricing,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -41,6 +41,7 @@ pub struct ListingInfo {
     pub status: String,
     pub buyer_team_id: Option<u64>,
     pub buyer_team_name: Option<String>,
+    pub final_price: Option<i64>,
     pub current_bid_round: u32,
 }
 
@@ -538,6 +539,7 @@ pub async fn get_auction_status(
                     status: r.get("status"),
                     buyer_team_id: r.get::<Option<i64>, _>("buyer_team_id").map(|id| id as u64),
                     buyer_team_name: r.get("buyer_team_name"),
+                    final_price: r.get("final_price"),
                     current_bid_round: r.get::<i64, _>("current_bid_round") as u32,
                 }
             }).collect();
@@ -757,6 +759,93 @@ pub async fn finalize_auction(
         .map_err(|e| e.to_string())?;
     }
 
+    // 处理求购成交的选秀权转移
+    let fulfilled_wanted = sqlx::query(
+        r#"
+        SELECT w.*, a.id as auction_id
+        FROM draft_pick_wanted w
+        JOIN draft_pick_auctions a ON w.auction_id = a.id
+        WHERE a.save_id = ? AND a.season_id = ? AND a.region_id = ? AND w.status = 'FULFILLED'
+        "#
+    )
+    .bind(&save_id)
+    .bind(current_season)
+    .bind(region_id as i64)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    for wanted in fulfilled_wanted {
+        let holder_team_id: i64 = wanted.get("holder_team_id");
+        let buyer_team_id: i64 = wanted.get("buyer_team_id");
+        let target_position: i64 = wanted.get("target_position");
+        let final_price: i64 = wanted.get::<Option<i64>, _>("final_price").unwrap_or(0);
+        let commission = (final_price as f64 * 0.05) as i64;
+        let seller_revenue = final_price - commission;
+
+        sqlx::query(
+            r#"
+            UPDATE draft_orders
+            SET team_id = ?, original_team_id = ?, acquired_via = 'WANTED', acquisition_price = ?
+            WHERE save_id = ? AND season_id = ? AND region_id = ? AND draft_position = ?
+            "#
+        )
+        .bind(buyer_team_id)
+        .bind(holder_team_id)
+        .bind(final_price)
+        .bind(&save_id)
+        .bind(current_season)
+        .bind(region_id as i64)
+        .bind(target_position)
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        sqlx::query("UPDATE teams SET balance = balance - ? WHERE id = ?")
+            .bind(final_price)
+            .bind(buyer_team_id)
+            .execute(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query("UPDATE teams SET balance = balance + ? WHERE id = ?")
+            .bind(seller_revenue)
+            .bind(holder_team_id)
+            .execute(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO financial_transactions (save_id, season_id, team_id, transaction_type, amount, description)
+            VALUES (?, ?, ?, 'DRAFT_PICK_PURCHASE', ?, ?)
+            "#
+        )
+        .bind(&save_id)
+        .bind(current_season)
+        .bind(buyer_team_id)
+        .bind(final_price)
+        .bind(format!("求购第{}顺位选秀权", target_position))
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO financial_transactions (save_id, season_id, team_id, transaction_type, amount, description)
+            VALUES (?, ?, ?, 'DRAFT_PICK_SALE', ?, ?)
+            "#
+        )
+        .bind(&save_id)
+        .bind(current_season)
+        .bind(holder_team_id)
+        .bind(seller_revenue)
+        .bind(format!("出售第{}顺位选秀权（求购成交，扣除5%佣金）", target_position))
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
     Ok(CommandResult::ok(true))
 }
 
@@ -924,6 +1013,43 @@ async fn load_auction_engine(
         }
     }).collect();
 
+    // 加载已有求购请求
+    let wanted_rows = sqlx::query(
+        r#"
+        SELECT id, save_id, season_id, region_id, auction_id, buyer_team_id, buyer_team_name,
+               target_position, offer_price, reason, status, holder_team_id, holder_team_name,
+               response_reason, final_price, created_at, resolved_at
+        FROM draft_pick_wanted
+        WHERE auction_id = ?
+        "#
+    )
+    .bind(auction_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    for row in wanted_rows {
+        engine.wanted_requests.push(DraftPickWanted {
+            id: row.get::<i64, _>("id") as u64,
+            save_id: save_id.to_string(),
+            season_id: current_season as u64,
+            region_id,
+            auction_id: auction_id as u64,
+            buyer_team_id: row.get::<i64, _>("buyer_team_id") as u64,
+            buyer_team_name: row.get("buyer_team_name"),
+            target_position: row.get::<i64, _>("target_position") as u32,
+            offer_price: row.get("offer_price"),
+            reason: row.get("reason"),
+            status: WantedStatus::from(row.get::<String, _>("status").as_str()),
+            holder_team_id: row.get::<i64, _>("holder_team_id") as u64,
+            holder_team_name: row.get("holder_team_name"),
+            response_reason: row.get("response_reason"),
+            final_price: row.get("final_price"),
+            created_at: row.get("created_at"),
+            resolved_at: row.get("resolved_at"),
+        });
+    }
+
     Ok(engine)
 }
 
@@ -1008,6 +1134,60 @@ async fn save_auction_round_result(
         .map_err(|e| e.to_string())?;
     }
 
+    // 更新求购请求状态
+    for wanted in &result.wanted_results {
+        sqlx::query(
+            r#"
+            UPDATE draft_pick_wanted SET
+                status = ?, final_price = ?, response_reason = ?, resolved_at = ?, offer_price = ?
+            WHERE id = ?
+            "#
+        )
+        .bind(wanted.status.to_string())
+        .bind(wanted.final_price)
+        .bind(&wanted.response_reason)
+        .bind(&wanted.resolved_at)
+        .bind(wanted.offer_price)
+        .bind(wanted.id as i64)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    // 插入本轮新生成的求购请求（id == 0 表示尚未写入数据库）
+    for wanted in &engine.wanted_requests {
+        if wanted.id != 0 {
+            continue;
+        }
+        sqlx::query(
+            r#"
+            INSERT INTO draft_pick_wanted (
+                save_id, season_id, region_id, auction_id, buyer_team_id, buyer_team_name,
+                target_position, offer_price, reason, status, holder_team_id, holder_team_name,
+                response_reason, final_price, resolved_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#
+        )
+        .bind(save_id)
+        .bind(wanted.season_id as i64)
+        .bind(wanted.region_id as i64)
+        .bind(wanted.auction_id as i64)
+        .bind(wanted.buyer_team_id as i64)
+        .bind(&wanted.buyer_team_name)
+        .bind(wanted.target_position as i64)
+        .bind(wanted.offer_price)
+        .bind(&wanted.reason)
+        .bind(wanted.status.to_string())
+        .bind(wanted.holder_team_id as i64)
+        .bind(&wanted.holder_team_name)
+        .bind(&wanted.response_reason)
+        .bind(wanted.final_price)
+        .bind(&wanted.resolved_at)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
     // 更新拍卖状态
     sqlx::query(
         r#"
@@ -1046,6 +1226,7 @@ fn build_auction_status_info(engine: &DraftAuctionEngine, auction_id: u64) -> Au
             status: l.status.to_string(),
             buyer_team_id: l.buyer_team_id,
             buyer_team_name: l.buyer_team_name.clone(),
+            final_price: l.final_price,
             current_bid_round: l.current_bid_round,
         }
     }).collect();

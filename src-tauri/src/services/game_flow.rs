@@ -4004,8 +4004,8 @@ impl GameFlowService {
             let avg_tenure: f64 = players
                 .iter()
                 .map(|p| {
-                    let tenure = current_season - *team_join_seasons.get(&p.player_id).unwrap_or(&current_season);
-                    tenure.max(0) as f64
+                    let tenure = (current_season - *team_join_seasons.get(&p.player_id).unwrap_or(&current_season)).max(0) + 1;
+                    tenure as f64
                 })
                 .sum::<f64>()
                 / players.len() as f64;

@@ -8,7 +8,7 @@ import { loggerService, createLogger, LogLevel } from '@/utils/logger'
 const logger = createLogger('App')
 const isDev = import.meta.env.DEV
 
-const cachedViews = ref(['Teams', 'Players'])
+const cachedViews = ref(['Teams', 'Players', 'DataCenter', 'AnnualTop'])
 
 // 初始化日志系统
 onMounted(() => {

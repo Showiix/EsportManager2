@@ -2,9 +2,13 @@
   <div class="player-detail-view">
     <!-- 返回按钮 -->
     <div class="back-link">
-      <el-button text @click="$router.push('/players')">
+      <el-button text @click="$router.back()">
         <el-icon><ArrowLeft /></el-icon>
-        返回选手列表
+        返回上一页
+      </el-button>
+      <el-button text @click="$router.push(`/data-center/player/${$route.params.id}`)" style="color: #409eff;">
+        <el-icon><DataAnalysis /></el-icon>
+        数据中心
       </el-button>
     </div>
 
@@ -423,9 +427,14 @@
         </el-table-column>
         <el-table-column label="成长" width="100" align="center">
           <template #default="{ row, $index }">
-            <el-tag v-if="$index > 0" type="success" size="small">
-              +{{ row.ability - seasonHistory[$index - 1].ability }}
-            </el-tag>
+            <template v-if="$index > 0">
+              <el-tag
+                :type="row.ability - seasonHistory[$index - 1].ability > 0 ? 'success' : row.ability - seasonHistory[$index - 1].ability < 0 ? 'danger' : 'info'"
+                size="small"
+              >
+                {{ row.ability - seasonHistory[$index - 1].ability > 0 ? '+' : '' }}{{ row.ability - seasonHistory[$index - 1].ability }}
+              </el-tag>
+            </template>
             <span v-else class="text-gray">-</span>
           </template>
         </el-table-column>

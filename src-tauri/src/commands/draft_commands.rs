@@ -1,5 +1,5 @@
 use crate::commands::save_commands::{AppState, CommandResult};
-use crate::engines::{DraftEngine, MarketValueEngine, RookieGenerator, TraitEngine};
+use crate::engines::{DraftEngine, MarketValueEngine, RookieGenerator, RookieGenerationConfig, TraitEngine};
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -1231,6 +1231,8 @@ pub async fn generate_rookies(
     region_id: u64,
     count: Option<u32>,
     seed: Option<u64>,
+    ability_min: Option<u8>,
+    ability_max: Option<u8>,
 ) -> Result<CommandResult<Vec<DraftPoolPlayer>>, String> {
     let count = count.unwrap_or(14) as usize;
 
@@ -1285,7 +1287,16 @@ pub async fn generate_rookies(
     };
 
     // 生成新秀
-    let rookies = generator.generate_rookies(region_id, count, &existing_ids);
+    let config = RookieGenerationConfig {
+        ability_range: match (ability_min, ability_max) {
+            (Some(min), Some(max)) => Some((min, max)),
+            (Some(min), None) => Some((min, 80)),
+            (None, Some(max)) => Some((30, max)),
+            _ => None,
+        },
+        ..Default::default()
+    };
+    let rookies = generator.generate_rookies_with_config(region_id, count, &existing_ids, &config);
 
     // 插入 draft_pool 并收集结果
     let mut results = Vec::with_capacity(rookies.len());

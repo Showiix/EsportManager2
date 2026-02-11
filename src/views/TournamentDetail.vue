@@ -19,15 +19,6 @@
       </div>
       <div class="header-actions">
         <el-button
-          v-if="tournament.status === 'active' && currentPhase === 'regular'"
-          type="primary"
-          @click="simulateNextMatch"
-          :loading="simulating"
-        >
-          <el-icon><VideoPlay /></el-icon>
-          模拟下一场
-        </el-button>
-        <el-button
           v-if="tournament.status === 'active'"
           type="warning"
           @click="simulateAll"
@@ -539,7 +530,7 @@ const currentMatchDetail = ref<MatchDetail | null>(null)
 const currentPhase = ref<'regular' | 'playoffs'>('regular')
 const selectedRegion = ref('LPL')
 const matchFilter = ref('all')
-const simulating = ref(false)
+
 const batchSimulating = ref(false)
 const playoffsSimulating = ref(false)
 
@@ -1081,36 +1072,6 @@ const getRankClass = (rank: number) => {
   if (rank === 3) return 'bronze'
   if (rank <= 4) return 'playoffs'
   return ''
-}
-
-const simulateNextMatch = async () => {
-  const nextMatch = matches.value.find(m => m.status === 'active' || m.status === 'upcoming')
-  if (!nextMatch) {
-    ElMessage.info('没有待模拟的比赛')
-    return
-  }
-
-  simulating.value = true
-  await new Promise(resolve => setTimeout(resolve, 1000))
-
-  // 模拟比赛结果
-  const homeWin = Math.random() > 0.5
-  nextMatch.homeScore = homeWin ? 2 : Math.floor(Math.random() * 2)
-  nextMatch.awayScore = homeWin ? Math.floor(Math.random() * 2) : 2
-  nextMatch.winnerId = homeWin ? nextMatch.homeTeamId : nextMatch.awayTeamId
-  nextMatch.status = 'completed'
-
-  // 更新下一场比赛状态
-  const nextUpcoming = matches.value.find(m => m.status === 'upcoming')
-  if (nextUpcoming) {
-    nextUpcoming.status = 'active'
-  }
-
-  // 更新积分榜
-  updateStandings()
-
-  simulating.value = false
-  ElMessage.success(`比赛结束: ${nextMatch.homeTeam} ${nextMatch.homeScore} - ${nextMatch.awayScore} ${nextMatch.awayTeam}`)
 }
 
 const simulateAll = async () => {

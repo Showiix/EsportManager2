@@ -245,9 +245,9 @@
             <el-icon class="mr-2"><Sell /></el-icon>
             进入拍卖大厅
           </el-button>
-          <el-button size="large" @click="skipAuction">
+          <el-button size="large" :disabled="!auctionCompleted" @click="skipAuction">
             <el-icon class="mr-2"><Right /></el-icon>
-            跳过拍卖，直接分配
+            {{ auctionCompleted ? '拍卖已完成，进入分配' : '请先完成拍卖' }}
           </el-button>
         </div>
       </div>
@@ -392,7 +392,7 @@ import {
   Money,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { draftApi, teamApi, queryApi } from '@/api/tauri'
+import { draftApi, draftAuctionApi, teamApi, queryApi } from '@/api/tauri'
 import { useGameStore } from '@/stores/useGameStore'
 import { storeToRefs } from 'pinia'
 import { createLogger } from '@/utils/logger'
@@ -456,6 +456,8 @@ const backendLotteryCache = ref<any[]>([])
 
 // 分配列表（position-centric，拍卖后的实际签位归属）
 const assignmentList = ref<any[]>([])
+// 拍卖是否已完成
+const auctionCompleted = ref(false)
 // 获取赛区ID
 const getRegionId = async (regionCode: string): Promise<number> => {
   try {
@@ -550,6 +552,8 @@ const restoreDraftState = async () => {
       currentStep.value = 5
     } else {
       currentStep.value = 2
+      // 检查拍卖状态（用户可能从拍卖大厅返回）
+      await checkAuctionStatus()
     }
   } catch (e) {
     logger.error('恢复选秀状态失败:', e)
@@ -639,8 +643,9 @@ const startLottery = () => {
 }
 
 // 进入拍卖步骤
-const proceedToAuction = () => {
+const proceedToAuction = async () => {
   currentStep.value = 3
+  await checkAuctionStatus()
 }
 
 // 前往拍卖大厅页面
@@ -648,7 +653,17 @@ const goToAuction = () => {
   router.push(`/draft/${selectedRegion.value}/auction`)
 }
 
-// 跳过拍卖，直接进入分配
+// 检查拍卖是否已完成
+const checkAuctionStatus = async () => {
+  try {
+    const status = await draftAuctionApi.getStatus(currentRegionId.value)
+    auctionCompleted.value = status?.status === 'COMPLETED'
+  } catch {
+    auctionCompleted.value = false
+  }
+}
+
+// 拍卖完成后进入分配
 const skipAuction = async () => {
   await buildAssignmentList()
   currentStep.value = 4

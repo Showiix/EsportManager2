@@ -219,7 +219,7 @@
             <div v-if="listing.status === 'SOLD'" class="buyer-info">
               <span class="info-label">买家</span>
               <span class="team-name success">{{ listing.buyer_team_name }}</span>
-              <span class="final-price">成交价: {{ formatAmount(listing.final_price || 0) }}</span>
+              <span class="final-price">成交价: {{ formatAmount(listing.final_price || listing.current_price) }}</span>
             </div>
           </div>
 
@@ -303,7 +303,7 @@
               </div>
               <div class="bidder-price">
                 <span class="bid-amount">{{ formatAmount(bid.offer_price) }}</span>
-                <span v-if="bid.final_price !== null" class="bid-final">
+                <span v-if="bid.final_price" class="bid-final">
                   成交 {{ formatAmount(bid.final_price) }}
                 </span>
               </div>

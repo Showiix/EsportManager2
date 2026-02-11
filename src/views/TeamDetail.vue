@@ -2,9 +2,9 @@
   <div class="team-detail-view">
     <!-- 返回按钮 -->
     <div class="back-link">
-      <el-button text @click="$router.push('/teams')">
+      <el-button text @click="$router.back()">
         <el-icon><ArrowLeft /></el-icon>
-        返回战队列表
+        返回上一页
       </el-button>
     </div>
 

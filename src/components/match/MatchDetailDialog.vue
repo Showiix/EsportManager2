@@ -193,7 +193,7 @@ watch(() => props.matchDetail, (newVal) => {
     synergyA.value = null
     synergyB.value = null
   }
-})
+}, { immediate: true })
 
 // 当前选中的局
 const currentGame = computed(() => {

@@ -386,7 +386,7 @@ pub struct TransferOffer {
     pub signing_bonus: i64,
     pub match_score: f64,
     pub priority: f64,
-    pub target_region_id: Option<i64>,  // 目标球队赛区ID（用于跨赛区转会意愿计算）
+    pub target_region_id: Option<i64>, // 目标球队赛区ID（用于跨赛区转会意愿计算）
 }
 
 // ============================================
@@ -413,7 +413,7 @@ impl Default for TransferConfig {
             max_transfers_per_round: 2,
             max_transfers_per_window: 10,
             negotiation_max_rounds: 3,
-            luxury_tax_threshold: 10,
+            luxury_tax_threshold: 8,
             luxury_tax_per_player: 5_000_000, // 500万/人
         }
     }
@@ -709,14 +709,14 @@ pub struct PlayerContract {
     pub save_id: String,
     pub player_id: i64,
     pub team_id: i64,
-    pub contract_type: String,      // INITIAL / RENEWAL / FREE_AGENT / TRANSFER / EMERGENCY / DRAFT
-    pub total_salary: i64,          // 总合同薪资（元）
-    pub annual_salary: i64,         // 年薪 = total_salary / contract_years（元）
-    pub contract_years: i64,        // 合同总年数
-    pub start_season: i64,          // 签约赛季
-    pub end_season: i64,            // 合同结束赛季
-    pub transfer_fee: i64,          // 转会费（元，自由球员/续约为0）
-    pub signing_bonus: i64,         // 签约奖金（元）
-    pub is_active: bool,            // 是否为当前生效合同
+    pub contract_type: String, // INITIAL / RENEWAL / FREE_AGENT / TRANSFER / EMERGENCY / DRAFT
+    pub total_salary: i64,     // 总合同薪资（元）
+    pub annual_salary: i64,    // 年薪 = total_salary / contract_years（元）
+    pub contract_years: i64,   // 合同总年数
+    pub start_season: i64,     // 签约赛季
+    pub end_season: i64,       // 合同结束赛季
+    pub transfer_fee: i64,     // 转会费（元，自由球员/续约为0）
+    pub signing_bonus: i64,    // 签约奖金（元）
+    pub is_active: bool,       // 是否为当前生效合同
     pub created_at: String,
 }

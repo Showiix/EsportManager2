@@ -234,8 +234,12 @@ impl DraftAuctionEngine {
             }
         }
 
-        // 如果没有任何挂牌，直接结束拍卖
-        if self.listings.is_empty() {
+        // 生成求购请求：没有挂牌但想买签的球队，向持签球队发起求购
+        let wanted_events = self.generate_wanted_requests();
+        new_events.extend(wanted_events);
+
+        // 如果既没有挂牌，也没有求购请求，才结束拍卖
+        if self.listings.is_empty() && self.wanted_requests.is_empty() {
             self.auction.status = AuctionStatus::Completed;
             self.auction.completed_at = Some(chrono::Utc::now().to_rfc3339());
 
@@ -251,10 +255,6 @@ impl DraftAuctionEngine {
                 0,
             ));
         }
-
-        // 生成求购请求：没有挂牌但想买签的球队，向持签球队发起求购
-        let wanted_events = self.generate_wanted_requests();
-        new_events.extend(wanted_events);
 
         self.events.extend(new_events.clone());
         new_events
@@ -471,8 +471,8 @@ impl DraftAuctionEngine {
             // 处理本轮出价
             if round_bidders.is_empty() {
                 // 无人出价
-                if current_round >= max_rounds || current_bid_round == 0 {
-                    // 已达最大轮数或从未有人出价，流拍
+                if current_bid_round == 0 && current_round >= max_rounds {
+                    // 从未有人出价且达到最大轮数，流拍
                     self.listings[idx].status = DraftListingStatus::Expired;
                     round_expirations.push(draft_position);
 
@@ -496,7 +496,7 @@ impl DraftAuctionEngine {
                         round: current_round,
                         created_at: chrono::Utc::now().to_rfc3339(),
                     });
-                } else if current_round >= max_rounds {
+                } else if current_bid_round > 0 && current_round >= max_rounds {
                     // 有人出过价但本轮无新出价，成交
                     if let Some(buyer_id) = buyer_team_id {
                         self.finalize_listing_sale(idx, current_round, &mut new_events);
@@ -587,14 +587,18 @@ impl DraftAuctionEngine {
         // 处理求购请求
         let wanted_results = self.process_wanted_requests(current_round, &mut new_events);
 
-        // 检查是否所有挂牌都已处理完毕
         let active_listings = self
             .listings
             .iter()
             .filter(|l| l.status == DraftListingStatus::Active)
             .count();
-        if active_listings == 0 || current_round >= max_rounds {
-            // 最终轮结束时将未处理的求购标记为过期
+        // 本轮是否有任何实际活动（出价、成交、求购处理）
+        let had_activity_this_round =
+            !round_bids.is_empty() || !round_sales.is_empty() || !wanted_results.is_empty();
+        // 结束条件：达到最大轮数，或 (没有活跃挂牌 且 本轮无任何活动)
+        let should_complete =
+            current_round >= max_rounds || (active_listings == 0 && !had_activity_this_round);
+        if should_complete {
             for w in &mut self.wanted_requests {
                 if w.status == WantedStatus::Active {
                     w.status = WantedStatus::Expired;
@@ -639,7 +643,7 @@ impl DraftAuctionEngine {
         let available_budget = (team_info.balance as f64 * budget_ratio) as i64;
         let min_bid = current_price + min_increment;
 
-        if available_budget < min_bid || team_info.roster_count >= 15 {
+        if available_budget < min_bid || team_info.roster_count >= 8 {
             return None;
         }
 
@@ -666,13 +670,8 @@ impl DraftAuctionEngine {
             1.00
         } else if team_info.roster_count < 7 {
             0.60
-        } else if team_info.roster_count < 9 {
-            0.30
-        } else if team_info.roster_count <= 10 {
-            0.10
         } else {
-            // 超过奢侈税起征线，急剧降低
-            (0.10 - (team_info.roster_count - 10) as f64 * 0.02).max(0.01)
+            0.30
         };
 
         // 4. 实力因素（弱队更需要新秀补强）
@@ -880,7 +879,7 @@ impl DraftAuctionEngine {
                 continue;
             }
 
-            if buyer_info.roster_count >= 10 {
+            if buyer_info.roster_count >= 8 {
                 continue;
             }
 
@@ -1014,13 +1013,13 @@ impl DraftAuctionEngine {
 
     fn calculate_buy_desire(&self, team_info: &TeamAuctionInfo, own_pick: Option<u32>) -> f64 {
         let roster_need = if team_info.roster_count < 5 {
-            0.80
+            0.90
         } else if team_info.roster_count < 7 {
-            0.50
+            0.70
         } else if team_info.roster_count < 9 {
-            0.25
+            0.50
         } else {
-            0.05
+            0.30
         };
 
         let strength_need = if team_info.avg_ability < 55.0 {

@@ -9,16 +9,6 @@
       <div class="header-actions">
         <el-button
           v-if="tournament.status === 'active'"
-          type="primary"
-          size="small"
-          @click="simulateNextMatch"
-          :loading="simulating"
-        >
-          <el-icon><VideoPlay /></el-icon>
-          模拟下一场
-        </el-button>
-        <el-button
-          v-if="tournament.status === 'active'"
           size="small"
           @click="simulateAll"
           :loading="batchSimulating"
@@ -249,7 +239,7 @@ const currentMatchDetail = ref<MatchDetail | null>(null)
 // 状态
 const selectedRegion = ref(1) // 默认 LPL region_id = 1
 const matchFilter = ref('all')
-const simulating = ref(false)
+
 // 批量模拟 composable
 const { simulationProgress, isSimulating: batchSimulating, batchSimulate } = useBatchSimulation()
 const loading = ref(false)
@@ -738,41 +728,6 @@ const convertToMatchDetail = (result: any, match: any): MatchDetail => {
     mvpTeamId: result.match_mvp?.team_id ? String(result.match_mvp.team_id) : undefined,
     mvpTotalImpact: result.match_mvp?.mvp_score,
     createdAt: new Date().toISOString(),
-  }
-}
-
-const simulateNextMatch = async () => {
-  if (!currentTournamentId.value) {
-    ElMessage.error('赛事未加载')
-    return
-  }
-
-  const nextMatch = matches.value.find(m => m.status === 'active' || m.status === 'upcoming')
-  if (!nextMatch) {
-    ElMessage.info('没有待模拟的比赛')
-    return
-  }
-
-  simulating.value = true
-
-  try {
-    // 使用后端 API 模拟下一场比赛
-    const result = await tournamentApi.simulateNextMatch(currentTournamentId.value)
-
-    if (result) {
-      // 重新加载比赛列表和积分榜
-      await loadMatches()
-      await updateStandings()
-
-      ElMessage.success(`比赛结束: ${result.home_team_name} ${result.home_score} - ${result.away_score} ${result.away_team_name}`)
-    } else {
-      ElMessage.info('没有待模拟的比赛')
-    }
-  } catch (error) {
-    logger.error('Failed to simulate next match:', error)
-    ElMessage.error('模拟比赛失败')
-  } finally {
-    simulating.value = false
   }
 }
 

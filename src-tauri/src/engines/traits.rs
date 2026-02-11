@@ -900,6 +900,36 @@ impl TraitEngine {
         let mut gained = Vec::new();
         let mut lost = Vec::new();
 
+        // 全局觉醒门槛：只有 25% 的选手有机会觉醒新特性
+        // 高能力(80+)选手略微提高到 35%，低能力(<55)选手降低到 15%
+        let base_awakening_rate = if ability >= 80 {
+            0.35
+        } else if ability >= 70 {
+            0.25
+        } else if ability >= 55 {
+            0.20
+        } else {
+            0.15
+        };
+
+        if rng.gen::<f64>() >= base_awakening_rate {
+            // 未通过全局门槛，只检查退化，跳过觉醒
+            for trait_type in existing_traits {
+                let decay_prob = Self::get_decay_probability(
+                    *trait_type,
+                    ability,
+                    age,
+                    games_played,
+                    avg_performance,
+                );
+                if decay_prob > 0.0 && rng.gen::<f64>() < decay_prob {
+                    lost.push(*trait_type);
+                    break;
+                }
+            }
+            return (gained, lost);
+        }
+
         // 每赛季最多觉醒1个，退化1个
         let mut awakened_one = false;
 
@@ -1027,146 +1057,152 @@ impl TraitEngine {
     ) -> Vec<(TraitType, f64)> {
         let mut candidates = Vec::new();
 
-        // 高能力 + 季后赛大量比赛 → Clutch / BigGame
-        if ability >= 70 && games_played >= 30 && avg_performance > 0.5 {
-            candidates.push((TraitType::Clutch, 0.08));
-            candidates.push((TraitType::BigGame, 0.10));
+        // Clutch / BigGame: 高能力 + 大量高质量比赛
+        if ability >= 75 && games_played >= 40 && avg_performance > 0.8 {
+            candidates.push((TraitType::Clutch, 0.06));
+            candidates.push((TraitType::BigGame, 0.08));
         }
 
-        // 表现极好 → FinalsKiller
-        if ability >= 75 && avg_performance > 1.0 {
-            candidates.push((TraitType::FinalsKiller, 0.05));
+        // FinalsKiller: 顶尖表现
+        if ability >= 80 && avg_performance > 1.5 {
+            candidates.push((TraitType::FinalsKiller, 0.04));
         }
 
-        // 常规赛打满 + 表现稳定 → RegularKing
-        if games_played >= 35 && avg_performance > 0.0 && avg_performance < 0.8 {
-            candidates.push((TraitType::RegularKing, 0.10));
+        // RegularKing: 打满常规赛 + 稳定中等表现
+        if games_played >= 40 && avg_performance > 0.2 && avg_performance < 0.8 && ability >= 65 {
+            candidates.push((TraitType::RegularKing, 0.08));
         }
 
-        // 连续高表现 → WinStreak
-        if avg_performance > 0.8 && games_played >= 25 {
-            candidates.push((TraitType::WinStreak, 0.10));
+        // WinStreak: 持续高表现
+        if avg_performance > 1.0 && games_played >= 35 && ability >= 70 {
+            candidates.push((TraitType::WinStreak, 0.08));
         }
 
-        // 波动大但高能力 → Explosive
-        if ability >= 65 && avg_performance > 0.3 {
-            candidates.push((TraitType::Explosive, 0.06));
+        // Explosive: 高能力 + 高表现
+        if ability >= 72 && avg_performance > 0.8 {
+            candidates.push((TraitType::Explosive, 0.05));
         }
 
-        // 稳定表现 → Consistent
-        if games_played >= 30 && avg_performance > -0.2 && avg_performance < 0.5 {
-            candidates.push((TraitType::Consistent, 0.10));
+        // Consistent: 大量比赛 + 表现稳定在中间段
+        if games_played >= 40 && avg_performance > 0.0 && avg_performance < 0.5 && ability >= 65 {
+            candidates.push((TraitType::Consistent, 0.08));
         }
 
-        // 表现极端 → Gambler
-        if ability >= 60 {
-            candidates.push((TraitType::Gambler, 0.04));
+        // Gambler: 高能力 + 极端表现波动
+        if ability >= 70 && avg_performance > 0.5 {
+            candidates.push((TraitType::Gambler, 0.03));
         }
 
-        // 逆境中表现好 → ComebackKing / PressurePlayer
-        if avg_performance > 0.5 && ability >= 65 {
-            candidates.push((TraitType::ComebackKing, 0.07));
-            candidates.push((TraitType::PressurePlayer, 0.06));
+        // ComebackKing / PressurePlayer: 高能力 + 显著高表现
+        if avg_performance > 0.8 && ability >= 72 && games_played >= 30 {
+            candidates.push((TraitType::ComebackKing, 0.06));
+            candidates.push((TraitType::PressurePlayer, 0.05));
         }
 
-        // 表现差 → 负面特性
-        if avg_performance < -0.5 && games_played >= 20 {
-            candidates.push((TraitType::Tilter, 0.12));
-            candidates.push((TraitType::Fragile, 0.08));
-            candidates.push((TraitType::Choker, 0.08));
+        // 负面特性: 表现极差
+        if avg_performance < -0.8 && games_played >= 25 {
+            candidates.push((TraitType::Tilter, 0.10));
+            candidates.push((TraitType::Fragile, 0.06));
+            candidates.push((TraitType::Choker, 0.06));
         }
 
-        // 大量比赛不疲劳 → Ironman / Endurance
-        if games_played >= 40 {
-            candidates.push((TraitType::Ironman, 0.08));
-            candidates.push((TraitType::Endurance, 0.10));
-            candidates.push((TraitType::TournamentHorse, 0.06));
+        // Ironman / Endurance / TournamentHorse: 超大量比赛 + 表现不差
+        if games_played >= 50 && avg_performance > 0.0 {
+            candidates.push((TraitType::Ironman, 0.06));
+            candidates.push((TraitType::Endurance, 0.08));
+        }
+        if games_played >= 55 && avg_performance > 0.3 {
+            candidates.push((TraitType::TournamentHorse, 0.05));
         }
 
-        // 心态稳 → MentalFortress
-        if ability >= 70 && avg_performance > 0.0 && games_played >= 30 {
-            candidates.push((TraitType::MentalFortress, 0.06));
+        // MentalFortress: 高能力 + 稳定正面表现 + 大量比赛
+        if ability >= 75 && avg_performance > 0.5 && games_played >= 35 {
+            candidates.push((TraitType::MentalFortress, 0.05));
         }
 
-        // 老将觉醒
-        if age >= 28 {
-            candidates.push((TraitType::Veteran, 0.15));
-            candidates.push((TraitType::BattleTested, 0.12));
+        // 老将觉醒: 需要高能力支撑
+        if age >= 29 && ability >= 68 {
+            candidates.push((TraitType::Veteran, 0.10));
+            candidates.push((TraitType::BattleTested, 0.08));
         }
-        if age >= 30 && ability >= 65 {
-            candidates.push((TraitType::Mentor, 0.10));
-        }
-
-        // 年轻天才
-        if age <= 20 && ability >= 65 {
-            candidates.push((TraitType::Prodigy, 0.08));
-            candidates.push((TraitType::RisingStar, 0.10));
+        if age >= 30 && ability >= 70 && seasons_in_team >= 2 {
+            candidates.push((TraitType::Mentor, 0.06));
         }
 
-        // 长期效力同一队 → TeamLeader / Supportive
-        if seasons_in_team >= 3 && ability >= 65 {
-            candidates.push((TraitType::TeamLeader, 0.06));
-            candidates.push((TraitType::Supportive, 0.08));
+        // 年轻天才: 更严格
+        if age <= 19 && ability >= 70 {
+            candidates.push((TraitType::Prodigy, 0.06));
+            candidates.push((TraitType::RisingStar, 0.08));
         }
 
-        // 黄金年龄 → PeakAge / PeakForm
-        if age >= 24 && age <= 28 && ability >= 70 {
-            candidates.push((TraitType::PeakAge, 0.10));
-            candidates.push((TraitType::PeakForm, 0.05));
+        // TeamLeader / Supportive: 长期效力 + 高能力
+        if seasons_in_team >= 4 && ability >= 70 {
+            candidates.push((TraitType::TeamLeader, 0.05));
+        }
+        if seasons_in_team >= 3 && ability >= 65 && avg_performance > 0.0 {
+            candidates.push((TraitType::Supportive, 0.06));
         }
 
-        // 高潜力成长 → Limitless
-        if age <= 22 && ability >= 68 && avg_performance > 0.5 {
+        // PeakAge / PeakForm: 黄金年龄 + 高能力
+        if age >= 24 && age <= 27 && ability >= 75 && avg_performance > 0.5 {
+            candidates.push((TraitType::PeakAge, 0.08));
+            candidates.push((TraitType::PeakForm, 0.04));
+        }
+
+        // Limitless: 非常年轻 + 高能力 + 优秀表现
+        if age <= 21 && ability >= 72 && avg_performance > 0.8 {
             candidates.push((TraitType::Limitless, 0.04));
         }
 
-        // 成长慢 → LowCeiling / EarlyDecline
-        if age >= 24 && ability < 60 {
-            candidates.push((TraitType::LowCeiling, 0.10));
+        // LowCeiling / EarlyDecline: 负面成长
+        if age >= 25 && ability < 55 && avg_performance < -0.2 {
+            candidates.push((TraitType::LowCeiling, 0.08));
         }
-        if age >= 26 && avg_performance < -0.3 {
-            candidates.push((TraitType::EarlyDecline, 0.08));
-        }
-
-        // 适应力 → Adaptable
-        if seasons_in_team <= 1 && avg_performance > 0.3 {
-            candidates.push((TraitType::Adaptable, 0.12));
+        if age >= 27 && avg_performance < -0.5 {
+            candidates.push((TraitType::EarlyDecline, 0.06));
         }
 
-        // 不合群 → LoneWolf / Troublemaker
-        if ability >= 70 && avg_performance > 0.5 && seasons_in_team <= 2 {
-            candidates.push((TraitType::LoneWolf, 0.06));
-        }
-        if avg_performance < -0.3 && ability >= 65 {
-            candidates.push((TraitType::Troublemaker, 0.06));
+        // Adaptable: 新转会 + 高能力 + 优秀表现
+        if seasons_in_team <= 1 && avg_performance > 0.8 && ability >= 68 {
+            candidates.push((TraitType::Adaptable, 0.08));
         }
 
-        // 抗衰老 → Resilient
-        if age >= 29 && ability >= 65 {
-            candidates.push((TraitType::Resilient, 0.08));
+        // LoneWolf: 高能力 + 高表现 + 短期效力
+        if ability >= 75 && avg_performance > 0.8 && seasons_in_team <= 1 {
+            candidates.push((TraitType::LoneWolf, 0.05));
+        }
+        // Troublemaker: 表现很差 + 有能力
+        if avg_performance < -0.5 && ability >= 68 {
+            candidates.push((TraitType::Troublemaker, 0.05));
         }
 
-        // 大器晚成 → LateBlocker
-        if age >= 25 && ability >= 68 && avg_performance > 0.5 {
-            candidates.push((TraitType::LateBlocker, 0.06));
+        // Resilient: 老将 + 高能力
+        if age >= 30 && ability >= 70 {
+            candidates.push((TraitType::Resilient, 0.06));
         }
 
-        // 国际赛类
-        if games_played >= 25 && avg_performance > 0.3 {
-            candidates.push((TraitType::GroupStageExpert, 0.08));
-            candidates.push((TraitType::CrossRegion, 0.06));
+        // LateBlocker: 大器晚成
+        if age >= 26 && ability >= 72 && avg_performance > 0.8 {
+            candidates.push((TraitType::LateBlocker, 0.05));
         }
-        if ability >= 75 && avg_performance > 1.0 {
+
+        // 国际赛类: 大量比赛 + 高表现
+        if games_played >= 35 && avg_performance > 0.8 && ability >= 68 {
+            candidates.push((TraitType::GroupStageExpert, 0.06));
+        }
+        if games_played >= 30 && avg_performance > 0.5 && seasons_in_team <= 2 {
+            candidates.push((TraitType::CrossRegion, 0.05));
+        }
+        if ability >= 80 && avg_performance > 1.5 {
             candidates.push((TraitType::WorldStage, 0.03));
-            candidates.push((TraitType::KnockoutSpecialist, 0.05));
+            candidates.push((TraitType::KnockoutSpecialist, 0.04));
         }
 
-        // 完美主义 → Perfectionist
-        if seasons_in_team >= 3 && avg_performance > 0.3 && ability >= 65 {
-            candidates.push((TraitType::Perfectionist, 0.08));
+        // Perfectionist: 长期效力 + 高能力 + 稳定高表现
+        if seasons_in_team >= 4 && avg_performance > 0.5 && ability >= 70 {
+            candidates.push((TraitType::Perfectionist, 0.06));
         }
 
-        // 过滤已有特性
         candidates.retain(|(t, _)| !existing.contains(t));
 
         candidates

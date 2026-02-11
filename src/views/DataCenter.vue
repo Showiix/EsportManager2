@@ -378,6 +378,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'DataCenter' })
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { DataLine, Refresh, ArrowRight, ArrowDown, User, VideoCamera, TrendCharts, Star } from '@element-plus/icons-vue'

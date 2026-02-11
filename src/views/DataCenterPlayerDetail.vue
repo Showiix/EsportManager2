@@ -4,7 +4,7 @@
     <div class="back-nav">
       <el-button text @click="goBack">
         <el-icon><ArrowLeft /></el-icon>
-        返回排行榜
+        返回上一页
       </el-button>
       <el-select v-model="selectedSeason" placeholder="选择赛季" style="width: 100px" size="small">
         <el-option v-for="s in seasons" :key="s.value" :label="s.label" :value="s.value" />
@@ -1313,7 +1313,7 @@ const yearlyTopRankOption = computed(() => {
 })
 
 const goBack = () => {
-  router.push('/data-center')
+  router.back()
 }
 
 const getPositionName = (position: PlayerPosition): string => {
