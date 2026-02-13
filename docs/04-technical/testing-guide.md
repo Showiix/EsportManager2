@@ -38,8 +38,8 @@ npx vitest run
 | 模块 | 位置 | 测试内容 |
 |------|------|----------|
 | 比赛模拟 | `engines/match_simulation.rs` | BO1/BO3/BO5、胜率、特性效果 |
-| 转会系统 | `engines/transfer.rs` | 概率取整、稳定性评分、策略决策、意愿计算、匹配度、缓存操作 |
-| 数据库层 | `db/repository.rs` | Save CRUD、Team 创建/查询、Player 创建/查询 |
+| 转会系统 | `engines/transfer/tests.rs` | 概率取整、稳定性评分、策略决策、意愿计算、匹配度、缓存操作 |
+| 数据库层 | `db/repository/tests.rs` | Save CRUD、Team 创建/查询、Player 创建/查询 |
 | 选手模型 | `models/player.rs` | PlayerTag、Position、RegionCode、LoyaltyType、忠诚度方法 |
 | 战队模型 | `models/team.rs` | 胜率计算、FinancialStatus 分级/边界值 |
 | 选手状态 | `engines/condition.rs` | 状态计算、动量系统 |
@@ -201,7 +201,7 @@ describe('SomeModule', () => {
 | 优先级 | 模块 | 理由 |
 |--------|------|------|
 | 高 | `commands/` (23个模块) | 命令层是前后端桥梁，参数校验容易出错 |
-| 高 | `services/game_flow.rs` | 赛季推进是核心流程 |
+| 高 | `services/game_flow/tests.rs` | 赛季推进是核心流程 |
 | 中 | `engines/financial.rs` 补充 | 奖金/赞助计算影响游戏平衡 |
 | 中 | Vue Store 测试 | 状态管理逻辑复杂 |
 | 低 | Vue 组件测试 | UI 层变化频繁，ROI 较低 |

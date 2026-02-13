@@ -190,7 +190,7 @@ impl Player {
 
 ### 能力成长
 
-**代码位置**: `src-tauri/src/engines/transfer.rs` — `execute_season_settlement()` 函数
+**代码位置**: `src-tauri/src/engines/transfer/round1_settlement.rs` — `execute_season_settlement()` 函数
 
 - **30岁前**: `new_ability = min(ability + tag_growth, potential, 100)`
 - **30岁后**: `new_ability = max(ability - 1, 50)` (每赛季-1)

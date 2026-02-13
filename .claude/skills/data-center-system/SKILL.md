@@ -13,7 +13,7 @@ description: 电竞经理游戏的数据中心系统。管理选手赛季统计�
 
 ### PlayerStatsRepository
 
-**文件**: `src-tauri/src/db/repository.rs`
+**文件**: `src-tauri/src/db/repository/player.rs`
 
 选手统计数据仓库，提供增删改查操作。
 
@@ -27,7 +27,7 @@ description: 电竞经理游戏的数据中心系统。管理选手赛季统计�
 
 ### PlayerTournamentStatsRepository
 
-**文件**: `src-tauri/src/db/repository.rs`
+**文件**: `src-tauri/src/db/repository/player.rs`
 
 选手赛事统计仓库，记录单项赛事中的表现。
 

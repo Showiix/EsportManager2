@@ -18,7 +18,7 @@
 ┌───────────────────────────────────────────────────────────┼─────────────┐
 │                           后端 (Rust + Tauri)              │             │
 │  ┌──────────────────┐    ┌──────────────────┐    ┌────────▼─────────┐   │
-│  │  GameFlowService │ ◄──│   game_flow.rs   │ ◄──│ time_commands.rs │   │
+│  │  GameFlowService │ ◄──│   game_flow/     │ ◄──│ time_commands.rs │   │
 │  │   (核心服务)      │    │   (业务逻辑)      │    │   (命令接口)     │   │
 │  └────────┬─────────┘    └──────────────────┘    └──────────────────┘   │
 │           │                                                              │
@@ -209,7 +209,7 @@ const newSeason = await timeApi.startNewSeason()
 | 文件 | 说明 |
 |------|------|
 | `models/game_time.rs` | 时间相关数据模型 |
-| `services/game_flow.rs` | 游戏流程核心服务 |
+| `services/game_flow/` | 游戏流程核心服务 |
 | `commands/time_commands.rs` | Tauri 命令接口 |
 
 ### 前端

@@ -259,7 +259,7 @@ CREATE TABLE player_traits (
 |------|------|
 | `src-tauri/src/engines/traits.rs` | 特性定义、修正计算、生成逻辑 |
 | `src-tauri/src/engines/match_simulation.rs` | 快速模拟路径集成（MatchPlayerInfo、simulate_match_with_traits） |
-| `src-tauri/src/services/game_flow.rs` | 时间推进集成（load_team_players、simulate_all_phase_matches） |
+| `src-tauri/src/services/game_flow/match_simulation.rs` | 时间推进集成（load_team_players、simulate_all_phase_matches） |
 | `src-tauri/src/commands/match_commands.rs` | 详细模拟路径集成 |
 | `src-tauri/src/engines/condition.rs` | 状态/体力系统（MatchContext） |
 

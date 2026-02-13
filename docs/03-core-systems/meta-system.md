@@ -16,7 +16,7 @@
 ```
 ┌─────────────────────────────────────┐
 │         赛季推进（新赛季开始）          │
-│    services/game_flow.rs            │
+│    services/game_flow/              │
 │    advance_to_new_season()          │
 └──────────────┬──────────────────────┘
                │ 调用
@@ -36,7 +36,7 @@
 ┌──────────────┐  ┌──────┴─────────────┐
 │ meta_versions│  │   比赛模拟          │
 │    (DB)      │  │ match_commands.rs   │
-└──────────────┘  │ game_flow.rs        │
+└──────────────┘  │ game_flow/          │
                   └────────────────────┘
 ```
 
@@ -161,7 +161,7 @@ CREATE UNIQUE INDEX idx_meta_versions_save_season ON meta_versions(save_id, seas
 | `src-tauri/src/models/meta.rs` | 数据模型（MetaInfo, MetaHistoryEntry, MetaTypeInfo） |
 | `src-tauri/src/commands/meta_commands.rs` | 4 个 Tauri 命令 |
 | `src-tauri/src/db/connection.rs` | 数据库迁移（meta_versions 表） |
-| `src-tauri/src/services/game_flow.rs` | 时间系统集成点 |
+| `src-tauri/src/services/game_flow/` | 时间系统集成点 |
 | `src-tauri/src/commands/match_commands.rs` | 比赛模拟集成点 |
 
 ## Tauri 命令

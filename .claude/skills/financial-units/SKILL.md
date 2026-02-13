@@ -19,11 +19,8 @@ description: 电竞经理游戏的金额单位规范。全项目金额统一以�
 | `calculate_market_value()` | `services/init_service.rs` | 初始化身价，返回元 |
 | `calculate_base_market_value()` | `models/player.rs` | 基础身价计算，返回元 |
 | `calculate_full_market_value()` | `models/player.rs` | 含荣誉系数的完整身价，返回元 |
-| `calculate_base_market_value()` | `services/game_flow.rs` | 赛季结算身价重算，返回元 |
+| `calculate_base_market_value()` | `services/game_flow/market_value.rs` | 赛季结算身价重算，返回元 |
 | `calculate_market_value()` | `commands/dev_commands.rs` | 开发工具身价重算，返回元 |
-| `estimate_market_salary()` | `engines/transfer.rs` | 转会引擎薪资估算，返回元 |
-| `calculate_expected_salary()` | `engines/transfer.rs` | 期望薪资，返回元 |
-| `calculate_market_value_simple()` | `engines/transfer.rs` | 简易身价计算，返回元 |
 | `calculate_sponsorship()` | `engines/financial.rs` | 赞助收入，返回元 |
 
 ## 财务阈值（元）

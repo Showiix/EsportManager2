@@ -91,7 +91,7 @@ pub struct TransferCloseIssue {
 
 ### 阶段状态判断
 
-`game_flow.rs` 的 `get_phase_progress` 根据数据库查询转会窗口实际状态：
+`game_flow/` 的 `get_phase_progress` 根据数据库查询转会窗口实际状态：
 
 ```
 无记录        → total=0, completed=0 → PhaseStatus::NotInitialized
@@ -174,10 +174,10 @@ async function confirmCloseWindow(force: boolean): Promise<TransferWindowCloseVa
 
 | 文件 | 说明 |
 |------|------|
-| `src-tauri/src/engines/transfer.rs` | `validate_and_close_window` 方法 |
+| `src-tauri/src/engines/transfer/mod.rs` | `validate_and_close_window` 方法 |
 | `src-tauri/src/models/transfer.rs` | 验证结构体定义 |
 | `src-tauri/src/commands/transfer_commands.rs` | `confirm_close_transfer_window` 命令 |
-| `src-tauri/src/services/game_flow.rs` | 阶段状态判断 + 推进验证 |
+| `src-tauri/src/services/game_flow/time_system.rs` | 阶段状态判断 + 推进验证 |
 | `src/api/tauri.ts` | 前端 API + 类型定义 |
 | `src/stores/useTransferWindowStore.ts` | Store action + computed |
 | `src/views/TransferWindow.vue` | 关闭按钮 + 弹窗交互 |

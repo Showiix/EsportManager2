@@ -6,7 +6,7 @@
 
 ## 根因
 
-`src-tauri/src/engines/transfer.rs` 第 365 行的 UPDATE 语句缺少 `.bind(window_id)`：
+`src-tauri/src/engines/transfer/mod.rs` 第 365 行的 UPDATE 语句缺少 `.bind(window_id)`：
 
 ```rust
 // 修复前 — 3 个占位符，只绑定了 2 个参数

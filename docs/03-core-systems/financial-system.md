@@ -249,6 +249,6 @@ pub struct SeasonFinanceReport {
 | `src-tauri/src/engines/financial.rs` | 财政引擎（赞助/分成/运营成本/弱队补贴计算） |
 | `src-tauri/src/commands/finance_commands.rs` | 财政命令接口（前端调用入口） |
 | `src-tauri/src/models/team.rs` | Team 模型（含 brand_value 字段） |
-| `src-tauri/src/services/game_flow.rs` | 品牌价值赛季更新逻辑 |
+| `src-tauri/src/services/game_flow/market_value.rs` | 品牌价值赛季更新逻辑 |
 | `src/api/tauri.ts` | 前端类型定义 |
 | `src/components/finance/TeamFinanceDialog.vue` | 财务详情弹窗 |

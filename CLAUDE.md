@@ -21,7 +21,7 @@ EsportManager2-Backend/
 │   ├── api/tauri.ts             # Tauri 命令调用封装
 │   ├── components/              # Vue 组件 (28个，含 common/layout/match/msi/worlds/icp/super/clauch/transfer/finance/player/settings/dev)
 │   ├── engines/                 # 前端计算引擎 (PlayerEngine, PowerEngine)
-│   ├── stores/                  # Pinia 状态管理 (29个 Store)
+│   ├── stores/                  # Pinia 状态管理 (16个 Store，已清理旧 axios 版)
 │   ├── views/                   # 页面视图 (48个)
 │   ├── types/                   # TypeScript 类型定义 (6个)
 │   └── router/                  # Vue Router 路由
@@ -30,7 +30,12 @@ EsportManager2-Backend/
 │   ├── commands/                # Tauri Commands (23个命令模块)
 │   ├── engines/                 # 核心计算引擎 (17个引擎)
 │   │   ├── match_simulation.rs # 比赛模拟引擎
-│   │   ├── transfer.rs         # 转会引擎
+│   │   ├── transfer/           # 转会引擎（已拆分为模块目录）
+│   │   │   ├── mod.rs          # TransferEngine 定义 + 主流程
+│   │   │   ├── cache.rs        # TransferCache 内存缓存
+│   │   │   ├── round1_settlement.rs ~ round7_remedy.rs  # 7轮转会逻辑
+│   │   │   ├── scoring.rs      # 匹配度/意愿度/策略算法
+│   │   │   └── tests.rs        # 25个单元测试
 │   │   ├── financial.rs        # 财政引擎
 │   │   ├── points_calculation.rs # 积分计算引擎
 │   │   ├── traits.rs           # 选手特性系统
@@ -40,7 +45,17 @@ EsportManager2-Backend/
 │   │   └── ...
 │   ├── models/                  # 数据模型 (20个)
 │   ├── services/                # 业务服务层 (11个)
-│   │   ├── game_flow.rs        # 游戏流程核心
+│   │   ├── game_flow/          # 游戏流程核心（已拆分为模块目录）
+│   │   │   ├── mod.rs          # GameFlowService 定义 + 公开类型
+│   │   │   ├── phase_init.rs   # 阶段初始化（15个赛季阶段）
+│   │   │   ├── phase_complete.rs # 阶段完成（荣誉/统计/推进）
+│   │   │   ├── tournament_init.rs # 赛事初始化（常规赛/季后赛/大师赛）
+│   │   │   ├── tournament_complete.rs # 赛事完成（排名/积分/奖金）
+│   │   │   ├── time_system.rs  # 时间推进系统
+│   │   │   ├── match_simulation.rs # 比赛模拟（含特性系统）
+│   │   │   ├── annual_awards.rs # 年度颁奖
+│   │   │   ├── market_value.rs # 身价与品牌价值
+│   │   │   └── season_management.rs # 赛季管理
 │   │   ├── league_service.rs   # 联赛服务
 │   │   ├── honor_service.rs    # 荣誉服务
 │   │   ├── init_service.rs     # 初始化服务
@@ -48,9 +63,20 @@ EsportManager2-Backend/
 │   │   └── ...
 │   └── db/                      # 数据库操作 (SQLite)
 │       ├── connection.rs       # 连接与迁移
-│       └── repository.rs       # 数据仓库（统一）
+│       └── repository/         # 数据仓库（已拆分为模块目录）
+│           ├── mod.rs          # 统一 re-export
+│           ├── helpers.rs      # 27个共享 row_to_*/parse_* 函数
+│           ├── save.rs         # SaveRepository
+│           ├── team.rs         # TeamRepository
+│           ├── player.rs       # PlayerRepository + PlayerStatsRepository
+│           ├── match_repo.rs   # MatchRepository + MatchGameDetailRepository
+│           ├── tournament.rs   # TournamentRepository + TournamentResultRepository
+│           ├── honor.rs        # HonorRepository
+│           ├── points.rs       # PointsRepository
+│           └── ...             # 其余 Repository 各自独立文件
 │
 ├── docs/                        # 项目文档
+│   └── architecture-refactor.md # 架构重构记录（详细拆分说明）
 └── .claude/skills/              # Claude Code 技能文档
 ```
 
@@ -70,7 +96,7 @@ EsportManager2-Backend/
 
 ### 1. 时间推进系统 (Time System)
 
-**文件**: `src-tauri/src/services/game_flow.rs`, `src-tauri/src/engines/season_progress.rs`
+**文件**: `src-tauri/src/services/game_flow/` (模块目录), `src-tauri/src/engines/season_progress.rs`
 
 管理游戏的15个赛季阶段流转：
 
@@ -117,17 +143,16 @@ EsportManager2-Backend/
 
 ### 4. 转会系统 (Transfer System)
 
-**文件**: `src-tauri/src/engines/transfer.rs`
+**文件**: `src-tauri/src/engines/transfer/` (模块目录)
 
-8轮转会流程：
-1. 赛季结算（年龄/能力更新）
-2. 双向评估
-3. 续约谈判
-4. 自由球员竞标
-5. 合同选手转会
-6. 财务调整
-7. 最终补救
-8. 选秀权拍卖
+7轮转会流程：
+1. 赛季结算（年龄/能力更新） → `round1_settlement.rs`
+2. 双向评估 → `round2_evaluation.rs`
+3. 续约谈判 → `round3_renewal.rs`
+4. 自由球员竞标 → `round4_free_agent.rs`
+5. 合同选手转会 → `round5_contracted.rs`
+6. 财务调整 → `round6_financial.rs`
+7. 最终补救 → `round7_remedy.rs`
 
 **跨赛区偏好值**:
 - `home_region_id`: 选手出生赛区
@@ -167,12 +192,12 @@ EsportManager2-Backend/
 
 ### 8. 数据中心系统 (Data Center)
 
-**文件**: `src-tauri/src/db/repository.rs`
+**文件**: `src-tauri/src/db/repository/` (模块目录)
 
 记录选手赛季表现：
-- 影响力统计（单局影响力 = 选手发挥 - 队伍平均）
-- 稳定性评分
-- 年度Top得分
+- 影响力统计（单局影响力 = 选手发挥 - 队伍平均） → `player_tournament_stats.rs`
+- 稳定性评分 → `player.rs` (PlayerStatsRepository)
+- 年度Top得分 → `player.rs` (PlayerStatsRepository)
 
 ## 数据库设计
 
@@ -271,9 +296,10 @@ if !column_names.contains(&"new_column") {
 
 ### 修改转会逻辑
 
-编辑 `src-tauri/src/engines/transfer.rs`:
-- `calculate_willingness`: 转会意愿计算
-- `execute_*`: 各轮次执行逻辑
+编辑 `src-tauri/src/engines/transfer/` 目录:
+- `scoring.rs` → `calculate_willingness`: 转会意愿计算, `calculate_match_score`: 匹配度计算
+- `round1_settlement.rs` ~ `round7_remedy.rs` → 各轮次执行逻辑
+- `cache.rs` → TransferCache 缓存结构
 
 ## 注意事项
 

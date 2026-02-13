@@ -149,7 +149,7 @@ src-tauri/src/
 └── db/                      # 数据库操作
     ├── connection.rs         # 连接与迁移
     ├── migrations.rs         # 迁移工具
-    └── repository.rs         # 数据仓库（统一）
+    └── repository/          # 数据仓库（已拆分为模块目录）
 ```
 
 ## 前后端通信

@@ -320,5 +320,5 @@ let willingness = base_willingness * (100 - region_loyalty) / 100;
 |-----|------|
 | `src-tauri/src/engines/player_decision.rs` | 选手决策引擎 |
 | `src-tauri/src/services/draft_ai_service.rs` | 选秀 AI 服务 |
-| `src-tauri/src/engines/transfer.rs` | 转会引擎（含 AI 策略） |
+| `src-tauri/src/engines/transfer/` | 转会引擎（含 AI 策略） |
 | `src-tauri/src/engines/satisfaction.rs` | 满意度系统 |

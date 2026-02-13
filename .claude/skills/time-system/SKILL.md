@@ -33,7 +33,7 @@ pub struct SeasonProgressEngine {
 
 ### 2. GameFlowService
 
-**文件**: `src-tauri/src/services/game_flow.rs`
+**文件**: `src-tauri/src/services/game_flow/`
 
 游戏流程服务，协调各引擎完成阶段初始化和推进。
 

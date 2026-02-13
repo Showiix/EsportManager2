@@ -200,7 +200,7 @@ pub struct MetaTypeInfo {
 
 ### 与时间推进系统
 - `advance_to_new_season()` 在重置年度积分后、确认首发前，调用 `MetaEngine::roll_new_meta()` 生成新赛季版本
-- **文件**: `src-tauri/src/services/game_flow.rs`
+- **文件**: `src-tauri/src/services/game_flow/match_simulation.rs`
 
 ### 与比赛模拟系统
 - `simulate_match_detailed()` 在模拟前获取当前 Meta 权重
@@ -209,7 +209,7 @@ pub struct MetaTypeInfo {
 
 ### 与战力计算
 - `recalculate_team_powers()` 查询首发选手 + 位置，调用 `calculate_team_power_weighted()` 计算加权战力
-- **文件**: `src-tauri/src/services/game_flow.rs`
+- **文件**: `src-tauri/src/services/game_flow/match_simulation.rs`
 
 ## 使用示例
 

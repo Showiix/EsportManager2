@@ -166,5 +166,5 @@ consistency_score = 100 - (performance_std_dev × 2)
 | `src/views/DataCenter.vue` | 数据中心主页（仪表盘 + 排行榜） |
 | `src/views/DataCenterPlayerDetail.vue` | 选手详情页（雷达图 + 走势图） |
 | `src-tauri/src/models/player_stats.rs` | 统计数据模型 |
-| `src-tauri/src/db/repository.rs` | 数据仓库（含统计数据操作） |
+| `src-tauri/src/db/repository/` | 数据仓库（含统计数据操作） |
 | `src-tauri/src/commands/stats_commands.rs` | 统计命令接口 |

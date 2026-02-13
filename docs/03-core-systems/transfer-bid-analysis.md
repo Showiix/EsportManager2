@@ -260,7 +260,7 @@ TransferWindow.vue 中，R4/R5 完成后（`currentRound >= 5` 或转会期完�
 |------|------|
 | `src-tauri/src/db/connection.rs` | `transfer_bids` 建表迁移 |
 | `src-tauri/src/models/transfer.rs` | `TransferBid`、`PlayerBidAnalysis`、`BidOverview` 结构体 |
-| `src-tauri/src/engines/transfer.rs` | R4/R5 竞价数据收集 + `insert_bid` 方法 |
+| `src-tauri/src/engines/transfer/` | R4/R5 竞价数据收集 + `insert_bid` 方法 |
 | `src-tauri/src/commands/transfer_commands.rs` | `get_transfer_bids_overview`、`get_player_bids` 命令 |
 | `src/api/tauri.ts` | 前端 TS 类型 + API 函数 |
 | `src/views/TransferBidAnalysis.vue` | 竞价分析页面 |

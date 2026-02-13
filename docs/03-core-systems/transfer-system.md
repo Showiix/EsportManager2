@@ -71,7 +71,7 @@ R8 完成 → 点击"确认关闭转会窗口" → 验证检查
 
 ### 时间引擎集成
 
-`game_flow.rs` 根据数据库实际状态判断转会期进度：
+`game_flow/` 根据数据库实际状态判断转会期进度：
 
 | 状态 | 条件 | PhaseStatus |
 |------|------|-------------|
@@ -285,12 +285,12 @@ transfer_fee = original_bid × bid_premium
 
 | 文件 | 说明 |
 |------|------|
-| `src-tauri/src/engines/transfer.rs` | 转会引擎（含关闭验证） |
+| `src-tauri/src/engines/transfer/` | 转会引擎（含关闭验证） |
 | `src-tauri/src/engines/draft_auction.rs` | 选秀权拍卖引擎 |
 | `src-tauri/src/commands/transfer_commands.rs` | 转会命令接口 |
 | `src-tauri/src/commands/draft_auction_commands.rs` | 选秀权拍卖命令接口 |
 | `src-tauri/src/models/transfer.rs` | 转会数据模型 |
-| `src-tauri/src/services/game_flow.rs` | 时间引擎（转会期状态判断） |
+| `src-tauri/src/services/game_flow/time_system.rs` | 时间引擎（转会期状态判断） |
 | `src/stores/useTransferWindowStore.ts` | 前端转会窗口状态管理 |
 | `src/stores/useTransferStoreTauri.ts` | 前端转会 Tauri 集成 |
 | `src/stores/useDraftAuctionStore.ts` | 前端选秀权拍卖状态 |

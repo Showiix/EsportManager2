@@ -51,7 +51,7 @@ src-tauri/src/
 ├── engines/                   # 核心引擎
 │   ├── mod.rs
 │   ├── match_simulation.rs   # 比赛模拟引擎
-│   ├── transfer.rs           # 转会引擎
+│   ├── transfer/           # 转会引擎（模块目录）
 │   ├── financial.rs          # 财政引擎
 │   ├── draft.rs              # 选秀引擎
 │   ├── honor.rs              # 荣誉引擎
@@ -73,7 +73,7 @@ src-tauri/src/
 │   ├── mod.rs
 │   ├── connection.rs         # 数据库连接
 │   ├── migrations.rs         # 数据库迁移
-│   └── repository.rs         # 数据仓库
+│   └── repository/         # 数据仓库（模块目录）
 └── errors/                    # 错误处理
     ├── mod.rs
     └── error_codes.rs        # 错误码定义
@@ -182,7 +182,7 @@ impl MatchSimulationEngine {
 ### 转会引擎
 
 ```rust
-// src-tauri/src/engines/transfer.rs
+// src-tauri/src/engines/transfer/mod.rs
 
 pub struct TransferEngine;
 
@@ -333,7 +333,7 @@ pub async fn run_all(pool: &SqlitePool) -> Result<()> {
 ### Repository 模式
 
 ```rust
-// src-tauri/src/db/repository.rs
+// src-tauri/src/db/repository/player.rs
 
 pub struct PlayerRepository;
 

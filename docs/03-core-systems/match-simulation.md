@@ -184,7 +184,7 @@ pub struct MatchGame {
 | `src-tauri/src/engines/match_simulation.rs` | 核心模拟引擎 |
 | `src-tauri/src/engines/traits.rs` | 选手特性系统 |
 | `src-tauri/src/commands/match_commands.rs` | 比赛命令接口 |
-| `src-tauri/src/services/game_flow.rs` | 时间推进集成 |
+| `src-tauri/src/services/game_flow/match_simulation.rs` | 时间推进集成 |
 | `src-tauri/src/services/league_service.rs` | 联赛服务 |
 | `src/engines/PlayerEngine.ts` | 前端选手计算 |
 | `src/engines/PowerEngine.ts` | 前端战力计算 |
@@ -282,6 +282,6 @@ CREATE TABLE player_form_factors (
 | 文件 | 说明 |
 |------|------|
 | `src-tauri/src/engines/condition.rs` | ConditionEngine 核心算法 |
-| `src-tauri/src/services/game_flow.rs` | 快速模拟路径集成（load_team_players / flush_form_factors_to_db） |
+| `src-tauri/src/services/game_flow/match_simulation.rs` | 快速模拟路径集成（load_team_players / flush_form_factors_to_db） |
 | `src-tauri/src/commands/match_commands.rs` | 详细模拟路径 form factors 更新 |
 | `src-tauri/src/commands/game_commands.rs` | 单场模拟路径 form factors 更新 |

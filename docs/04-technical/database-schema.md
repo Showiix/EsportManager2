@@ -344,5 +344,5 @@ if !column_names.contains(&"new_column") {
 |-----|------|
 | `src-tauri/src/db/connection.rs` | 数据库连接管理 |
 | `src-tauri/src/db/migrations.rs` | 数据库迁移 |
-| `src-tauri/src/db/repository.rs` | 数据仓库接口 |
+| `src-tauri/src/db/repository/` | 数据仓库接口（模块目录） |
 | `src-tauri/src/models/*.rs` | 数据模型定义 |

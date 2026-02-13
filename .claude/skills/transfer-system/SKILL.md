@@ -13,7 +13,7 @@ description: 电竞经理游戏的转会系统。8轮制转会流程、AI球队�
 
 ### TransferEngine
 
-**文件**: `src-tauri/src/engines/transfer.rs`
+**文件**: `src-tauri/src/engines/transfer/`
 
 转会引擎，实现8轮转会流程。
 
@@ -187,7 +187,7 @@ pub struct TeamReputation {
 
 ### 意愿度计算
 
-**文件**: `src-tauri/src/engines/transfer.rs` - `calculate_willingness` 函数
+**文件**: `src-tauri/src/engines/transfer/scoring.rs` - `calculate_willingness` 函数
 
 ```rust
 fn calculate_willingness(

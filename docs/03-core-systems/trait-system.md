@@ -256,6 +256,6 @@ CREATE INDEX idx_player_traits ON player_traits(player_id);
 |------|------|
 | `src-tauri/src/engines/traits.rs` | 特性定义、修正计算、生成逻辑、互斥规则 |
 | `src-tauri/src/engines/match_simulation.rs` | MatchPlayerInfo、MatchSimContext、simulate_match_with_traits |
-| `src-tauri/src/services/game_flow.rs` | load_team_players、simulate_all_phase_matches |
+| `src-tauri/src/services/game_flow/match_simulation.rs` | load_team_players、simulate_all_phase_matches |
 | `src-tauri/src/commands/match_commands.rs` | 详细模拟路径的特性集成 |
 | `src-tauri/src/engines/condition.rs` | MatchContext（详细模拟路径用） |

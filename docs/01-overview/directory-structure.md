@@ -245,7 +245,7 @@ EsportManager2-Backend/
 │   │       ├── mod.rs
 │   │       ├── connection.rs    # 数据库连接与迁移
 │   │       ├── migrations.rs    # 迁移工具
-│   │       └── repository.rs    # 数据仓库（所有表操作）
+│   │       └── repository/     # 数据仓库（模块目录，按领域拆分）
 │   │
 │   ├── Cargo.toml               # Rust 依赖配置
 │   └── tauri.conf.json          # Tauri 配置
@@ -297,7 +297,7 @@ EsportManager2-Backend/
 | `engines/` | 17 | 核心业务逻辑和算法实现 |
 | `models/` | 20 | 数据结构定义，与数据库表对应 |
 | `services/` | 11 | 业务服务层，组织多个引擎协作 |
-| `db/` | 4 | 数据库连接、迁移和仓库操作（统一在 repository.rs 中） |
+| `db/` | 4 | 数据库连接、迁移和仓库操作（repository/ 已按领域拆分为独立文件） |
 
 ### 文档 (docs/)
 
