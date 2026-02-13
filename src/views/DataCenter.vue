@@ -396,7 +396,7 @@ import {
 } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { usePlayerStore } from '@/stores/usePlayerStore'
-import { useSeasonStore } from '@/stores/useSeasonStore'
+import { useTimeStore } from '@/stores/useTimeStore'
 import { teamApi, devApi, queryApi } from '@/api/tauri'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
 import { ElMessage } from 'element-plus'
@@ -423,7 +423,7 @@ const logger = createLogger('DataCenter')
 
 const router = useRouter()
 const playerStore = usePlayerStore()
-const seasonStore = useSeasonStore()
+const timeStore = useTimeStore()
 
 // 本地战队映射表
 const teamsMap = ref<Map<number, string>>(new Map())
@@ -431,7 +431,7 @@ const teamsMap = ref<Map<number, string>>(new Map())
 const teamsRegionMap = ref<Record<string, number>>({})
 
 // 状态
-const selectedSeason = ref(seasonStore.currentSeason)
+const selectedSeason = ref(timeStore.currentSeasonFromTime)
 const selectedPosition = ref('')
 const activeAnalysisCharts = ref<string[]>([])
 const searchQuery = ref('')

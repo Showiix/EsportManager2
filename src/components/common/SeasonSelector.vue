@@ -21,7 +21,7 @@
 
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
-import { useSeasonStore } from '@/stores/useSeasonStore'
+import { useTimeStore } from '@/stores/useTimeStore'
 
 defineProps<{
   modelValue: number
@@ -33,6 +33,6 @@ defineEmits<{
   'update:modelValue': [value: number]
 }>()
 
-const seasonStore = useSeasonStore()
-const { seasonOptions, currentSeason } = storeToRefs(seasonStore)
+const timeStore = useTimeStore()
+const { seasonOptions, currentSeasonFromTime: currentSeason } = storeToRefs(timeStore)
 </script>

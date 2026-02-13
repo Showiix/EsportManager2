@@ -338,7 +338,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Trophy, Aim, Star, MagicStick } from '@element-plus/icons-vue'
-import { useSeasonStore } from '@/stores/useSeasonStore'
 import { useTimeStore } from '@/stores/useTimeStore'
 import { awardsApi } from '@/api/tauri'
 import type { AnnualAwardsData, Top20Player, AllProPlayer } from '@/api/tauri'
@@ -349,13 +348,12 @@ import SeasonSelector from '@/components/common/SeasonSelector.vue'
 
 const logger = createLogger('AnnualAwards')
 const router = useRouter()
-const seasonStore = useSeasonStore()
 const timeStore = useTimeStore()
 
 const loading = ref(false)
 const starting = ref(false)
 const awardsData = ref<AnnualAwardsData | null>(null)
-const selectedSeason = ref(seasonStore.currentSeason)
+const selectedSeason = ref(timeStore.currentSeasonFromTime)
 
 // 典礼状态
 const ceremonyStarted = ref(false)
@@ -366,7 +364,7 @@ const revealedTier = ref(0)
 const revealedSpecial = ref(0)
 
 const isAwardsPhase = computed(() => timeStore.isAnnualAwardsPhase)
-const isCurrentSeason = computed(() => selectedSeason.value === seasonStore.currentSeason)
+const isCurrentSeason = computed(() => selectedSeason.value === timeStore.currentSeasonFromTime)
 const mvpPlayer = computed(() => awardsData.value?.top20[0] || null)
 
 const visibleTop20 = computed(() => {

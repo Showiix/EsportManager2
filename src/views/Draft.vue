@@ -325,7 +325,7 @@ import {
 import { useDraftStoreTauri } from '@/stores/useDraftStoreTauri'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
 import { useGameStore } from '@/stores/useGameStore'
-import { useSeasonStore } from '@/stores/useSeasonStore'
+import { useTimeStore } from '@/stores/useTimeStore'
 import { draftApi } from '@/api/tauri'
 import type { DraftRegionStatus } from '@/api/tauri'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
@@ -334,7 +334,7 @@ const router = useRouter()
 const draftStore = useDraftStoreTauri()
 const teamStore = useTeamStoreTauri()
 const gameStore = useGameStore()
-const seasonStore = useSeasonStore()
+const timeStore = useTimeStore()
 
 // 从 store 获取响应式数据
 const { isLoading } = storeToRefs(draftStore)
@@ -342,7 +342,7 @@ const { regions } = storeToRefs(teamStore)
 
 // 赛季选择
 const selectedSeason = ref(0)
-const isViewingHistory = computed(() => selectedSeason.value !== 0 && selectedSeason.value !== seasonStore.currentSeason)
+const isViewingHistory = computed(() => selectedSeason.value !== 0 && selectedSeason.value !== timeStore.currentSeasonFromTime)
 
 // 各赛区选秀状态（当前赛季）
 const regionStatuses = ref<Record<number, DraftRegionStatus>>({})
@@ -354,7 +354,7 @@ const historyLoading = ref(false)
 // 初始化
 onMounted(async () => {
   await gameStore.refreshGameState()
-  selectedSeason.value = seasonStore.currentSeason
+  selectedSeason.value = timeStore.currentSeasonFromTime
   await teamStore.loadRegions()
   await loadRegionStatuses()
 })
@@ -394,7 +394,7 @@ async function loadHistoryData(season: number) {
 
 // 监听赛季切换
 watch(selectedSeason, (val) => {
-  if (val !== 0 && val !== seasonStore.currentSeason) {
+  if (val !== 0 && val !== timeStore.currentSeasonFromTime) {
     loadHistoryData(val)
   }
 })

@@ -401,7 +401,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { useSeasonStore } from '@/stores/useSeasonStore'
+import { useTimeStore } from '@/stores/useTimeStore'
 import { statsApi, awardsApi } from '@/api/tauri'
 import type { AnnualAwardsData, Top20Player } from '@/api/tauri'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
@@ -425,9 +425,9 @@ use([CanvasRenderer, RadarChart, TooltipComponent, LegendComponent, RadarCompone
 const logger = createLogger('AnnualTop')
 
 const router = useRouter()
-const seasonStore = useSeasonStore()
+const timeStore = useTimeStore()
 
-const selectedSeason = ref(seasonStore.currentSeason)
+const selectedSeason = ref(timeStore.currentSeasonFromTime)
 const awardsData = ref<AnnualAwardsData | null>(null)
 const loading = ref(false)
 const recalculating = ref(false)

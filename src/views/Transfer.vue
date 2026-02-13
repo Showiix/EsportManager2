@@ -247,7 +247,6 @@ import {
   Document,
 } from '@element-plus/icons-vue'
 import { useTransferWindowStore, ROUND_NAMES, EVENT_TYPE_NAMES } from '@/stores/useTransferWindowStore'
-import { useSeasonStore } from '@/stores/useSeasonStore'
 import { useTimeStore } from '@/stores/useTimeStore'
 import { queryApi, transferWindowApi } from '@/api/tauri'
 import type { TransferWindowResponse, TransferReport } from '@/api/tauri'
@@ -271,7 +270,6 @@ interface Team {
 
 const router = useRouter()
 const transferStore = useTransferWindowStore()
-const seasonStore = useSeasonStore()
 const timeStore = useTimeStore()
 
 // 是否在转会期阶段
@@ -279,7 +277,7 @@ const isTransferPhase = computed(() => timeStore.isInTransferWindow)
 
 // 赛季选择
 const selectedSeason = ref(0)
-const isViewingHistory = computed(() => selectedSeason.value !== 0 && selectedSeason.value !== seasonStore.currentSeason)
+const isViewingHistory = computed(() => selectedSeason.value !== 0 && selectedSeason.value !== timeStore.currentSeasonFromTime)
 
 // 历史数据
 const historyWindow = ref<TransferWindowResponse | null>(null)
@@ -434,7 +432,7 @@ async function loadHistoryData(season: number) {
 
 // 监听赛季切换
 watch(selectedSeason, (val) => {
-  if (val !== 0 && val !== seasonStore.currentSeason) {
+  if (val !== 0 && val !== timeStore.currentSeasonFromTime) {
     loadHistoryData(val)
   }
 })
@@ -475,7 +473,7 @@ async function loadData() {
 }
 
 onMounted(async () => {
-  selectedSeason.value = seasonStore.currentSeason
+  selectedSeason.value = timeStore.currentSeasonFromTime
   // 先加载时间状态，确保 phaseDisplayName 和 isInTransferWindow 正确
   await timeStore.fetchTimeState()
   await loadData()

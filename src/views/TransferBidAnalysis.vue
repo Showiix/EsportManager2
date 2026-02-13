@@ -383,11 +383,11 @@ import { transferWindowApi } from '@/api/tauri'
 import type { BidOverview, PlayerBidAnalysis } from '@/api/tauri'
 import { formatMoney } from '@/utils/format'
 import { Search, Loading, QuestionFilled } from '@element-plus/icons-vue'
-import { useSeasonStore } from '@/stores/useSeasonStore'
+import { useTimeStore } from '@/stores/useTimeStore'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
 
 const route = useRoute()
-const seasonStore = useSeasonStore()
+const timeStore = useTimeStore()
 
 const loading = ref(false)
 const overview = ref<BidOverview | null>(null)
@@ -566,11 +566,11 @@ onMounted(async () => {
     }
   }
 
-  // 如果仍然没有选中赛季，用当前活跃赛季
-  if (!selectedSeason.value) {
-    selectedSeason.value = seasonStore.currentSeason
-    seasonId.value = selectedSeason.value
-  }
+   // 如果仍然没有选中赛季，用当前活跃赛季
+   if (!selectedSeason.value) {
+     selectedSeason.value = timeStore.currentSeasonFromTime
+     seasonId.value = selectedSeason.value
+   }
 
   await loadData()
 })

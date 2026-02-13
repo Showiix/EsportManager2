@@ -39,12 +39,19 @@ export const useTimeStore = defineStore('time', () => {
   // 操作结果消息
   const lastMessage = ref<string | null>(null)
 
-  // 最近颁发的荣誉
-  const recentHonors = ref<CompleteAndAdvanceResult['honors_awarded']>([])
+   // 最近颁发的荣誉
+   const recentHonors = ref<CompleteAndAdvanceResult['honors_awarded']>([])
 
-  // ========================================
-  // Computed
-  // ========================================
+   // ========================================
+   // Season State (merged from useSeasonStore)
+   // ========================================
+
+   // 各页面正在查看的赛季（默认当前赛季）
+   const viewingSeason = ref(1)
+
+   // ========================================
+   // Computed
+   // ========================================
 
   // 当前赛季
   const currentSeason = computed(() => timeState.value?.current_season ?? 1)
@@ -103,12 +110,27 @@ export const useTimeStore = defineStore('time', () => {
   // 是否在赛季结束阶段
   const isSeasonEnd = computed(() => currentPhase.value === 'SeasonEnd')
 
-  // 是否在年度颁奖阶段
-  const isAnnualAwardsPhase = computed(() => currentPhase.value === 'AnnualAwards')
+   // 是否在年度颁奖阶段
+   const isAnnualAwardsPhase = computed(() => currentPhase.value === 'AnnualAwards')
 
-  // ========================================
-  // Actions
-  // ========================================
+   // 当前活跃赛季（来自 timeState，每次时间操作后自动更新）
+   const currentSeasonFromTime = computed(() => timeState.value?.current_season ?? 1)
+
+   // 赛季选项列表
+   const seasonOptions = computed(() => {
+     const list = []
+     for (let i = 1; i <= currentSeasonFromTime.value; i++) {
+       list.push({ label: `S${i}`, value: i })
+     }
+     return list
+   })
+
+   // 是否在查看历史赛季
+   const isViewingHistory = computed(() => viewingSeason.value !== currentSeasonFromTime.value)
+
+   // ========================================
+   // Actions
+   // ========================================
 
   /**
    * 获取/刷新时间状态
@@ -350,14 +372,28 @@ export const useTimeStore = defineStore('time', () => {
    */
   const fastForwardToWorlds = () => fastForwardTo('WORLDS')
 
-  /**
-   * 快进到赛季结束
-   */
-  const fastForwardToSeasonEnd = () => fastForwardTo('SEASON_END')
+   /**
+    * 快进到赛季结束
+    */
+   const fastForwardToSeasonEnd = () => fastForwardTo('SEASON_END')
 
-  /**
-   * 清除所有状态（切换存档时调用）
-   */
+   /**
+    * 切换查看的赛季
+    */
+   const switchSeason = (season: number) => {
+     viewingSeason.value = season
+   }
+
+   /**
+    * 重置为当前赛季
+    */
+   const resetToCurrentSeason = () => {
+     viewingSeason.value = currentSeasonFromTime.value
+   }
+
+   /**
+    * 清除所有状态（切换存档时调用）
+    */
   const clearAll = () => {
     timeState.value = null
     isLoading.value = false
@@ -385,50 +421,56 @@ export const useTimeStore = defineStore('time', () => {
   // Return
   // ========================================
 
-  return {
-    // State
-    timeState,
-    isLoading,
-    error,
-    lastMessage,
-    recentHonors,
-    lastSimulatedMatch,
+   return {
+     // State
+     timeState,
+     isLoading,
+     error,
+     lastMessage,
+     recentHonors,
+     lastSimulatedMatch,
+     viewingSeason,
 
-    // Computed
-    currentSeason,
-    currentPhase,
-    phaseDisplayName,
-    phaseStatus,
-    phaseProgress,
-    seasonProgress,
-    canAdvance,
-    nextPhase,
-    availableActions,
-    tournaments,
-    completedMatches,
-    totalMatches,
-    allPhases,
-    currentPhaseIndex,
-    isInTournamentPhase,
-    isInTransferWindow,
-    isInDraft,
-    isSeasonEnd,
-    isAnnualAwardsPhase,
+      // Computed
+      currentSeason,
+      currentSeasonFromTime,
+      currentPhase,
+     phaseDisplayName,
+     phaseStatus,
+     phaseProgress,
+     seasonProgress,
+     canAdvance,
+     nextPhase,
+     availableActions,
+     tournaments,
+     completedMatches,
+     totalMatches,
+     allPhases,
+     currentPhaseIndex,
+     isInTournamentPhase,
+     isInTransferWindow,
+     isInDraft,
+     isSeasonEnd,
+     isAnnualAwardsPhase,
+     seasonOptions,
+     isViewingHistory,
 
-    // Actions
-    fetchTimeState,
-    initPhase,
-    completeAndAdvance,
-    fastForwardTo,
-    simulateAll,
-    simulateNext,
-    startNewSeason,
-    advanceToNextPhase,
-    fastForwardToSummer,
-    fastForwardToWorlds,
-    fastForwardToSeasonEnd,
-    clearAll,
-    clearError,
-    clearMessage,
-  }
+     // Actions
+     fetchTimeState,
+     initPhase,
+     completeAndAdvance,
+     fastForwardTo,
+     simulateAll,
+     simulateNext,
+     startNewSeason,
+     advanceToNextPhase,
+     fastForwardToSummer,
+     fastForwardToWorlds,
+     fastForwardToSeasonEnd,
+     switchSeason,
+     resetToCurrentSeason,
+     clearAll,
+     clearError,
+     clearMessage,
+   }
 })

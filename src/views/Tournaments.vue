@@ -175,7 +175,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useTournamentStoreTauri } from '@/stores/useTournamentStoreTauri'
 import { useGameStore } from '@/stores/useGameStore'
-import { useSeasonStore } from '@/stores/useSeasonStore'
+import { useTimeStore } from '@/stores/useTimeStore'
 import { queryApi, timeApi } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
@@ -185,7 +185,7 @@ const logger = createLogger('Tournaments')
 const router = useRouter()
 const tournamentStore = useTournamentStoreTauri()
 const gameStore = useGameStore()
-const seasonStore = useSeasonStore()
+const timeStore = useTimeStore()
 
 // 从 store 获取响应式数据
 const { currentSeason, gameState } = storeToRefs(gameStore)
@@ -200,7 +200,7 @@ const isFixing = ref(false)
 
 // 初始化加载数据
 onMounted(async () => {
-  selectedSeason.value = seasonStore.currentSeason
+  selectedSeason.value = timeStore.currentSeasonFromTime
   await loadAllTournaments()
   // 自动检测并修复赛事状态
   try {

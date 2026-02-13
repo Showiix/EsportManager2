@@ -428,17 +428,17 @@ import { teamApi, queryApi, pointsApi } from '@/api/tauri'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
 import type { Team, Region, TeamAnnualPoints, AnnualPointsDetail } from '@/api/tauri'
 import { createLogger } from '@/utils/logger'
-import { useSeasonStore } from '@/stores/useSeasonStore'
+import { useTimeStore } from '@/stores/useTimeStore'
 
 const logger = createLogger('Rankings')
 
 const router = useRouter()
-const seasonStore = useSeasonStore()
+const timeStore = useTimeStore()
 
 // 状态
 const activeTab = ref('annual')
 const selectedRegion = ref('')
-const selectedSeason = ref(seasonStore.currentSeason)
+const selectedSeason = ref(timeStore.currentSeasonFromTime)
 const pointsDetailVisible = ref(false)
 const selectedTeam = ref<any>(null)
 const loading = ref(false)

@@ -432,7 +432,7 @@ import {
   type PlayerStayEvaluationInfo,
 } from '@/api/tauri'
 import { formatBudget } from '@/utils'
-import { useSeasonStore } from '@/stores/useSeasonStore'
+import { useTimeStore } from '@/stores/useTimeStore'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
 
 // 状态
@@ -445,7 +445,7 @@ const detailDialogVisible = ref(false)
 const selectedTeam = ref<TeamSeasonEvaluationInfo | null>(null)
 const currentPage = ref(1)
 const pageSize = ref(20)
-const seasonStore = useSeasonStore()
+const timeStore = useTimeStore()
 const selectedSeason = ref<number>(0)
 
 // 筛选条件
@@ -765,7 +765,7 @@ function getStayScoreColor(score: number): string {
 
 // 初始化
 onMounted(async () => {
-  selectedSeason.value = seasonStore.currentSeason
+  selectedSeason.value = timeStore.currentSeasonFromTime
   loadEvaluations()
 })
 </script>
