@@ -1,118 +1,102 @@
-import axios from 'axios'
+/**
+ * Tauri IPC Client
+ * Replaces axios HTTP calls with Tauri invoke commands
+ */
+import { invoke } from '@tauri-apps/api/core'
 import { createLogger } from '@/utils/logger'
+import { usePerformanceStoreRaw } from '@/stores/usePerformanceStore'
 
-const logger = createLogger('APIClient')
+export const logger = createLogger('TauriAPI')
 
-// 创建axios实例
-const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-})
-
-// 请求拦截器
-apiClient.interceptors.request.use(
-  (config) => {
-    // 添加认证token等
-    const token = localStorage.getItem('auth_token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  },
-  (error) => {
-    return Promise.reject(error)
-  }
-)
-
-// 数据字段转换函数 - 将后端蛇形命名转换为前端驼峰命名
-function transformKeys(obj: any): any {
-  if (Array.isArray(obj)) {
-    return obj.map(item => transformKeys(item))
-  }
-
-  if (obj !== null && typeof obj === 'object') {
-    const transformed: any = {}
-
-    // 特殊字段映射
-    const fieldMapping: Record<string, string> = {
-      'power_rating': 'strength',
-      'region_id': 'regionId',
-      'short_name': 'shortName',
-      'founded_date': 'foundedDate',
-      'logo_url': 'logoUrl',
-      'is_active': 'isActive',
-      'total_matches': 'totalMatches',
-      'total_wins': 'wins',
-      'total_losses': 'losses',
-      'net_round_difference': 'netRoundDifference',
-      'created_at': 'createdAt',
-      'updated_at': 'updatedAt',
-      'region_name': 'regionName',
-      'region_code': 'regionCode',
-      'competition_id': 'competitionId',
-      'home_team_id': 'homeTeamId',
-      'away_team_id': 'awayTeamId',
-      'scheduled_at': 'scheduledAt',
-      'played_at': 'playedAt',
-      'season_id': 'seasonId',
-      'season_code': 'seasonCode',
-      'season_name': 'seasonName',
-      'season_year': 'seasonYear',
-      'display_name': 'displayName',
-      'competition_code': 'competitionCode',
-      'new_id': 'newId',
-      'new_season_id': 'newSeasonId',
-      'max_teams': 'maxTeams',
-      'start_date': 'startDate',
-      'end_date': 'endDate',
-      'scoring_rules': 'scoringRules',
-      'team_id': 'teamId'
-    }
-
-    for (const key in obj) {
-      const newKey = fieldMapping[key] || key
-      transformed[newKey] = transformKeys(obj[key])
-    }
-
-    // 添加statistics字段（如果有相关数据）
-    if (transformed.totalMatches !== undefined) {
-      transformed.statistics = {
-        totalMatches: transformed.totalMatches || 0,
-        wins: transformed.wins || 0,
-        losses: transformed.losses || 0,
-        winRate: transformed.totalMatches > 0 ? (transformed.wins || 0) / transformed.totalMatches : 0,
-        totalPoints: transformed.totalPoints || 0,
-        seasonPoints: transformed.seasonPoints || 0,
-        intercontinentalPoints: transformed.intercontinentalPoints || 0
-      }
-    }
-
-    return transformed
-  }
-
-  return obj
+// Generic API response from Rust backend
+export interface CommandResult<T> {
+  success: boolean
+  data: T | null
+  error: string | null
 }
 
-// 响应拦截器
-apiClient.interceptors.response.use(
-  (response) => {
-    // 转换数据字段
-    if (response.data) {
-      const transformed = {
-        ...response.data,
-        data: transformKeys(response.data.data)
-      }
-      return transformed
-    }
-    return response.data
-  },
-  (error) => {
-    logger.error('API请求失败', { error })
-    return Promise.reject(error)
-  }
-)
+// Helper to invoke Tauri commands with error handling
+export async function invokeCommand<T>(
+  command: string,
+  args?: Record<string, unknown>
+): Promise<T> {
+  const perfStore = usePerformanceStoreRaw()
+  const startTime = perfStore.isMonitoring ? performance.now() : 0
 
-export default apiClient
+  try {
+    const result = await invoke<CommandResult<T>>(command, args)
+    logger.debug('Tauri命令执行成功', { command, result: JSON.stringify(result) })
+
+    if (perfStore.isMonitoring && startTime > 0) {
+      const duration = Math.round(performance.now() - startTime)
+      perfStore.recordInvoke({
+        command,
+        duration,
+        success: result.success,
+        error: result.success ? undefined : (result.error || undefined),
+        timestamp: Date.now(),
+      })
+    }
+
+    if (result.success) {
+      return result.data as T
+    }
+    throw new Error(result.error || 'Unknown error')
+  } catch (error) {
+    if (perfStore.isMonitoring && startTime > 0) {
+      const duration = Math.round(performance.now() - startTime)
+      perfStore.recordInvoke({
+        command,
+        duration,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now(),
+      })
+    }
+    logger.error('Tauri命令执行失败', { command, error })
+    throw error
+  }
+}
+
+// Helper that returns the full CommandResult (for cases where we need to check success)
+export async function invokeCommandRaw<T>(
+  command: string,
+  args?: Record<string, unknown>
+): Promise<CommandResult<T>> {
+  const perfStore = usePerformanceStoreRaw()
+  const startTime = perfStore.isMonitoring ? performance.now() : 0
+
+  try {
+    const result = await invoke<CommandResult<T>>(command, args)
+
+    if (perfStore.isMonitoring && startTime > 0) {
+      const duration = Math.round(performance.now() - startTime)
+      perfStore.recordInvoke({
+        command,
+        duration,
+        success: result.success,
+        error: result.success ? undefined : (result.error || undefined),
+        timestamp: Date.now(),
+      })
+    }
+
+    return result
+  } catch (error) {
+    if (perfStore.isMonitoring && startTime > 0) {
+      const duration = Math.round(performance.now() - startTime)
+      perfStore.recordInvoke({
+        command,
+        duration,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now(),
+      })
+    }
+    logger.error('Tauri命令执行失败', { command, error })
+    return {
+      success: false,
+      data: null,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
+}
