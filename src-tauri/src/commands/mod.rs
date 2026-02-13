@@ -22,14 +22,29 @@ pub mod meta_commands;
 
 pub use save_commands::*;
 pub use team_commands::*;
-pub use game_commands::*;
+// Explicit re-exports to avoid ambiguous `simulation` module from both game_commands and match_commands
+pub use game_commands::{
+    GameStateInfo, MatchInfo, StandingInfo, FixTournamentStatusResult,
+    get_phase_display_name,
+    get_game_state,
+    advance_phase, initialize_current_phase, complete_current_phase, start_new_season,
+    get_tournament_matches, get_standings, fix_tournament_status,
+    simulate_next_match, simulate_all_matches,
+};
+pub use match_commands::{
+    DetailedMatchResult, DetailedGameResult, PlayerMvpInfo, TeamMatchStats,
+    PlayerGameStats, ActivatedTraitInfo, GameEvent, BatchDetailedResult,
+    PlayerSeasonStats, MatchPrediction,
+    simulate_match_detailed, simulate_all_matches_detailed,
+    get_player_season_stats, get_match_prediction,
+    update_match_result, update_match_teams, cancel_match,
+};
 pub use honor_commands::*;
 pub use draft_commands::*;
 pub use draft_auction_commands::*;
 pub use finance_commands::*;
 pub use query_commands::*;
 pub use international_commands::*;
-pub use match_commands::*;
 pub use event_commands::*;
 pub use stats_commands::*;
 pub use time_commands::*;

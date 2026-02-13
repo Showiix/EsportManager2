@@ -727,7 +727,7 @@ pub async fn get_player_season_history(
 
     for season in start_season..=current_season {
         let seasons_ago = current_season - season;
-        let age_at_season = current_age - seasons_ago;
+        let _age_at_season = current_age - seasons_ago;
 
         // 反推 ability：从当前值往回减去成长/加上衰退
         let mut ability = current_ability;

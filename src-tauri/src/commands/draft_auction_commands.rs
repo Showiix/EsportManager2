@@ -296,7 +296,7 @@ pub async fn start_draft_auction(
     engine.auction.id = auction_id as u64;
 
     // 开始拍卖（评估卖签意愿，创建挂牌）
-    let events = engine.start_auction();
+    let _events = engine.start_auction();
 
     // 保存挂牌到数据库
     for listing in &engine.listings {
