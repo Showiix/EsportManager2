@@ -203,7 +203,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import {
-  VideoPlay,
   DArrowRight,
   Refresh,
 } from '@element-plus/icons-vue'

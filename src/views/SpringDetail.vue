@@ -202,7 +202,6 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  VideoPlay,
   DArrowRight,
   Refresh,
 } from '@element-plus/icons-vue'
