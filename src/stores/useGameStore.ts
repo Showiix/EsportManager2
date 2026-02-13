@@ -13,24 +13,10 @@ import { useTimeStore } from './useTimeStore'
 import { useTeamStoreTauri } from './useTeamStoreTauri'
 import { useTournamentStoreTauri } from './useTournamentStoreTauri'
 import { useTransferStoreTauri } from './useTransferStoreTauri'
-import { usePlayoffStore } from './usePlayoffStore'
-import { useSuperStore } from './useSuperStore'
-import { useClauchStore } from './useClauchStore'
-import { useMSIStore } from './useMSIStore'
-import { useWorldsStore } from './useWorldsStore'
-import { usePointsStore } from './usePointsStore'
 import { useFinanceStore } from './useFinanceStore'
-import { useScheduleStore } from './useScheduleStore'
-import { useRankingStore } from './useRankingStore'
-import { useTeamStore } from './useTeamStore'
-import { useRegionStore } from './useRegionStore'
-import { useHonorHallStore } from './useHonorHallStore'
-import { useAutoTournamentStore } from './useAutoTournamentStore'
-import { useEventStore } from './useEventStore'
 import { useAIStrategyStore } from './useAIStrategyStore'
 import { useDraftStoreTauri } from './useDraftStoreTauri'
 import { useDraftAuctionStore } from './useDraftAuctionStore'
-import { useSeasonStore } from './useSeasonStore'
 import { createLogger } from '@/utils/logger'
 import { handleError } from '@/utils/errors'
 
@@ -235,58 +221,31 @@ export const useGameStore = defineStore('game', () => {
 
     try {
       logger.info('加载存档', { saveId })
-      // 清除所有 store 的缓存数据
-      const playerStore = usePlayerStore()
-      const matchDetailStore = useMatchDetailStore()
-      const transferWindowStore = useTransferWindowStore()
-      const timeStore = useTimeStore()
-      const teamStoreTauri = useTeamStoreTauri()
-      const tournamentStoreTauri = useTournamentStoreTauri()
-      const transferStoreTauri = useTransferStoreTauri()
-      const playoffStore = usePlayoffStore()
-      const superStore = useSuperStore()
-      const clauchStore = useClauchStore()
-      const msiStore = useMSIStore()
-      const worldsStore = useWorldsStore()
-      const pointsStore = usePointsStore()
-      const financeStore = useFinanceStore()
-      const scheduleStore = useScheduleStore()
-      const rankingStore = useRankingStore()
-      const teamStore = useTeamStore()
-      const regionStore = useRegionStore()
-      const honorHallStore = useHonorHallStore()
-      const autoTournamentStore = useAutoTournamentStore()
-      const eventStore = useEventStore()
-      const aiStrategyStore = useAIStrategyStore()
-      const draftStore = useDraftStoreTauri()
-      const draftAuctionStore = useDraftAuctionStore()
-      const seasonStore = useSeasonStore()
+       // 清除所有 store 的缓存数据
+       const playerStore = usePlayerStore()
+       const matchDetailStore = useMatchDetailStore()
+       const transferWindowStore = useTransferWindowStore()
+       const timeStore = useTimeStore()
+       const teamStoreTauri = useTeamStoreTauri()
+       const tournamentStoreTauri = useTournamentStoreTauri()
+       const transferStoreTauri = useTransferStoreTauri()
+       const financeStore = useFinanceStore()
+       const aiStrategyStore = useAIStrategyStore()
+        const draftStore = useDraftStoreTauri()
+        const draftAuctionStore = useDraftAuctionStore()
 
-      playerStore.clearAll()
-      matchDetailStore.clearAll()
-      transferWindowStore.clearState()
-      timeStore.clearAll()
-      teamStoreTauri.clearAll()
-      tournamentStoreTauri.clearAll()
-      transferStoreTauri.clearAll()
-      playoffStore.clearAll()
-      superStore.clearAll()
-      clauchStore.clearAll()
-      msiStore.clearAll()
-      worldsStore.clearAll()
-      pointsStore.clearCache()
-      financeStore.clearCache()
-      scheduleStore.clearAll()
-      rankingStore.clearAll()
-      teamStore.clearAll()
-      regionStore.clearAll()
-      honorHallStore.clearAll()
-      autoTournamentStore.clearAll()
-      eventStore.reset()
-      aiStrategyStore.reset()
-      draftStore.resetDraft()
-      draftAuctionStore.clearState()
-      seasonStore.resetToCurrentSeason()
+        playerStore.clearAll()
+        matchDetailStore.clearAll()
+        transferWindowStore.clearState()
+        timeStore.clearAll()
+        teamStoreTauri.clearAll()
+        tournamentStoreTauri.clearAll()
+        transferStoreTauri.clearAll()
+        financeStore.clearCache()
+        aiStrategyStore.reset()
+        draftStore.resetDraft()
+        draftAuctionStore.clearState()
+        timeStore.resetToCurrentSeason()
 
       logger.debug('已清除所有 store 缓存')
 
