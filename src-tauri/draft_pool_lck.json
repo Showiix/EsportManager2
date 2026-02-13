@@ -1,0 +1,502 @@
+[
+  {
+    "game_id": "Auro",
+    "real_name": "金宇烈",
+    "position": "Top",
+    "ability": 64,
+    "potential": 67,
+    "stability": 53,
+    "age": 18,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Vex",
+    "real_name": "李承焕",
+    "position": "Jug",
+    "ability": 63,
+    "potential": 66,
+    "stability": 53,
+    "age": 17,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Rye",
+    "real_name": "崔敏锡",
+    "position": "Mid",
+    "ability": 65,
+    "potential": 68,
+    "stability": 54,
+    "age": 19,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Kev",
+    "real_name": "朴志勋",
+    "position": "Jug",
+    "ability": 62,
+    "potential": 64,
+    "stability": 52,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Zyen",
+    "real_name": "郑建佑",
+    "position": "Mid",
+    "ability": 64,
+    "potential": 67,
+    "stability": 54,
+    "age": 17,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Doph",
+    "real_name": "金宰贤",
+    "position": "Mid",
+    "ability": 62,
+    "potential": 65,
+    "stability": 51,
+    "age": 19,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Snow",
+    "real_name": "安道贤",
+    "position": "Top",
+    "ability": 61,
+    "potential": 64,
+    "stability": 51,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Flay",
+    "real_name": "姜仁浩",
+    "position": "Top",
+    "ability": 60,
+    "potential": 63,
+    "stability": 50,
+    "age": 17,
+    "tag": "Ordinary"
+  },
+  {
+    "game_id": "Echo",
+    "real_name": "徐珉宇",
+    "position": "Mid",
+    "ability": 66,
+    "potential": 69,
+    "stability": 54,
+    "age": 20,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Nyon",
+    "real_name": "林贤宇",
+    "position": "Sup",
+    "ability": 63,
+    "potential": 65,
+    "stability": 53,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Cloz",
+    "real_name": "金建辉",
+    "position": "Jug",
+    "ability": 62,
+    "potential": 67,
+    "stability": 52,
+    "age": 17,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Mira",
+    "real_name": "闵艺琳",
+    "position": "Adc",
+    "ability": 64,
+    "potential": 66,
+    "stability": 53,
+    "age": 19,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Zeru",
+    "real_name": "赵成民",
+    "position": "Top",
+    "ability": 60,
+    "potential": 62,
+    "stability": 49,
+    "age": 16,
+    "tag": "Ordinary"
+  },
+  {
+    "game_id": "Haze",
+    "real_name": "黄晙赫",
+    "position": "Mid",
+    "ability": 64,
+    "potential": 67,
+    "stability": 54,
+    "age": 18,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Luxe",
+    "real_name": "申艺灿",
+    "position": "Mid",
+    "ability": 62,
+    "potential": 64,
+    "stability": 51,
+    "age": 17,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Bolt",
+    "real_name": "金泰勋",
+    "position": "Jug",
+    "ability": 61,
+    "potential": 63,
+    "stability": 51,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Nova",
+    "real_name": "李晙奭",
+    "position": "Mid",
+    "ability": 65,
+    "potential": 68,
+    "stability": 54,
+    "age": 19,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Rain",
+    "real_name": "朴雨范",
+    "position": "Sup",
+    "ability": 60,
+    "potential": 62,
+    "stability": 50,
+    "age": 17,
+    "tag": "Ordinary"
+  },
+  {
+    "game_id": "Frost",
+    "real_name": "崔寒星",
+    "position": "Top",
+    "ability": 63,
+    "potential": 65,
+    "stability": 53,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Acez",
+    "real_name": "金胜浩",
+    "position": "Adc",
+    "ability": 64,
+    "potential": 67,
+    "stability": 53,
+    "age": 20,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Zenk",
+    "real_name": "朴正宇",
+    "position": "Top",
+    "ability": 62,
+    "potential": 64,
+    "stability": 52,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Skyu",
+    "real_name": "李天空",
+    "position": "Adc",
+    "ability": 59,
+    "potential": 61,
+    "stability": 49,
+    "age": 16,
+    "tag": "Ordinary"
+  },
+  {
+    "game_id": "Blad",
+    "real_name": "金刃宇",
+    "position": "Top",
+    "ability": 64,
+    "potential": 66,
+    "stability": 54,
+    "age": 19,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Puls",
+    "real_name": "安泰勋",
+    "position": "Jug",
+    "ability": 62,
+    "potential": 64,
+    "stability": 51,
+    "age": 17,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Ghst",
+    "real_name": "申幽然",
+    "position": "Sup",
+    "ability": 61,
+    "potential": 62,
+    "stability": 51,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Rune",
+    "real_name": "朴卢恩",
+    "position": "Mid",
+    "ability": 65,
+    "potential": 67,
+    "stability": 54,
+    "age": 20,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Myth",
+    "real_name": "金神话",
+    "position": "Mid",
+    "ability": 63,
+    "potential": 65,
+    "stability": 53,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Edgx",
+    "real_name": "李锋宇",
+    "position": "Top",
+    "ability": 60,
+    "potential": 63,
+    "stability": 50,
+    "age": 17,
+    "tag": "Ordinary"
+  },
+  {
+    "game_id": "Core",
+    "real_name": "崔核心",
+    "position": "Sup",
+    "ability": 64,
+    "potential": 67,
+    "stability": 53,
+    "age": 19,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Vale",
+    "real_name": "金谷贤",
+    "position": "Jug",
+    "ability": 62,
+    "potential": 64,
+    "stability": 52,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Drft",
+    "real_name": "朴漂宇",
+    "position": "Jug",
+    "ability": 60,
+    "potential": 62,
+    "stability": 49,
+    "age": 16,
+    "tag": "Ordinary"
+  },
+  {
+    "game_id": "Quil",
+    "real_name": "申羽笔",
+    "position": "Adc",
+    "ability": 64,
+    "potential": 68,
+    "stability": 54,
+    "age": 20,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Tide",
+    "real_name": "李潮宇",
+    "position": "Jug",
+    "ability": 62,
+    "potential": 64,
+    "stability": 51,
+    "age": 17,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Shde",
+    "real_name": "金影锡",
+    "position": "Sup",
+    "ability": 61,
+    "potential": 63,
+    "stability": 51,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Orbt",
+    "real_name": "崔轨道",
+    "position": "Mid",
+    "ability": 66,
+    "potential": 69,
+    "stability": 54,
+    "age": 19,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Lynx",
+    "real_name": "朴林克",
+    "position": "Jug",
+    "ability": 63,
+    "potential": 65,
+    "stability": 53,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Mist",
+    "real_name": "安雾贤",
+    "position": "Sup",
+    "ability": 60,
+    "potential": 62,
+    "stability": 50,
+    "age": 17,
+    "tag": "Ordinary"
+  },
+  {
+    "game_id": "Peak",
+    "real_name": "金峰宇",
+    "position": "Top",
+    "ability": 64,
+    "potential": 67,
+    "stability": 53,
+    "age": 20,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Flow",
+    "real_name": "李流锡",
+    "position": "Jug",
+    "ability": 62,
+    "potential": 64,
+    "stability": 52,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Dust",
+    "real_name": "朴尘宇",
+    "position": "Adc",
+    "ability": 59,
+    "potential": 61,
+    "stability": 49,
+    "age": 16,
+    "tag": "Ordinary"
+  },
+  {
+    "game_id": "Spar",
+    "real_name": "申火花",
+    "position": "Adc",
+    "ability": 65,
+    "potential": 67,
+    "stability": 54,
+    "age": 19,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Gale",
+    "real_name": "金风宇",
+    "position": "Jug",
+    "ability": 62,
+    "potential": 64,
+    "stability": 51,
+    "age": 17,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Embr",
+    "real_name": "崔余烬",
+    "position": "Sup",
+    "ability": 61,
+    "potential": 63,
+    "stability": 51,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Prsm",
+    "real_name": "朴棱镜",
+    "position": "Adc",
+    "ability": 64,
+    "potential": 69,
+    "stability": 54,
+    "age": 20,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Veil",
+    "real_name": "李面纱",
+    "position": "Sup",
+    "ability": 63,
+    "potential": 65,
+    "stability": 53,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Thorn",
+    "real_name": "金荆宇",
+    "position": "Top",
+    "ability": 60,
+    "potential": 62,
+    "stability": 50,
+    "age": 17,
+    "tag": "Ordinary"
+  },
+  {
+    "game_id": "Rift",
+    "real_name": "安裂宇",
+    "position": "Top",
+    "ability": 64,
+    "potential": 67,
+    "stability": 53,
+    "age": 19,
+    "tag": "Genius"
+  },
+  {
+    "game_id": "Wisp",
+    "real_name": "朴微光",
+    "position": "Sup",
+    "ability": 62,
+    "potential": 64,
+    "stability": 52,
+    "age": 18,
+    "tag": "Normal"
+  },
+  {
+    "game_id": "Ecko",
+    "real_name": "申回声",
+    "position": "Adc",
+    "ability": 60,
+    "potential": 62,
+    "stability": 49,
+    "age": 16,
+    "tag": "Ordinary"
+  },
+  {
+    "game_id": "Kyro",
+    "real_name": "金凯罗",
+    "position": "Mid",
+    "ability": 64,
+    "potential": 67,
+    "stability": 54,
+    "age": 18,
+    "tag": "Genius"
+  }
+]
