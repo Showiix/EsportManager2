@@ -28,25 +28,34 @@ impl SatisfactionEngine {
     pub fn calculate_season_changes(
         player: &Player,
         team_perf: &TeamSeasonPerformance,
-        games_as_starter: u32,
-        total_games: u32,
+        games_played: u32,
+        team_total_games: u32,
+        contract_role: &str,
         market_value: u64,
     ) -> i32 {
         let mut change: i32 = 0;
 
-        // 1. 上场时间影响
-        let starter_ratio = if total_games > 0 {
-            games_as_starter as f64 / total_games as f64
+        let play_rate = if team_total_games > 0 {
+            games_played as f64 / team_total_games as f64
         } else {
             0.0
         };
 
-        if starter_ratio < 0.3 && player.ability >= 54 {
-            change -= 12;
-        } else if starter_ratio < 0.5 && player.ability >= 47 {
-            change -= 6;
-        } else if starter_ratio >= 0.8 {
+        // expected_rate: Starter=0.75, Sub=0.20, Prospect=0.05
+        let expected_rate: f64 = match contract_role {
+            "Sub" => 0.20,
+            "Prospect" => 0.05,
+            _ => 0.75,
+        };
+        let rate_gap = expected_rate - play_rate;
+        if rate_gap > 0.0 {
+            // penalty = gap × 25 × (ability / 50)
+            let ability_factor = player.ability as f64 / 50.0;
+            change -= (rate_gap * 25.0 * ability_factor).round() as i32;
+        } else if play_rate >= 0.8 {
             change += 8;
+        } else if play_rate >= expected_rate {
+            change += 3;
         }
 
         // 2. 球队战绩影响
@@ -100,7 +109,7 @@ impl SatisfactionEngine {
         if player.age >= 28 && team_perf.is_poor_performance() {
             change -= 6;
         }
-        if player.age <= 24 && starter_ratio < 0.5 {
+        if player.age <= 24 && play_rate < 0.5 {
             change -= 3;
         }
 

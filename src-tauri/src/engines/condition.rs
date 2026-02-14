@@ -29,7 +29,7 @@ impl Default for PlayerFormFactors {
     fn default() -> Self {
         Self {
             player_id: 0,
-            form_cycle: 50.0,  // 初始在中间位置
+            form_cycle: 50.0, // 初始在中间位置
             momentum: 0,
             last_performance: 0.0,
             last_match_won: false,
@@ -119,9 +119,9 @@ impl ConditionEngine {
     /// 根据年龄获取状态波动幅度
     fn get_amplitude_by_age(age: u8) -> f64 {
         match age {
-            16..=24 => 6.0,  // 年轻人波动大
-            25..=29 => 4.0,  // 巅峰期较稳定
-            _ => 2.0,        // 老将最稳定
+            16..=24 => 6.0, // 年轻人波动大
+            25..=29 => 4.0, // 巅峰期较稳定
+            _ => 2.0,       // 老将最稳定
         }
     }
 
@@ -182,21 +182,33 @@ impl ConditionEngine {
         won: bool,
         performance: f64,
     ) -> PlayerFormFactors {
-        // 1. 状态周期自然推进 (每场比赛推进 8-15)
         let cycle_step = 8.0 + rand::random::<f64>() * 7.0;
         factors.form_cycle = (factors.form_cycle + cycle_step) % 100.0;
 
-        // 2. 更新动能
         if won {
             factors.momentum = (factors.momentum + 1).min(5);
         } else {
             factors.momentum = (factors.momentum - 1).max(-5);
         }
 
-        // 3. 记录本场数据
         factors.last_performance = performance;
         factors.last_match_won = won;
         factors.games_since_rest += 1;
+
+        factors
+    }
+
+    /// 替补（未出场）的 form_factors 更新
+    /// form_cycle 慢推进 (+5~10)，momentum 向0衰减 (×0.8)，games_since_rest 重置为0
+    pub fn update_form_factors_bench(mut factors: PlayerFormFactors) -> PlayerFormFactors {
+        let cycle_step = 5.0 + rand::random::<f64>() * 5.0;
+        factors.form_cycle = (factors.form_cycle + cycle_step) % 100.0;
+
+        // momentum 向 0 衰减
+        factors.momentum = (factors.momentum as f64 * 0.8).round() as i8;
+
+        // 板凳休息，疲劳清零
+        factors.games_since_rest = 0;
 
         factors
     }
@@ -205,7 +217,7 @@ impl ConditionEngine {
     pub fn reset_form_factors(player_id: u64) -> PlayerFormFactors {
         PlayerFormFactors {
             player_id,
-            form_cycle: rand::random::<f64>() * 100.0,  // 随机初始位置
+            form_cycle: rand::random::<f64>() * 100.0, // 随机初始位置
             momentum: 0,
             last_performance: 0.0,
             last_match_won: false,
@@ -239,7 +251,7 @@ mod tests {
     #[test]
     fn test_calculate_condition_with_momentum() {
         let mut factors = PlayerFormFactors::default();
-        factors.momentum = 5;  // 5连胜
+        factors.momentum = 5; // 5连胜
         let condition = ConditionEngine::calculate_condition(25, 80, &factors, None);
         // 高动能应该产生正向condition
         assert!(condition > 0);
@@ -248,7 +260,7 @@ mod tests {
     #[test]
     fn test_calculate_condition_young_player() {
         let mut factors = PlayerFormFactors::default();
-        factors.form_cycle = 75.0;  // 接近波峰
+        factors.form_cycle = 75.0; // 接近波峰
         let condition = ConditionEngine::calculate_condition(20, 80, &factors, None);
         // 年轻选手波动大，可能有高condition
         assert!(condition >= -5 && condition <= 8);
@@ -276,11 +288,39 @@ mod tests {
         let mut factors = PlayerFormFactors::default();
         factors.momentum = 5;
         let updated = ConditionEngine::update_form_factors(factors, true, 85.0);
-        assert_eq!(updated.momentum, 5);  // 不超过5
+        assert_eq!(updated.momentum, 5); // 不超过5
 
         let mut factors2 = PlayerFormFactors::default();
         factors2.momentum = -5;
         let updated2 = ConditionEngine::update_form_factors(factors2, false, 70.0);
-        assert_eq!(updated2.momentum, -5);  // 不低于-5
+        assert_eq!(updated2.momentum, -5); // 不低于-5
+    }
+
+    #[test]
+    fn test_update_form_factors_bench() {
+        let mut factors = PlayerFormFactors {
+            player_id: 1,
+            form_cycle: 30.0,
+            momentum: 4,
+            last_performance: 80.0,
+            last_match_won: true,
+            games_since_rest: 5,
+        };
+        let updated = ConditionEngine::update_form_factors_bench(factors.clone());
+        // form_cycle advances by 5~10
+        assert!(updated.form_cycle >= 35.0 || updated.form_cycle < 5.0); // handles wrap at 100
+                                                                         // momentum decays toward 0: 4 * 0.8 = 3.2 → round to 3
+        assert_eq!(updated.momentum, 3);
+        // rest resets
+        assert_eq!(updated.games_since_rest, 0);
+        // last_performance and last_match_won unchanged
+        assert_eq!(updated.last_performance, 80.0);
+        assert!(updated.last_match_won);
+
+        // negative momentum decay
+        factors.momentum = -3;
+        let updated2 = ConditionEngine::update_form_factors_bench(factors);
+        // -3 * 0.8 = -2.4 → round to -2
+        assert_eq!(updated2.momentum, -2);
     }
 }

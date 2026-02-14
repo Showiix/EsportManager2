@@ -46,6 +46,63 @@ impl TransferEngine {
             })
             .collect();
 
+        // === 预加载：上场时间系数（从 game_player_performances 聚合） ===
+        // 1) 每个选手本赛季实际上场局数
+        let player_games_rows = sqlx::query(
+            r#"SELECT gpp.player_id, COUNT(DISTINCT gpp.game_id) as games_appeared
+               FROM game_player_performances gpp
+               JOIN match_games mg ON gpp.game_id = mg.id
+               JOIN matches m ON mg.match_id = m.id
+               JOIN tournaments t ON m.tournament_id = t.id
+               WHERE gpp.save_id = ? AND t.season_id = ?
+               GROUP BY gpp.player_id"#
+        )
+        .bind(save_id)
+        .bind(season_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("查询选手上场局数失败: {}", e))?;
+
+        let player_games_map: HashMap<i64, i64> = player_games_rows.iter()
+            .map(|row| {
+                let pid: i64 = row.get("player_id");
+                let games: i64 = row.get("games_appeared");
+                (pid, games)
+            })
+            .collect();
+
+        // 2) 每个队伍本赛季总局数（参与的所有比赛局数）
+        let team_games_rows = sqlx::query(
+            r#"SELECT team_id, COUNT(DISTINCT game_id) as total_games FROM (
+                   SELECT mg.winner_team_id as team_id, mg.id as game_id
+                   FROM match_games mg
+                   JOIN matches m ON mg.match_id = m.id
+                   JOIN tournaments t ON m.tournament_id = t.id
+                   WHERE mg.save_id = ? AND t.season_id = ?
+                   UNION ALL
+                   SELECT mg.loser_team_id as team_id, mg.id as game_id
+                   FROM match_games mg
+                   JOIN matches m ON mg.match_id = m.id
+                   JOIN tournaments t ON m.tournament_id = t.id
+                   WHERE mg.save_id = ? AND t.season_id = ?
+               ) GROUP BY team_id"#
+        )
+        .bind(save_id)
+        .bind(season_id)
+        .bind(save_id)
+        .bind(season_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("查询队伍总局数失败: {}", e))?;
+
+        let team_total_games_map: HashMap<i64, i64> = team_games_rows.iter()
+            .map(|row| {
+                let tid: i64 = row.get("team_id");
+                let total: i64 = row.get("total_games");
+                (tid, total)
+            })
+            .collect();
+
         // === 预加载：选手特性（成长类特性判定） ===
         let all_player_ids: Vec<i64> = cache.team_rosters.values()
             .flat_map(|roster| roster.iter().map(|p| p.id))
@@ -73,6 +130,51 @@ impl TransferEngine {
                 }
             }
         }
+
+        // === 预加载：选手加入赛季（协同成长计算用） ===
+        let join_season_rows_early: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
+            "SELECT id, join_season FROM players WHERE save_id = ? AND status = 'Active' AND team_id IS NOT NULL"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let join_season_map_early: HashMap<i64, i64> = join_season_rows_early.iter()
+            .map(|r| {
+                let pid: i64 = r.get("id");
+                let js: i64 = r.try_get("join_season").unwrap_or(season_id);
+                (pid, js)
+            })
+            .collect();
+
+        // === 预计算：每个队伍首发平均同队赛季数（协同成长） ===
+        let mut team_avg_tenure: HashMap<i64, f64> = HashMap::new();
+        for (&tid, roster) in &cache.team_rosters {
+            let starters: Vec<&CachedPlayer> = roster.iter().filter(|p| p.is_starter).collect();
+            if starters.len() >= 5 {
+                let total_tenure: f64 = starters.iter()
+                    .map(|p| {
+                        let js = join_season_map_early.get(&p.id).copied().unwrap_or(season_id);
+                        (season_id - js).max(0) as f64
+                    })
+                    .sum();
+                team_avg_tenure.insert(tid, total_tenure / starters.len() as f64);
+            }
+        }
+
+        // === 预加载：队伍训练设施等级 ===
+        let facility_rows = sqlx::query(
+            "SELECT id, training_facility FROM teams WHERE save_id = ?"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let team_facility_map: HashMap<i64, i64> = facility_rows.iter()
+            .map(|r| (r.get::<i64, _>("id"), r.try_get::<i64, _>("training_facility").unwrap_or(1)))
+            .collect();
 
         // === 遍历所有选手，执行成长/衰退/退役 ===
         let all_players: Vec<CachedPlayer> = cache.team_rosters.values()
@@ -143,10 +245,77 @@ impl TransferEngine {
                     1.0
                 };
 
-                // ⑤ 年龄衰减后成长（精确小数）
-                let growth_after_age_f64 = base_growth as f64 * age_coeff * prodigy_mod;
+                // ⑤ 上场时间系数 — 基于实际出场局数/队伍总局数
+                let starter_ratio_for_growth: f64 = if let Some(tid) = team_id {
+                    let appeared = player_games_map.get(&player_id).copied().unwrap_or(0);
+                    let total = team_total_games_map.get(&tid).copied().unwrap_or(0);
+                    if total > 0 { appeared as f64 / total as f64 } else { 0.0 }
+                } else {
+                    0.0
+                };
+                let playtime_coeff: f64 = if starter_ratio_for_growth >= 0.8 {
+                    1.2
+                } else if starter_ratio_for_growth >= 0.3 {
+                    1.0
+                } else if starter_ratio_for_growth > 0.0 {
+                    0.5
+                } else {
+                    0.3
+                };
 
-                // ⑥ 表现加成 (D) — 基于赛季统计
+                // ⑥ 导师效应 — 年轻选手(≤22)受同位置导师/老将加成
+                let mentor_coeff: f64 = if new_age <= 22 {
+                    if let Some(tid) = team_id {
+                        let teammates = cache.team_rosters.get(&tid);
+                        let has_mentor_same_pos = teammates.map_or(false, |roster| {
+                            roster.iter().any(|t| {
+                                t.id != player_id
+                                    && t.position == player.position
+                                    && traits_map.get(&t.id).map_or(false, |tr| tr.contains(&TraitType::Mentor))
+                            })
+                        });
+                        let has_veteran_same_pos = teammates.map_or(false, |roster| {
+                            roster.iter().any(|t| {
+                                t.id != player_id
+                                    && t.position == player.position
+                                    && t.ability >= 70
+                                    && t.age >= 28
+                                    && !traits_map.get(&t.id).map_or(false, |tr| tr.contains(&TraitType::Mentor))
+                            })
+                        });
+                        if has_mentor_same_pos {
+                            1.25
+                        } else if has_veteran_same_pos {
+                            1.10
+                        } else {
+                            1.0
+                        }
+                    } else {
+                        1.0
+                    }
+                } else {
+                    1.0
+                };
+
+                // ⑦ 协同成长 — 首发平均同队≥3赛季 → +5%
+                let synergy_coeff: f64 = if let Some(tid) = team_id {
+                    if team_avg_tenure.get(&tid).copied().unwrap_or(0.0) >= 3.0 { 1.05 } else { 1.0 }
+                } else {
+                    1.0
+                };
+
+                // ⑧ 培训设施加成 — 等级1~10 → +5%~+50%
+                let facility_coeff: f64 = if let Some(tid) = team_id {
+                    let level = team_facility_map.get(&tid).copied().unwrap_or(1).clamp(1, 10);
+                    1.0 + level as f64 * 0.05
+                } else {
+                    1.0
+                };
+
+                // ⑨ 环境系数后成长（精确小数）
+                let growth_after_env_f64 = base_growth as f64 * age_coeff * prodigy_mod * playtime_coeff * mentor_coeff * synergy_coeff * facility_coeff;
+
+                // ⑩ 表现加成 (D) — 基于赛季统计
                 let perf_bonus: f64 = match stats_map.get(&player_id) {
                     Some(&(gp, avg_perf)) if gp >= 20 && avg_perf > ability as f64 + 5.0 => {
                         if perf_desc.is_empty() { perf_desc = "超常发挥".to_string(); }
@@ -160,12 +329,6 @@ impl TransferEngine {
                             1.0
                         } else { 0.0 }
                     }
-                    Some(&(gp, _)) if gp == 0 => {
-                        if perf_desc.is_empty() { perf_desc = "缺乏实战".to_string(); }
-                        else { perf_desc.push_str("+缺乏实战"); }
-                        // 缺乏实战：成长减半
-                        -(growth_after_age_f64 / 2.0)
-                    }
                     Some(&(gp, avg_perf)) if gp > 0 && avg_perf < (ability as f64) - 5.0 => {
                         if perf_desc.is_empty() { perf_desc = "表现低迷".to_string(); }
                         else { perf_desc.push_str("+表现低迷"); }
@@ -174,8 +337,11 @@ impl TransferEngine {
                     _ => 0.0,
                 };
 
-                // ⑦ 累积器模式：小数精确累积，攒够整数才涨
-                let raw_growth = (growth_after_age_f64 + perf_bonus).max(0.0);
+                // ⑪ 随机波动 ±1
+                let fluctuation: f64 = rng.gen_range(-1.0..=1.0);
+
+                // ⑫ 累积器模式：小数精确累积，攒够整数才涨
+                let raw_growth = (growth_after_env_f64 + perf_bonus + fluctuation).max(0.0);
                 let accumulated = prev_accumulator + raw_growth;
                 let integer_part = accumulated.trunc() as i64;
                 let remainder = accumulated.fract();
@@ -236,14 +402,91 @@ impl TransferEngine {
                 }
             }
 
+            // ========== 成长事件系统 ==========
+            // 每人每赛季最多1个事件，互斥判定
+            let mut new_ability = new_ability;
+            let mut new_potential = new_potential;
+            let mut growth_event: Option<&str> = None;
+
+            let event_roll: f64 = rng.gen();
+            let mut threshold = 0.0;
+
+            // 心态崩盘：满意度<30, 10%
+            threshold += 0.10;
+            if growth_event.is_none() && player.satisfaction < 30 && event_roll < threshold {
+                let loss = rng.gen_range(1..=3) as i64;
+                new_ability = (new_ability - loss).max(50);
+                growth_event = Some("心态崩盘");
+                if perf_desc.is_empty() { perf_desc = format!("心态崩盘(-{})", loss); }
+                else { perf_desc.push_str(&format!("+心态崩盘(-{})", loss)); }
+            }
+
+            // 瓶颈：25-28岁, 8%
+            threshold += 0.08;
+            if growth_event.is_none() && new_age >= 25 && new_age <= 28 && event_roll < threshold {
+                // 本赛季成长归零：回退到原能力
+                new_ability = ability;
+                growth_event = Some("瓶颈期");
+                if perf_desc.is_empty() { perf_desc = "瓶颈期".to_string(); }
+                else { perf_desc.push_str("+瓶颈期"); }
+            }
+
+            // 天赋觉醒：Genius + ≤22岁, 6%
+            threshold += 0.06;
+            if growth_event.is_none() && tag.to_uppercase() == "GENIUS" && new_age <= 22 && event_roll < threshold {
+                let pot_gain = rng.gen_range(2..=3) as i64;
+                new_potential = (new_potential + pot_gain).min(100);
+                growth_event = Some("天赋觉醒");
+                if perf_desc.is_empty() { perf_desc = format!("天赋觉醒(潜力+{})", pot_gain); }
+                else { perf_desc.push_str(&format!("+天赋觉醒(潜力+{})", pot_gain)); }
+            }
+
+            // 觉醒：≤24岁, 5%
+            threshold += 0.05;
+            if growth_event.is_none() && new_age <= 24 && event_roll < threshold {
+                let gain = rng.gen_range(3..=5) as i64;
+                new_ability = (new_ability + gain).min(new_potential).min(100);
+                growth_event = Some("觉醒");
+                if perf_desc.is_empty() { perf_desc = format!("觉醒(+{})", gain); }
+                else { perf_desc.push_str(&format!("+觉醒(+{})", gain)); }
+            }
+
+            // 二次巅峰：29-32岁, 5% — 衰退期回复少量能力
+            threshold += 0.05;
+            if growth_event.is_none() && new_age >= 29 && new_age <= 32 && event_roll < threshold {
+                let gain = rng.gen_range(1..=2) as i64;
+                new_ability = (new_ability + gain).min(new_potential).min(100);
+                growth_event = Some("二次巅峰");
+                if perf_desc.is_empty() { perf_desc = format!("二次巅峰(+{})", gain); }
+                else { perf_desc.push_str(&format!("+二次巅峰(+{})", gain)); }
+            }
+
+            // 伤病：任何年龄, 3%
+            threshold += 0.03;
+            if growth_event.is_none() && event_roll < threshold {
+                let loss = rng.gen_range(2..=4) as i64;
+                new_ability = (new_ability - loss).max(50);
+                growth_event = Some("伤病");
+                if perf_desc.is_empty() { perf_desc = format!("伤病(-{})", loss); }
+                else { perf_desc.push_str(&format!("+伤病(-{})", loss)); }
+            }
+
+            // 更新 growth_event_state
+            let event_state = if let Some(evt) = growth_event {
+                format!("{{\"season\":{},\"event\":\"{}\"}}", season_id, evt)
+            } else {
+                "{}".to_string()
+            };
+
             // ========== 更新数据库 ==========
             sqlx::query(
-                "UPDATE players SET age = ?, ability = ?, potential = ?, growth_accumulator = ? WHERE id = ? AND save_id = ?"
+                "UPDATE players SET age = ?, ability = ?, potential = ?, growth_accumulator = ?, growth_event_state = ? WHERE id = ? AND save_id = ?"
             )
             .bind(new_age)
             .bind(new_ability)
             .bind(new_potential)
             .bind(new_accumulator)
+            .bind(&event_state)
             .bind(player_id)
             .bind(save_id)
             .execute(pool)
@@ -349,6 +592,66 @@ impl TransferEngine {
                     0, 0, 0,
                     &retire_desc,
                 ).await?;
+
+                if let Ok(Some(hof_entry)) = crate::engines::honor::HonorEngine::evaluate_hall_of_fame(
+                    pool, save_id, player_id, season_id,
+                )
+                .await
+                {
+                    let _ = sqlx::query(
+                        "INSERT OR IGNORE INTO hall_of_fame (save_id, player_id, player_name, position, region_id, induction_season, total_score, tier, peak_ability, career_seasons, honors_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    )
+                    .bind(save_id)
+                    .bind(player_id)
+                    .bind(&hof_entry.player_name)
+                    .bind(&hof_entry.position)
+                    .bind(hof_entry.region_id)
+                    .bind(hof_entry.induction_season)
+                    .bind(hof_entry.total_score)
+                    .bind(&hof_entry.tier)
+                    .bind(hof_entry.peak_ability)
+                    .bind(hof_entry.career_seasons)
+                    .bind(&hof_entry.honors_json)
+                    .execute(pool)
+                    .await;
+
+                    let hof_desc = format!(
+                        "入选{}！总积分{}，巅峰能力{}，职业生涯{}赛季",
+                        if hof_entry.tier == "Legend" {
+                            "传奇殿堂"
+                        } else {
+                            "名人堂"
+                        },
+                        hof_entry.total_score,
+                        hof_entry.peak_ability,
+                        hof_entry.career_seasons
+                    );
+                    let hof_event = self.record_event(
+                        pool,
+                        window_id,
+                        1,
+                        TransferEventType::PlayerRetirement,
+                        EventLevel::A,
+                        player_id,
+                        game_id,
+                        new_ability as i64,
+                        team_id,
+                        if from_team_name.is_empty() {
+                            None
+                        } else {
+                            Some(&from_team_name)
+                        },
+                        None,
+                        None,
+                        0,
+                        0,
+                        0,
+                        &hof_desc,
+                    )
+                    .await?;
+                    events.push(hof_event);
+                }
+
                 events.push(event);
             }
         }
@@ -478,21 +781,28 @@ impl TransferEngine {
             let has_international = team_has_international.contains(&team_id);
             let consecutive_no_playoffs = if rank >= 7 && prev_no_playoff.contains(&team_id) { 2u32 } else if rank >= 7 { 1 } else { 0 };
 
-            let (gp, _avg_perf) = stats_map.get(&player.id).copied().unwrap_or((0, 0.0));
-            let total_games = gp.max(0) as u32;
-            let games_as_starter = if player.is_starter { total_games } else { 0u32 };
-            let starter_ratio = if total_games > 0 { games_as_starter as f64 / total_games as f64 } else { 0.0 };
+            let appeared = player_games_map.get(&player.id).copied().unwrap_or(0);
+            let team_total = team_total_games_map.get(&team_id).copied().unwrap_or(0);
+            let play_rate = if team_total > 0 { appeared as f64 / team_total as f64 } else { 0.0 };
 
             // === 满意度变化 ===
             let mut sat_change: i32 = 0;
 
-            // 上场时间
-            if starter_ratio < 0.3 && player.ability >= 54 {
-                sat_change -= 12;
-            } else if starter_ratio < 0.5 && player.ability >= 47 {
-                sat_change -= 6;
-            } else if starter_ratio >= 0.8 {
+            // 上场时间 — 基于 contract_role 的期望出场率动态计算
+            let expected_rate: f64 = match player.contract_role.as_str() {
+                "Sub" => 0.20,
+                "Prospect" => 0.05,
+                _ => 0.75, // Starter
+            };
+            let rate_gap = expected_rate - play_rate; // >0 表示出场不足
+            if rate_gap > 0.0 {
+                // 出场低于预期：penalty = gap × 25 × (ability/50)
+                let ability_factor = player.ability as f64 / 50.0;
+                sat_change -= (rate_gap * 25.0 * ability_factor).round() as i32;
+            } else if play_rate >= 0.8 {
                 sat_change += 8;
+            } else if play_rate >= expected_rate {
+                sat_change += 3;
             }
 
             // 球队战绩
@@ -543,7 +853,7 @@ impl TransferEngine {
             if player.age >= 28 && rank >= 8 {
                 sat_change -= 6;
             }
-            if player.age <= 24 && starter_ratio < 0.5 {
+            if player.age <= 24 && play_rate < 0.5 {
                 sat_change -= 3;
             }
 
