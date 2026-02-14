@@ -641,6 +641,12 @@ async fn simulate_match_core(
         let away_power: f64 = if !away_player_stats.is_empty() {
             away_player_stats.iter().map(|p| p.actual_ability).sum::<f64>() / away_player_stats.len() as f64
         } else { 0.0 };
+        let home_base_power: f64 = if !home_player_stats.is_empty() {
+            home_player_stats.iter().map(|p| p.base_ability as f64).sum::<f64>() / home_player_stats.len() as f64
+        } else { 0.0 };
+        let away_base_power: f64 = if !away_player_stats.is_empty() {
+            away_player_stats.iter().map(|p| p.base_ability as f64).sum::<f64>() / away_player_stats.len() as f64
+        } else { 0.0 };
 
         games_data.push(SaveGameInput {
             game_number: game_number as i32,
@@ -653,6 +659,14 @@ async fn simulate_match_core(
             away_power: Some(away_power),
             home_meta_power: Some(home_perf),
             away_meta_power: Some(away_perf),
+            home_base_power: Some(home_base_power),
+            away_base_power: Some(away_base_power),
+            home_synergy_bonus: Some(0.0),
+            away_synergy_bonus: Some(0.0),
+            home_bp_bonus: Some(0.0),
+            away_bp_bonus: Some(0.0),
+            home_version_bonus: Some(0.0),
+            away_version_bonus: Some(0.0),
             performances,
         });
 

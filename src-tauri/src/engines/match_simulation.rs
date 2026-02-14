@@ -37,6 +37,15 @@ pub struct MatchSimContext {
     pub tournament_type: String,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct TeamPowerBreakdown {
+    pub base_power: f64,
+    pub synergy_bonus: f64,
+    pub bp_bonus: f64,
+    pub version_bonus: f64,
+    pub meta_power: f64,
+}
+
 /// 比赛模拟引擎 - 基于正态分布的胜负判定
 pub struct MatchSimulationEngine {
     /// 标准差 (控制发挥波动程度)
@@ -122,6 +131,14 @@ impl MatchSimulationEngine {
                 game_number,
                 home_power,
                 away_power,
+                home_base_power: None,
+                away_base_power: None,
+                home_synergy_bonus: None,
+                away_synergy_bonus: None,
+                home_bp_bonus: None,
+                away_bp_bonus: None,
+                home_version_bonus: None,
+                away_version_bonus: None,
                 home_performance: home_perf,
                 away_performance: away_perf,
                 winner_id,
@@ -243,7 +260,7 @@ impl MatchSimulationEngine {
 
             let score_diff_home = home_score as i8 - away_score as i8;
 
-            let home_power = self.calculate_trait_adjusted_power(
+            let (home_power, home_breakdown) = self.calculate_trait_adjusted_power(
                 &current_home,
                 game_number,
                 score_diff_home,
@@ -251,7 +268,7 @@ impl MatchSimulationEngine {
                 meta_weights,
                 home_has_leader,
             );
-            let away_power = self.calculate_trait_adjusted_power(
+            let (away_power, away_breakdown) = self.calculate_trait_adjusted_power(
                 &current_away,
                 game_number,
                 -score_diff_home,
@@ -267,8 +284,16 @@ impl MatchSimulationEngine {
                 id: 0,
                 match_id,
                 game_number,
-                home_power,
-                away_power,
+                home_power: home_breakdown.meta_power,
+                away_power: away_breakdown.meta_power,
+                home_base_power: Some(home_breakdown.base_power),
+                away_base_power: Some(away_breakdown.base_power),
+                home_synergy_bonus: Some(home_breakdown.synergy_bonus),
+                away_synergy_bonus: Some(away_breakdown.synergy_bonus),
+                home_bp_bonus: Some(home_breakdown.bp_bonus),
+                away_bp_bonus: Some(away_breakdown.bp_bonus),
+                home_version_bonus: Some(home_breakdown.version_bonus),
+                away_version_bonus: Some(away_breakdown.version_bonus),
                 home_performance: home_perf,
                 away_performance: away_perf,
                 winner_id,
@@ -465,9 +490,12 @@ impl MatchSimulationEngine {
         sim_ctx: &MatchSimContext,
         meta_weights: &MetaWeights,
         team_leader_bonus: bool,
-    ) -> f64 {
+    ) -> (f64, TeamPowerBreakdown) {
         let mut rng = rand::thread_rng();
         let mut player_abilities: Vec<(f64, &str)> = Vec::with_capacity(players.len());
+        let mut raw_modified_abilities: Vec<f64> = Vec::with_capacity(players.len());
+        let mut total_bp_bonus = 0.0;
+        let mut total_version_bonus = 0.0;
 
         for player in players {
             // 构建选手专属的 TraitContext
@@ -493,6 +521,9 @@ impl MatchSimulationEngine {
                     player.condition,
                     &modifiers,
                 );
+            raw_modified_abilities.push(modified_ability as f64);
+            total_bp_bonus += player.bp_modifier;
+            total_version_bonus += player.champion_version_score;
 
             // TeamLeader 队友加成：condition +1（对非 TeamLeader 本人）
             if team_leader_bonus && !player.traits.contains(&TraitType::TeamLeader) {
@@ -517,7 +548,24 @@ impl MatchSimulationEngine {
         }
 
         // 使用 Meta 加权计算队伍战力
-        MetaEngine::calculate_team_power_weighted(&player_abilities, meta_weights)
+        let meta_power = MetaEngine::calculate_team_power_weighted(&player_abilities, meta_weights);
+        let player_count = players.len() as f64;
+        let breakdown = if player_count > 0.0 {
+            TeamPowerBreakdown {
+                base_power: raw_modified_abilities.iter().sum::<f64>() / player_count,
+                synergy_bonus: 0.0,
+                bp_bonus: total_bp_bonus / player_count,
+                version_bonus: total_version_bonus / player_count,
+                meta_power,
+            }
+        } else {
+            TeamPowerBreakdown {
+                meta_power,
+                ..TeamPowerBreakdown::default()
+            }
+        };
+
+        (meta_power, breakdown)
     }
 }
 

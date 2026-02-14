@@ -16,6 +16,14 @@ pub struct MatchGameDetail {
     pub away_power: Option<f64>,
     pub home_meta_power: Option<f64>,
     pub away_meta_power: Option<f64>,
+    pub home_base_power: Option<f64>,
+    pub away_base_power: Option<f64>,
+    pub home_synergy_bonus: Option<f64>,
+    pub away_synergy_bonus: Option<f64>,
+    pub home_bp_bonus: Option<f64>,
+    pub away_bp_bonus: Option<f64>,
+    pub home_version_bonus: Option<f64>,
+    pub away_version_bonus: Option<f64>,
     pub created_at: Option<String>,
 }
 
@@ -26,16 +34,16 @@ pub struct GamePlayerPerformance {
     pub save_id: String,
     pub game_id: String,
     pub player_id: i64,
-    pub player_name: String,           // 选手名称（快照）
+    pub player_name: String, // 选手名称（快照）
     pub team_id: i64,
-    pub team_name: String,             // 队伍名称（快照）
+    pub team_name: String, // 队伍名称（快照）
     pub position: String,
-    pub base_ability: f64,             // 基础能力值
-    pub condition_bonus: f64,          // 状态加成
-    pub stability_noise: f64,          // 稳定性波动
-    pub actual_ability: f64,           // 实际发挥值
-    pub impact_score: f64,             // 影响力得分
-    pub mvp_score: f64,                // MVP 得分
+    pub base_ability: f64,    // 基础能力值
+    pub condition_bonus: f64, // 状态加成
+    pub stability_noise: f64, // 稳定性波动
+    pub actual_ability: f64,  // 实际发挥值
+    pub impact_score: f64,    // 影响力得分
+    pub mvp_score: f64,       // MVP 得分
     pub is_mvp: bool,
     pub is_key_player: bool,
     // 详细战斗数据
@@ -48,8 +56,8 @@ pub struct GamePlayerPerformance {
     pub damage_taken: Option<i32>,
     pub vision_score: Option<i32>,
     // 特性系统
-    pub traits_json: Option<String>,              // 选手拥有的特性 (JSON数组)
-    pub activated_traits_json: Option<String>,    // 本局激活的特性效果 (JSON数组)
+    pub traits_json: Option<String>, // 选手拥有的特性 (JSON数组)
+    pub activated_traits_json: Option<String>, // 本局激活的特性效果 (JSON数组)
     pub created_at: Option<String>,
 }
 
@@ -87,6 +95,14 @@ pub struct SaveGameInput {
     pub away_power: Option<f64>,
     pub home_meta_power: Option<f64>,
     pub away_meta_power: Option<f64>,
+    pub home_base_power: Option<f64>,
+    pub away_base_power: Option<f64>,
+    pub home_synergy_bonus: Option<f64>,
+    pub away_synergy_bonus: Option<f64>,
+    pub home_bp_bonus: Option<f64>,
+    pub away_bp_bonus: Option<f64>,
+    pub home_version_bonus: Option<f64>,
+    pub away_version_bonus: Option<f64>,
     pub performances: Vec<SavePerformanceInput>,
 }
 
@@ -94,16 +110,16 @@ pub struct SaveGameInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavePerformanceInput {
     pub player_id: i64,
-    pub player_name: String,           // 选手名称（快照）
+    pub player_name: String, // 选手名称（快照）
     pub team_id: i64,
-    pub team_name: String,             // 队伍名称（快照）
+    pub team_name: String, // 队伍名称（快照）
     pub position: String,
-    pub base_ability: f64,             // 基础能力值
-    pub condition_bonus: f64,          // 状态加成
-    pub stability_noise: f64,          // 稳定性波动
-    pub actual_ability: f64,           // 实际发挥值
-    pub impact_score: f64,             // 影响力得分
-    pub mvp_score: f64,                // MVP 得分
+    pub base_ability: f64,    // 基础能力值
+    pub condition_bonus: f64, // 状态加成
+    pub stability_noise: f64, // 稳定性波动
+    pub actual_ability: f64,  // 实际发挥值
+    pub impact_score: f64,    // 影响力得分
+    pub mvp_score: f64,       // MVP 得分
     pub is_mvp: bool,
     pub is_key_player: bool,
     // 详细战斗数据
@@ -116,6 +132,6 @@ pub struct SavePerformanceInput {
     pub damage_taken: Option<i32>,
     pub vision_score: Option<i32>,
     // 特性系统
-    pub traits_json: Option<String>,              // 选手拥有的特性 (JSON数组)
-    pub activated_traits_json: Option<String>,    // 本局激活的特性效果 (JSON数组)
+    pub traits_json: Option<String>, // 选手拥有的特性 (JSON数组)
+    pub activated_traits_json: Option<String>, // 本局激活的特性效果 (JSON数组)
 }

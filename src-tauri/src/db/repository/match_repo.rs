@@ -130,9 +130,13 @@ impl MatchGameDetailRepository {
                 INSERT INTO match_games (
                     id, save_id, match_id, game_number, winner_team_id, loser_team_id,
                     duration_minutes, mvp_player_id, key_player_id,
-                    home_power, away_power, home_meta_power, away_meta_power
+                    home_power, away_power, home_meta_power, away_meta_power,
+                    home_base_power, away_base_power,
+                    home_synergy_bonus, away_synergy_bonus,
+                    home_bp_bonus, away_bp_bonus,
+                    home_version_bonus, away_version_bonus
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     winner_team_id = excluded.winner_team_id,
                     loser_team_id = excluded.loser_team_id,
@@ -142,7 +146,15 @@ impl MatchGameDetailRepository {
                     home_power = excluded.home_power,
                     away_power = excluded.away_power,
                     home_meta_power = excluded.home_meta_power,
-                    away_meta_power = excluded.away_meta_power
+                    away_meta_power = excluded.away_meta_power,
+                    home_base_power = excluded.home_base_power,
+                    away_base_power = excluded.away_base_power,
+                    home_synergy_bonus = excluded.home_synergy_bonus,
+                    away_synergy_bonus = excluded.away_synergy_bonus,
+                    home_bp_bonus = excluded.home_bp_bonus,
+                    away_bp_bonus = excluded.away_bp_bonus,
+                    home_version_bonus = excluded.home_version_bonus,
+                    away_version_bonus = excluded.away_version_bonus
                 "#
             )
             .bind(&game_id)
@@ -158,6 +170,14 @@ impl MatchGameDetailRepository {
             .bind(game_input.away_power)
             .bind(game_input.home_meta_power)
             .bind(game_input.away_meta_power)
+            .bind(game_input.home_base_power)
+            .bind(game_input.away_base_power)
+            .bind(game_input.home_synergy_bonus)
+            .bind(game_input.away_synergy_bonus)
+            .bind(game_input.home_bp_bonus)
+            .bind(game_input.away_bp_bonus)
+            .bind(game_input.home_version_bonus)
+            .bind(game_input.away_version_bonus)
             .execute(pool)
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;

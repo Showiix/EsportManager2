@@ -169,6 +169,38 @@ impl DatabaseManager {
                 sqlx::query("ALTER TABLE match_games ADD COLUMN away_meta_power REAL")
                     .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
             }
+            if !mg_col_names.contains(&"home_base_power") {
+                sqlx::query("ALTER TABLE match_games ADD COLUMN home_base_power REAL")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+            if !mg_col_names.contains(&"away_base_power") {
+                sqlx::query("ALTER TABLE match_games ADD COLUMN away_base_power REAL")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+            if !mg_col_names.contains(&"home_synergy_bonus") {
+                sqlx::query("ALTER TABLE match_games ADD COLUMN home_synergy_bonus REAL")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+            if !mg_col_names.contains(&"away_synergy_bonus") {
+                sqlx::query("ALTER TABLE match_games ADD COLUMN away_synergy_bonus REAL")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+            if !mg_col_names.contains(&"home_bp_bonus") {
+                sqlx::query("ALTER TABLE match_games ADD COLUMN home_bp_bonus REAL")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+            if !mg_col_names.contains(&"away_bp_bonus") {
+                sqlx::query("ALTER TABLE match_games ADD COLUMN away_bp_bonus REAL")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+            if !mg_col_names.contains(&"home_version_bonus") {
+                sqlx::query("ALTER TABLE match_games ADD COLUMN home_version_bonus REAL")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+            if !mg_col_names.contains(&"away_version_bonus") {
+                sqlx::query("ALTER TABLE match_games ADD COLUMN away_version_bonus REAL")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
         }
 
         // 迁移17: 为 teams 表添加 training_facility 字段（训练设施等级）
@@ -344,6 +376,38 @@ impl DatabaseManager {
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_draft_results_match ON game_draft_results(save_id, match_id)"
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS player_growth_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                save_id TEXT NOT NULL,
+                season_id INTEGER NOT NULL,
+                player_id INTEGER NOT NULL,
+                player_name TEXT NOT NULL,
+                team_name TEXT NOT NULL DEFAULT '',
+                age INTEGER NOT NULL,
+                old_ability INTEGER NOT NULL,
+                new_ability INTEGER NOT NULL,
+                old_potential INTEGER NOT NULL,
+                new_potential INTEGER NOT NULL,
+                base_growth REAL NOT NULL DEFAULT 0,
+                age_coeff REAL NOT NULL DEFAULT 1.0,
+                playtime_coeff REAL NOT NULL DEFAULT 1.0,
+                mentor_coeff REAL NOT NULL DEFAULT 1.0,
+                synergy_coeff REAL NOT NULL DEFAULT 1.0,
+                facility_coeff REAL NOT NULL DEFAULT 1.0,
+                prodigy_mod REAL NOT NULL DEFAULT 1.0,
+                perf_bonus REAL NOT NULL DEFAULT 0,
+                fluctuation REAL NOT NULL DEFAULT 0,
+                growth_event TEXT,
+                description TEXT NOT NULL DEFAULT ''
+            )
+            "#,
         )
         .execute(pool)
         .await

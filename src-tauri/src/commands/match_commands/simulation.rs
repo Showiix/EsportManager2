@@ -1,7 +1,7 @@
 use crate::commands::save_commands::{AppState, CommandResult};
 use crate::engines::{ConditionEngine, PlayerFormFactors, TraitType, TraitEngine, TraitContext, MetaEngine, MetaWeights};
 use crate::engines::lineup_engine::{LineupCandidate, LineupEngine, SubstitutionContext, SubstitutionDecision};
-use crate::engines::bp_engine::{BpEngine, PlayerChampionPool};
+use crate::engines::bp_engine::{BpEngine, CompType, PlayerChampionPool, SeriesContext, TeamSide};
 use crate::engines::champion::{self, MasteryTier, VersionTier};
 use crate::engines::meta_engine::MetaType;
 use crate::models::MatchFormat;
@@ -326,6 +326,8 @@ async fn simulate_single_match_internal(
             position: pos,
             ability: p.ability,
             masteries: HashMap::new(),
+            games_played: HashMap::new(),
+            games_won: HashMap::new(),
             traits: p.traits.clone(),
         });
     }
@@ -343,6 +345,8 @@ async fn simulate_single_match_internal(
             position: pos,
             ability: p.ability,
             masteries: HashMap::new(),
+            games_played: HashMap::new(),
+            games_won: HashMap::new(),
             traits: p.traits.clone(),
         });
     }
@@ -351,7 +355,7 @@ async fn simulate_single_match_internal(
     if !all_player_ids.is_empty() {
         let placeholders: String = all_player_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let query = format!(
-            "SELECT player_id, champion_id, mastery_tier FROM player_champion_mastery WHERE save_id = ? AND player_id IN ({})",
+            "SELECT player_id, champion_id, mastery_tier, games_played, games_won FROM player_champion_mastery WHERE save_id = ? AND player_id IN ({})",
             placeholders
         );
         
@@ -367,15 +371,23 @@ async fn simulate_single_match_internal(
                 let player_id: i64 = row.get("player_id");
                 let champion_id: i64 = row.get("champion_id");
                 let tier_str: String = row.get("mastery_tier");
+                let games_played: i64 = row.get("games_played");
+                let games_won_val: i64 = row.get("games_won");
                 
                 if let Some(tier) = MasteryTier::from_id(&tier_str) {
                     let player_id = player_id as u64;
                     let champion_id = champion_id as u8;
+                    let games_played = games_played.max(0) as u32;
+                    let games_won_val = games_won_val.max(0) as u32;
                     
                     if let Some(pool_entry) = home_champion_pools.get_mut(&player_id) {
                         pool_entry.masteries.insert(champion_id, tier);
+                        pool_entry.games_played.insert(champion_id, games_played);
+                        pool_entry.games_won.insert(champion_id, games_won_val);
                     } else if let Some(pool_entry) = away_champion_pools.get_mut(&player_id) {
                         pool_entry.masteries.insert(champion_id, tier);
+                        pool_entry.games_played.insert(champion_id, games_played);
+                        pool_entry.games_won.insert(champion_id, games_won_val);
                     }
                 }
             }
@@ -400,6 +412,9 @@ async fn simulate_single_match_internal(
         .collect();
     
     let mut bp_rng = StdRng::from_entropy();
+    let home_team_comp_history = load_team_comp_history(pool, &ctx.save_id, home_team_id).await;
+    let away_team_comp_history = load_team_comp_history(pool, &ctx.save_id, away_team_id).await;
+    let mut series_ctx: Option<SeriesContext> = None;
 
     while home_score < wins_needed && away_score < wins_needed {
         // === BP系统：每局比赛前运行BP ===
@@ -424,6 +439,9 @@ async fn simulate_single_match_internal(
             &version_tiers,
             meta_type,
             &mut bp_rng,
+            &home_team_comp_history,
+            &away_team_comp_history,
+            series_ctx.as_ref(),
         );
         
         // 保存BP结果到数据库
@@ -514,8 +532,8 @@ async fn simulate_single_match_internal(
         // 根据队伍发挥战力决定胜负（加入正态分布增加不确定性）
         // 使用 Box-Muller 变换生成高斯随机数
         let game_std_dev = 3.0; // 局内波动标准差
-        let u1: f64 = rng.gen::<f64>().max(0.0001);
-        let u2: f64 = rng.gen::<f64>().max(0.0001);
+        let u1: f64 = rng.r#gen::<f64>().max(0.0001);
+        let u2: f64 = rng.r#gen::<f64>().max(0.0001);
         let gaussian = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
 
         // 双方发挥战力差值 + 随机波动
@@ -548,6 +566,13 @@ async fn simulate_single_match_internal(
         update_team_stats(&mut total_home_stats, &home_player_stats, &events, true);
         update_team_stats(&mut total_away_stats, &away_player_stats, &events, false);
 
+        let home_count = home_player_stats.len().max(1) as f64;
+        let away_count = away_player_stats.len().max(1) as f64;
+        let home_base_avg = home_player_stats.iter().map(|p| p.base_ability as f64).sum::<f64>() / home_count;
+        let away_base_avg = away_player_stats.iter().map(|p| p.base_ability as f64).sum::<f64>() / away_count;
+        let home_bp_avg = draft.home_bp_modifiers.values().sum::<f64>() / home_count;
+        let away_bp_avg = draft.away_bp_modifiers.values().sum::<f64>() / away_count;
+
         games.push(DetailedGameResult {
             game_number,
             winner_id,
@@ -558,16 +583,39 @@ async fn simulate_single_match_internal(
             home_players: home_player_stats,
             away_players: away_player_stats,
             key_events: events,
+            home_base_power: Some(home_base_avg),
+            away_base_power: Some(away_base_avg),
+            home_synergy_bonus: Some(0.0),
+            away_synergy_bonus: Some(0.0),
+            home_bp_bonus: Some(home_bp_avg),
+            away_bp_bonus: Some(away_bp_avg),
+            home_version_bonus: Some(0.0),
+            away_version_bonus: Some(0.0),
         });
 
-        if winner_id == home_team_id as u64 {
+        let home_won_this_game = winner_id == home_team_id as u64;
+        if home_won_this_game {
             home_score += 1;
         } else {
             away_score += 1;
         }
 
+        let prev_winner_picks: Vec<u8> = if home_won_this_game {
+            draft.home_picks.iter().map(|p| p.champion_id).collect()
+        } else {
+            draft.away_picks.iter().map(|p| p.champion_id).collect()
+        };
+        let prev_loser_side = if home_won_this_game {
+            Some(TeamSide::Away)
+        } else {
+            Some(TeamSide::Home)
+        };
+        series_ctx = Some(SeriesContext {
+            prev_winner_picks,
+            prev_loser_side,
+        });
+
         // === 更新选手英雄池 games_played / games_won ===
-        let home_won_this_game = winner_id == home_team_id as u64;
         for pick in &draft.home_picks {
             let won_val: i64 = if home_won_this_game { 1 } else { 0 };
             sqlx::query(
@@ -1009,6 +1057,54 @@ async fn simulate_single_match_internal(
 
 // ==================== 辅助函数 ====================
 
+async fn load_team_comp_history(
+    pool: &sqlx::SqlitePool,
+    save_id: &str,
+    team_id: i64,
+) -> Vec<(CompType, u32)> {
+    let rows = match sqlx::query(
+        r#"
+        SELECT d.home_comp, d.away_comp, m.home_team_id, m.away_team_id
+        FROM game_draft_results d
+        JOIN matches m ON m.id = d.match_id
+        WHERE d.save_id = ? AND (m.home_team_id = ? OR m.away_team_id = ?)
+        "#,
+    )
+    .bind(save_id)
+    .bind(team_id)
+    .bind(team_id)
+    .fetch_all(pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut comp_counts: HashMap<CompType, u32> = HashMap::new();
+    for row in rows {
+        let home_team_id: i64 = row.get("home_team_id");
+        let away_team_id: i64 = row.get("away_team_id");
+
+        let comp_str: Option<String> = if team_id == home_team_id {
+            row.get("home_comp")
+        } else if team_id == away_team_id {
+            row.get("away_comp")
+        } else {
+            None
+        };
+
+        if let Some(comp_str) = comp_str {
+            if let Some(comp) = CompType::from_id(comp_str.trim()) {
+                *comp_counts.entry(comp).or_insert(0) += 1;
+            }
+        }
+    }
+
+    let mut history: Vec<(CompType, u32)> = comp_counts.into_iter().collect();
+    history.sort_by(|left, right| right.1.cmp(&left.1));
+    history
+}
+
 /// 从 SQL Row 构建 PlayerData
 fn build_player_data(
     r: &sqlx::sqlite::SqliteRow,
@@ -1270,8 +1366,8 @@ fn simulate_game_with_players(
     rng: &mut impl Rng,
 ) -> (Vec<PlayerGameStats>, Vec<PlayerGameStats>, f64, f64) {
     fn gaussian_random(rng: &mut impl Rng) -> f64 {
-        let u: f64 = rng.gen::<f64>().max(0.0001);
-        let v: f64 = rng.gen::<f64>().max(0.0001);
+        let u: f64 = rng.r#gen::<f64>().max(0.0001);
+        let v: f64 = rng.r#gen::<f64>().max(0.0001);
         (-2.0 * u.ln()).sqrt() * (2.0 * std::f64::consts::PI * v).cos()
     }
 
@@ -1394,12 +1490,12 @@ fn simulate_game_with_players(
 
             // 根据发挥值生成KDA等统计
             let base = actual_ability / 100.0;
-            let kills = (base * (3.0 + rng.gen::<f64>() * 5.0)) as u32;
-            let deaths = ((1.0 - base * 0.5) * (2.0 + rng.gen::<f64>() * 4.0)) as u32;
-            let assists = (base * (4.0 + rng.gen::<f64>() * 8.0)) as u32;
-            let cs = (duration as f64 * (7.0 + rng.gen::<f64>() * 3.0) * base) as u32;
+            let kills = (base * (3.0 + rng.r#gen::<f64>() * 5.0)) as u32;
+            let deaths = ((1.0 - base * 0.5) * (2.0 + rng.r#gen::<f64>() * 4.0)) as u32;
+            let assists = (base * (4.0 + rng.r#gen::<f64>() * 8.0)) as u32;
+            let cs = (duration as f64 * (7.0 + rng.r#gen::<f64>() * 3.0) * base) as u32;
             let gold = cs as u64 * 20 + kills as u64 * 300 + assists as u64 * 150;
-            let damage = (actual_ability * 1000.0 * (0.8 + rng.gen::<f64>() * 0.4)) as u64;
+            let damage = (actual_ability * 1000.0 * (0.8 + rng.r#gen::<f64>() * 0.4)) as u64;
 
             let kda = if deaths > 0 {
                 (kills + assists) as f64 / deaths as f64
@@ -1427,7 +1523,7 @@ fn simulate_game_with_players(
                 gold,
                 damage_dealt: damage,
                 damage_taken: (damage as f64 * 0.8) as u64,
-                vision_score: (duration as f64 * (0.5 + rng.gen::<f64>() * 1.5)) as u32,
+                vision_score: (duration as f64 * (0.5 + rng.r#gen::<f64>() * 1.5)) as u32,
                 mvp_score,
                 impact_score,
                 traits: player.traits.iter().map(|t| format!("{:?}", t)).collect(),
@@ -1510,7 +1606,7 @@ fn generate_key_events(
 
     // 一血
     let fb_time = 2 + rng.gen_range(0..5);
-    let fb_team = if rng.gen::<f64>() < 0.6 { winner_id } else { loser_id };
+    let fb_team = if rng.r#gen::<f64>() < 0.6 { winner_id } else { loser_id };
     events.push(GameEvent {
         time_minutes: fb_time,
         event_type: "FirstBlood".to_string(),
@@ -1520,7 +1616,7 @@ fn generate_key_events(
 
     // 一塔
     let ft_time = 8 + rng.gen_range(0..7);
-    let ft_team = if rng.gen::<f64>() < 0.65 { winner_id } else { loser_id };
+    let ft_team = if rng.r#gen::<f64>() < 0.65 { winner_id } else { loser_id };
     events.push(GameEvent {
         time_minutes: ft_time,
         event_type: "FirstTower".to_string(),
@@ -1532,7 +1628,7 @@ fn generate_key_events(
     for i in 0..3 {
         let dragon_time = 6 + i * 6 + rng.gen_range(0..4);
         if dragon_time < duration {
-            let dragon_team = if rng.gen::<f64>() < 0.55 { winner_id } else { loser_id };
+            let dragon_team = if rng.r#gen::<f64>() < 0.55 { winner_id } else { loser_id };
             events.push(GameEvent {
                 time_minutes: dragon_time,
                 event_type: "Dragon".to_string(),

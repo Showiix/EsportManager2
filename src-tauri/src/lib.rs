@@ -73,6 +73,7 @@ use commands::{
     get_tournament_mvp_ranking, recalculate_yearly_scores, get_annual_awards_data,
     get_player_market_value_changes, get_player_season_history, get_player_contract_history,
     get_player_tournament_history, get_player_yearly_top_history,
+    get_player_growth_logs,
     // 选手特性和状态命令
     get_player_traits, get_player_condition, get_player_full_detail,
     get_all_player_traits, get_trait_catalog, get_team_synergy,
@@ -109,7 +110,7 @@ use commands::{
     get_current_meta, get_meta_history, get_all_meta_types, get_meta_detail,
     // 英雄/BP系统命令
     get_champion_list, get_champion_stats, get_draft_result, get_comp_stats, get_comp_matchups,
-    get_meta_comp_effects, get_player_champion_mastery,
+    get_meta_comp_effects, get_player_champion_mastery, get_player_champion_usage, get_team_comp_usage,
     // 应用状态
     AppState,
 };
@@ -298,6 +299,7 @@ pub fn run() {
             get_player_contract_history,
             get_player_tournament_history,
             get_player_yearly_top_history,
+            get_player_growth_logs,
             // 选手特性和状态命令
             get_player_traits,
             get_player_condition,
@@ -389,6 +391,8 @@ pub fn run() {
             get_comp_matchups,
             get_meta_comp_effects,
             get_player_champion_mastery,
+            get_player_champion_usage,
+            get_team_comp_usage,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1082,3 +1082,81 @@ fn calc_6dim_score(
         games_played, champion_bonus, big_stage_score, has_international,
     )
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlayerGrowthLogItem {
+    pub season_id: i64,
+    pub player_name: String,
+    pub team_name: String,
+    pub age: i64,
+    pub old_ability: i64,
+    pub new_ability: i64,
+    pub old_potential: i64,
+    pub new_potential: i64,
+    pub base_growth: f64,
+    pub age_coeff: f64,
+    pub playtime_coeff: f64,
+    pub mentor_coeff: f64,
+    pub synergy_coeff: f64,
+    pub facility_coeff: f64,
+    pub prodigy_mod: f64,
+    pub perf_bonus: f64,
+    pub fluctuation: f64,
+    pub growth_event: Option<String>,
+    pub description: String,
+}
+
+#[tauri::command]
+pub async fn get_player_growth_logs(
+    state: State<'_, AppState>,
+    save_id: String,
+    player_id: i64,
+) -> Result<StatsCommandResult<Vec<PlayerGrowthLogItem>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(StatsCommandResult::err("Database not initialized")),
+    };
+    let pool = db.get_pool().await.map_err(|e| e.to_string())?;
+
+    let rows = sqlx::query(
+        "SELECT season_id, player_name, team_name, age, old_ability, new_ability,
+                old_potential, new_potential, base_growth, age_coeff, playtime_coeff,
+                mentor_coeff, synergy_coeff, facility_coeff, prodigy_mod,
+                perf_bonus, fluctuation, growth_event, description
+         FROM player_growth_logs
+         WHERE save_id = ? AND player_id = ?
+         ORDER BY season_id ASC"
+    )
+    .bind(&save_id)
+    .bind(player_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let result: Vec<PlayerGrowthLogItem> = rows.iter().map(|r| {
+        PlayerGrowthLogItem {
+            season_id: r.get("season_id"),
+            player_name: r.get("player_name"),
+            team_name: r.get("team_name"),
+            age: r.get("age"),
+            old_ability: r.get("old_ability"),
+            new_ability: r.get("new_ability"),
+            old_potential: r.get("old_potential"),
+            new_potential: r.get("new_potential"),
+            base_growth: r.get("base_growth"),
+            age_coeff: r.get("age_coeff"),
+            playtime_coeff: r.get("playtime_coeff"),
+            mentor_coeff: r.get("mentor_coeff"),
+            synergy_coeff: r.get("synergy_coeff"),
+            facility_coeff: r.get("facility_coeff"),
+            prodigy_mod: r.get("prodigy_mod"),
+            perf_bonus: r.get("perf_bonus"),
+            fluctuation: r.get("fluctuation"),
+            growth_event: r.get("growth_event"),
+            description: r.get("description"),
+        }
+    }).collect();
+
+    Ok(StatsCommandResult::ok(result))
+}

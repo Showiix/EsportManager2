@@ -188,6 +188,7 @@ pub async fn fast_forward_to(
         "SHANGHAI_MASTERS" => FastForwardTarget::ToPhase(SeasonPhase::ShanghaiMasters),
         "ICP_INTERCONTINENTAL" => FastForwardTarget::ToPhase(SeasonPhase::IcpIntercontinental),
         "SUPER_INTERCONTINENTAL" => FastForwardTarget::ToPhase(SeasonPhase::SuperIntercontinental),
+        "ANNUAL_AWARDS" => FastForwardTarget::ToPhase(SeasonPhase::AnnualAwards),
         "TRANSFER_WINDOW" => FastForwardTarget::ToPhase(SeasonPhase::TransferWindow),
         "DRAFT" => FastForwardTarget::ToPhase(SeasonPhase::Draft),
         _ => return Ok(CommandResult::err(format!("Invalid target: {}", target))),
@@ -250,7 +251,15 @@ pub async fn time_simulate_all(
     // === 特性系统：预加载选手数据 ===
     let game_flow = GameFlowService::new();
     let league_service = LeagueService::new();
-    let (team_players, team_bench, _form_factors, team_personalities, _player_mastery_map) = game_flow
+    let (
+        team_players,
+        team_bench,
+        _form_factors,
+        team_personalities,
+        _player_mastery_map,
+        _player_games_played_map,
+        _player_games_won_map,
+    ) = game_flow
         .load_team_players(&pool, &save_id, save.current_season as i64)
         .await
         .map_err(|e| format!("加载选手数据失败: {}", e))?;
@@ -552,7 +561,15 @@ pub async fn time_simulate_next(
 
     // 特性感知模拟
     let game_flow_svc = GameFlowService::new();
-    let (team_players, team_bench_3, _form_factors, team_personalities_3, _player_mastery_map_3) = game_flow_svc
+    let (
+        team_players,
+        team_bench_3,
+        _form_factors,
+        team_personalities_3,
+        _player_mastery_map_3,
+        _player_games_played_map_3,
+        _player_games_won_map_3,
+    ) = game_flow_svc
         .load_team_players(&pool, &save_id, save.current_season as i64)
         .await
         .map_err(|e| format!("加载选手数据失败: {}", e))?;

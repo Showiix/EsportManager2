@@ -1,6 +1,6 @@
-use crate::models::*;
+use crate::models::match_game_detail::{GamePlayerPerformance, MatchGameDetail};
 use crate::models::tournament_result::PlayerTournamentStats;
-use crate::models::match_game_detail::{MatchGameDetail, GamePlayerPerformance};
+use crate::models::*;
 use sqlx::Row;
 
 pub(crate) fn parse_season_phase(s: &str) -> SeasonPhase {
@@ -58,13 +58,27 @@ pub(crate) fn row_to_player(row: &sqlx::sqlite::SqliteRow) -> Player {
         team_id: row.get::<Option<i64>, _>("team_id").map(|v| v as u64),
         salary: row.get::<i64, _>("salary") as u64,
         market_value: row.get::<i64, _>("market_value") as u64,
-        calculated_market_value: row.try_get::<i64, _>("calculated_market_value").ok().map(|v| v as u64).unwrap_or(0),
-        contract_end_season: row.get::<Option<i64>, _>("contract_end_season").map(|v| v as u32),
+        calculated_market_value: row
+            .try_get::<i64, _>("calculated_market_value")
+            .ok()
+            .map(|v| v as u64)
+            .unwrap_or(0),
+        contract_end_season: row
+            .get::<Option<i64>, _>("contract_end_season")
+            .map(|v| v as u32),
         join_season: row.get::<i64, _>("join_season") as u32,
         retire_season: row.get::<Option<i64>, _>("retire_season").map(|v| v as u32),
         is_starter: row.get("is_starter"),
-        loyalty: row.try_get::<i64, _>("loyalty").ok().map(|v| v as u8).unwrap_or(50),
-        satisfaction: row.try_get::<i64, _>("satisfaction").ok().map(|v| v as u8).unwrap_or(50),
+        loyalty: row
+            .try_get::<i64, _>("loyalty")
+            .ok()
+            .map(|v| v as u8)
+            .unwrap_or(50),
+        satisfaction: row
+            .try_get::<i64, _>("satisfaction")
+            .ok()
+            .map(|v| v as u8)
+            .unwrap_or(50),
         growth_accumulator: row.try_get::<f64, _>("growth_accumulator").unwrap_or(0.0),
     }
 }
@@ -215,8 +229,11 @@ pub(crate) fn parse_honor_type(s: &str) -> HonorType {
         "ANNUAL_MOST_DOMINANT" => HonorType::AnnualMostDominant,
         "ANNUAL_ROOKIE" => HonorType::AnnualRookie,
         // 兼容旧存档
-        "ANNUAL_BEST_TOP" | "ANNUAL_BEST_JUNGLE" | "ANNUAL_BEST_MID"
-        | "ANNUAL_BEST_ADC" | "ANNUAL_BEST_SUPPORT" => HonorType::AnnualAllPro1st,
+        "ANNUAL_BEST_TOP"
+        | "ANNUAL_BEST_JUNGLE"
+        | "ANNUAL_BEST_MID"
+        | "ANNUAL_BEST_ADC"
+        | "ANNUAL_BEST_SUPPORT" => HonorType::AnnualAllPro1st,
         _ => HonorType::TeamChampion,
     }
 }
@@ -336,9 +353,13 @@ pub(crate) fn row_to_tournament_result(row: &sqlx::sqlite::SqliteRow) -> Tournam
         runner_up_team_name: row.get("runner_up_team_name"),
         third_team_id: row.get::<Option<i64>, _>("third_team_id").map(|v| v as u64),
         third_team_name: row.get("third_team_name"),
-        fourth_team_id: row.get::<Option<i64>, _>("fourth_team_id").map(|v| v as u64),
+        fourth_team_id: row
+            .get::<Option<i64>, _>("fourth_team_id")
+            .map(|v| v as u64),
         fourth_team_name: row.get("fourth_team_name"),
-        final_match_id: row.get::<Option<i64>, _>("final_match_id").map(|v| v as u64),
+        final_match_id: row
+            .get::<Option<i64>, _>("final_match_id")
+            .map(|v| v as u64),
         final_score: row.get("final_score"),
         total_matches: row.get::<Option<i64>, _>("total_matches").map(|v| v as u32),
         total_games: row.get::<Option<i64>, _>("total_games").map(|v| v as u32),
@@ -346,7 +367,9 @@ pub(crate) fn row_to_tournament_result(row: &sqlx::sqlite::SqliteRow) -> Tournam
     }
 }
 
-pub(crate) fn row_to_player_tournament_stats(row: &sqlx::sqlite::SqliteRow) -> PlayerTournamentStats {
+pub(crate) fn row_to_player_tournament_stats(
+    row: &sqlx::sqlite::SqliteRow,
+) -> PlayerTournamentStats {
     PlayerTournamentStats {
         id: row.get::<i64, _>("id") as u64,
         save_id: row.get("save_id"),
@@ -387,11 +410,21 @@ pub(crate) fn row_to_match_game_detail(row: &sqlx::sqlite::SqliteRow) -> MatchGa
         away_power: row.get("away_power"),
         home_meta_power: row.get("home_meta_power"),
         away_meta_power: row.get("away_meta_power"),
+        home_base_power: row.get("home_base_power"),
+        away_base_power: row.get("away_base_power"),
+        home_synergy_bonus: row.get("home_synergy_bonus"),
+        away_synergy_bonus: row.get("away_synergy_bonus"),
+        home_bp_bonus: row.get("home_bp_bonus"),
+        away_bp_bonus: row.get("away_bp_bonus"),
+        home_version_bonus: row.get("home_version_bonus"),
+        away_version_bonus: row.get("away_version_bonus"),
         created_at: row.get("created_at"),
     }
 }
 
-pub(crate) fn row_to_game_player_performance(row: &sqlx::sqlite::SqliteRow) -> GamePlayerPerformance {
+pub(crate) fn row_to_game_player_performance(
+    row: &sqlx::sqlite::SqliteRow,
+) -> GamePlayerPerformance {
     GamePlayerPerformance {
         id: row.get("id"),
         save_id: row.get("save_id"),
@@ -425,8 +458,8 @@ pub(crate) fn row_to_game_player_performance(row: &sqlx::sqlite::SqliteRow) -> G
 
 pub(crate) fn row_to_player_season_status(row: &sqlx::sqlite::SqliteRow) -> PlayerSeasonStatus {
     let reasons_json: String = row.get("departure_reasons");
-    let departure_reasons: Vec<DepartureReason> = serde_json::from_str(&reasons_json)
-        .unwrap_or_default();
+    let departure_reasons: Vec<DepartureReason> =
+        serde_json::from_str(&reasons_json).unwrap_or_default();
 
     PlayerSeasonStatus {
         id: row.get::<i64, _>("id") as u64,
@@ -443,7 +476,9 @@ pub(crate) fn row_to_player_season_status(row: &sqlx::sqlite::SqliteRow) -> Play
     }
 }
 
-pub(crate) fn row_to_team_season_performance(row: &sqlx::sqlite::SqliteRow) -> TeamSeasonPerformance {
+pub(crate) fn row_to_team_season_performance(
+    row: &sqlx::sqlite::SqliteRow,
+) -> TeamSeasonPerformance {
     TeamSeasonPerformance {
         id: row.get::<i64, _>("id") as u64,
         save_id: row.get("save_id"),

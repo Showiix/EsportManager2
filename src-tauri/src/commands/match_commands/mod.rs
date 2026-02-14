@@ -33,6 +33,15 @@ pub struct DetailedGameResult {
     pub home_players: Vec<PlayerGameStats>,
     pub away_players: Vec<PlayerGameStats>,
     pub key_events: Vec<GameEvent>,
+    // MR 分解数据
+    pub home_base_power: Option<f64>,
+    pub away_base_power: Option<f64>,
+    pub home_synergy_bonus: Option<f64>,
+    pub away_synergy_bonus: Option<f64>,
+    pub home_bp_bonus: Option<f64>,
+    pub away_bp_bonus: Option<f64>,
+    pub home_version_bonus: Option<f64>,
+    pub away_version_bonus: Option<f64>,
 }
 
 /// 球员MVP信息
