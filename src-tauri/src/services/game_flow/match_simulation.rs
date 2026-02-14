@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::db::*;
-use crate::engines::bp_engine::{BpEngine, PlayerChampionPool};
+use crate::engines::bp_engine::{BpEngine, DraftResult, PlayerChampionPool};
 use crate::engines::champion::{self, MasteryTier, VersionTier};
 use crate::engines::meta_engine::MetaType;
 use crate::engines::{
@@ -134,6 +134,8 @@ impl GameFlowService {
                             meta_type,
                             &mut bp_rng,
                         );
+
+                        Self::save_draft_result(pool, save_id, match_info.id, &draft).await?;
 
                         if let Some(players) = team_players.get_mut(&match_info.home_team_id) {
                             for p in players.iter_mut() {
@@ -285,6 +287,8 @@ impl GameFlowService {
                             meta_type,
                             &mut bp_rng,
                         );
+
+                        Self::save_draft_result(pool, save_id, match_info.id, &draft).await?;
 
                         if let Some(players) = team_players.get_mut(&match_info.home_team_id) {
                             for p in players.iter_mut() {
@@ -745,6 +749,40 @@ impl GameFlowService {
         .execute(pool)
         .await
         .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    /// 将 draft 结果存入 game_draft_results 表
+    async fn save_draft_result(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        match_id: u64,
+        draft: &DraftResult,
+    ) -> Result<(), String> {
+        let bans_json = serde_json::to_string(&draft.bans).unwrap_or_default();
+        let home_picks_json = serde_json::to_string(&draft.home_picks).unwrap_or_default();
+        let away_picks_json = serde_json::to_string(&draft.away_picks).unwrap_or_default();
+        let home_comp = draft.home_comp.as_ref().map(|c| format!("{:?}", c));
+        let away_comp = draft.away_comp.as_ref().map(|c| format!("{:?}", c));
+
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO game_draft_results
+                (save_id, match_id, game_number, bans_json, home_picks_json, away_picks_json, home_comp, away_comp)
+            VALUES (?, ?, 1, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(save_id)
+        .bind(match_id as i64)
+        .bind(&bans_json)
+        .bind(&home_picks_json)
+        .bind(&away_picks_json)
+        .bind(&home_comp)
+        .bind(&away_comp)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("存储BP结果失败: {}", e))?;
 
         Ok(())
     }

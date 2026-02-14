@@ -74,6 +74,46 @@
     <!-- 荣誉记录 -->
     <player-honors-card :honors="honors" />
 
+    <!-- 英雄池 -->
+    <div v-if="championMasteries.length > 0" class="champion-pool-card">
+      <div class="card-header">
+        <span class="card-title">英雄池</span>
+        <span class="card-sub">熟练英雄 {{ championMasteries.length }} 个</span>
+      </div>
+      <div class="mastery-sections">
+        <div v-if="ssChampions.length > 0" class="mastery-section">
+          <div class="mastery-tier-label tier-ss">SS 级 · 信仰英雄</div>
+          <div class="champion-grid">
+            <div v-for="c in ssChampions" :key="c.champion_id" class="champion-item">
+              <span class="champion-name">{{ c.name_cn }}</span>
+              <span class="champion-pos">{{ c.position }}</span>
+              <span class="champion-stats">{{ c.games_played }}场 / {{ c.games_won }}胜</span>
+            </div>
+          </div>
+        </div>
+        <div v-if="sChampions.length > 0" class="mastery-section">
+          <div class="mastery-tier-label tier-s">S 级 · 擅长英雄</div>
+          <div class="champion-grid">
+            <div v-for="c in sChampions" :key="c.champion_id" class="champion-item">
+              <span class="champion-name">{{ c.name_cn }}</span>
+              <span class="champion-pos">{{ c.position }}</span>
+              <span class="champion-stats">{{ c.games_played }}场 / {{ c.games_won }}胜</span>
+            </div>
+          </div>
+        </div>
+        <div v-if="aChampions.length > 0" class="mastery-section">
+          <div class="mastery-tier-label tier-a">A 级 · 可用英雄</div>
+          <div class="champion-grid">
+            <div v-for="c in aChampions" :key="c.champion_id" class="champion-item">
+              <span class="champion-name">{{ c.name_cn }}</span>
+              <span class="champion-pos">{{ c.position }}</span>
+              <span class="champion-stats">{{ c.games_played }}场 / {{ c.games_won }}胜</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 赛季历史 -->
     <player-season-history 
       :season-history="seasonHistory"
@@ -91,7 +131,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from "vue"
+import { ref, onMounted, watch, computed } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import {
   ArrowLeft,
@@ -110,6 +150,8 @@ import PlayerMarketValueDialog from "@/components/player/PlayerMarketValueDialog
 
 // Import Composable
 import { usePlayerDetail } from "@/composables/usePlayerDetail"
+import { getPlayerChampionMastery, type PlayerMasteryInfo } from "@/api/tauri"
+import { useGameStore } from "@/stores/useGameStore"
 
 const route = useRoute()
 const router = useRouter()
@@ -137,6 +179,25 @@ const {
 
 // 身价弹窗状态
 const showMarketValueDialog = ref(false)
+
+// 英雄池数据
+const gameStore = useGameStore()
+const championMasteries = ref<PlayerMasteryInfo[]>([])
+
+const ssChampions = computed(() => championMasteries.value.filter(c => c.mastery_tier === 'SS'))
+const sChampions = computed(() => championMasteries.value.filter(c => c.mastery_tier === 'S'))
+const aChampions = computed(() => championMasteries.value.filter(c => c.mastery_tier === 'A'))
+
+const loadChampionMasteries = async () => {
+  const saveId = gameStore.currentSave?.id
+  if (!saveId || !playerId) return
+  try {
+    const result = await getPlayerChampionMastery(saveId, Number(playerId))
+    championMasteries.value = result
+  } catch {
+    championMasteries.value = []
+  }
+}
 
 // 监听身价弹窗打开
 watch(showMarketValueDialog, (newVal) => {
@@ -170,6 +231,7 @@ const getTalentAlertType = (tag: string) => {
 
 onMounted(() => {
   initData()
+  loadChampionMasteries()
 })
 </script>
 
@@ -202,5 +264,87 @@ onMounted(() => {
 
 .traits-condition-row {
   margin-bottom: 20px;
+}
+
+.champion-pool-card {
+  margin-bottom: 20px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: #f7f8fa;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1d2129;
+}
+
+.card-sub {
+  font-size: 12px;
+  color: #86909c;
+}
+
+.mastery-sections {
+  padding: 16px;
+}
+
+.mastery-section {
+  margin-bottom: 16px;
+}
+
+.mastery-section:last-child {
+  margin-bottom: 0;
+}
+
+.mastery-tier-label {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.tier-ss { color: #dc2626; }
+.tier-s { color: #d97706; }
+.tier-a { color: #059669; }
+
+.champion-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.champion-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #f7f8fa;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.champion-name {
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.champion-pos {
+  color: #667eea;
+  font-weight: 500;
+  font-size: 10px;
+}
+
+.champion-stats {
+  color: #86909c;
+  font-size: 11px;
 }
 </style>

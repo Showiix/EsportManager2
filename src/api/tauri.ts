@@ -3593,3 +3593,16 @@ export function getDraftResult(saveId: string, matchId: number, gameNumber: numb
 export function getCompStats(saveId: string) {
   return invokeCommand<CompStatInfo[]>('get_comp_stats', { saveId })
 }
+
+export interface PlayerMasteryInfo {
+  champion_id: number
+  name_cn: string
+  position: string
+  mastery_tier: string
+  games_played: number
+  games_won: number
+}
+
+export function getPlayerChampionMastery(saveId: string, playerId: number) {
+  return invokeCommand<PlayerMasteryInfo[]>('get_player_champion_mastery', { saveId, playerId })
+}

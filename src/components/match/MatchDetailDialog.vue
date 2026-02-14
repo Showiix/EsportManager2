@@ -101,40 +101,43 @@
         </button>
       </div>
 
-      <!-- 阵容信息 -->
-      <div v-if="currentLineup" class="lineup-section">
-        <div class="lineup-header">
-          <span class="lineup-title">阵容</span>
-        </div>
-        <div class="lineup-body">
-          <div class="lineup-team">
-            <div class="lineup-team-label">{{ matchDetail.teamAName }}</div>
-            <div class="lineup-players">
-              <span v-for="p in currentLineup.home_players" :key="p.player_id" class="lineup-player">
-                <span class="lineup-pos">{{ p.position }}</span>
-                <span class="lineup-name">{{ p.player_name }}</span>
-              </span>
+      <!-- 阵容信息（可折叠） -->
+      <div v-if="currentLineup" class="breakdown-panel lineup-panel">
+        <button class="breakdown-toggle" @click="lineupOpen = !lineupOpen">
+          <span class="toggle-arrow" :class="{ open: lineupOpen }">&#9654;</span>
+          <span>阵容</span>
+        </button>
+        <div v-if="lineupOpen" class="breakdown-content">
+          <div class="lineup-body">
+            <div class="lineup-team">
+              <div class="lineup-team-label">{{ matchDetail.teamAName }}</div>
+              <div class="lineup-players">
+                <span v-for="p in currentLineup.home_players" :key="p.player_id" class="lineup-player">
+                  <span class="lineup-pos">{{ p.position }}</span>
+                  <span class="lineup-name">{{ p.player_name }}</span>
+                </span>
+              </div>
+            </div>
+            <div class="lineup-vs">VS</div>
+            <div class="lineup-team">
+              <div class="lineup-team-label">{{ matchDetail.teamBName }}</div>
+              <div class="lineup-players">
+                <span v-for="p in currentLineup.away_players" :key="p.player_id" class="lineup-player">
+                  <span class="lineup-pos">{{ p.position }}</span>
+                  <span class="lineup-name">{{ p.player_name }}</span>
+                </span>
+              </div>
             </div>
           </div>
-          <div class="lineup-vs">VS</div>
-          <div class="lineup-team">
-            <div class="lineup-team-label">{{ matchDetail.teamBName }}</div>
-            <div class="lineup-players">
-              <span v-for="p in currentLineup.away_players" :key="p.player_id" class="lineup-player">
-                <span class="lineup-pos">{{ p.position }}</span>
-                <span class="lineup-name">{{ p.player_name }}</span>
-              </span>
+          <div v-if="currentLineup.substitutions.length > 0" class="lineup-subs">
+            <div class="lineup-subs-title">换人</div>
+            <div v-for="s in currentLineup.substitutions" :key="`sub-${s.player_id}-${s.game_number}`" class="lineup-sub-item">
+              <span class="sub-arrow">↔</span>
+              <span class="sub-in">{{ s.player_name }}</span>
+              <span class="sub-pos">({{ s.position }})</span>
+              <span v-if="s.replaced_player_name" class="sub-out">替换 {{ s.replaced_player_name }}</span>
+              <span v-if="s.substitution_reason" class="sub-reason">· {{ s.substitution_reason }}</span>
             </div>
-          </div>
-        </div>
-        <div v-if="currentLineup.substitutions.length > 0" class="lineup-subs">
-          <div class="lineup-subs-title">换人</div>
-          <div v-for="s in currentLineup.substitutions" :key="`sub-${s.player_id}-${s.game_number}`" class="lineup-sub-item">
-            <span class="sub-arrow">↔</span>
-            <span class="sub-in">{{ s.player_name }}</span>
-            <span class="sub-pos">({{ s.position }})</span>
-            <span v-if="s.replaced_player_name" class="sub-out">替换 {{ s.replaced_player_name }}</span>
-            <span v-if="s.substitution_reason" class="sub-reason">· {{ s.substitution_reason }}</span>
           </div>
         </div>
       </div>
@@ -200,6 +203,7 @@ const dialogVisible = computed({
 })
 
 const activeTab = ref('1')
+const lineupOpen = ref(true)
 
 // 协同值数据
 const synergyA = ref<TeamSynergyInfo | null>(null)
@@ -247,6 +251,14 @@ watch(() => props.matchDetail, (newVal) => {
     lineups.value = null
   }
 }, { immediate: true })
+
+watch(() => props.visible, (newVal) => {
+  if (newVal && props.matchDetail) {
+    activeTab.value = '1'
+    lineupOpen.value = true
+    loadSynergy()
+  }
+})
 
 // 当前选中的局
 const currentGame = computed(() => {
@@ -722,24 +734,51 @@ const handleExport = () => {
   color: #f59e0b;
 }
 
-/* 阵容区 */
-.lineup-section {
-  margin: 0 24px;
-  padding: 16px 20px;
-  background: #f7f8fa;
+/* 阵容区（可折叠面板） */
+.lineup-panel {
+  margin: 0 24px 16px;
+}
+
+.breakdown-panel {
+  border: 1px solid #e5e7eb;
   border-radius: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.04);
+  overflow: hidden;
 }
 
-.lineup-header {
-  margin-bottom: 12px;
-}
-
-.lineup-title {
+.breakdown-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 16px;
+  background: #f7f8fa;
+  border: none;
+  cursor: pointer;
   font-size: 13px;
   font-weight: 700;
   color: #1d2129;
-  letter-spacing: 1px;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.breakdown-toggle:hover {
+  background: #f0f1f3;
+}
+
+.toggle-arrow {
+  font-size: 10px;
+  color: #86909c;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+
+.toggle-arrow.open {
+  transform: rotate(90deg);
+}
+
+.breakdown-content {
+  padding: 16px 20px;
+  border-top: 1px solid #e5e7eb;
 }
 
 .lineup-body {
