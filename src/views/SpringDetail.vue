@@ -686,7 +686,7 @@ const convertToMatchDetail = (result: any, match: any): MatchDetail => {
   })
 
   return {
-    matchId: `spring-${match.id}`,
+    matchId: result.match_id || `spring-${match.id}`,
     seasonId: String(viewingSeason.value),
     tournamentType: 'spring',
     teamAId: String(result.home_team_id),

@@ -1,6 +1,9 @@
 use crate::commands::save_commands::{AppState, CommandResult};
 use crate::engines::{ConditionEngine, PlayerFormFactors, TraitType, TraitEngine, TraitContext, MetaEngine, MetaWeights};
 use crate::engines::lineup_engine::{LineupCandidate, LineupEngine, SubstitutionContext, SubstitutionDecision};
+use crate::engines::bp_engine::{BpEngine, PlayerChampionPool};
+use crate::engines::champion::{self, MasteryTier, VersionTier};
+use crate::engines::meta_engine::MetaType;
 use crate::models::MatchFormat;
 use crate::models::player::Position;
 use crate::models::transfer::AITeamPersonality;
@@ -299,7 +302,156 @@ async fn simulate_single_match_internal(
         .await
         .ok();
 
+    // === BP系统：加载选手英雄池 ===
+    let home_player_ids: Vec<u64> = home_players.iter().map(|p| p.id).collect();
+    let away_player_ids: Vec<u64> = away_players.iter().map(|p| p.id).collect();
+    let all_player_ids: Vec<u64> = home_player_ids.iter().chain(away_player_ids.iter()).cloned().collect();
+    
+    // 创建选手的英雄池映射
+    let mut home_champion_pools: HashMap<u64, PlayerChampionPool> = HashMap::new();
+    let mut away_champion_pools: HashMap<u64, PlayerChampionPool> = HashMap::new();
+    
+    // 初始化所有选手的英雄池
+    for p in &home_players {
+        let pos = match p.position.to_uppercase().as_str() {
+            "TOP" => Position::Top,
+            "JUG" | "JUNGLE" => Position::Jug,
+            "MID" | "MIDDLE" => Position::Mid,
+            "ADC" | "BOT" => Position::Adc,
+            "SUP" | "SUPPORT" => Position::Sup,
+            _ => Position::Mid,
+        };
+        home_champion_pools.insert(p.id, PlayerChampionPool {
+            player_id: p.id,
+            position: pos,
+            ability: p.ability,
+            masteries: HashMap::new(),
+            traits: p.traits.clone(),
+        });
+    }
+    for p in &away_players {
+        let pos = match p.position.to_uppercase().as_str() {
+            "TOP" => Position::Top,
+            "JUG" | "JUNGLE" => Position::Jug,
+            "MID" | "MIDDLE" => Position::Mid,
+            "ADC" | "BOT" => Position::Adc,
+            "SUP" | "SUPPORT" => Position::Sup,
+            _ => Position::Mid,
+        };
+        away_champion_pools.insert(p.id, PlayerChampionPool {
+            player_id: p.id,
+            position: pos,
+            ability: p.ability,
+            masteries: HashMap::new(),
+            traits: p.traits.clone(),
+        });
+    }
+    
+    // 加载选手的英雄池数据
+    if !all_player_ids.is_empty() {
+        let placeholders: String = all_player_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let query = format!(
+            "SELECT player_id, champion_id, mastery_tier FROM player_champion_mastery WHERE save_id = ? AND player_id IN ({})",
+            placeholders
+        );
+        
+        let mut query_builder = sqlx::query(&query).bind(&ctx.save_id);
+        for id in &all_player_ids {
+            query_builder = query_builder.bind(*id as i64);
+        }
+        
+        let mastery_rows = query_builder.fetch_all(pool).await;
+        
+        if let Ok(rows) = mastery_rows {
+            for row in &rows {
+                let player_id: i64 = row.get("player_id");
+                let champion_id: i64 = row.get("champion_id");
+                let tier_str: String = row.get("mastery_tier");
+                
+                if let Some(tier) = MasteryTier::from_id(&tier_str) {
+                    let player_id = player_id as u64;
+                    let champion_id = champion_id as u8;
+                    
+                    if let Some(pool_entry) = home_champion_pools.get_mut(&player_id) {
+                        pool_entry.masteries.insert(champion_id, tier);
+                    } else if let Some(pool_entry) = away_champion_pools.get_mut(&player_id) {
+                        pool_entry.masteries.insert(champion_id, tier);
+                    }
+                }
+            }
+        }
+    }
+    
+    // 获取Meta类型和版本权重
+    let meta_type_row: Option<String> = sqlx::query_scalar(
+        "SELECT meta_type FROM meta_versions WHERE save_id = ? AND season_id = ? LIMIT 1"
+    )
+    .bind(&ctx.save_id)
+    .bind(ctx.current_season)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    let meta_type = meta_type_row
+        .and_then(|s| MetaType::from_id(&s))
+        .unwrap_or(MetaType::Balanced);
+    let version_tiers: HashMap<u8, VersionTier> = champion::calculate_version_tiers(meta_type)
+        .into_iter()
+        .collect();
+    
+    let mut bp_rng = StdRng::from_entropy();
+
     while home_score < wins_needed && away_score < wins_needed {
+        // === BP系统：每局比赛前运行BP ===
+        let mut home_pool_vec: Vec<PlayerChampionPool> = Vec::new();
+        for p in &home_players {
+            if let Some(pool) = home_champion_pools.get(&p.id).cloned() {
+                home_pool_vec.push(pool);
+            }
+        }
+        
+        let mut away_pool_vec: Vec<PlayerChampionPool> = Vec::new();
+        for p in &away_players {
+            if let Some(pool) = away_champion_pools.get(&p.id).cloned() {
+                away_pool_vec.push(pool);
+            }
+        }
+        
+        // 运行BP
+        let draft = BpEngine::run_draft(
+            &home_pool_vec,
+            &away_pool_vec,
+            &version_tiers,
+            meta_type,
+            &mut bp_rng,
+        );
+        
+        // 保存BP结果到数据库
+        let bans_json = serde_json::to_string(&draft.bans).unwrap_or_default();
+        let home_picks_json = serde_json::to_string(&draft.home_picks).unwrap_or_default();
+        let away_picks_json = serde_json::to_string(&draft.away_picks).unwrap_or_default();
+        let home_comp = draft.home_comp.as_ref().map(|c| format!("{:?}", c));
+        let away_comp = draft.away_comp.as_ref().map(|c| format!("{:?}", c));
+        
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO game_draft_results
+                (save_id, match_id, game_number, bans_json, home_picks_json, away_picks_json, home_comp, away_comp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#
+        )
+        .bind(&ctx.save_id)
+        .bind(match_id as i64)
+        .bind(game_number)
+        .bind(&bans_json)
+        .bind(&home_picks_json)
+        .bind(&away_picks_json)
+        .bind(&home_comp)
+        .bind(&away_comp)
+        .execute(pool)
+        .await
+        .ok();
+        
         insert_match_lineups_for_team(
             pool,
             &ctx.save_id,
@@ -412,6 +564,35 @@ async fn simulate_single_match_internal(
             home_score += 1;
         } else {
             away_score += 1;
+        }
+
+        // === 更新选手英雄池 games_played / games_won ===
+        let home_won_this_game = winner_id == home_team_id as u64;
+        for pick in &draft.home_picks {
+            let won_val: i64 = if home_won_this_game { 1 } else { 0 };
+            sqlx::query(
+                "UPDATE player_champion_mastery SET games_played = games_played + 1, games_won = games_won + ? WHERE save_id = ? AND player_id = ? AND champion_id = ?"
+            )
+            .bind(won_val)
+            .bind(&ctx.save_id)
+            .bind(pick.player_id as i64)
+            .bind(pick.champion_id as i64)
+            .execute(pool)
+            .await
+            .ok();
+        }
+        for pick in &draft.away_picks {
+            let won_val: i64 = if !home_won_this_game { 1 } else { 0 };
+            sqlx::query(
+                "UPDATE player_champion_mastery SET games_played = games_played + 1, games_won = games_won + ? WHERE save_id = ? AND player_id = ? AND champion_id = ?"
+            )
+            .bind(won_val)
+            .bind(&ctx.save_id)
+            .bind(pick.player_id as i64)
+            .bind(pick.champion_id as i64)
+            .execute(pool)
+            .await
+            .ok();
         }
 
         // 局间换人：仅在 BO 系列赛且比赛未结束时执行

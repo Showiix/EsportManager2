@@ -884,20 +884,42 @@ const simulateSingleMatch = async (match: any) => {
  * 查看比赛详情
  */
 const viewMatchDetails = async (matchId: string) => {
-  // 先尝试从内存获取
+  // 尝试从内存获取 (key 可能是 "spring-1" 格式或 backendMatchId)
   let detail = matchDetailStore.getMatchDetail(matchId)
   if (detail) {
     currentMatchDetail.value = detail
     showMatchDetailDialog.value = true
     return
   }
-  // 如果内存中没有，尝试从数据库加载
-  detail = await matchDetailStore.loadMatchDetailFromDb(matchId)
-  if (detail) {
-    currentMatchDetail.value = detail
-    showMatchDetailDialog.value = true
-    return
+  
+  // 如果内存中没有，尝试从 matchId 中提取数字查找
+  // 注意：这里的 matchId 可能是 "spring-1" 格式，需要找到对应的 backendMatchId
+  // 但由于前端 match.id 和数据库 match_id 不对应，我们需要尝试所有可能的格式
+  
+  // 尝试作为纯数字查找
+  const numericMatchId = parseInt(String(matchId).replace(/\D/g, ''))
+  if (!isNaN(numericMatchId) && numericMatchId > 0) {
+    detail = await matchDetailStore.loadMatchDetailFromDb(numericMatchId)
+    if (detail) {
+      currentMatchDetail.value = detail
+      showMatchDetailDialog.value = true
+      return
+    }
   }
+  
+  // 如果还是找不到，尝试从 "spring-X" 格式中提取
+  // 查找所有已保存的比赛详情
+  const allDetails = matchDetailStore.getAllMatchDetails()
+  const matchIdNum = matchId.replace(/\D/g, '')
+  for (const [key, value] of allDetails) {
+    const keyStr = String(key)
+    if (keyStr.includes(matchIdNum) || keyStr.replace(/\D/g, '').includes(matchIdNum)) {
+      currentMatchDetail.value = value
+      showMatchDetailDialog.value = true
+      return
+    }
+  }
+  
   ElMessage.info('该比赛暂无详细数据')
 }
 

@@ -3578,6 +3578,24 @@ export interface CompStatInfo {
   win_count: number
 }
 
+export interface CompMatchupInfo {
+  comp_type: string
+  display_name: string
+  core_archetypes: string[]
+  difficulty_bonus: number
+  hard_counters: string[]
+  hard_countered_by: string[]
+  soft_counters: string[]
+  soft_countered_by: string[]
+}
+
+export interface MetaCompEffect {
+  meta_type: string
+  meta_name: string
+  favored_comps: string[]
+  unfavored_comps: string[]
+}
+
 export function getChampionList() {
   return invokeCommand<ChampionInfo[]>('get_champion_list')
 }
@@ -3592,6 +3610,14 @@ export function getDraftResult(saveId: string, matchId: number, gameNumber: numb
 
 export function getCompStats(saveId: string) {
   return invokeCommand<CompStatInfo[]>('get_comp_stats', { saveId })
+}
+
+export function getCompMatchups() {
+  return invokeCommand<CompMatchupInfo[]>('get_comp_matchups')
+}
+
+export function getMetaCompEffects() {
+  return invokeCommand<MetaCompEffect[]>('get_meta_comp_effects')
 }
 
 export interface PlayerMasteryInfo {

@@ -92,7 +92,7 @@
         >
           <el-table-column label="体系" width="160">
             <template #default="{ row }">
-              {{ compName(row.comp_type) }}
+              <span class="comp-name-text">{{ compName(row.comp_type) }}</span>
             </template>
           </el-table-column>
           <el-table-column prop="pick_count" label="使用次数" width="120" align="center" sortable />
@@ -107,6 +107,104 @@
         </el-table>
         <el-empty v-else description="暂无比赛数据" />
       </el-tab-pane>
+
+      <el-tab-pane label="体系图鉴" name="matchup">
+        <div class="matchup-grid">
+          <el-card v-for="comp in compMatchups" :key="comp.id" class="comp-card" shadow="hover">
+            <template #header>
+              <div class="comp-card-header">
+                <div class="comp-title">
+                  <span class="name">{{ comp.name }}</span>
+                  <el-tag :type="getDifficultyType(comp.difficulty)" size="small" effect="plain">
+                    难度: {{ comp.difficulty }}
+                  </el-tag>
+                </div>
+                <div class="archetypes">
+                  <el-tag v-for="arch in comp.archetypes" :key="arch" type="info" size="small" class="arch-tag">
+                    {{ arch }}
+                  </el-tag>
+                </div>
+              </div>
+            </template>
+            <div class="comp-relationships">
+              <div class="rel-section" v-if="comp.hardCounters.length">
+                <span class="rel-label">克制:</span>
+                <div class="tags">
+                  <el-tag v-for="t in comp.hardCounters" :key="t" type="danger" size="small" effect="light">
+                    {{ COMP_NAME_MAP[t] || t }}
+                  </el-tag>
+                </div>
+              </div>
+              <div class="rel-section" v-if="comp.hardCounteredBy.length">
+                <span class="rel-label">被克制:</span>
+                <div class="tags">
+                  <el-tag v-for="t in comp.hardCounteredBy" :key="t" type="" size="small" effect="light">
+                    {{ COMP_NAME_MAP[t] || t }}
+                  </el-tag>
+                </div>
+              </div>
+              <div class="rel-section" v-if="comp.softCounters.length">
+                <span class="rel-label">小克:</span>
+                <div class="tags">
+                  <el-tag v-for="t in comp.softCounters" :key="t" type="warning" size="small" effect="plain">
+                    {{ COMP_NAME_MAP[t] || t }}
+                  </el-tag>
+                </div>
+              </div>
+              <div class="rel-section" v-if="comp.softCounteredBy.length">
+                <span class="rel-label">被小克:</span>
+                <div class="tags">
+                  <el-tag v-for="t in comp.softCounteredBy" :key="t" type="success" size="small" effect="plain">
+                    {{ COMP_NAME_MAP[t] || t }}
+                  </el-tag>
+                </div>
+              </div>
+            </div>
+          </el-card>
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="选手统计" name="player">
+        <el-table
+          v-if="playerStats.length > 0"
+          :data="playerStats"
+          stripe
+          style="width: 100%"
+          :default-sort="{ prop: 'avg_impact', order: 'descending' }"
+        >
+          <el-table-column type="index" label="排名" width="60" align="center" />
+          <el-table-column prop="player_name" label="选手" width="140">
+            <template #default="{ row }">
+              <span class="player-name">{{ row.player_name }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="team_name" label="战队" width="120" />
+          <el-table-column prop="position" label="位置" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag :type="positionTagType(row.position)" size="small">
+                {{ positionName(row.position) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="games_played" label="场次" width="80" align="center" />
+          <el-table-column prop="avg_impact" label="平均影响力" width="120" align="center" sortable>
+            <template #default="{ row }">
+              <span :class="row.avg_impact > 25 ? 'rate-high' : ''">{{ row.avg_impact.toFixed(1) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="avg_performance" label="平均表现" width="100" align="center" sortable>
+             <template #default="{ row }">
+              {{ row.avg_performance.toFixed(1) }}
+            </template>
+          </el-table-column>
+           <el-table-column prop="yearly_top_score" label="年度评分" width="100" align="center" sortable>
+             <template #default="{ row }">
+              <span class="score-text">{{ row.yearly_top_score.toFixed(1) }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="暂无选手数据" />
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -114,8 +212,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { Aim } from '@element-plus/icons-vue'
-import { getChampionList, getChampionStats, getCompStats } from '@/api/tauri'
-import type { ChampionInfo, ChampionStatInfo, CompStatInfo } from '@/api/tauri'
+import { getChampionList, getChampionStats, getCompStats, statsApi } from '@/api/tauri'
+import type { ChampionInfo, ChampionStatInfo, CompStatInfo, PlayerRankingItem } from '@/api/tauri'
 import { useGameStore } from '@/stores/useGameStore'
 import { ElMessage } from 'element-plus'
 
@@ -127,6 +225,7 @@ const archetypeFilter = ref('')
 const champions = ref<ChampionInfo[]>([])
 const championStats = ref<ChampionStatInfo[]>([])
 const compStats = ref<CompStatInfo[]>([])
+const playerStats = ref<PlayerRankingItem[]>([])
 
 const filteredChampions = computed(() => {
   return champions.value.filter(c => {
@@ -141,6 +240,99 @@ const COMP_NAME_MAP: Record<string, string> = {
   Protect: '保C', Fortress: '铁桶阵', UtilityComp: '功能流', Stall: '龟缩', BotLane: '下路统治',
   Teamfight: '团战', Dive: '开团', Skirmish: '小规模团战', DualCarry: '双C', Flex: '全能',
   Splitpush: '分推', SideLane: '4-1分带', Control: '运营', TripleThreat: '三线施压', LateGame: '后期发育',
+}
+
+const COMP_CORE_ARCHETYPES: Record<string, string[]> = {
+  Rush: ['Aggressive'], PickOff: ['Aggressive'], AllIn: ['Aggressive'],
+  MidJungle: ['Aggressive'], TopJungle: ['Aggressive'],
+  Protect: ['Scaling'], Stall: ['Scaling'], LateGame: ['Scaling'], DualCarry: ['Scaling'],
+  Fortress: ['Utility'], UtilityComp: ['Utility'], Control: ['Utility'],
+  Splitpush: ['Splitpush'], SideLane: ['Splitpush'], TripleThreat: ['Splitpush'],
+  Teamfight: ['Teamfight'], Dive: ['Teamfight'], Skirmish: ['Teamfight'],
+  BotLane: ['Scaling', 'Utility'],
+  Flex: ['Aggressive', 'Scaling', 'Utility', 'Splitpush', 'Teamfight'],
+}
+
+const COMP_DIFFICULTY: Record<string, string> = {
+  Rush: '中', PickOff: '高', AllIn: '低', MidJungle: '中', TopJungle: '中',
+  Protect: '低', Fortress: '低', UtilityComp: '中', Stall: '低', BotLane: '中',
+  Teamfight: '低', Dive: '高', Skirmish: '中', DualCarry: '高', Flex: '高',
+  Splitpush: '高', SideLane: '高', Control: '高', TripleThreat: '高', LateGame: '低',
+}
+
+const HARD_COUNTERS: [string, string][] = [
+  ['Rush', 'Control'], ['PickOff', 'Splitpush'], ['AllIn', 'LateGame'],
+  ['MidJungle', 'TripleThreat'], ['TopJungle', 'SideLane'],
+  ['Protect', 'PickOff'], ['Fortress', 'AllIn'],
+  ['UtilityComp', 'TopJungle'], ['Stall', 'Rush'],
+  ['BotLane', 'MidJungle'], ['Teamfight', 'Skirmish'],
+  ['Dive', 'DualCarry'], ['Skirmish', 'Stall'],
+  ['DualCarry', 'Fortress'], ['Flex', 'Teamfight'],
+  ['Splitpush', 'Protect'], ['SideLane', 'UtilityComp'],
+  ['Control', 'BotLane'], ['TripleThreat', 'Dive'],
+  ['LateGame', 'Flex'],
+]
+
+const SOFT_COUNTERS: [string, string][] = [
+  ['Rush', 'LateGame'], ['Rush', 'DualCarry'],
+  ['PickOff', 'LateGame'], ['PickOff', 'Control'],
+  ['AllIn', 'TripleThreat'], ['AllIn', 'Splitpush'],
+  ['MidJungle', 'SideLane'], ['MidJungle', 'Control'],
+  ['TopJungle', 'Splitpush'], ['TopJungle', 'TripleThreat'],
+  ['Protect', 'Dive'], ['Protect', 'AllIn'],
+  ['Fortress', 'PickOff'], ['Fortress', 'MidJungle'],
+  ['UtilityComp', 'PickOff'], ['UtilityComp', 'Rush'],
+  ['Stall', 'AllIn'], ['Stall', 'TopJungle'],
+  ['BotLane', 'Skirmish'], ['BotLane', 'Dive'],
+  ['Teamfight', 'Flex'], ['Teamfight', 'SideLane'],
+  ['Dive', 'Stall'], ['Dive', 'Protect'],
+  ['Skirmish', 'BotLane'], ['Skirmish', 'Fortress'],
+  ['DualCarry', 'UtilityComp'], ['DualCarry', 'Flex'],
+  ['Flex', 'Stall'], ['Flex', 'MidJungle'],
+  ['Splitpush', 'BotLane'], ['Splitpush', 'UtilityComp'],
+  ['SideLane', 'Fortress'], ['SideLane', 'Skirmish'],
+  ['Control', 'Rush'], ['Control', 'DualCarry'],
+  ['TripleThreat', 'Protect'], ['TripleThreat', 'Teamfight'],
+  ['LateGame', 'TopJungle'], ['LateGame', 'Teamfight'],
+]
+
+interface CompMatchup {
+  id: string
+  name: string
+  difficulty: string
+  archetypes: string[]
+  hardCounters: string[]
+  hardCounteredBy: string[]
+  softCounters: string[]
+  softCounteredBy: string[]
+}
+
+const compMatchups = computed<CompMatchup[]>(() => {
+  const list: CompMatchup[] = []
+  for (const type in COMP_NAME_MAP) {
+    const hardCounters = HARD_COUNTERS.filter(x => x[0] === type).map(x => x[1])
+    const hardCounteredBy = HARD_COUNTERS.filter(x => x[1] === type).map(x => x[0])
+    const softCounters = SOFT_COUNTERS.filter(x => x[0] === type).map(x => x[1])
+    const softCounteredBy = SOFT_COUNTERS.filter(x => x[1] === type).map(x => x[0])
+    
+    list.push({
+      id: type,
+      name: COMP_NAME_MAP[type],
+      difficulty: COMP_DIFFICULTY[type] || '中',
+      archetypes: COMP_CORE_ARCHETYPES[type] || [],
+      hardCounters,
+      hardCounteredBy,
+      softCounters,
+      softCounteredBy
+    })
+  }
+  return list
+})
+
+const getDifficultyType = (diff: string): '' | 'success' | 'warning' | 'danger' => {
+  if (diff === '高') return 'danger'
+  if (diff === '中') return 'warning'
+  return 'success'
 }
 
 const POSITION_NAME_MAP: Record<string, string> = {
@@ -192,12 +384,15 @@ const fetchData = async () => {
 
     const saveId = gameStore.currentSave?.id
     if (saveId) {
-      const [stats, comps] = await Promise.all([
+      const currentSeason = gameStore.currentSave?.current_season || 1
+      const [stats, comps, players] = await Promise.all([
         getChampionStats(saveId),
         getCompStats(saveId),
+        statsApi.getSeasonImpactRanking(currentSeason, 100)
       ])
       championStats.value = stats
       compStats.value = comps
+      playerStats.value = players
     }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
@@ -256,5 +451,74 @@ onMounted(() => {
 .rate-low {
   color: #f56c6c;
   font-weight: 600;
+}
+
+.matchup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  
+  .comp-card {
+    .comp-card-header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      
+      .comp-title {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        
+        .name {
+          font-size: 16px;
+          font-weight: 700;
+          color: #1f2937;
+        }
+      }
+      
+      .archetypes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+    }
+    
+    .comp-relationships {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      
+      .rel-section {
+        .rel-label {
+          display: block;
+          font-size: 12px;
+          color: #6b7280;
+          margin-bottom: 4px;
+        }
+        
+        .tags {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px;
+        }
+      }
+    }
+  }
+}
+
+.player-name {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.score-text {
+  font-family: monospace;
+  font-weight: 600;
+  color: #409eff;
+}
+
+.comp-name-text {
+  font-weight: 600;
+  color: #374151;
 }
 </style>

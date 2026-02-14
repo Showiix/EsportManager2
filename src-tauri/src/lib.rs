@@ -108,7 +108,8 @@ use commands::{
     // 版本系统命令
     get_current_meta, get_meta_history, get_all_meta_types, get_meta_detail,
     // 英雄/BP系统命令
-    get_champion_list, get_champion_stats, get_draft_result, get_comp_stats, get_player_champion_mastery,
+    get_champion_list, get_champion_stats, get_draft_result, get_comp_stats, get_comp_matchups,
+    get_meta_comp_effects, get_player_champion_mastery,
     // 应用状态
     AppState,
 };
@@ -385,6 +386,8 @@ pub fn run() {
             get_champion_stats,
             get_draft_result,
             get_comp_stats,
+            get_comp_matchups,
+            get_meta_comp_effects,
             get_player_champion_mastery,
         ])
         .run(tauri::generate_context!())

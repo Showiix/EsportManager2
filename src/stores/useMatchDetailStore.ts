@@ -379,6 +379,11 @@ export const useMatchDetailStore = defineStore('matchDetail', () => {
     return matchDetails.value.get(matchId) || null
   }
 
+  // 获取所有比赛详情（用于遍历搜索）
+  const getAllMatchDetails = (): Map<string | number, MatchDetail> => {
+    return matchDetails.value
+  }
+
   // 从数据库加载单个比赛详情
   const loadMatchDetailFromDb = async (matchId: string | number): Promise<MatchDetail | null> => {
     // 先检查内存中是否已有
@@ -623,6 +628,7 @@ export const useMatchDetailStore = defineStore('matchDetail', () => {
     getSeasonSummary,
     saveMatchDetail,
     getMatchDetail,
+    getAllMatchDetails,
     loadMatchDetailFromDb,
     showMatchDetail,
     closeDialog,

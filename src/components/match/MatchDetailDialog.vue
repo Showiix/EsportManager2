@@ -102,36 +102,27 @@
       </div>
 
       <!-- 阵容信息（可折叠） -->
-      <div v-if="currentLineup" class="breakdown-panel lineup-panel">
+      <div v-if="sortedLineup" class="breakdown-panel lineup-panel">
         <button class="breakdown-toggle" @click="lineupOpen = !lineupOpen">
           <span class="toggle-arrow" :class="{ open: lineupOpen }">&#9654;</span>
           <span>阵容</span>
         </button>
         <div v-if="lineupOpen" class="breakdown-content">
-          <div class="lineup-body">
-            <div class="lineup-team">
-              <div class="lineup-team-label">{{ matchDetail.teamAName }}</div>
-              <div class="lineup-players">
-                <span v-for="p in currentLineup.home_players" :key="p.player_id" class="lineup-player">
-                  <span class="lineup-pos">{{ p.position }}</span>
-                  <span class="lineup-name">{{ p.player_name }}</span>
-                </span>
-              </div>
-            </div>
-            <div class="lineup-vs">VS</div>
-            <div class="lineup-team">
-              <div class="lineup-team-label">{{ matchDetail.teamBName }}</div>
-              <div class="lineup-players">
-                <span v-for="p in currentLineup.away_players" :key="p.player_id" class="lineup-player">
-                  <span class="lineup-pos">{{ p.position }}</span>
-                  <span class="lineup-name">{{ p.player_name }}</span>
-                </span>
-              </div>
+          <div class="lineup-header-row">
+            <span class="lineup-team-label">{{ matchDetail.teamAName }}</span>
+            <span class="lineup-pos-header"></span>
+            <span class="lineup-team-label">{{ matchDetail.teamBName }}</span>
+          </div>
+          <div class="lineup-matchup-list">
+            <div v-for="(home, idx) in sortedLineup.home" :key="home.player_id" class="lineup-matchup-row">
+              <span class="lineup-name home">{{ home.player_name }}</span>
+              <span class="lineup-pos-badge">{{ home.position }}</span>
+              <span class="lineup-name away">{{ sortedLineup.away[idx]?.player_name || '-' }}</span>
             </div>
           </div>
-          <div v-if="currentLineup.substitutions.length > 0" class="lineup-subs">
+          <div v-if="sortedLineup.substitutions.length > 0" class="lineup-subs">
             <div class="lineup-subs-title">换人</div>
-            <div v-for="s in currentLineup.substitutions" :key="`sub-${s.player_id}-${s.game_number}`" class="lineup-sub-item">
+            <div v-for="s in sortedLineup.substitutions" :key="`sub-${s.player_id}-${s.game_number}`" class="lineup-sub-item">
               <span class="sub-arrow">↔</span>
               <span class="sub-in">{{ s.player_name }}</span>
               <span class="sub-pos">({{ s.position }})</span>
@@ -143,7 +134,7 @@
       </div>
 
       <!-- 当前局详情 -->
-      <GameDetailView v-if="currentGame" :game="currentGame" :match-id="matchDetail?.matchId" />
+      <GameDetailView v-if="currentGame" :game="currentGame" :match-id="matchDetail?.matchId" :key="`${matchDetail?.matchId}-${currentGame.gameNumber}-${activeTab}`" />
 
       <!-- 底部统计栏 -->
       <div class="match-stats">
@@ -204,6 +195,7 @@ const dialogVisible = computed({
 
 const activeTab = ref('1')
 const lineupOpen = ref(true)
+const bpOpen = ref(true)
 
 // 协同值数据
 const synergyA = ref<TeamSynergyInfo | null>(null)
@@ -215,6 +207,18 @@ const lineups = ref<MatchLineupsResult | null>(null)
 const currentLineup = computed<MatchGameLineup | undefined>(() => {
   if (!lineups.value) return undefined
   return lineups.value.games.find(g => String(g.game_number) === activeTab.value)
+})
+
+const LINEUP_POS_ORDER: Record<string, number> = { Top: 0, Jug: 1, Mid: 2, Adc: 3, Sup: 4, TOP: 0, JUG: 1, MID: 2, ADC: 3, SUP: 4 }
+
+const sortedLineup = computed(() => {
+  if (!currentLineup.value) return null
+  const sortFn = (a: any, b: any) => (LINEUP_POS_ORDER[a.position] ?? 99) - (LINEUP_POS_ORDER[b.position] ?? 99)
+  return {
+    home: [...currentLineup.value.home_players].sort(sortFn),
+    away: [...currentLineup.value.away_players].sort(sortFn),
+    substitutions: currentLineup.value.substitutions,
+  }
 })
 
 // 加载协同值
@@ -234,7 +238,12 @@ const loadSynergy = async () => {
   }
 
   try {
-    lineups.value = await matchApi.getMatchLineups(Number(props.matchDetail.matchId))
+    const numericId = typeof props.matchDetail.matchId === 'number'
+      ? props.matchDetail.matchId
+      : parseInt(String(props.matchDetail.matchId).replace(/\D/g, ''))
+    if (!isNaN(numericId) && numericId > 0) {
+      lineups.value = await matchApi.getMatchLineups(numericId)
+    }
   } catch {
     lineups.value = null
   }
@@ -256,6 +265,7 @@ watch(() => props.visible, (newVal) => {
   if (newVal && props.matchDetail) {
     activeTab.value = '1'
     lineupOpen.value = true
+    bpOpen.value = true
     loadSynergy()
   }
 })
@@ -781,62 +791,72 @@ const handleExport = () => {
   border-top: 1px solid #e5e7eb;
 }
 
-.lineup-body {
+.lineup-header-row {
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  gap: 24px;
-}
-
-.lineup-team {
-  flex: 1;
-  text-align: center;
-}
-
-.lineup-team-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: #4e5969;
+  align-items: center;
   margin-bottom: 8px;
 }
 
-.lineup-players {
+.lineup-header-row .lineup-team-label {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4e5969;
+}
+
+.lineup-header-row .lineup-team-label:first-child {
+  text-align: right;
+  padding-right: 12px;
+}
+
+.lineup-header-row .lineup-team-label:last-child {
+  text-align: left;
+  padding-left: 12px;
+}
+
+.lineup-pos-header {
+  width: 40px;
+}
+
+.lineup-matchup-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.lineup-player {
+.lineup-matchup-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
+  padding: 4px 0;
   border-radius: 6px;
   background: white;
   border: 1px solid #e5e7eb;
   font-size: 12px;
 }
 
-.lineup-pos {
-  font-weight: 800;
-  color: #667eea;
-  min-width: 48px;
-  text-align: left;
-  font-size: 11px;
-  text-transform: uppercase;
-}
-
 .lineup-name {
+  flex: 1;
   font-weight: 600;
   color: #1d2129;
+  padding: 0 12px;
 }
 
-.lineup-vs {
-  font-size: 11px;
-  font-weight: 700;
-  color: #c0c4cc;
-  letter-spacing: 2px;
-  padding-top: 28px;
+.lineup-name.home {
+  text-align: right;
+}
+
+.lineup-name.away {
+  text-align: left;
+}
+
+.lineup-pos-badge {
+  width: 40px;
+  text-align: center;
+  font-weight: 800;
+  font-size: 10px;
+  color: #667eea;
+  text-transform: uppercase;
+  flex-shrink: 0;
 }
 
 .lineup-subs {

@@ -97,6 +97,37 @@
             <span :class="getWeightClass(row.weight_sup)">{{ row.weight_sup.toFixed(2) }}</span>
           </template>
         </el-table-column>
+        <el-table-column label="增强体系" width="220">
+          <template #default="{ row }">
+            <div class="comp-tags">
+              <el-tag
+                v-for="comp in getFavoredComps(row.meta_type)"
+                :key="comp"
+                type="success"
+                size="small"
+                effect="plain"
+              >
+                {{ COMP_NAME_MAP[comp] || comp }}
+              </el-tag>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="削弱体系" width="220">
+          <template #default="{ row }">
+            <div class="comp-tags">
+              <el-tag
+                v-for="comp in getNerfedComps(row.meta_type)"
+                :key="comp"
+                type="info"
+                size="small"
+                effect="plain"
+                class="nerfed-tag"
+              >
+                {{ COMP_NAME_MAP[comp] || comp }}
+              </el-tag>
+            </div>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
   </div>
@@ -114,6 +145,96 @@ const gameStore = useGameStore()
 const loading = ref(false)
 const currentMeta = ref<MetaInfo | null>(null)
 const history = ref<MetaHistoryEntry[]>([])
+
+// Meta type -> favored archetypes mapping
+const META_FAVORED_ARCHETYPES: Record<string, string[]> = {
+  Balanced: [],
+  EarlyGameAggro: ['Aggressive'],
+  DiveComposition: ['Aggressive'],
+  SkirmishMeta: ['Aggressive'],
+  PickComposition: ['Aggressive', 'Utility'],
+  LateGameScaling: ['Scaling'],
+  ProtectTheCarry: ['Scaling', 'Utility'],
+  DualCarry: ['Scaling'],
+  VisionControl: ['Utility'],
+  SupportEra: ['Utility'],
+  SplitPushMeta: ['Splitpush'],
+  SoloLaneMeta: ['Splitpush'],
+  TeamfightMeta: ['Teamfight'],
+  ObjectiveControl: ['Teamfight', 'Utility'],
+  MidKingdom: ['Aggressive', 'Scaling'],
+  BotLaneDominance: ['Scaling', 'Utility'],
+  TopLaneCarry: ['Splitpush', 'Aggressive'],
+  JungleTempo: ['Aggressive'],
+  MidJungleSynergy: ['Aggressive', 'Teamfight'],
+  TopJungleSynergy: ['Splitpush', 'Aggressive'],
+}
+
+// Comp type -> core archetypes mapping
+const COMP_CORE_ARCHETYPES: Record<string, string[]> = {
+  Rush: ['Aggressive'], PickOff: ['Aggressive'], AllIn: ['Aggressive'],
+  MidJungle: ['Aggressive'], TopJungle: ['Aggressive'],
+  Protect: ['Scaling'], Stall: ['Scaling'], LateGame: ['Scaling'], DualCarry: ['Scaling'],
+  Fortress: ['Utility'], UtilityComp: ['Utility'], Control: ['Utility'],
+  Splitpush: ['Splitpush'], SideLane: ['Splitpush'], TripleThreat: ['Splitpush'],
+  Teamfight: ['Teamfight'], Dive: ['Teamfight'], Skirmish: ['Teamfight'],
+  BotLane: ['Scaling', 'Utility'],
+  Flex: ['Aggressive', 'Scaling', 'Utility', 'Splitpush', 'Teamfight'],
+}
+
+const COMP_NAME_MAP: Record<string, string> = {
+  Rush: '速推', PickOff: '抓单', AllIn: '莽夫', MidJungle: '中野联动', TopJungle: '上野联动',
+  Protect: '保C', Fortress: '铁桶阵', UtilityComp: '功能流', Stall: '龟缩', BotLane: '下路统治',
+  Teamfight: '团战', Dive: '开团', Skirmish: '小规模团战', DualCarry: '双C', Flex: '全能',
+  Splitpush: '分推', SideLane: '4-1分带', Control: '运营', TripleThreat: '三线施压', LateGame: '后期发育',
+}
+
+const getFavoredComps = (metaType: string): string[] => {
+  if (metaType === 'Balanced') return []
+  const favoredArchetypes = META_FAVORED_ARCHETYPES[metaType] || []
+  if (favoredArchetypes.length === 0) return []
+
+  const favoredComps: string[] = []
+  
+  for (const [comp, archetypes] of Object.entries(COMP_CORE_ARCHETYPES)) {
+    // Flex is special - always favored if meta has ANY favored archetype
+    if (comp === 'Flex') {
+      favoredComps.push(comp)
+      continue
+    }
+    
+    // Check if comp has ANY of the favored archetypes
+    const isFavored = archetypes.some(a => favoredArchetypes.includes(a))
+    if (isFavored) {
+      favoredComps.push(comp)
+    }
+  }
+  
+  return favoredComps
+}
+
+const getNerfedComps = (metaType: string): string[] => {
+  if (metaType === 'Balanced') return []
+  const favoredArchetypes = META_FAVORED_ARCHETYPES[metaType] || []
+  
+  // If meta has no specific favored archetypes (unlikely unless Balanced), no nerfs
+  if (favoredArchetypes.length === 0) return []
+
+  const nerfedComps: string[] = []
+  
+  for (const [comp, archetypes] of Object.entries(COMP_CORE_ARCHETYPES)) {
+    // Flex is never nerfed
+    if (comp === 'Flex') continue
+    
+    // Comp is nerfed if NONE of its archetypes are favored
+    const isFavored = archetypes.some(a => favoredArchetypes.includes(a))
+    if (!isFavored) {
+      nerfedComps.push(comp)
+    }
+  }
+  
+  return nerfedComps
+}
 
 const positionList = [
   { key: 'top', label: '上单', color: '#f56c6c' },
@@ -304,6 +425,18 @@ onMounted(() => {
       font-family: monospace;
       font-size: 13px;
       color: #6b7280;
+    }
+
+    .comp-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      
+      .nerfed-tag {
+        color: #909399;
+        border-color: #e9e9eb;
+        background-color: #f4f4f5;
+      }
     }
   }
 }

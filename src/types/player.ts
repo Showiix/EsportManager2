@@ -58,6 +58,9 @@ export interface PlayerPerformance {
   stabilityNoise: number       // 稳定性波动（高斯噪声）
   actualAbility: number        // 实际能力 = base + condition + noise（钳位后）
 
+  // BP加成
+  bpModifier?: number          // BP加成百分比（来自英雄熟练度和版本强势）
+
   // 统计分析
   impactScore: number          // 影响力分数 = actualAbility - teamAverage
   mvpScore?: number            // MVP 得分

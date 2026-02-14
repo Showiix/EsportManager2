@@ -1,7 +1,9 @@
 //! 英雄/BP系统 Tauri 命令
 
 use crate::commands::save_commands::{AppState, CommandResult};
+use crate::engines::bp_engine::{hard_counter_pairs, soft_counter_pairs, CompType};
 use crate::engines::champion::CHAMPIONS;
+use crate::engines::meta_engine::MetaType;
 use crate::get_pool;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -50,6 +52,26 @@ pub struct CompStatInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CompMatchupInfo {
+    pub comp_type: String,
+    pub display_name: String,
+    pub core_archetypes: Vec<String>,
+    pub difficulty_bonus: f64,
+    pub hard_counters: Vec<String>,
+    pub hard_countered_by: Vec<String>,
+    pub soft_counters: Vec<String>,
+    pub soft_countered_by: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MetaCompEffect {
+    pub meta_type: String,
+    pub meta_name: String,
+    pub favored_comps: Vec<String>,
+    pub unfavored_comps: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlayerMasteryInfo {
     pub champion_id: u8,
     pub name_cn: String,
@@ -69,6 +91,35 @@ struct StoredBan {
 #[derive(Debug, Deserialize)]
 struct StoredPick {
     champion_id: u8,
+}
+
+fn comp_type_name(comp_type: CompType) -> String {
+    format!("{:?}", comp_type)
+}
+
+fn comp_display_name(comp_type: CompType) -> &'static str {
+    match comp_type {
+        CompType::Rush => "速推",
+        CompType::PickOff => "抓单",
+        CompType::AllIn => "莽夫",
+        CompType::MidJungle => "中野联动",
+        CompType::TopJungle => "上野联动",
+        CompType::Protect => "保C",
+        CompType::Fortress => "铁桶阵",
+        CompType::UtilityComp => "功能流",
+        CompType::Stall => "龟缩",
+        CompType::BotLane => "下路统治",
+        CompType::Teamfight => "团战",
+        CompType::Dive => "开团",
+        CompType::Skirmish => "小规模团战",
+        CompType::DualCarry => "双C",
+        CompType::Flex => "全能",
+        CompType::Splitpush => "分推",
+        CompType::SideLane => "4-1分带",
+        CompType::Control => "运营",
+        CompType::TripleThreat => "三线施压",
+        CompType::LateGame => "后期发育",
+    }
 }
 
 // ── 命令 ────────────────────────────────────────────────
@@ -313,4 +364,87 @@ pub async fn get_comp_stats(
     result.sort_by(|a, b| b.pick_count.cmp(&a.pick_count));
 
     Ok(CommandResult::ok(result))
+}
+
+#[tauri::command]
+pub fn get_comp_matchups() -> CommandResult<Vec<CompMatchupInfo>> {
+    let result: Vec<CompMatchupInfo> = CompType::all()
+        .iter()
+        .map(|comp| {
+            let comp_type = *comp;
+
+            let hard_counters = hard_counter_pairs()
+                .iter()
+                .filter_map(|(attacker, victim)| {
+                    (*attacker == comp_type).then(|| comp_type_name(*victim))
+                })
+                .collect();
+
+            let hard_countered_by = hard_counter_pairs()
+                .iter()
+                .filter_map(|(attacker, victim)| {
+                    (*victim == comp_type).then(|| comp_type_name(*attacker))
+                })
+                .collect();
+
+            let soft_counters = soft_counter_pairs()
+                .iter()
+                .filter_map(|(attacker, victim)| {
+                    (*attacker == comp_type).then(|| comp_type_name(*victim))
+                })
+                .collect();
+
+            let soft_countered_by = soft_counter_pairs()
+                .iter()
+                .filter_map(|(attacker, victim)| {
+                    (*victim == comp_type).then(|| comp_type_name(*attacker))
+                })
+                .collect();
+
+            CompMatchupInfo {
+                comp_type: comp_type_name(comp_type),
+                display_name: comp_display_name(comp_type).to_string(),
+                core_archetypes: comp_type
+                    .core_archetypes()
+                    .iter()
+                    .map(|archetype| format!("{:?}", archetype))
+                    .collect(),
+                difficulty_bonus: comp_type.difficulty_bonus(),
+                hard_counters,
+                hard_countered_by,
+                soft_counters,
+                soft_countered_by,
+            }
+        })
+        .collect();
+
+    CommandResult::ok(result)
+}
+
+#[tauri::command]
+pub fn get_meta_comp_effects() -> CommandResult<Vec<MetaCompEffect>> {
+    let result: Vec<MetaCompEffect> = MetaType::all()
+        .iter()
+        .map(|meta| {
+            let meta_type = *meta;
+            let favored_comps = CompType::all()
+                .iter()
+                .filter_map(|comp| comp.is_meta_favored(meta_type).then(|| comp_type_name(*comp)))
+                .collect();
+
+            let unfavored_comps = CompType::all()
+                .iter()
+                .filter_map(|comp| (!comp.is_meta_favored(meta_type)).then(|| comp_type_name(*comp)))
+                .collect();
+
+            MetaCompEffect {
+                meta_type: meta_type.id().to_string(),
+                meta_name: meta_type.display_name().to_string(),
+                favored_comps,
+                unfavored_comps,
+            }
+        })
+        .collect();
+
+    CommandResult::ok(result)
 }

@@ -406,29 +406,51 @@
         <span>Ban/Pick</span>
       </button>
       <div v-if="bpOpen" class="breakdown-content">
-        <div class="bp-section">
-          <div class="bp-label">Ban</div>
-          <div class="bp-list">
-            <el-tag
-              v-for="ban in parsedBans"
-              :key="'ban-' + ban.champion_id"
-              type="danger"
-              size="small"
-              effect="dark"
-              class="bp-tag"
-            >
-              {{ getChampionName(ban.champion_id) }}
-            </el-tag>
-            <span v-if="parsedBans.length === 0" class="bp-empty">无</span>
+        <!-- Ban 分两队显示 -->
+        <div class="bp-ban-row">
+          <div class="bp-ban-col">
+            <div class="bp-team-label team-a-accent">{{ game.teamAName }} Ban</div>
+            <div class="bp-list">
+              <el-tag
+                v-for="ban in homeBans"
+                :key="'ban-a-' + ban.champion_id"
+                type="danger"
+                size="small"
+                effect="dark"
+                class="bp-tag"
+              >
+                {{ getChampionName(ban.champion_id) }}
+              </el-tag>
+            </div>
+          </div>
+          <div class="bp-ban-col">
+            <div class="bp-team-label team-b-accent">{{ game.teamBName }} Ban</div>
+            <div class="bp-list">
+              <el-tag
+                v-for="ban in awayBans"
+                :key="'ban-b-' + ban.champion_id"
+                type="danger"
+                size="small"
+                effect="dark"
+                class="bp-tag"
+              >
+                {{ getChampionName(ban.champion_id) }}
+              </el-tag>
+            </div>
           </div>
         </div>
+        <!-- Pick 分两队显示，带选手名和熟练度 -->
         <div class="bp-teams-row">
           <div class="bp-team-col">
-            <div class="bp-team-label team-a-accent">{{ game.teamAName }}</div>
+            <div class="bp-team-label team-a-accent">{{ game.teamAName }} Pick</div>
             <div class="bp-pick-list">
               <div v-for="pick in parsedHomePicks" :key="'hp-' + pick.champion_id" class="bp-pick-item">
+                <span class="bp-pick-pos">{{ pick.position }}</span>
                 <el-tag size="small" effect="plain">{{ getChampionName(pick.champion_id) }}</el-tag>
                 <span v-if="pick.mastery_tier" class="bp-mastery" :class="'mastery-' + pick.mastery_tier">{{ pick.mastery_tier }}</span>
+                <span v-if="getPlayerBpModifier(pick.player_id) !== undefined" class="bp-modifier" :class="getPlayerBpModifier(pick.player_id)! >= 0 ? 'positive' : 'negative'">
+                  {{ getPlayerBpModifier(pick.player_id)! >= 0 ? '+' : '' }}{{ getPlayerBpModifier(pick.player_id)!.toFixed(1) }}%
+                </span>
               </div>
             </div>
             <div v-if="draftData.home_comp" class="bp-comp">
@@ -436,11 +458,15 @@
             </div>
           </div>
           <div class="bp-team-col">
-            <div class="bp-team-label team-b-accent">{{ game.teamBName }}</div>
+            <div class="bp-team-label team-b-accent">{{ game.teamBName }} Pick</div>
             <div class="bp-pick-list">
               <div v-for="pick in parsedAwayPicks" :key="'ap-' + pick.champion_id" class="bp-pick-item">
+                <span class="bp-pick-pos">{{ pick.position }}</span>
                 <el-tag size="small" effect="plain">{{ getChampionName(pick.champion_id) }}</el-tag>
                 <span v-if="pick.mastery_tier" class="bp-mastery" :class="'mastery-' + pick.mastery_tier">{{ pick.mastery_tier }}</span>
+                <span v-if="getPlayerBpModifier(pick.player_id) !== undefined" class="bp-modifier" :class="getPlayerBpModifier(pick.player_id)! >= 0 ? 'positive' : 'negative'">
+                  {{ getPlayerBpModifier(pick.player_id)! >= 0 ? '+' : '' }}{{ getPlayerBpModifier(pick.player_id)!.toFixed(1) }}%
+                </span>
               </div>
             </div>
             <div v-if="draftData.away_comp" class="bp-comp">
@@ -485,14 +511,30 @@ const parsedBans = computed<StoredBanEntry[]>(() => {
   try { return JSON.parse(draftData.value.bans_json) } catch { return [] }
 })
 
+const homeBans = computed<StoredBanEntry[]>(() => {
+  return parsedBans.value.filter(b => b.team_side === 'Home')
+})
+
+const awayBans = computed<StoredBanEntry[]>(() => {
+  return parsedBans.value.filter(b => b.team_side === 'Away')
+})
+
+const BP_POS_ORDER: Record<string, number> = { TOP: 0, JUG: 1, MID: 2, ADC: 3, SUP: 4, Top: 0, Jug: 1, Mid: 2, Adc: 3, Sup: 4 }
+
 const parsedHomePicks = computed<StoredPickEntry[]>(() => {
   if (!draftData.value) return []
-  try { return JSON.parse(draftData.value.home_picks_json) } catch { return [] }
+  try {
+    const picks: StoredPickEntry[] = JSON.parse(draftData.value.home_picks_json)
+    return picks.sort((a, b) => (BP_POS_ORDER[a.position] ?? 99) - (BP_POS_ORDER[b.position] ?? 99))
+  } catch { return [] }
 })
 
 const parsedAwayPicks = computed<StoredPickEntry[]>(() => {
   if (!draftData.value) return []
-  try { return JSON.parse(draftData.value.away_picks_json) } catch { return [] }
+  try {
+    const picks: StoredPickEntry[] = JSON.parse(draftData.value.away_picks_json)
+    return picks.sort((a, b) => (BP_POS_ORDER[a.position] ?? 99) - (BP_POS_ORDER[b.position] ?? 99))
+  } catch { return [] }
 })
 
 const COMP_NAMES: Record<string, string> = {
@@ -509,10 +551,21 @@ const getChampionName = (id: number): string => {
   return champ ? champ.name_cn : `#${id}`
 }
 
+const getPlayerBpModifier = (playerId: number): number | undefined => {
+  const allPlayers = [...(props.game.teamAPlayers || []), ...(props.game.teamBPlayers || [])]
+  const player = allPlayers.find(p => String(p.playerId) === String(playerId))
+  return player?.bpModifier
+}
+
 const loadBpData = async () => {
   const saveId = gameStore.currentSave?.id
   const mid = props.matchId
   if (!saveId || !mid) return
+
+  const numericMatchId = typeof mid === 'number'
+    ? mid
+    : parseInt(String(mid).replace(/\D/g, ''))
+  if (isNaN(numericMatchId) || numericMatchId <= 0) return
 
   try {
     if (championMap.value.size === 0) {
@@ -522,15 +575,24 @@ const loadBpData = async () => {
       championMap.value = map
     }
 
-    const result = await getDraftResult(saveId, Number(mid), props.game.gameNumber)
+    const result = await getDraftResult(saveId, numericMatchId, props.game.gameNumber)
     draftData.value = result
   } catch {
     draftData.value = null
   }
 }
 
-watch(() => [props.matchId, props.game.gameNumber], () => { loadBpData() })
+watch(() => [props.matchId, props.game.gameNumber], () => { loadBpData() }, { immediate: true })
 onMounted(() => { loadBpData() })
+
+// 监听弹窗可见性变化，重新加载数据
+const reloadKey = ref(0)
+defineExpose({
+  reload: () => {
+    reloadKey.value++
+    loadBpData()
+  }
+})
 
 // 位置排序顺序
 const POSITION_ORDER: Record<string, number> = { TOP: 0, JUG: 1, MID: 2, ADC: 3, SUP: 4 }
@@ -1609,5 +1671,44 @@ const keyMatchupPos = computed(() => {
   margin-top: 8px;
   font-size: 12px;
   color: #4e5969;
+}
+
+.bp-ban-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.bp-ban-col {
+  flex: 1;
+}
+
+.bp-ban-col .bp-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bp-pick-pos {
+  font-size: 10px;
+  color: #86909c;
+  width: 28px;
+}
+
+.bp-modifier {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.bp-modifier.positive {
+  color: #059669;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.bp-modifier.negative {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.1);
 }
 </style>
