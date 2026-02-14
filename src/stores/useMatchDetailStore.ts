@@ -136,6 +136,17 @@ function convertFromDbFormat(matchId: number, dbData: MatchFullDetails): MatchDe
       powerDifference: teamAPower - teamBPower,
       performanceDifference: teamAPerfAvg - teamBPerfAvg,
       metaPowerDifference: teamAMetaPower != null && teamBMetaPower != null ? teamAMetaPower - teamBMetaPower : undefined,
+      
+      // MR Breakdown
+      teamABasePower: game.home_base_power ?? undefined,
+      teamBBasePower: game.away_base_power ?? undefined,
+      teamASynergyBonus: game.home_synergy_bonus ?? undefined,
+      teamBSynergyBonus: game.away_synergy_bonus ?? undefined,
+      teamABpBonus: game.home_bp_bonus ?? undefined,
+      teamBBpBonus: game.away_bp_bonus ?? undefined,
+      teamAVersionBonus: game.home_version_bonus ?? undefined,
+      teamBVersionBonus: game.away_version_bonus ?? undefined,
+
       isUpset: teamBPower > teamAPower // 战力低的队伍获胜
     }
   })
@@ -282,6 +293,14 @@ function convertToSaveInput(matchId: number, detail: MatchDetail): SaveMatchDeta
       away_power: game.teamBPower ?? null,
       home_meta_power: game.teamAMetaPower ?? null,
       away_meta_power: game.teamBMetaPower ?? null,
+      home_base_power: game.teamABasePower ?? null,
+      away_base_power: game.teamBBasePower ?? null,
+      home_synergy_bonus: game.teamASynergyBonus ?? null,
+      away_synergy_bonus: game.teamBSynergyBonus ?? null,
+      home_bp_bonus: game.teamABpBonus ?? null,
+      away_bp_bonus: game.teamBBpBonus ?? null,
+      home_version_bonus: game.teamAVersionBonus ?? null,
+      away_version_bonus: game.teamBVersionBonus ?? null,
       performances
     }
   })

@@ -53,6 +53,16 @@ export interface GameDetail {
   performanceDifference: number // 发挥差值（A - B）
   metaPowerDifference?: number // Meta加权战力差值（A - B）
 
+  // MR 分解数据
+  teamABasePower?: number      // A队基础战力（选手能力均值）
+  teamBBasePower?: number
+  teamASynergyBonus?: number   // A队协同加成
+  teamBSynergyBonus?: number
+  teamABpBonus?: number        // A队BP加成
+  teamBBpBonus?: number
+  teamAVersionBonus?: number   // A队版本适配
+  teamBVersionBonus?: number
+
   // 是否爆冷（战力低的队伍赢了）
   isUpset: boolean
 

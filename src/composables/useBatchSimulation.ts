@@ -111,7 +111,15 @@ export function buildMatchDetail(opts: {
         performanceDifference: teamAPower - teamBPower,
         metaPowerDifference: game.home_performance - game.away_performance,
         isUpset: (teamAPower > teamBPower && game.winner_id !== result.home_team_id) ||
-                 (teamBPower > teamAPower && game.winner_id === result.home_team_id)
+                 (teamBPower > teamAPower && game.winner_id === result.home_team_id),
+        teamABasePower: game.home_base_power ?? undefined,
+        teamBBasePower: game.away_base_power ?? undefined,
+        teamASynergyBonus: game.home_synergy_bonus ?? undefined,
+        teamBSynergyBonus: game.away_synergy_bonus ?? undefined,
+        teamABpBonus: game.home_bp_bonus ?? undefined,
+        teamBBpBonus: game.away_bp_bonus ?? undefined,
+        teamAVersionBonus: game.home_version_bonus ?? undefined,
+        teamBVersionBonus: game.away_version_bonus ?? undefined,
       }
     })
   }

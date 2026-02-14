@@ -16,24 +16,84 @@
       </div>
     </div>
 
-    <!-- 战力 + 发挥对比（并排两列） -->
-    <div class="comparison-row">
-      <div class="comparison-block">
-        <div class="comparison-label">
-          <span class="team-label">{{ game.teamAName }}</span>
-          <span class="vs-label">战力</span>
-          <span class="team-label">{{ game.teamBName }}</span>
-        </div>
-        <div class="bar-row">
-          <span class="bar-value team-a">{{ formatPower(game.teamAPower) }}</span>
-          <div class="progress-container">
-            <div class="progress-bar team-a" :style="{ width: teamAPowerPercent + '%' }" :class="{ winner: game.winnerId === game.teamAId }"></div>
-            <div class="progress-bar team-b" :style="{ width: teamBPowerPercent + '%' }" :class="{ winner: game.winnerId === game.teamBId }"></div>
-          </div>
-          <span class="bar-value team-b">{{ formatPower(game.teamBPower) }}</span>
-        </div>
-        <div class="bar-diff" :class="powerDiffClass">{{ formatDiff(game.powerDifference) }}</div>
+    <!-- 最终战力 MR (可展开) -->
+    <div class="mr-comparison-block" :class="{ 'is-open': mrBreakdownOpen }" @click="toggleMrBreakdown">
+      <div class="comparison-label">
+        <span class="team-label">{{ game.teamAName }}</span>
+        <span class="vs-label mr-label">
+          最终战力 MR
+          <span class="expand-icon" :class="{ open: mrBreakdownOpen }">▼</span>
+        </span>
+        <span class="team-label">{{ game.teamBName }}</span>
       </div>
+      
+      <!-- Main MR Bar -->
+      <div class="bar-row">
+        <span class="bar-value team-a">{{ formatPower(finalPowerA) }}</span>
+        <div class="progress-container">
+          <div class="progress-bar team-a" :style="{ width: finalPowerAPercent + '%' }" :class="{ winner: finalWinnerA }"></div>
+          <div class="progress-bar team-b" :style="{ width: finalPowerBPercent + '%' }" :class="{ winner: finalWinnerB }"></div>
+        </div>
+        <span class="bar-value team-b">{{ formatPower(finalPowerB) }}</span>
+      </div>
+      
+      <div class="bar-diff" :class="finalDiffClass">
+        {{ formatDiff(finalPowerDiff) }}
+        <span v-if="!mrBreakdownOpen" class="click-hint"> (点击查看详情)</span>
+      </div>
+
+      <!-- Breakdown Table (Expanded) -->
+      <div v-if="mrBreakdownOpen" class="mr-breakdown-table" @click.stop>
+        <div class="breakdown-divider"></div>
+        
+        <!-- Base Power -->
+        <div class="mr-row">
+          <span class="mr-val team-a">{{ formatPower(game.teamABasePower) }}</span>
+          <span class="mr-label-item">基础战力</span>
+          <span class="mr-val team-b">{{ formatPower(game.teamBBasePower) }}</span>
+        </div>
+
+        <!-- BP Bonus -->
+        <div class="mr-row">
+          <span class="mr-val" :class="getBonusClass(game.teamABpBonus)">{{ formatBonusVal(game.teamABpBonus) }}</span>
+          <span class="mr-label-item">BP加成</span>
+          <span class="mr-val" :class="getBonusClass(game.teamBBpBonus)">{{ formatBonusVal(game.teamBBpBonus) }}</span>
+        </div>
+
+        <!-- Version Bonus -->
+        <div class="mr-row">
+          <span class="mr-val" :class="getBonusClass(game.teamAVersionBonus)">{{ formatBonusVal(game.teamAVersionBonus) }}</span>
+          <span class="mr-label-item">版本适配</span>
+          <span class="mr-val" :class="getBonusClass(game.teamBVersionBonus)">{{ formatBonusVal(game.teamBVersionBonus) }}</span>
+        </div>
+
+        <!-- Synergy Bonus -->
+        <div class="mr-row">
+          <span class="mr-val" :class="getBonusClass(game.teamASynergyBonus)">{{ formatBonusVal(game.teamASynergyBonus) }}</span>
+          <span class="mr-label-item">协同加成</span>
+          <span class="mr-val" :class="getBonusClass(game.teamBSynergyBonus)">{{ formatBonusVal(game.teamBSynergyBonus) }}</span>
+        </div>
+
+        <!-- Meta Multiplier (Implicit) -->
+        <div class="mr-row meta-mult-row">
+          <span class="mr-val meta-text">{{ formatMetaMult(game.teamABasePower, game.teamABpBonus, game.teamAVersionBonus, game.teamASynergyBonus, finalPowerA) }}</span>
+          <span class="mr-label-item">META加权</span>
+          <span class="mr-val meta-text">{{ formatMetaMult(game.teamBBasePower, game.teamBBpBonus, game.teamBVersionBonus, game.teamBSynergyBonus, finalPowerB) }}</span>
+        </div>
+
+        <div class="breakdown-divider"></div>
+
+        <!-- Final MR (Repeated for clarity in table) -->
+        <div class="mr-row final-row">
+          <span class="mr-val team-a">{{ formatPower(finalPowerA) }}</span>
+          <span class="mr-label-item">最终 MR</span>
+          <span class="mr-val team-b">{{ formatPower(finalPowerB) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 发挥对比 (单独一行) -->
+    <div class="comparison-row performance-only">
       <div class="comparison-block">
         <div class="comparison-label">
           <span class="team-label">{{ game.teamAName }}</span>
@@ -49,27 +109,6 @@
           <span class="bar-value team-b">{{ formatPower(game.teamBPerformance) }}</span>
         </div>
         <div class="bar-diff" :class="perfDiffClass">{{ formatDiff(game.performanceDifference) }}</div>
-      </div>
-    </div>
-
-    <!-- Meta加权战力对比 -->
-    <div v-if="game.teamAMetaPower != null && game.teamBMetaPower != null" class="comparison-row meta-row">
-      <div class="comparison-block meta-block">
-        <div class="comparison-label">
-          <span class="team-label">{{ game.teamAName }}</span>
-          <span class="vs-label meta-label">META 加权</span>
-          <span class="team-label">{{ game.teamBName }}</span>
-        </div>
-        <div class="bar-row">
-          <span class="bar-value team-a">{{ formatPower(game.teamAMetaPower) }}</span>
-          <div class="progress-container">
-            <div class="progress-bar team-a" :style="{ width: metaAPowerPercent + '%' }" :class="{ winner: game.winnerId === game.teamAId }"></div>
-            <div class="progress-bar team-b" :style="{ width: metaBPowerPercent + '%' }" :class="{ winner: game.winnerId === game.teamBId }"></div>
-          </div>
-          <span class="bar-value team-b">{{ formatPower(game.teamBMetaPower) }}</span>
-        </div>
-        <div class="bar-diff" :class="metaDiffClass">{{ formatDiff(game.metaPowerDifference) }}</div>
-        <div class="meta-hint">基于版本权重的位置加权战力（Mid/Adc 权重更高时，中路/下路选手影响更大）</div>
       </div>
     </div>
 
@@ -495,6 +534,9 @@ interface Props {
 
 const props = defineProps<Props>()
 
+const mrBreakdownOpen = ref(false)
+const toggleMrBreakdown = () => { mrBreakdownOpen.value = !mrBreakdownOpen.value }
+
 const breakdownOpen = ref(false)
 const matchupOpen = ref(false)
 const bpOpen = ref(false)
@@ -620,15 +662,56 @@ const matchedPlayers = computed(() => {
 })
 
 // 计算战力百分比
-const totalPower = computed(() => props.game.teamAPower + props.game.teamBPower)
-const teamAPowerPercent = computed(() =>
-  totalPower.value > 0 ? (props.game.teamAPower / totalPower.value) * 100 : 50
+// 使用 metaPower 作为最终战力，如果没有则使用 teamPower
+const finalPowerA = computed(() => props.game.teamAMetaPower ?? props.game.teamAPower)
+const finalPowerB = computed(() => props.game.teamBMetaPower ?? props.game.teamBPower)
+const finalPowerDiff = computed(() => finalPowerA.value - finalPowerB.value)
+const finalWinnerA = computed(() => props.game.winnerId === props.game.teamAId)
+const finalWinnerB = computed(() => props.game.winnerId === props.game.teamBId)
+
+const totalPower = computed(() => finalPowerA.value + finalPowerB.value)
+const finalPowerAPercent = computed(() =>
+  totalPower.value > 0 ? (finalPowerA.value / totalPower.value) * 100 : 50
 )
-const teamBPowerPercent = computed(() =>
-  totalPower.value > 0 ? (props.game.teamBPower / totalPower.value) * 100 : 50
+const finalPowerBPercent = computed(() =>
+  totalPower.value > 0 ? (finalPowerB.value / totalPower.value) * 100 : 50
 )
 
-// 计算发挥值百分比
+const finalDiffClass = computed(() => {
+  if (finalPowerDiff.value > 0) return 'positive'
+  if (finalPowerDiff.value < 0) return 'negative'
+  return ''
+})
+
+// 辅助函数
+const formatMetaMult = (base: number | undefined, bp: number | undefined, ver: number | undefined, syn: number | undefined, final: number) => {
+  const sum = (base || 0) + (bp || 0) + (ver || 0) + (syn || 0)
+  if (sum === 0) return '-'
+  
+  // 1. 如果 base 为 undefined，说明是旧数据，无法计算倍率，直接返回 "-"
+  if (base === undefined) return '-'
+
+  // 2. 正常计算 sum，如果 final ≈ sum，说明没有 meta multiplier
+  if (Math.abs(final - sum) < 0.05) return '×1.00'
+  
+  // 3. 计算倍率
+  const mult = final / sum
+  return `×${mult.toFixed(2)}`
+}
+
+
+const formatBonusVal = (val: number | undefined) => {
+  if (val === undefined || val === null) return '-'
+  if (val > 0) return `+${val.toFixed(2)}`
+  return val.toFixed(2)
+}
+
+const getBonusClass = (val: number | undefined) => {
+  if (val === undefined || val === null || val === 0) return 'neutral'
+  return val > 0 ? 'positive' : 'negative'
+}
+
+// 发挥对比百分比
 const totalPerf = computed(() => props.game.teamAPerformance + props.game.teamBPerformance)
 const teamAPerfPercent = computed(() =>
   totalPerf.value > 0 ? (props.game.teamAPerformance / totalPerf.value) * 100 : 50
@@ -637,32 +720,8 @@ const teamBPerfPercent = computed(() =>
   totalPerf.value > 0 ? (props.game.teamBPerformance / totalPerf.value) * 100 : 50
 )
 
-// 计算Meta加权战力百分比
-const totalMetaPower = computed(() => (props.game.teamAMetaPower || 0) + (props.game.teamBMetaPower || 0))
-const metaAPowerPercent = computed(() =>
-  totalMetaPower.value > 0 ? ((props.game.teamAMetaPower || 0) / totalMetaPower.value) * 100 : 50
-)
-const metaBPowerPercent = computed(() =>
-  totalMetaPower.value > 0 ? ((props.game.teamBMetaPower || 0) / totalMetaPower.value) * 100 : 50
-)
-
-// 战力差样式
-const powerDiffClass = computed(() => {
-  if (props.game.powerDifference > 0) return 'positive'
-  if (props.game.powerDifference < 0) return 'negative'
-  return ''
-})
-
-// 发挥差样式
 const perfDiffClass = computed(() => {
-  if (props.game.performanceDifference > 0) return 'positive'
-  if (props.game.performanceDifference < 0) return 'negative'
-  return ''
-})
-
-// Meta加权差样式
-const metaDiffClass = computed(() => {
-  const diff = props.game.metaPowerDifference || 0
+  const diff = props.game.performanceDifference
   if (diff > 0) return 'positive'
   if (diff < 0) return 'negative'
   return ''
@@ -839,9 +898,127 @@ const keyMatchupPos = computed(() => {
 /* 战力/发挥对比并排 */
 .comparison-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+}
+
+.performance-only {
+  /* 只有发挥条时，也可以用 grid */
+  display: block;
+}
+
+.mr-comparison-block {
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(59, 130, 246, 0.05) 100%);
+  border-radius: 12px;
+  border: 1px solid rgba(139, 92, 246, 0.15);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+.mr-comparison-block:hover {
+  border-color: rgba(139, 92, 246, 0.3);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.05);
+}
+
+.mr-comparison-block.is-open {
+  border-color: rgba(139, 92, 246, 0.3);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%);
+}
+
+.mr-label {
+  color: #8b5cf6;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.expand-icon {
+  font-size: 10px;
+  transition: transform 0.2s;
+  opacity: 0.6;
+}
+
+.expand-icon.open {
+  transform: rotate(180deg);
+}
+
+.click-hint {
+  font-size: 10px;
+  color: #a0aec0;
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+/* MR Breakdown Table */
+.mr-breakdown-table {
+  margin-top: 12px;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.breakdown-divider {
+  height: 1px;
+  background: rgba(0, 0, 0, 0.06);
+  margin: 8px 0;
+}
+
+.mr-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 28px;
+  font-size: 12px;
+}
+
+.mr-label-item {
+  color: #64748b;
+  font-weight: 500;
+  font-size: 11px;
+}
+
+.mr-val {
+  width: 60px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.mr-val.positive { color: #10b981; }
+.mr-val.negative { color: #ef4444; }
+.mr-val.text-gray { color: #94a3b8; }
+
+.mr-val.team-a { text-align: left; color: #3b82f6; font-weight: 700; }
+.mr-val.team-b { text-align: right; color: #f59e0b; font-weight: 700; }
+
+.meta-mult-row {
+  background: rgba(139, 92, 246, 0.05);
+  border-radius: 4px;
+  margin: 2px 0;
+}
+
+.meta-text {
+  color: #8b5cf6;
+  font-weight: 700;
+}
+
+.final-row {
+  font-weight: 800;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.final-row .mr-label-item {
+  color: #1d2129;
+  font-weight: 800;
 }
 
 .comparison-block {

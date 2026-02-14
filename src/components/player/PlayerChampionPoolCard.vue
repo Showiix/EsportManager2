@@ -47,7 +47,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
-import { championApi, saveApi } from '@/api/tauri'
+import { getPlayerChampionMastery, saveApi } from '@/api/tauri'
 import type { PlayerMasteryInfo } from '@/api/tauri'
 
 const props = defineProps<{
@@ -66,7 +66,7 @@ const loadData = async () => {
     if (saveId) {
       const pid = typeof props.playerId === 'string' ? parseInt(props.playerId) : props.playerId
       if (!isNaN(pid)) {
-        champions.value = await championApi.getPlayerChampionMastery(saveId, pid)
+        champions.value = await getPlayerChampionMastery(saveId, pid)
       }
     }
   } catch (error) {
