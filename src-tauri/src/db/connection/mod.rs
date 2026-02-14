@@ -45,6 +45,16 @@ impl DatabaseManager {
             .await
             .map_err(|e| DatabaseError::Connection(e.to_string()))?;
 
+        // 设置 SQLite 性能优化 PRAGMA（WAL 模式 + 降低 fsync 频率）
+        sqlx::query("PRAGMA journal_mode = WAL")
+            .execute(&pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(format!("设置WAL模式失败: {}", e)))?;
+        sqlx::query("PRAGMA synchronous = NORMAL")
+            .execute(&pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(format!("设置synchronous失败: {}", e)))?;
+
         // 运行迁移
         self.run_migrations(&pool).await?;
 

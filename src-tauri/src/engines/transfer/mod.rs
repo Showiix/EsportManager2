@@ -109,11 +109,14 @@ impl TransferEngine {
         window_id: i64,
         round: i64,
     ) -> Result<RoundResult, String> {
+        let round_start = std::time::Instant::now();
+        eprintln!("[转会] R{} 开始", round);
+
         let window = self.get_window(pool, window_id).await?;
         let save_id = &window.save_id;
 
-        // 构建缓存（替代每轮数百次单独查询）
         let mut cache = TransferCache::build(pool, save_id, window.season_id).await?;
+        eprintln!("[转会] R{} cache构建完成 {:?}", round, round_start.elapsed());
 
         let result = match round {
             1 => self.execute_season_settlement(pool, window_id, save_id, window.season_id, &mut cache).await?,
@@ -126,12 +129,10 @@ impl TransferEngine {
             _ => return Err(format!("无效轮次: {}", round)),
         };
 
-        // R4-R7 会改变阵容，需要重算首发（避免新签选手一直是替补、旧弱选手一直是首发）
         if round >= 4 {
             Self::recalculate_starters_for_save(pool, save_id).await?;
         }
 
-        // 更新转会期轮次（不再自动标记 COMPLETED，需要手动确认关闭）
         sqlx::query("UPDATE transfer_windows SET current_round = ? WHERE id = ?")
             .bind(round)
             .bind(window_id)
