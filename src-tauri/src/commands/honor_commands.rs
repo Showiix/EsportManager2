@@ -3,6 +3,7 @@ use crate::db::{HonorRepository, PlayerRepository, TournamentResultRepository};
 use crate::engines::HonorEngine;
 use crate::models::Honor;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use tauri::State;
 
 /// 荣誉殿堂数据响应
@@ -1046,4 +1047,54 @@ pub async fn regenerate_all_honors(
         created_count: total_created,
         message,
     }))
+}
+
+#[tauri::command]
+pub async fn get_hall_of_fame(
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let guard = state.db.read().await;
+    let db = guard
+        .as_ref()
+        .ok_or_else(|| "Database not initialized".to_string())?;
+
+    let pool = db
+        .get_pool()
+        .await
+        .map_err(|e| format!("Database error: {}", e))?;
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = current_save
+        .as_ref()
+        .ok_or_else(|| "No save loaded".to_string())?
+        .clone();
+
+    let rows = sqlx::query(
+        "SELECT * FROM hall_of_fame WHERE save_id = ? ORDER BY total_score DESC",
+    )
+    .bind(&save_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("查询名人堂失败: {}", e))?;
+
+    let entries: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|row| {
+            serde_json::json!({
+                "id": row.get::<i64, _>("id"),
+                "player_id": row.get::<i64, _>("player_id"),
+                "player_name": row.get::<String, _>("player_name"),
+                "position": row.get::<String, _>("position"),
+                "region_id": row.try_get::<i64, _>("region_id").ok(),
+                "induction_season": row.get::<i64, _>("induction_season"),
+                "total_score": row.get::<i64, _>("total_score"),
+                "tier": row.get::<String, _>("tier"),
+                "peak_ability": row.try_get::<i64, _>("peak_ability").ok(),
+                "career_seasons": row.try_get::<i64, _>("career_seasons").ok(),
+                "honors_json": row.try_get::<String, _>("honors_json").unwrap_or_default(),
+            })
+        })
+        .collect();
+
+    Ok(entries)
 }

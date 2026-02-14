@@ -36,6 +36,12 @@
             <span>战队荣誉榜</span>
           </div>
         </div>
+        <div class="sub-nav-card hall-of-fame" @click="$router.push('/hall-of-fame')">
+          <div class="sub-nav-content">
+            <el-icon class="sub-icon"><Trophy /></el-icon>
+            <span>名人堂</span>
+          </div>
+        </div>
       </div>
     </div>
 

@@ -1,12 +1,26 @@
 use std::collections::HashMap;
 
-use crate::models::honor::{
-    Honor, HonorHallData, HonorStats, HonorType,
-};
+use crate::models::honor::{Honor, HonorHallData, HonorStats, HonorType};
 use crate::models::tournament_result::PlayerTournamentStats;
+use serde::{Deserialize, Serialize};
+use sqlx::{Pool, Row, Sqlite};
 
 /// 荣誉引擎 - 统一管理所有荣誉记录
 pub struct HonorEngine;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HallOfFameEntry {
+    pub player_id: i64,
+    pub player_name: String,
+    pub position: String,
+    pub region_id: Option<i64>,
+    pub induction_season: i64,
+    pub total_score: i64,
+    pub tier: String,
+    pub peak_ability: i64,
+    pub career_seasons: i64,
+    pub honors_json: String,
+}
 
 impl HonorEngine {
     pub fn new() -> Self {
@@ -377,13 +391,11 @@ impl HonorEngine {
         }
 
         // 找出累计影响力最高的选手
-        stats_map
-            .into_values()
-            .max_by(|a, b| {
-                a.total_impact
-                    .partial_cmp(&b.total_impact)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
+        stats_map.into_values().max_by(|a, b| {
+            a.total_impact
+                .partial_cmp(&b.total_impact)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     }
 
     /// 计算决赛MVP（决赛中胜方影响力最高的选手）
@@ -435,26 +447,28 @@ impl HonorEngine {
                     .partial_cmp(&b.1 .4)
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
-            .map(|(player_id, (name, team_id, team_name, position, impact, games, wins))| {
-                (
-                    player_id,
-                    name,
-                    team_id,
-                    team_name,
-                    position,
-                    HonorStats {
-                        total_impact: impact,
-                        mvp_count: 0,
-                        games_played: games,
-                        wins,
-                        avg_performance: if games > 0 {
-                            impact / games as f64
-                        } else {
-                            0.0
+            .map(
+                |(player_id, (name, team_id, team_name, position, impact, games, wins))| {
+                    (
+                        player_id,
+                        name,
+                        team_id,
+                        team_name,
+                        position,
+                        HonorStats {
+                            total_impact: impact,
+                            mvp_count: 0,
+                            games_played: games,
+                            wins,
+                            avg_performance: if games > 0 {
+                                impact / games as f64
+                            } else {
+                                0.0
+                            },
                         },
-                    },
-                )
-            })
+                    )
+                },
+            )
     }
 
     // ========== 数据聚合 ==========
@@ -482,7 +496,8 @@ impl HonorEngine {
         }
 
         // 按时间倒序排列
-        hall.champions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        hall.champions
+            .sort_by(|a, b| b.created_at.cmp(&a.created_at));
         hall.mvps.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
         hall
@@ -492,9 +507,7 @@ impl HonorEngine {
     pub fn count_team_champions(&self, honors: &[Honor], team_id: u64) -> u32 {
         honors
             .iter()
-            .filter(|h| {
-                h.honor_type == HonorType::TeamChampion && h.team_id == Some(team_id)
-            })
+            .filter(|h| h.honor_type == HonorType::TeamChampion && h.team_id == Some(team_id))
             .count() as u32
     }
 
@@ -502,9 +515,7 @@ impl HonorEngine {
     pub fn count_player_champions(&self, honors: &[Honor], player_id: u64) -> u32 {
         honors
             .iter()
-            .filter(|h| {
-                h.honor_type == HonorType::PlayerChampion && h.player_id == Some(player_id)
-            })
+            .filter(|h| h.honor_type == HonorType::PlayerChampion && h.player_id == Some(player_id))
             .count() as u32
     }
 
@@ -551,6 +562,160 @@ impl HonorEngine {
             .cloned()
             .collect()
     }
+
+    pub async fn evaluate_hall_of_fame(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        player_id: i64,
+        season_id: i64,
+    ) -> Result<Option<HallOfFameEntry>, String> {
+        let player_row = sqlx::query(
+            "SELECT game_id, position, home_region_id, age, join_season, ability FROM players WHERE save_id = ? AND id = ? LIMIT 1",
+        )
+        .bind(save_id)
+        .bind(player_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("查询选手基础信息失败: {}", e))?;
+
+        let player_row = match player_row {
+            Some(row) => row,
+            None => return Ok(None),
+        };
+
+        let player_name: String = player_row.get("game_id");
+        let position: String = player_row.get("position");
+        let region_id: Option<i64> = player_row.try_get("home_region_id").unwrap_or(None);
+        let age: i64 = player_row.get("age");
+        let join_season: Option<i64> = player_row.try_get("join_season").unwrap_or(None);
+        let current_ability: i64 = player_row.get("ability");
+
+        let honor_rows = sqlx::query(
+            "SELECT honor_type, tournament_type FROM honors WHERE save_id = ? AND player_id = ?",
+        )
+        .bind(save_id)
+        .bind(player_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("查询选手荣誉失败: {}", e))?;
+
+        let mut super_champion_count = 0i64;
+        let mut international_champion_count = 0i64;
+        let mut league_champion_count = 0i64;
+        let mut mvp_count = 0i64;
+        let mut annual_mvp_count = 0i64;
+        let mut annual_top3_count = 0i64;
+        let mut annual_top20_count = 0i64;
+
+        for row in &honor_rows {
+            let honor_type: String = row.get("honor_type");
+            let tournament_type: String = row.try_get("tournament_type").unwrap_or_default();
+
+            match honor_type.as_str() {
+                "PLAYER_CHAMPION" | "PlayerChampion" => match tournament_type.as_str() {
+                    "SuperIntercontinental" => super_champion_count += 1,
+                    "Msi"
+                    | "WorldChampionship"
+                    | "MadridMasters"
+                    | "ShanghaiMasters"
+                    | "ClaudeIntercontinental"
+                    | "IcpIntercontinental" => international_champion_count += 1,
+                    "SpringPlayoff" | "SummerPlayoff" => league_champion_count += 1,
+                    _ => {}
+                },
+                "TOURNAMENT_MVP" | "TournamentMvp" => mvp_count += 1,
+                "FINALS_MVP" | "FinalsMvp" => mvp_count += 1,
+                "REGULAR_SEASON_MVP" | "RegularSeasonMvp" => mvp_count += 1,
+                "PLAYOFFS_FMVP" | "PlayoffsFmvp" => mvp_count += 1,
+                "ANNUAL_MVP" | "AnnualMvp" => annual_mvp_count += 1,
+                "ANNUAL_ALL_PRO_1ST" | "AnnualAllPro1st" => annual_top3_count += 1,
+                "ANNUAL_ALL_PRO_2ND" | "AnnualAllPro2nd" => annual_top3_count += 1,
+                "ANNUAL_ALL_PRO_3RD" | "AnnualAllPro3rd" => annual_top3_count += 1,
+                "ANNUAL_TOP20" | "AnnualTop20" => annual_top20_count += 1,
+                _ => {}
+            }
+        }
+
+        let career_seasons = (age - 17).max(0);
+        let career_bonus = if career_seasons >= 8 { 5 } else { 0 };
+
+        let peak_stats_row = sqlx::query(
+            "SELECT MAX(best_performance) as max_perf FROM player_season_stats WHERE save_id = ? AND player_id = ?",
+        )
+        .bind(save_id)
+        .bind(player_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("查询选手历史巅峰能力失败: {}", e))?;
+
+        let historical_peak = peak_stats_row
+            .try_get::<Option<f64>, _>("max_perf")
+            .unwrap_or(None)
+            .unwrap_or(0.0)
+            .round() as i64;
+        let peak_ability = current_ability.max(historical_peak);
+        let peak_bonus = if peak_ability >= 70 { 5 } else { 0 };
+
+        let super_score = super_champion_count * 20;
+        let international_score = international_champion_count * 15;
+        let league_score = league_champion_count * 10;
+        let mvp_score = mvp_count * 8;
+        let annual_mvp_score = annual_mvp_count * 15;
+        let annual_top3_score = annual_top3_count * 10;
+        let annual_top20_score = annual_top20_count * 5;
+
+        let total_score = super_score
+            + international_score
+            + league_score
+            + mvp_score
+            + annual_mvp_score
+            + annual_top3_score
+            + annual_top20_score
+            + career_bonus
+            + peak_bonus;
+
+        let tier = if total_score >= 300 {
+            "Legend"
+        } else if total_score >= 200 {
+            "HallOfFame"
+        } else {
+            return Ok(None);
+        };
+
+        let honors_json = serde_json::json!({
+            "super_champion_count": super_champion_count,
+            "international_champion_count": international_champion_count,
+            "league_champion_count": league_champion_count,
+            "mvp_count": mvp_count,
+            "annual_mvp_count": annual_mvp_count,
+            "annual_top3_count": annual_top3_count,
+            "annual_top20_count": annual_top20_count,
+            "career_bonus": career_bonus,
+            "peak_bonus": peak_bonus,
+            "super_score": super_score,
+            "international_score": international_score,
+            "league_score": league_score,
+            "mvp_score": mvp_score,
+            "annual_mvp_score": annual_mvp_score,
+            "annual_top3_score": annual_top3_score,
+            "annual_top20_score": annual_top20_score,
+            "join_season": join_season
+        })
+        .to_string();
+
+        Ok(Some(HallOfFameEntry {
+            player_id,
+            player_name,
+            position,
+            region_id,
+            induction_season: season_id,
+            total_score,
+            tier: tier.to_string(),
+            peak_ability,
+            career_seasons,
+            honors_json,
+        }))
+    }
 }
 
 impl Default for HonorEngine {
@@ -566,15 +731,8 @@ mod tests {
     #[test]
     fn test_create_team_champion() {
         let engine = HonorEngine::new();
-        let honor = engine.create_team_champion(
-            "save1",
-            1,
-            100,
-            "S1 MSI季中邀请赛",
-            "msi",
-            1,
-            "T1",
-        );
+        let honor =
+            engine.create_team_champion("save1", 1, 100, "S1 MSI季中邀请赛", "msi", 1, "T1");
 
         assert_eq!(honor.honor_type, HonorType::TeamChampion);
         assert_eq!(honor.team_id, Some(1));
@@ -587,10 +745,46 @@ mod tests {
         let engine = HonorEngine::new();
 
         let performances = vec![
-            (1, "Faker".to_string(), 1, "T1".to_string(), "MID".to_string(), 15.0, true, true),
-            (1, "Faker".to_string(), 1, "T1".to_string(), "MID".to_string(), 12.0, true, false),
-            (2, "Chovy".to_string(), 2, "GEN".to_string(), "MID".to_string(), 10.0, false, false),
-            (2, "Chovy".to_string(), 2, "GEN".to_string(), "MID".to_string(), 8.0, false, true),
+            (
+                1,
+                "Faker".to_string(),
+                1,
+                "T1".to_string(),
+                "MID".to_string(),
+                15.0,
+                true,
+                true,
+            ),
+            (
+                1,
+                "Faker".to_string(),
+                1,
+                "T1".to_string(),
+                "MID".to_string(),
+                12.0,
+                true,
+                false,
+            ),
+            (
+                2,
+                "Chovy".to_string(),
+                2,
+                "GEN".to_string(),
+                "MID".to_string(),
+                10.0,
+                false,
+                false,
+            ),
+            (
+                2,
+                "Chovy".to_string(),
+                2,
+                "GEN".to_string(),
+                "MID".to_string(),
+                8.0,
+                false,
+                true,
+            ),
         ];
 
         let mvp = engine.calculate_tournament_mvp(&performances);
@@ -610,11 +804,64 @@ mod tests {
         let engine = HonorEngine::new();
 
         let honors = vec![
-            Honor::new_team_honor("save1", HonorType::TeamChampion, 1, 1, "MSI", "msi", 1, "T1"),
-            Honor::new_team_honor("save1", HonorType::TeamChampion, 1, 2, "Worlds", "worlds", 1, "T1"),
-            Honor::new_team_honor("save1", HonorType::TeamChampion, 1, 3, "Spring", "spring", 2, "GEN"),
-            Honor::new_player_honor("save1", HonorType::TournamentMvp, 1, Some(1), "MSI", "msi", 1, "T1", 1, "Faker", "MID", None),
-            Honor::new_player_honor("save1", HonorType::FinalsMvp, 1, Some(2), "Worlds", "worlds", 1, "T1", 1, "Faker", "MID", None),
+            Honor::new_team_honor(
+                "save1",
+                HonorType::TeamChampion,
+                1,
+                1,
+                "MSI",
+                "msi",
+                1,
+                "T1",
+            ),
+            Honor::new_team_honor(
+                "save1",
+                HonorType::TeamChampion,
+                1,
+                2,
+                "Worlds",
+                "worlds",
+                1,
+                "T1",
+            ),
+            Honor::new_team_honor(
+                "save1",
+                HonorType::TeamChampion,
+                1,
+                3,
+                "Spring",
+                "spring",
+                2,
+                "GEN",
+            ),
+            Honor::new_player_honor(
+                "save1",
+                HonorType::TournamentMvp,
+                1,
+                Some(1),
+                "MSI",
+                "msi",
+                1,
+                "T1",
+                1,
+                "Faker",
+                "MID",
+                None,
+            ),
+            Honor::new_player_honor(
+                "save1",
+                HonorType::FinalsMvp,
+                1,
+                Some(2),
+                "Worlds",
+                "worlds",
+                1,
+                "T1",
+                1,
+                "Faker",
+                "MID",
+                None,
+            ),
         ];
 
         assert_eq!(engine.count_team_champions(&honors, 1), 2);
