@@ -81,6 +81,28 @@ pub struct PlayerMasteryInfo {
     pub games_won: i32,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlayerChampionUsageItem {
+    pub player_id: u64,
+    pub player_name: String,
+    pub team_name: String,
+    pub position: String,
+    pub champion_id: u8,
+    pub champion_name: String,
+    pub games: u32,
+    pub wins: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TeamCompUsageItem {
+    pub team_id: u64,
+    pub team_name: String,
+    pub comp_type: String,
+    pub comp_name: String,
+    pub games: u32,
+    pub wins: u32,
+}
+
 // ── 用于反序列化 DB 中 JSON 的辅助结构 ──────────────────
 
 #[derive(Debug, Deserialize)]
@@ -90,6 +112,12 @@ struct StoredBan {
 
 #[derive(Debug, Deserialize)]
 struct StoredPick {
+    champion_id: u8,
+}
+
+#[derive(Debug, Deserialize)]
+struct StoredPickFull {
+    player_id: u64,
     champion_id: u8,
 }
 
@@ -147,22 +175,33 @@ pub fn get_champion_list() -> CommandResult<Vec<ChampionInfo>> {
 pub async fn get_champion_stats(
     state: State<'_, AppState>,
     save_id: String,
+    season_id: Option<i64>,
 ) -> Result<CommandResult<Vec<ChampionStatInfo>>, String> {
     let pool = get_pool!(state);
 
-    let rows = sqlx::query(
+    let mut sql = String::from(
         "SELECT d.bans_json, d.home_picks_json, d.away_picks_json,
                 m.home_team_id, g.winner_team_id
          FROM game_draft_results d
          JOIN match_games g ON g.save_id = d.save_id
               AND g.match_id = d.match_id AND g.game_number = d.game_number
-         JOIN matches m ON m.save_id = d.save_id AND m.id = d.match_id
-         WHERE d.save_id = ?",
-    )
-    .bind(&save_id)
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| e.to_string())?;
+         JOIN matches m ON m.save_id = d.save_id AND m.id = d.match_id",
+    );
+
+    let filter_season = season_id.filter(|&s| s > 0);
+    if filter_season.is_some() {
+        sql.push_str(" JOIN tournaments t ON m.tournament_id = t.id AND t.save_id = d.save_id");
+    }
+    sql.push_str(" WHERE d.save_id = ?");
+    if filter_season.is_some() {
+        sql.push_str(" AND t.season_id = ?");
+    }
+
+    let mut query = sqlx::query(&sql).bind(&save_id);
+    if let Some(sid) = filter_season {
+        query = query.bind(sid);
+    }
+    let rows = query.fetch_all(&pool).await.map_err(|e| e.to_string())?;
 
     // champion_id → (pick_count, win_count, ban_count)
     let mut stats: HashMap<u8, (u32, u32, u32)> = HashMap::new();
@@ -308,21 +347,32 @@ pub async fn get_player_champion_mastery(
 pub async fn get_comp_stats(
     state: State<'_, AppState>,
     save_id: String,
+    season_id: Option<i64>,
 ) -> Result<CommandResult<Vec<CompStatInfo>>, String> {
     let pool = get_pool!(state);
 
-    let rows = sqlx::query(
+    let mut sql = String::from(
         "SELECT d.home_comp, d.away_comp, m.home_team_id, g.winner_team_id
          FROM game_draft_results d
          JOIN match_games g ON g.save_id = d.save_id
               AND g.match_id = d.match_id AND g.game_number = d.game_number
-         JOIN matches m ON m.save_id = d.save_id AND m.id = d.match_id
-         WHERE d.save_id = ?",
-    )
-    .bind(&save_id)
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| e.to_string())?;
+         JOIN matches m ON m.save_id = d.save_id AND m.id = d.match_id",
+    );
+
+    let filter_season = season_id.filter(|&s| s > 0);
+    if filter_season.is_some() {
+        sql.push_str(" JOIN tournaments t ON m.tournament_id = t.id AND t.save_id = d.save_id");
+    }
+    sql.push_str(" WHERE d.save_id = ?");
+    if filter_season.is_some() {
+        sql.push_str(" AND t.season_id = ?");
+    }
+
+    let mut query = sqlx::query(&sql).bind(&save_id);
+    if let Some(sid) = filter_season {
+        query = query.bind(sid);
+    }
+    let rows = query.fetch_all(&pool).await.map_err(|e| e.to_string())?;
 
     // comp_type → (pick_count, win_count)
     let mut stats: HashMap<String, (u32, u32)> = HashMap::new();
@@ -447,4 +497,218 @@ pub fn get_meta_comp_effects() -> CommandResult<Vec<MetaCompEffect>> {
         .collect();
 
     CommandResult::ok(result)
+}
+
+#[tauri::command]
+pub async fn get_player_champion_usage(
+    state: State<'_, AppState>,
+    save_id: String,
+    season_id: Option<i64>,
+) -> Result<CommandResult<Vec<PlayerChampionUsageItem>>, String> {
+    let pool = get_pool!(state);
+
+    let mut sql = String::from(
+        "SELECT d.home_picks_json, d.away_picks_json,
+                m.home_team_id, m.away_team_id, g.winner_team_id
+         FROM game_draft_results d
+         JOIN match_games g ON g.save_id = d.save_id
+              AND g.match_id = d.match_id AND g.game_number = d.game_number
+         JOIN matches m ON m.save_id = d.save_id AND m.id = d.match_id",
+    );
+
+    let filter_season = season_id.filter(|&s| s > 0);
+    if filter_season.is_some() {
+        sql.push_str(" JOIN tournaments t ON m.tournament_id = t.id AND t.save_id = d.save_id");
+    }
+    sql.push_str(" WHERE d.save_id = ?");
+    if filter_season.is_some() {
+        sql.push_str(" AND t.season_id = ?");
+    }
+
+    let mut query = sqlx::query(&sql).bind(&save_id);
+    if let Some(sid) = filter_season {
+        query = query.bind(sid);
+    }
+    let rows = query.fetch_all(&pool).await.map_err(|e| e.to_string())?;
+
+    let mut usage: HashMap<(u64, u8), (u32, u32)> = HashMap::new();
+
+    for row in &rows {
+        let home_picks_json: String = row.get("home_picks_json");
+        let away_picks_json: String = row.get("away_picks_json");
+        let home_team_id: i64 = row.get("home_team_id");
+        let winner_team_id: i64 = row.get("winner_team_id");
+
+        if let Ok(picks) = serde_json::from_str::<Vec<StoredPickFull>>(&home_picks_json) {
+            let won = home_team_id == winner_team_id;
+            for pick in &picks {
+                let entry = usage.entry((pick.player_id, pick.champion_id)).or_default();
+                entry.0 += 1;
+                if won { entry.1 += 1; }
+            }
+        }
+
+        if let Ok(picks) = serde_json::from_str::<Vec<StoredPickFull>>(&away_picks_json) {
+            let won = home_team_id != winner_team_id;
+            for pick in &picks {
+                let entry = usage.entry((pick.player_id, pick.champion_id)).or_default();
+                entry.0 += 1;
+                if won { entry.1 += 1; }
+            }
+        }
+    }
+
+    let player_ids: Vec<i64> = usage.keys().map(|(pid, _)| *pid as i64).collect::<std::collections::HashSet<_>>().into_iter().collect();
+    let mut player_info: HashMap<u64, (String, String, String)> = HashMap::new();
+
+    if !player_ids.is_empty() {
+        let placeholders: String = player_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let q = format!(
+            "SELECT p.id, p.game_id, p.position, COALESCE(t.name, '') as team_name
+             FROM players p LEFT JOIN teams t ON p.team_id = t.id
+             WHERE p.save_id = ? AND p.id IN ({})", placeholders
+        );
+        let mut qb = sqlx::query(&q).bind(&save_id);
+        for pid in &player_ids {
+            qb = qb.bind(*pid);
+        }
+        if let Ok(prows) = qb.fetch_all(&pool).await {
+            for r in &prows {
+                let id: i64 = r.get("id");
+                let game_id: String = r.get("game_id");
+                let position: String = r.get::<Option<String>, _>("position").unwrap_or_default();
+                let team_name: String = r.get("team_name");
+                player_info.insert(id as u64, (game_id, position, team_name));
+            }
+        }
+    }
+
+    let mut result: Vec<PlayerChampionUsageItem> = usage
+        .into_iter()
+        .filter_map(|((pid, cid), (games, wins))| {
+            let champ = CHAMPIONS.iter().find(|c| c.id == cid)?;
+            let (player_name, position, team_name) = player_info.get(&pid).cloned()
+                .unwrap_or_else(|| (format!("Player#{}", pid), String::new(), String::new()));
+            Some(PlayerChampionUsageItem {
+                player_id: pid,
+                player_name,
+                team_name,
+                position,
+                champion_id: cid,
+                champion_name: champ.name_cn.to_string(),
+                games,
+                wins,
+            })
+        })
+        .collect();
+
+    result.sort_by(|a, b| b.games.cmp(&a.games));
+
+    Ok(CommandResult::ok(result))
+}
+
+#[tauri::command]
+pub async fn get_team_comp_usage(
+    state: State<'_, AppState>,
+    save_id: String,
+    season_id: Option<i64>,
+) -> Result<CommandResult<Vec<TeamCompUsageItem>>, String> {
+    let pool = get_pool!(state);
+
+    let mut sql = String::from(
+        "SELECT d.home_comp, d.away_comp, m.home_team_id, m.away_team_id, g.winner_team_id
+         FROM game_draft_results d
+         JOIN match_games g ON g.save_id = d.save_id
+              AND g.match_id = d.match_id AND g.game_number = d.game_number
+         JOIN matches m ON m.save_id = d.save_id AND m.id = d.match_id",
+    );
+
+    let filter_season = season_id.filter(|&s| s > 0);
+    if filter_season.is_some() {
+        sql.push_str(" JOIN tournaments t ON m.tournament_id = t.id AND t.save_id = d.save_id");
+    }
+    sql.push_str(" WHERE d.save_id = ?");
+    if filter_season.is_some() {
+        sql.push_str(" AND t.season_id = ?");
+    }
+
+    let mut query = sqlx::query(&sql).bind(&save_id);
+    if let Some(sid) = filter_season {
+        query = query.bind(sid);
+    }
+    let rows = query.fetch_all(&pool).await.map_err(|e| e.to_string())?;
+
+    let mut usage: HashMap<(i64, String), (u32, u32)> = HashMap::new();
+
+    for row in &rows {
+        let home_comp: Option<String> = row.get("home_comp");
+        let away_comp: Option<String> = row.get("away_comp");
+        let home_team_id: i64 = row.get("home_team_id");
+        let away_team_id: i64 = row.get("away_team_id");
+        let winner_team_id: i64 = row.get("winner_team_id");
+
+        if let Some(comp) = home_comp {
+            let entry = usage.entry((home_team_id, comp)).or_default();
+            entry.0 += 1;
+            if home_team_id == winner_team_id { entry.1 += 1; }
+        }
+        if let Some(comp) = away_comp {
+            let entry = usage.entry((away_team_id, comp)).or_default();
+            entry.0 += 1;
+            if away_team_id == winner_team_id { entry.1 += 1; }
+        }
+    }
+
+    let team_ids: Vec<i64> = usage.keys().map(|(tid, _)| *tid).collect::<std::collections::HashSet<_>>().into_iter().collect();
+    let mut team_names: HashMap<i64, String> = HashMap::new();
+
+    if !team_ids.is_empty() {
+        let placeholders: String = team_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let q = format!("SELECT id, name FROM teams WHERE id IN ({})", placeholders);
+        let mut qb = sqlx::query(&q);
+        for tid in &team_ids {
+            qb = qb.bind(*tid);
+        }
+        if let Ok(trows) = qb.fetch_all(&pool).await {
+            for r in &trows {
+                let id: i64 = r.get("id");
+                let name: String = r.get("name");
+                team_names.insert(id, name);
+            }
+        }
+    }
+
+    let mut result: Vec<TeamCompUsageItem> = usage
+        .into_iter()
+        .map(|((tid, comp_type), (games, wins))| {
+            let team_name = team_names.get(&tid).cloned().unwrap_or_else(|| format!("Team#{}", tid));
+            let comp_name = comp_display_name_str(&comp_type).to_string();
+            TeamCompUsageItem {
+                team_id: tid as u64,
+                team_name,
+                comp_type,
+                comp_name,
+                games,
+                wins,
+            }
+        })
+        .collect();
+
+    result.sort_by(|a, b| b.games.cmp(&a.games));
+
+    Ok(CommandResult::ok(result))
+}
+
+fn comp_display_name_str(s: &str) -> &'static str {
+    match s {
+        "Rush" => "速推", "PickOff" => "抓单", "AllIn" => "莽夫",
+        "MidJungle" => "中野联动", "TopJungle" => "上野联动",
+        "Protect" => "保C", "Fortress" => "铁桶阵", "UtilityComp" => "功能流",
+        "Stall" => "龟缩", "BotLane" => "下路统治",
+        "Teamfight" => "团战", "Dive" => "开团", "Skirmish" => "小规模团战",
+        "DualCarry" => "双C", "Flex" => "全能",
+        "Splitpush" => "分推", "SideLane" => "4-1分带", "Control" => "运营",
+        "TripleThreat" => "三线施压", "LateGame" => "后期发育",
+        _ => "未知",
+    }
 }

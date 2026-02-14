@@ -77,6 +77,9 @@
     <!-- 英雄池 -->
     <player-champion-pool-card :player-id="Number(playerId)" />
 
+    <!-- 成长记录 -->
+    <player-growth-card :player-id="Number(playerId)" />
+
     <!-- 赛季历史 -->
     <player-season-history 
       :season-history="seasonHistory"
@@ -111,6 +114,7 @@ import PlayerHonorsCard from "@/components/player/PlayerHonorsCard.vue"
 import PlayerSeasonHistory from "@/components/player/PlayerSeasonHistory.vue"
 import PlayerMarketValueDialog from "@/components/player/PlayerMarketValueDialog.vue"
 import PlayerChampionPoolCard from "@/components/player/PlayerChampionPoolCard.vue"
+import PlayerGrowthCard from "@/components/player/PlayerGrowthCard.vue"
 
 // Import Composable
 import { usePlayerDetail } from "@/composables/usePlayerDetail"

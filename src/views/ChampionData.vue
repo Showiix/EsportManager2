@@ -10,6 +10,9 @@
           查看英雄列表、使用率、胜率和体系统计
         </p>
       </div>
+      <div class="header-actions">
+        <SeasonSelector v-model="selectedSeason" :show-all="true" />
+      </div>
     </div>
 
     <el-tabs v-model="activeTab" type="border-card">
@@ -83,8 +86,17 @@
       </el-tab-pane>
 
       <el-tab-pane label="体系统计" name="comp">
+        <div class="filter-bar">
+          <el-radio-group v-model="compViewMode" size="small">
+            <el-radio-button value="overall">总体</el-radio-button>
+            <el-radio-button value="team">按战队</el-radio-button>
+          </el-radio-group>
+          <el-select v-if="compViewMode === 'team'" v-model="compTeamFilter" placeholder="选择战队" clearable style="width: 180px">
+            <el-option v-for="t in teamCompTeams" :key="t" :label="t" :value="t" />
+          </el-select>
+        </div>
         <el-table
-          v-if="compStats.length > 0"
+          v-if="compViewMode === 'overall' && compStats.length > 0"
           :data="compStats"
           stripe
           style="width: 100%"
@@ -105,7 +117,30 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-empty v-else description="暂无比赛数据" />
+        <el-table
+          v-if="compViewMode === 'team' && filteredTeamCompUsage.length > 0"
+          :data="filteredTeamCompUsage"
+          stripe
+          style="width: 100%"
+          :default-sort="{ prop: 'games', order: 'descending' }"
+        >
+          <el-table-column prop="team_name" label="战队" width="140" />
+          <el-table-column label="体系" width="140">
+            <template #default="{ row }">
+              <span class="comp-name-text">{{ row.comp_name }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="games" label="使用次数" width="100" align="center" sortable />
+          <el-table-column prop="wins" label="胜场" width="80" align="center" sortable />
+          <el-table-column label="胜率" width="100" align="center" sortable :sort-method="sortTeamCompWinRate">
+            <template #default="{ row }">
+              <span :class="teamCompWinRateClass(row)">
+                {{ row.games > 0 ? ((row.wins / row.games) * 100).toFixed(1) + '%' : '-' }}
+              </span>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="(compViewMode === 'overall' && compStats.length === 0) || (compViewMode === 'team' && filteredTeamCompUsage.length === 0)" description="暂无比赛数据" />
       </el-tab-pane>
 
       <el-tab-pane label="体系图鉴" name="matchup">
@@ -127,6 +162,10 @@
               </div>
             </template>
             <div class="comp-relationships">
+              <div class="rel-section condition-section">
+                <span class="rel-label">触发条件:</span>
+                <div class="condition-text">{{ COMP_CONDITIONS[comp.id] }}</div>
+              </div>
               <div class="rel-section" v-if="comp.hardCounters.length">
                 <span class="rel-label">克制:</span>
                 <div class="tags">
@@ -164,16 +203,26 @@
         </div>
       </el-tab-pane>
 
-      <el-tab-pane label="选手统计" name="player">
+      <el-tab-pane label="选手英雄" name="player">
+        <div class="filter-bar">
+          <el-input v-model="playerSearch" placeholder="搜索选手" clearable style="width: 200px" />
+          <el-select v-model="playerPosFilter" placeholder="位置" clearable style="width: 120px">
+            <el-option label="全部" value="" />
+            <el-option label="上单" value="TOP" />
+            <el-option label="打野" value="JUG" />
+            <el-option label="中路" value="MID" />
+            <el-option label="ADC" value="ADC" />
+            <el-option label="辅助" value="SUP" />
+          </el-select>
+        </div>
         <el-table
-          v-if="playerStats.length > 0"
-          :data="playerStats"
+          v-if="filteredPlayerUsage.length > 0"
+          :data="pagedPlayerUsage"
           stripe
           style="width: 100%"
-          :default-sort="{ prop: 'avg_impact', order: 'descending' }"
+          :default-sort="{ prop: 'games', order: 'descending' }"
         >
-          <el-table-column type="index" label="排名" width="60" align="center" />
-          <el-table-column prop="player_name" label="选手" width="140">
+          <el-table-column prop="player_name" label="选手" width="130">
             <template #default="{ row }">
               <span class="player-name">{{ row.player_name }}</span>
             </template>
@@ -182,50 +231,65 @@
           <el-table-column prop="position" label="位置" width="80" align="center">
             <template #default="{ row }">
               <el-tag :type="positionTagType(row.position)" size="small">
-                {{ positionName(row.position) }}
+                {{ positionName(row.position.charAt(0).toUpperCase() + row.position.slice(1).toLowerCase()) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="games_played" label="场次" width="80" align="center" />
-          <el-table-column prop="avg_impact" label="平均影响力" width="120" align="center" sortable>
+          <el-table-column prop="champion_name" label="英雄" width="120" />
+          <el-table-column prop="games" label="使用次数" width="100" align="center" sortable />
+          <el-table-column prop="wins" label="胜场" width="80" align="center" sortable />
+          <el-table-column label="胜率" width="100" align="center" sortable :sort-method="sortPlayerUsageWinRate">
             <template #default="{ row }">
-              <span :class="row.avg_impact > 25 ? 'rate-high' : ''">{{ row.avg_impact.toFixed(1) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="avg_performance" label="平均表现" width="100" align="center" sortable>
-             <template #default="{ row }">
-              {{ row.avg_performance.toFixed(1) }}
-            </template>
-          </el-table-column>
-           <el-table-column prop="yearly_top_score" label="年度评分" width="100" align="center" sortable>
-             <template #default="{ row }">
-              <span class="score-text">{{ row.yearly_top_score.toFixed(1) }}</span>
+              <span :class="playerUsageWinRateClass(row)">
+                {{ row.games > 0 ? ((row.wins / row.games) * 100).toFixed(1) + '%' : '-' }}
+              </span>
             </template>
           </el-table-column>
         </el-table>
-        <el-empty v-else description="暂无选手数据" />
+        <div v-if="filteredPlayerUsage.length > 0" class="pagination-wrapper">
+          <el-pagination
+            v-model:current-page="playerPage"
+            v-model:page-size="playerPageSize"
+            :total="filteredPlayerUsage.length"
+            layout="total, sizes, prev, pager, next"
+            :page-sizes="[20, 50, 100]"
+            background
+          />
+        </div>
+        <el-empty v-if="filteredPlayerUsage.length === 0" description="暂无选手英雄使用数据" />
       </el-tab-pane>
     </el-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Aim } from '@element-plus/icons-vue'
-import { getChampionList, getChampionStats, getCompStats, statsApi } from '@/api/tauri'
-import type { ChampionInfo, ChampionStatInfo, CompStatInfo, PlayerRankingItem } from '@/api/tauri'
+import { getChampionList, getChampionStats, getCompStats, getPlayerChampionUsage, getTeamCompUsage } from '@/api/tauri'
+import type { ChampionInfo, ChampionStatInfo, CompStatInfo, PlayerChampionUsageItem, TeamCompUsageItem } from '@/api/tauri'
 import { useGameStore } from '@/stores/useGameStore'
+import { useTimeStore } from '@/stores/useTimeStore'
 import { ElMessage } from 'element-plus'
+import SeasonSelector from '@/components/common/SeasonSelector.vue'
 
 const gameStore = useGameStore()
+const timeStore = useTimeStore()
 const activeTab = ref('list')
+const selectedSeason = ref(timeStore.currentSeasonFromTime || 1)
 const positionFilter = ref('')
 const archetypeFilter = ref('')
+const playerSearch = ref('')
+const playerPosFilter = ref('')
+const playerPage = ref(1)
+const playerPageSize = ref(20)
+const compViewMode = ref<'overall' | 'team'>('overall')
+const compTeamFilter = ref('')
 
 const champions = ref<ChampionInfo[]>([])
 const championStats = ref<ChampionStatInfo[]>([])
 const compStats = ref<CompStatInfo[]>([])
-const playerStats = ref<PlayerRankingItem[]>([])
+const playerUsage = ref<PlayerChampionUsageItem[]>([])
+const teamCompUsage = ref<TeamCompUsageItem[]>([])
 
 const filteredChampions = computed(() => {
   return champions.value.filter(c => {
@@ -258,6 +322,29 @@ const COMP_DIFFICULTY: Record<string, string> = {
   Protect: '低', Fortress: '低', UtilityComp: '中', Stall: '低', BotLane: '中',
   Teamfight: '低', Dive: '高', Skirmish: '中', DualCarry: '高', Flex: '高',
   Splitpush: '高', SideLane: '高', Control: '高', TripleThreat: '高', LateGame: '低',
+}
+
+const COMP_CONDITIONS: Record<string, string> = {
+  Rush: '激进≥3 且 上单=激进 且 打野=激进',
+  PickOff: '激进≥3 且 打野=激进',
+  AllIn: '激进≥4',
+  MidJungle: '中路=激进 且 打野=激进 且 功能≥1',
+  TopJungle: '上单=激进 且 打野=激进 且 团战≥1',
+  Protect: 'ADC=后期 且 辅助=功能 且 团战≥1',
+  Fortress: '团战≥2 且 功能≥2 且 激进=0',
+  UtilityComp: '功能≥3',
+  Stall: '后期≥2 且 功能≥2 且 团战≥1',
+  BotLane: 'ADC=后期 且 辅助=功能/团战 且 激进≥1',
+  Teamfight: '团战≥3',
+  Dive: '激进≥2 且 团战≥2 且 打野=激进/团战',
+  Skirmish: '激进≥2 且 后期≥1 且 (打野=激进 或 中路=激进)',
+  DualCarry: '中路=后期 且 ADC=后期 且 功能≥1',
+  Flex: '每种定位至少1个（激进+后期+功能+分推+团战各≥1）',
+  Splitpush: '分推≥2 且 (上单=分推 或 中路=分推)',
+  SideLane: '上单=分推 且 ADC=后期 且 团战≥2',
+  Control: '功能≥2 且 后期≥2',
+  TripleThreat: '上单=分推/激进 且 中路=激进/分推 且 ADC=后期',
+  LateGame: '后期≥3',
 }
 
 const HARD_COUNTERS: [string, string][] = [
@@ -377,6 +464,65 @@ const sortCompByWinRate = (a: CompStatInfo, b: CompStatInfo) => {
   return rateA - rateB
 }
 
+const filteredPlayerUsage = computed(() => {
+  return playerUsage.value.filter(item => {
+    if (playerSearch.value && !item.player_name.toLowerCase().includes(playerSearch.value.toLowerCase())) return false
+    if (playerPosFilter.value && item.position.toUpperCase() !== playerPosFilter.value) return false
+    return true
+  })
+})
+
+const pagedPlayerUsage = computed(() => {
+  const start = (playerPage.value - 1) * playerPageSize.value
+  return filteredPlayerUsage.value.slice(start, start + playerPageSize.value)
+})
+
+watch([playerSearch, playerPosFilter], () => {
+  playerPage.value = 1
+})
+
+watch(selectedSeason, () => {
+  fetchData()
+})
+
+const sortPlayerUsageWinRate = (a: PlayerChampionUsageItem, b: PlayerChampionUsageItem) => {
+  const rateA = a.games > 0 ? a.wins / a.games : 0
+  const rateB = b.games > 0 ? b.wins / b.games : 0
+  return rateA - rateB
+}
+
+const playerUsageWinRateClass = (row: PlayerChampionUsageItem) => {
+  if (row.games === 0) return ''
+  const rate = row.wins / row.games
+  if (rate > 0.55) return 'rate-high'
+  if (rate < 0.45) return 'rate-low'
+  return ''
+}
+
+const teamCompTeams = computed(() => {
+  const teams = new Set(teamCompUsage.value.map(item => item.team_name))
+  return Array.from(teams).sort()
+})
+
+const filteredTeamCompUsage = computed(() => {
+  if (!compTeamFilter.value) return teamCompUsage.value
+  return teamCompUsage.value.filter(item => item.team_name === compTeamFilter.value)
+})
+
+const sortTeamCompWinRate = (a: TeamCompUsageItem, b: TeamCompUsageItem) => {
+  const rateA = a.games > 0 ? a.wins / a.games : 0
+  const rateB = b.games > 0 ? b.wins / b.games : 0
+  return rateA - rateB
+}
+
+const teamCompWinRateClass = (row: TeamCompUsageItem) => {
+  if (row.games === 0) return ''
+  const rate = row.wins / row.games
+  if (rate > 0.55) return 'rate-high'
+  if (rate < 0.45) return 'rate-low'
+  return ''
+}
+
 const fetchData = async () => {
   try {
     const list = await getChampionList()
@@ -384,15 +530,17 @@ const fetchData = async () => {
 
     const saveId = gameStore.currentSave?.id
     if (saveId) {
-      const currentSeason = gameStore.currentSave?.current_season || 1
-      const [stats, comps, players] = await Promise.all([
-        getChampionStats(saveId),
-        getCompStats(saveId),
-        statsApi.getSeasonImpactRanking(currentSeason, 100)
+      const seasonId = selectedSeason.value > 0 ? selectedSeason.value : undefined
+      const [stats, comps, pUsage, tComp] = await Promise.all([
+        getChampionStats(saveId, seasonId),
+        getCompStats(saveId, seasonId),
+        getPlayerChampionUsage(saveId, seasonId),
+        getTeamCompUsage(saveId, seasonId),
       ])
       championStats.value = stats
       compStats.value = comps
-      playerStats.value = players
+      playerUsage.value = pUsage
+      teamCompUsage.value = tComp
     }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
@@ -412,6 +560,15 @@ onMounted(() => {
 
   .page-header {
     margin-bottom: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
 
     .header-content {
       .page-title {
@@ -501,6 +658,19 @@ onMounted(() => {
           flex-wrap: wrap;
           gap: 4px;
         }
+
+        &.condition-section {
+          background: #f8f9fa;
+          border-radius: 6px;
+          padding: 8px 10px;
+
+          .condition-text {
+            font-size: 13px;
+            color: #374151;
+            font-family: monospace;
+            line-height: 1.5;
+          }
+        }
       }
     }
   }
@@ -520,5 +690,11 @@ onMounted(() => {
 .comp-name-text {
   font-weight: 600;
   color: #374151;
+}
+
+.pagination-wrapper {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

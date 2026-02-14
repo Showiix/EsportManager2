@@ -1623,6 +1623,14 @@ export interface DetailedGameResult {
   home_players: PlayerGameStats[]
   away_players: PlayerGameStats[]
   key_events: GameEvent[]
+  home_base_power: number | null
+  away_base_power: number | null
+  home_synergy_bonus: number | null
+  away_synergy_bonus: number | null
+  home_bp_bonus: number | null
+  away_bp_bonus: number | null
+  home_version_bonus: number | null
+  away_version_bonus: number | null
 }
 
 export interface PlayerGameStats {
@@ -2401,6 +2409,14 @@ export interface MatchGameDetail {
   away_power: number | null
   home_meta_power: number | null
   away_meta_power: number | null
+  home_base_power: number | null
+  away_base_power: number | null
+  home_synergy_bonus: number | null
+  away_synergy_bonus: number | null
+  home_bp_bonus: number | null
+  away_bp_bonus: number | null
+  home_version_bonus: number | null
+  away_version_bonus: number | null
   created_at: string | null
 }
 
@@ -2490,6 +2506,14 @@ export interface SaveGameInput {
   away_power: number | null
   home_meta_power: number | null
   away_meta_power: number | null
+  home_base_power: number | null
+  away_base_power: number | null
+  home_synergy_bonus: number | null
+  away_synergy_bonus: number | null
+  home_bp_bonus: number | null
+  away_bp_bonus: number | null
+  home_version_bonus: number | null
+  away_version_bonus: number | null
   performances: SavePerformanceInput[]
 }
 
@@ -3600,16 +3624,16 @@ export function getChampionList() {
   return invokeCommand<ChampionInfo[]>('get_champion_list')
 }
 
-export function getChampionStats(saveId: string) {
-  return invokeCommand<ChampionStatInfo[]>('get_champion_stats', { saveId })
+export function getChampionStats(saveId: string, seasonId?: number) {
+  return invokeCommand<ChampionStatInfo[]>('get_champion_stats', { saveId, seasonId: seasonId || null })
 }
 
 export function getDraftResult(saveId: string, matchId: number, gameNumber: number) {
   return invokeCommand<DraftResultInfo | null>('get_draft_result', { saveId, matchId, gameNumber })
 }
 
-export function getCompStats(saveId: string) {
-  return invokeCommand<CompStatInfo[]>('get_comp_stats', { saveId })
+export function getCompStats(saveId: string, seasonId?: number) {
+  return invokeCommand<CompStatInfo[]>('get_comp_stats', { saveId, seasonId: seasonId || null })
 }
 
 export function getCompMatchups() {
@@ -3631,4 +3655,58 @@ export interface PlayerMasteryInfo {
 
 export function getPlayerChampionMastery(saveId: string, playerId: number) {
   return invokeCommand<PlayerMasteryInfo[]>('get_player_champion_mastery', { saveId, playerId })
+}
+
+export interface PlayerChampionUsageItem {
+  player_id: number
+  player_name: string
+  team_name: string
+  position: string
+  champion_id: number
+  champion_name: string
+  games: number
+  wins: number
+}
+
+export interface TeamCompUsageItem {
+  team_id: number
+  team_name: string
+  comp_type: string
+  comp_name: string
+  games: number
+  wins: number
+}
+
+export function getPlayerChampionUsage(saveId: string, seasonId?: number) {
+  return invokeCommand<PlayerChampionUsageItem[]>('get_player_champion_usage', { saveId, seasonId: seasonId || null })
+}
+
+export function getTeamCompUsage(saveId: string, seasonId?: number) {
+  return invokeCommand<TeamCompUsageItem[]>('get_team_comp_usage', { saveId, seasonId: seasonId || null })
+}
+
+export interface PlayerGrowthLogItem {
+  season_id: number
+  player_name: string
+  team_name: string
+  age: number
+  old_ability: number
+  new_ability: number
+  old_potential: number
+  new_potential: number
+  base_growth: number
+  age_coeff: number
+  playtime_coeff: number
+  mentor_coeff: number
+  synergy_coeff: number
+  facility_coeff: number
+  prodigy_mod: number
+  perf_bonus: number
+  fluctuation: number
+  growth_event: string | null
+  description: string
+}
+
+export function getPlayerGrowthLogs(saveId: string, playerId: number) {
+  return invokeCommand<PlayerGrowthLogItem[]>('get_player_growth_logs', { saveId, playerId })
 }
