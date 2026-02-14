@@ -130,6 +130,36 @@ pub struct PlayerSeasonStats {
     pub win_rate: f64,
 }
 
+/// 比赛阵容记录（单条）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MatchLineupEntry {
+    pub game_number: u8,
+    pub team_id: u64,
+    pub player_id: u64,
+    pub player_name: String,
+    pub position: String,
+    pub is_substitution: bool,
+    pub replaced_player_id: Option<u64>,
+    pub replaced_player_name: Option<String>,
+    pub substitution_reason: Option<String>,
+}
+
+/// 某场比赛的完整阵容信息
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MatchLineupsResult {
+    pub match_id: u64,
+    pub games: Vec<MatchGameLineup>,
+}
+
+/// 单局阵容
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MatchGameLineup {
+    pub game_number: u8,
+    pub home_players: Vec<MatchLineupEntry>,
+    pub away_players: Vec<MatchLineupEntry>,
+    pub substitutions: Vec<MatchLineupEntry>,
+}
+
 /// 比赛预测结果
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MatchPrediction {
@@ -182,6 +212,7 @@ pub use simulation::{
 pub use queries::{
     get_player_season_stats,
     get_match_prediction,
+    get_match_lineups,
 };
 
 // 从 mutations 模块导出

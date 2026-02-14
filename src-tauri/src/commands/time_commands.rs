@@ -7,10 +7,38 @@ use crate::models::{
 use crate::services::{GameFlowService, LeagueService};
 use crate::engines::match_simulation::{MatchSimulationEngine, MatchSimContext};
 use crate::engines::meta_engine::MetaEngine;
+use crate::models::transfer::AITeamPersonality;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use tauri::State;
 use rand::{Rng, SeedableRng, rngs::StdRng};
+
+async fn update_season_games_played(
+    pool: &sqlx::SqlitePool,
+    save_id: &str,
+    games_played: std::collections::HashMap<u64, u8>,
+) -> Result<(), String> {
+    if games_played.is_empty() {
+        return Ok(());
+    }
+
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    for (player_id, count) in games_played {
+        sqlx::query(
+            "UPDATE players SET season_games_played = season_games_played + ? WHERE id = ? AND save_id = ?",
+        )
+        .bind(count as i64)
+        .bind(player_id as i64)
+        .bind(save_id)
+        .execute(&mut *tx)
+        .await
+        .ok();
+    }
+
+    tx.commit().await.ok();
+    Ok(())
+}
 
 /// 快进目标请求
 #[derive(Debug, Serialize, Deserialize)]
@@ -222,7 +250,7 @@ pub async fn time_simulate_all(
     // === 特性系统：预加载选手数据 ===
     let game_flow = GameFlowService::new();
     let league_service = LeagueService::new();
-    let (team_players, _form_factors) = game_flow
+    let (team_players, team_bench, _form_factors, team_personalities, _player_mastery_map) = game_flow
         .load_team_players(&pool, &save_id, save.current_season as i64)
         .await
         .map_err(|e| format!("加载选手数据失败: {}", e))?;
@@ -277,12 +305,17 @@ pub async fn time_simulate_all(
 
                 let home_players = team_players.get(&match_info.home_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
                 let away_players = team_players.get(&match_info.away_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+                let hb = team_bench.get(&match_info.home_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+                let ab = team_bench.get(&match_info.away_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+                let hp = team_personalities.get(&match_info.home_team_id).copied().unwrap_or(AITeamPersonality::Balanced);
+                let ap = team_personalities.get(&match_info.away_team_id).copied().unwrap_or(AITeamPersonality::Balanced);
 
                 let result = if !home_players.is_empty() && !away_players.is_empty() {
                     match_engine.simulate_match_with_traits(
                         match_info.id, match_info.tournament_id, &match_info.stage,
                         match_info.format.clone(), match_info.home_team_id, match_info.away_team_id,
-                        home_players, away_players, &sim_ctx, &meta_weights,
+                        home_players, away_players, hb, ab, &sim_ctx, &meta_weights,
+                        &hp, &ap, save.current_season as u32,
                     )
                 } else {
                     let home_team = TeamRepository::get_by_id(&pool, match_info.home_team_id)
@@ -301,6 +334,9 @@ pub async fn time_simulate_all(
                 )
                 .await
                 .map_err(|e| e.to_string())?;
+
+                let played = match_engine.take_last_games_played();
+                update_season_games_played(&pool, &save_id, played).await.ok();
 
                 simulated_count += 1;
 
@@ -355,12 +391,17 @@ pub async fn time_simulate_all(
             for match_info in &pending {
                 let home_players = team_players.get(&match_info.home_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
                 let away_players = team_players.get(&match_info.away_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+                let hb = team_bench.get(&match_info.home_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+                let ab = team_bench.get(&match_info.away_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+                let hp = team_personalities.get(&match_info.home_team_id).copied().unwrap_or(AITeamPersonality::Balanced);
+                let ap = team_personalities.get(&match_info.away_team_id).copied().unwrap_or(AITeamPersonality::Balanced);
 
                 let result = if !home_players.is_empty() && !away_players.is_empty() {
                     match_engine.simulate_match_with_traits(
                         match_info.id, match_info.tournament_id, &match_info.stage,
                         match_info.format.clone(), match_info.home_team_id, match_info.away_team_id,
-                        home_players, away_players, &sim_ctx, &meta_weights,
+                        home_players, away_players, hb, ab, &sim_ctx, &meta_weights,
+                        &hp, &ap, save.current_season as u32,
                     )
                 } else {
                     let home_team = TeamRepository::get_by_id(&pool, match_info.home_team_id)
@@ -379,6 +420,9 @@ pub async fn time_simulate_all(
                 )
                 .await
                 .map_err(|e| e.to_string())?;
+
+                let played = match_engine.take_last_games_played();
+                update_season_games_played(&pool, &save_id, played).await.ok();
 
                 simulated_count += 1;
             }
@@ -508,7 +552,7 @@ pub async fn time_simulate_next(
 
     // 特性感知模拟
     let game_flow_svc = GameFlowService::new();
-    let (team_players, _form_factors) = game_flow_svc
+    let (team_players, team_bench_3, _form_factors, team_personalities_3, _player_mastery_map_3) = game_flow_svc
         .load_team_players(&pool, &save_id, save.current_season as i64)
         .await
         .map_err(|e| format!("加载选手数据失败: {}", e))?;
@@ -527,13 +571,18 @@ pub async fn time_simulate_next(
 
     let home_players = team_players.get(&match_info.home_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
     let away_players = team_players.get(&match_info.away_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+    let hb3 = team_bench_3.get(&match_info.home_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+    let ab3 = team_bench_3.get(&match_info.away_team_id).map(|v| v.as_slice()).unwrap_or(&[]);
+    let hp3 = team_personalities_3.get(&match_info.home_team_id).copied().unwrap_or(AITeamPersonality::Balanced);
+    let ap3 = team_personalities_3.get(&match_info.away_team_id).copied().unwrap_or(AITeamPersonality::Balanced);
 
     let league_service = LeagueService::new();
     let result = if !home_players.is_empty() && !away_players.is_empty() {
         match_engine.simulate_match_with_traits(
             match_info.id, match_info.tournament_id, &match_info.stage,
             match_info.format.clone(), match_info.home_team_id, match_info.away_team_id,
-            home_players, away_players, &sim_ctx, &meta_weights,
+            home_players, away_players, hb3, ab3, &sim_ctx, &meta_weights,
+            &hp3, &ap3, save.current_season as u32,
         )
     } else {
         league_service.simulate_match(&match_info, home_team.power_rating, away_team.power_rating)
@@ -547,6 +596,9 @@ pub async fn time_simulate_next(
         result.away_score as u32,
         result.winner_id,
     ).await.map_err(|e| e.to_string())?;
+
+    let played = match_engine.take_last_games_played();
+    update_season_games_played(&pool, &save_id, played).await.ok();
 
     // 保存选手赛事统计（用于MVP计算）
     let _ = save_quick_player_stats(

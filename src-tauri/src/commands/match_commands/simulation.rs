@@ -1,11 +1,15 @@
 use crate::commands::save_commands::{AppState, CommandResult};
 use crate::engines::{ConditionEngine, PlayerFormFactors, TraitType, TraitEngine, TraitContext, MetaEngine, MetaWeights};
+use crate::engines::lineup_engine::{LineupCandidate, LineupEngine, SubstitutionContext, SubstitutionDecision};
 use crate::models::MatchFormat;
+use crate::models::player::Position;
+use crate::models::transfer::AITeamPersonality;
 use crate::models::tournament_result::PlayerTournamentStats;
 use crate::services::LeagueService;
 use crate::db::{MatchRepository, PlayerTournamentStatsRepository};
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use std::collections::HashMap;
 use sqlx::Row;
 use tauri::State;
 
@@ -36,6 +40,10 @@ struct PlayerData {
     form_factors: PlayerFormFactors,
     traits: Vec<TraitType>,
     is_first_season: bool,
+    potential: u8,
+    satisfaction: u8,
+    join_season: i64,
+    is_starter: bool,
 }
 
 // ==================== 公开命令 ====================
@@ -252,11 +260,20 @@ async fn simulate_single_match_internal(
         _ => MatchFormat::Bo3,
     };
 
-    // 获取双方首发球员
-    let home_players = get_starting_players(pool, &ctx.save_id, home_team_id as u64, ctx.current_season).await?;
-    let away_players = get_starting_players(pool, &ctx.save_id, away_team_id as u64, ctx.current_season).await?;
+    // 获取双方大名单（首发+替补）
+    let (mut home_players, mut home_bench) = get_match_roster(pool, &ctx.save_id, home_team_id as u64, ctx.current_season).await?;
+    let (mut away_players, mut away_bench) = get_match_roster(pool, &ctx.save_id, away_team_id as u64, ctx.current_season).await?;
 
-    // 模拟比赛 - 核心逻辑：基于选手真实属性决定胜负
+    // 获取队伍 personality（用于换人决策）
+    let home_personality = get_team_personality(pool, home_team_id as u64).await;
+    let away_personality = get_team_personality(pool, away_team_id as u64).await;
+
+    let bo_count: u8 = match format {
+        MatchFormat::Bo1 => 1,
+        MatchFormat::Bo3 => 3,
+        MatchFormat::Bo5 => 5,
+    };
+
     let mut rng = StdRng::from_entropy();
 
     let wins_needed = format.wins_needed();
@@ -265,13 +282,55 @@ async fn simulate_single_match_internal(
     let mut games = Vec::new();
     let mut game_number: u8 = 1;
 
+    // 追踪系列赛中每个选手的出场局数
+    let mut games_played_series: HashMap<u64, u8> = HashMap::new();
+    // 追踪每个选手在整场比赛中的总出场局数（用于赛后更新 season_games_played）
+    let mut player_games_in_match: HashMap<u64, u32> = HashMap::new();
+    let mut pending_home_subs: HashMap<u64, (u64, String)> = HashMap::new();
+    let mut pending_away_subs: HashMap<u64, (u64, String)> = HashMap::new();
+
     let mut total_home_stats = TeamMatchStats::default(home_team_id as u64);
     let mut total_away_stats = TeamMatchStats::default(away_team_id as u64);
 
-    while home_score < wins_needed && away_score < wins_needed {
-        let duration = 25 + rng.gen_range(0..25); // 25-50分钟
+    sqlx::query("DELETE FROM match_lineups WHERE save_id = ? AND match_id = ?")
+        .bind(&ctx.save_id)
+        .bind(match_id as i64)
+        .execute(pool)
+        .await
+        .ok();
 
-        // 构建特性上下文
+    while home_score < wins_needed && away_score < wins_needed {
+        insert_match_lineups_for_team(
+            pool,
+            &ctx.save_id,
+            match_id,
+            game_number,
+            home_team_id as u64,
+            &home_players,
+            &pending_home_subs,
+        )
+        .await;
+        insert_match_lineups_for_team(
+            pool,
+            &ctx.save_id,
+            match_id,
+            game_number,
+            away_team_id as u64,
+            &away_players,
+            &pending_away_subs,
+        )
+        .await;
+        pending_home_subs.clear();
+        pending_away_subs.clear();
+
+        let duration = 25 + rng.gen_range(0..25);
+
+        // 记录本局出场选手
+        for p in home_players.iter().chain(away_players.iter()) {
+            *games_played_series.entry(p.id).or_insert(0) += 1;
+            *player_games_in_match.entry(p.id).or_insert(0) += 1;
+        }
+
         let is_international = matches!(
             ctx.tournament_type.as_str(),
             "msi" | "Msi" | "worlds" | "WorldChampionship" | "masters" | "MadridMasters"
@@ -287,12 +346,11 @@ async fn simulate_single_match_internal(
             is_international,
             game_number,
             score_diff: home_score as i8 - away_score as i8,
-            age: 0,  // 每个选手单独设置
-            is_first_season: false,  // 每个选手单独设置
+            age: 0,
+            is_first_season: false,
             games_since_rest: 0,
         };
 
-        // 核心：先计算每个选手的发挥值，返回选手统计和队伍总发挥
         let (home_player_stats, away_player_stats, home_perf, away_perf) = simulate_game_with_players(
             &home_players, &away_players,
             duration,
@@ -354,6 +412,59 @@ async fn simulate_single_match_internal(
             home_score += 1;
         } else {
             away_score += 1;
+        }
+
+        // 局间换人：仅在 BO 系列赛且比赛未结束时执行
+        if bo_count > 1 && home_score < wins_needed && away_score < wins_needed {
+            let sub_ctx_home = SubstitutionContext {
+                tournament_type: ctx.tournament_type.clone(),
+                round: stage.clone(),
+                bo_count,
+                game_number,
+                home_score,
+                away_score,
+                is_home: true,
+                current_season: ctx.current_season as u32,
+            };
+            let home_starter_candidates: Vec<LineupCandidate> = home_players.iter().map(player_data_to_candidate).collect();
+            let home_bench_candidates: Vec<LineupCandidate> = home_bench.iter().map(player_data_to_candidate).collect();
+            let home_subs = LineupEngine::check_substitutions(
+                &home_starter_candidates, &home_bench_candidates,
+                &sub_ctx_home, &home_personality,
+                ctx.current_season as u32, &games_played_series,
+            );
+            if !home_subs.is_empty() {
+                let applied = apply_substitutions(&mut home_players, &mut home_bench, &home_subs);
+                for d in applied {
+                    pending_home_subs
+                        .insert(d.sub_in_player_id, (d.sub_out_player_id, d.reason.clone()));
+                }
+            }
+
+            let sub_ctx_away = SubstitutionContext {
+                tournament_type: ctx.tournament_type.clone(),
+                round: stage.clone(),
+                bo_count,
+                game_number,
+                home_score,
+                away_score,
+                is_home: false,
+                current_season: ctx.current_season as u32,
+            };
+            let away_starter_candidates: Vec<LineupCandidate> = away_players.iter().map(player_data_to_candidate).collect();
+            let away_bench_candidates: Vec<LineupCandidate> = away_bench.iter().map(player_data_to_candidate).collect();
+            let away_subs = LineupEngine::check_substitutions(
+                &away_starter_candidates, &away_bench_candidates,
+                &sub_ctx_away, &away_personality,
+                ctx.current_season as u32, &games_played_series,
+            );
+            if !away_subs.is_empty() {
+                let applied = apply_substitutions(&mut away_players, &mut away_bench, &away_subs);
+                for d in applied {
+                    pending_away_subs
+                        .insert(d.sub_in_player_id, (d.sub_out_player_id, d.reason.clone()));
+                }
+            }
         }
 
         game_number += 1;
@@ -614,6 +725,44 @@ async fn simulate_single_match_internal(
     update_player_form_factors(pool, &ctx.save_id, &home_players, home_won, home_avg_perf).await.ok();
     update_player_form_factors(pool, &ctx.save_id, &away_players, !home_won, away_avg_perf).await.ok();
 
+    // 更新未出场替补的 form_factors（慢推进 + 疲劳清零）
+    update_bench_form_factors(pool, &ctx.save_id, &home_bench).await.ok();
+    update_bench_form_factors(pool, &ctx.save_id, &away_bench).await.ok();
+
+    // 更新出场选手的 season_games_played
+    for (player_id, games_count) in &player_games_in_match {
+        sqlx::query(
+            "UPDATE players SET season_games_played = season_games_played + ? WHERE id = ? AND save_id = ?"
+        )
+        .bind(*games_count as i64)
+        .bind(*player_id as i64)
+        .bind(&ctx.save_id)
+        .execute(pool)
+        .await
+        .ok();
+    }
+
+    // 更新两支队伍全体选手的 season_games_total（本场比赛局数）
+    let total_games_this_match = games.len() as i64;
+    sqlx::query(
+        "UPDATE players SET season_games_total = season_games_total + ? WHERE team_id = ? AND save_id = ? AND status = 'Active'"
+    )
+    .bind(total_games_this_match)
+    .bind(home_team_id)
+    .bind(&ctx.save_id)
+    .execute(pool)
+    .await
+    .ok();
+    sqlx::query(
+        "UPDATE players SET season_games_total = season_games_total + ? WHERE team_id = ? AND save_id = ? AND status = 'Active'"
+    )
+    .bind(total_games_this_match)
+    .bind(away_team_id)
+    .bind(&ctx.save_id)
+    .execute(pool)
+    .await
+    .ok();
+
     // 保存选手赛事统计（用于MVP计算）
     save_player_tournament_stats(
         pool,
@@ -679,20 +828,69 @@ async fn simulate_single_match_internal(
 
 // ==================== 辅助函数 ====================
 
-async fn get_starting_players(
+/// 从 SQL Row 构建 PlayerData
+fn build_player_data(
+    r: &sqlx::sqlite::SqliteRow,
+    player_id: u64,
+    traits: Vec<TraitType>,
+    current_season: i64,
+    is_starter: bool,
+) -> PlayerData {
+    let age = r.get::<i64, _>("age") as u8;
+    let ability = r.get::<i64, _>("ability") as u8;
+    let join_season = r.get::<Option<i64>, _>("join_season").unwrap_or(1);
+    let is_first_season = join_season == current_season;
+
+    let form_factors = PlayerFormFactors {
+        player_id,
+        form_cycle: r.get::<Option<f64>, _>("form_cycle").unwrap_or(50.0),
+        momentum: r.get::<Option<i64>, _>("momentum").unwrap_or(0) as i8,
+        last_performance: r.get::<Option<f64>, _>("last_performance").unwrap_or(0.0),
+        last_match_won: r.get::<Option<i64>, _>("last_match_won").unwrap_or(0) == 1,
+        games_since_rest: r.get::<Option<i64>, _>("games_since_rest").unwrap_or(0) as u32,
+    };
+
+    let condition = ConditionEngine::calculate_condition(age, ability, &form_factors, None);
+
+    PlayerData {
+        id: player_id,
+        game_id: r.get::<String, _>("game_id"),
+        position: r.get::<Option<String>, _>("position")
+            .unwrap_or_default()
+            .trim_start_matches("Some(")
+            .trim_end_matches(")")
+            .to_uppercase(),
+        ability,
+        age,
+        stability: r.get::<Option<i64>, _>("stability").unwrap_or(70) as u8,
+        condition,
+        form_factors,
+        traits,
+        is_first_season,
+        potential: r.get::<Option<i64>, _>("potential").unwrap_or(ability as i64) as u8,
+        satisfaction: r.get::<Option<i64>, _>("satisfaction").unwrap_or(60) as u8,
+        join_season,
+        is_starter,
+    }
+}
+
+/// 加载队伍完整大名单：(首发, 替补)
+async fn get_match_roster(
     pool: &sqlx::SqlitePool,
     save_id: &str,
     team_id: u64,
     current_season: i64,
-) -> Result<Vec<PlayerData>, String> {
+) -> Result<(Vec<PlayerData>, Vec<PlayerData>), String> {
+    // 加载所有 Active 选手
     let rows = sqlx::query(
         r#"
         SELECT p.id, p.game_id, p.position, p.ability, p.age, p.stability, p.join_season,
+               p.potential, p.satisfaction, p.is_starter,
                pff.form_cycle, pff.momentum, pff.last_performance, pff.last_match_won, pff.games_since_rest
         FROM players p
         LEFT JOIN player_form_factors pff ON p.id = pff.player_id
-        WHERE p.save_id = ? AND p.team_id = ? AND p.status = 'Active' AND p.is_starter = 1
-        ORDER BY p.position
+        WHERE p.save_id = ? AND p.team_id = ? AND p.status = 'Active'
+        ORDER BY p.is_starter DESC, p.ability DESC
         "#,
     )
     .bind(save_id)
@@ -701,115 +899,52 @@ async fn get_starting_players(
     .await
     .map_err(|e| e.to_string())?;
 
-    let mut players: Vec<PlayerData> = Vec::new();
+    let mut starters: Vec<PlayerData> = Vec::new();
+    let mut bench: Vec<PlayerData> = Vec::new();
 
     for r in &rows {
         let player_id = r.get::<i64, _>("id") as u64;
-        let age = r.get::<i64, _>("age") as u8;
-        let ability = r.get::<i64, _>("ability") as u8;
-        let join_season = r.get::<Option<i64>, _>("join_season").unwrap_or(1);
-        let is_first_season = join_season == current_season;
-
-        // 获取状态因子，如果不存在则使用默认值
-        let form_factors = PlayerFormFactors {
-            player_id,
-            form_cycle: r.get::<Option<f64>, _>("form_cycle").unwrap_or(50.0),
-            momentum: r.get::<Option<i64>, _>("momentum").unwrap_or(0) as i8,
-            last_performance: r.get::<Option<f64>, _>("last_performance").unwrap_or(0.0),
-            last_match_won: r.get::<Option<i64>, _>("last_match_won").unwrap_or(0) == 1,
-            games_since_rest: r.get::<Option<i64>, _>("games_since_rest").unwrap_or(0) as u32,
-        };
-
-        // 加载选手特性
+        let is_starter = r.get::<Option<i64>, _>("is_starter").unwrap_or(0) == 1;
         let traits = load_player_traits(pool, player_id).await?;
+        let player = build_player_data(r, player_id, traits, current_season, is_starter);
 
-        // 使用 ConditionEngine 计算动态 condition
-        let condition = ConditionEngine::calculate_condition(
-            age,
-            ability,
-            &form_factors,
-            None,
-        );
-
-        players.push(PlayerData {
-            id: player_id,
-            game_id: r.get::<String, _>("game_id"),
-            position: r.get::<Option<String>, _>("position")
-                .unwrap_or_default()
-                .trim_start_matches("Some(")
-                .trim_end_matches(")")
-                .to_uppercase(),
-            ability,
-            age,
-            stability: r.get::<Option<i64>, _>("stability").unwrap_or(70) as u8,
-            condition,
-            form_factors,
-            traits,
-            is_first_season,
-        });
-    }
-
-    // 如果首发不足5人，补充板凳
-    if players.len() < 5 {
-        let bench_rows = sqlx::query(
-            r#"
-            SELECT p.id, p.game_id, p.position, p.ability, p.age, p.stability, p.join_season,
-                   pff.form_cycle, pff.momentum, pff.last_performance, pff.last_match_won, pff.games_since_rest
-            FROM players p
-            LEFT JOIN player_form_factors pff ON p.id = pff.player_id
-            WHERE p.save_id = ? AND p.team_id = ? AND p.status = 'Active' AND p.is_starter = 0
-            ORDER BY p.ability DESC
-            LIMIT ?
-            "#,
-        )
-        .bind(save_id)
-        .bind(team_id as i64)
-        .bind((5 - players.len()) as i64)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        for r in bench_rows {
-            let player_id = r.get::<i64, _>("id") as u64;
-            let age = r.get::<i64, _>("age") as u8;
-            let ability = r.get::<i64, _>("ability") as u8;
-            let join_season = r.get::<Option<i64>, _>("join_season").unwrap_or(1);
-            let is_first_season = join_season == current_season;
-
-            let form_factors = PlayerFormFactors {
-                player_id,
-                form_cycle: r.get::<Option<f64>, _>("form_cycle").unwrap_or(50.0),
-                momentum: r.get::<Option<i64>, _>("momentum").unwrap_or(0) as i8,
-                last_performance: r.get::<Option<f64>, _>("last_performance").unwrap_or(0.0),
-                last_match_won: r.get::<Option<i64>, _>("last_match_won").unwrap_or(0) == 1,
-                games_since_rest: r.get::<Option<i64>, _>("games_since_rest").unwrap_or(0) as u32,
-            };
-
-            let traits = load_player_traits(pool, player_id).await?;
-
-            let condition = ConditionEngine::calculate_condition(
-                age,
-                ability,
-                &form_factors,
-                None,
-            );
-
-            players.push(PlayerData {
-                id: player_id,
-                game_id: r.get::<String, _>("game_id"),
-                position: r.get::<Option<String>, _>("position").unwrap_or_default(),
-                ability,
-                age,
-                stability: r.get::<Option<i64>, _>("stability").unwrap_or(70) as u8,
-                condition,
-                form_factors,
-                traits,
-                is_first_season,
-            });
+        if is_starter {
+            starters.push(player);
+        } else {
+            bench.push(player);
         }
     }
 
-    Ok(players)
+    // 如果首发不足5人，从板凳补充
+    while starters.len() < 5 && !bench.is_empty() {
+        // 找一个板凳选手补首发（按 ability 降序，bench 已按 ability DESC 排序）
+        let player = bench.remove(0);
+        starters.push(PlayerData { is_starter: true, ..player });
+    }
+
+    // 替补只保留每个位置最优的1名（不能重复位置过多）
+    let mut filtered_bench: Vec<PlayerData> = Vec::new();
+    let mut bench_positions: HashMap<String, usize> = HashMap::new();
+    for player in bench {
+        let count = bench_positions.entry(player.position.clone()).or_insert(0);
+        if *count < 1 {
+            *count += 1;
+            filtered_bench.push(player);
+        }
+    }
+
+    Ok((starters, filtered_bench))
+}
+
+#[allow(dead_code)]
+async fn get_starting_players(
+    pool: &sqlx::SqlitePool,
+    save_id: &str,
+    team_id: u64,
+    current_season: i64,
+) -> Result<Vec<PlayerData>, String> {
+    let (starters, _) = get_match_roster(pool, save_id, team_id, current_season).await?;
+    Ok(starters)
 }
 
 async fn load_player_traits(
@@ -836,6 +971,113 @@ async fn load_player_traits(
 
 fn parse_trait_type(s: &str) -> Option<TraitType> {
     TraitType::from_str(s)
+}
+
+fn parse_position(s: &str) -> Position {
+    match s.to_uppercase().as_str() {
+        "TOP" => Position::Top,
+        "JUG" | "JUNGLE" => Position::Jug,
+        "MID" => Position::Mid,
+        "ADC" | "BOT" => Position::Adc,
+        "SUP" | "SUPPORT" => Position::Sup,
+        _ => Position::Mid,
+    }
+}
+
+fn player_data_to_candidate(p: &PlayerData) -> LineupCandidate {
+    LineupCandidate {
+        player_id: p.id,
+        game_id: p.game_id.clone(),
+        position: parse_position(&p.position),
+        ability: p.ability,
+        age: p.age,
+        potential: p.potential,
+        condition: p.condition,
+        form_factors: p.form_factors.clone(),
+        is_starter: p.is_starter,
+        join_season: p.join_season as u32,
+        traits: p.traits.clone(),
+        satisfaction: p.satisfaction,
+        champion_version_score: 0.0,
+    }
+}
+
+async fn insert_match_lineups_for_team(
+    pool: &sqlx::SqlitePool,
+    save_id: &str,
+    match_id: u64,
+    game_number: u8,
+    team_id: u64,
+    lineup: &[PlayerData],
+    substitutions: &HashMap<u64, (u64, String)>,
+) {
+    for p in lineup {
+        let (is_sub, replaced_id, reason) = if let Some((out_id, reason)) = substitutions.get(&p.id)
+        {
+            (1i64, Some(*out_id as i64), Some(reason.clone()))
+        } else {
+            (0i64, None, None)
+        };
+
+        sqlx::query(
+            "INSERT INTO match_lineups (save_id, match_id, game_number, team_id, player_id, position, is_substitution, replaced_player_id, substitution_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(save_id)
+        .bind(match_id as i64)
+        .bind(game_number as i64)
+        .bind(team_id as i64)
+        .bind(p.id as i64)
+        .bind(&p.position)
+        .bind(is_sub)
+        .bind(replaced_id)
+        .bind(reason)
+        .execute(pool)
+        .await
+        .ok();
+    }
+}
+
+fn apply_substitutions(
+    lineup: &mut Vec<PlayerData>,
+    bench: &mut Vec<PlayerData>,
+    decisions: &[SubstitutionDecision],
+) -> Vec<SubstitutionDecision> {
+    let mut applied = Vec::new();
+
+    for decision in decisions {
+        let sub_out_idx = lineup.iter().position(|p| p.id == decision.sub_out_player_id);
+        let sub_in_idx = bench.iter().position(|p| p.id == decision.sub_in_player_id);
+
+        if let (Some(out_idx), Some(in_idx)) = (sub_out_idx, sub_in_idx) {
+            let mut sub_in = bench.remove(in_idx);
+            sub_in.is_starter = true;
+            let mut sub_out = lineup[out_idx].clone();
+            sub_out.is_starter = false;
+            lineup[out_idx] = sub_in;
+            bench.push(sub_out);
+            applied.push(decision.clone());
+        }
+    }
+
+    applied
+}
+
+async fn get_team_personality(
+    pool: &sqlx::SqlitePool,
+    team_id: u64,
+) -> AITeamPersonality {
+    let result: Option<String> = sqlx::query_scalar(
+        "SELECT personality FROM team_personality_configs WHERE team_id = ? LIMIT 1"
+    )
+    .bind(team_id as i64)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    result
+        .map(|s| AITeamPersonality::from_str(&s))
+        .unwrap_or(AITeamPersonality::Balanced)
 }
 
 fn simulate_game_with_players(
@@ -1200,6 +1442,43 @@ async fn update_player_form_factors(
         .bind(updated_factors.last_performance)
         .bind(if updated_factors.last_match_won { 1i64 } else { 0i64 })
         .bind(updated_factors.games_since_rest as i64)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+async fn update_bench_form_factors(
+    pool: &sqlx::SqlitePool,
+    save_id: &str,
+    bench_players: &[PlayerData],
+) -> Result<(), String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    for player in bench_players {
+        let updated = ConditionEngine::update_form_factors_bench(player.form_factors.clone());
+
+        sqlx::query(
+            r#"
+            INSERT INTO player_form_factors (save_id, player_id, form_cycle, momentum, last_performance, last_match_won, games_since_rest, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(save_id, player_id) DO UPDATE SET
+                form_cycle = excluded.form_cycle,
+                momentum = excluded.momentum,
+                games_since_rest = excluded.games_since_rest,
+                updated_at = datetime('now')
+            "#,
+        )
+        .bind(save_id)
+        .bind(player.id as i64)
+        .bind(updated.form_cycle)
+        .bind(updated.momentum as i64)
+        .bind(updated.last_performance)
+        .bind(if updated.last_match_won { 1i64 } else { 0i64 })
+        .bind(updated.games_since_rest as i64)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;

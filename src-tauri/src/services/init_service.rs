@@ -6,8 +6,10 @@ use crate::services::free_agent_data::get_free_agents;
 use crate::services::league_service::LeagueService;
 use crate::engines::meta_engine::MetaEngine;
 use crate::engines::market_value::MarketValueEngine;
+use crate::engines::champion::{self, MasteryTier};
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 use sqlx::{Pool, Sqlite};
 
 /// 初始化服务 - 生成游戏初始数据
@@ -517,6 +519,8 @@ impl InitService {
                         .execute(pool)
                         .await
                         .map_err(|e| format!("Failed to init form factors for player {}: {}", player_id, e))?;
+
+                        Self::assign_champion_mastery(pool, save_id, player_id, config.position, config.ability, &mut rng).await?;
                     }
                 } else {
                     // 回退到随机生成选手
@@ -542,6 +546,10 @@ impl InitService {
                         .execute(pool)
                         .await
                         .map_err(|e| format!("Failed to init form factors for player {}: {}", player_id, e))?;
+
+                        if let Some(pos) = player.position {
+                            Self::assign_champion_mastery(pool, save_id, player_id, pos, player.ability, &mut rng).await?;
+                        }
                     }
                 }
             }
@@ -766,9 +774,77 @@ impl InitService {
                 .execute(pool)
                 .await
                 .map_err(|e| format!("Failed to init form factors for free agent {}: {}", player_id, e))?;
+
+                Self::assign_champion_mastery(pool, save_id, player_id, position, fa.ability, &mut rng).await?;
             }
         }
 
+        Ok(())
+    }
+
+    /// 为单个选手分配英雄熟练度
+    /// 
+    /// 规则（缩放后阈值）：
+    /// - ability ≥ 68: 1 SS + 2 S + 3 A = 6 个非 B
+    /// - ability ≥ 62: 0 SS + 1 S + 3 A = 4 个非 B
+    /// - ability ≥ 54: 0 SS + 0 S + 2 A = 2 个非 B
+    /// - ability < 54: 0 SS + 0 S + 1 A = 1 个非 B
+    /// 
+    /// 只分配本位置的 10 个英雄，B 级不存库
+    async fn assign_champion_mastery(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        player_id: u64,
+        position: Position,
+        ability: u8,
+        rng: &mut StdRng,
+    ) -> Result<(), String> {
+        let mut position_champions: Vec<u8> = champion::get_champions_by_position(position)
+            .iter()
+            .map(|c| c.id)
+            .collect();
+        position_champions.shuffle(rng);
+        
+        let (ss_count, s_count, a_count) = if ability >= 68 {
+            (1usize, 2usize, 3usize)
+        } else if ability >= 62 {
+            (0, 1, 3)
+        } else if ability >= 54 {
+            (0, 0, 2)
+        } else {
+            (0, 0, 1)
+        };
+        
+        let mut idx = 0;
+        for &champion_id in &position_champions {
+            let tier = if idx < ss_count {
+                MasteryTier::SS
+            } else if idx < ss_count + s_count {
+                MasteryTier::S
+            } else if idx < ss_count + s_count + a_count {
+                MasteryTier::A
+            } else {
+                break;
+            };
+            
+            sqlx::query(
+                r#"
+                INSERT INTO player_champion_mastery (save_id, player_id, champion_id, mastery_tier, games_played, games_won)
+                VALUES (?, ?, ?, ?, 0, 0)
+                ON CONFLICT(save_id, player_id, champion_id) DO NOTHING
+                "#
+            )
+            .bind(save_id)
+            .bind(player_id as i64)
+            .bind(champion_id as i64)
+            .bind(tier.id())
+            .execute(pool)
+            .await
+            .map_err(|e| format!("Failed to insert champion mastery for player {}: {}", player_id, e))?;
+            
+            idx += 1;
+        }
+        
         Ok(())
     }
 
@@ -967,6 +1043,8 @@ impl InitService {
                     .execute(pool)
                     .await
                     .map_err(|e| format!("Failed to init form factors for player {}: {}", player_id, e))?;
+
+                    Self::assign_champion_mastery(pool, save_id, player_id, position, player_config.ability, &mut rng).await?;
                 }
             }
 
@@ -1032,6 +1110,8 @@ impl InitService {
                 .execute(pool)
                 .await
                 .map_err(|e| format!("Failed to init form factors for free agent {}: {}", player_id, e))?;
+
+                Self::assign_champion_mastery(pool, save_id, player_id, position, player_config.ability, &mut rng_free).await?;
             }
         }
 

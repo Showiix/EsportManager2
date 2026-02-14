@@ -1,7 +1,13 @@
+use super::lineup_engine::{LineupCandidate, LineupEngine, SubstitutionContext};
+use super::meta_engine::{MetaEngine, MetaWeights};
+use super::traits::{TraitContext, TraitEngine, TraitType};
+use super::PlayerFormFactors;
+use crate::models::player::Position;
+use crate::models::transfer::AITeamPersonality;
+use crate::models::{Match, MatchFormat, MatchGame, MatchResult, MatchStatus};
 use rand_distr::{Distribution, Normal};
-use crate::models::{MatchFormat, MatchGame, MatchResult, Match, MatchStatus};
-use super::traits::{TraitType, TraitContext, TraitEngine};
-use super::meta_engine::{MetaWeights, MetaEngine};
+use std::collections::HashMap;
+use std::sync::Mutex;
 
 /// 比赛用选手信息（用于快速模拟路径的特性感知）
 #[derive(Debug, Clone)]
@@ -14,6 +20,13 @@ pub struct MatchPlayerInfo {
     pub position: String,
     pub traits: Vec<TraitType>,
     pub is_first_season: bool,
+    pub is_starter: bool,
+    pub join_season: i64,
+    pub potential: u8,
+    pub satisfaction: u8,
+    pub form_factors: Option<super::PlayerFormFactors>,
+    pub bp_modifier: f64,
+    pub champion_version_score: f64,
 }
 
 /// 比赛情境信息（用于快速模拟路径的特性触发判断）
@@ -28,17 +41,28 @@ pub struct MatchSimContext {
 pub struct MatchSimulationEngine {
     /// 标准差 (控制发挥波动程度)
     std_dev: f64,
+    last_games_played: Mutex<HashMap<u64, u8>>,
 }
 
 impl Default for MatchSimulationEngine {
     fn default() -> Self {
-        Self { std_dev: 6.0 }
+        Self {
+            std_dev: 6.0,
+            last_games_played: Mutex::new(HashMap::new()),
+        }
     }
 }
 
 impl MatchSimulationEngine {
     pub fn new(std_dev: f64) -> Self {
-        Self { std_dev }
+        Self {
+            std_dev,
+            last_games_played: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn take_last_games_played(&self) -> HashMap<u64, u8> {
+        std::mem::take(&mut *self.last_games_played.lock().unwrap())
     }
 
     /// 基于Box-Muller变换生成正态分布随机数
@@ -168,41 +192,74 @@ impl MatchSimulationEngine {
         away_team_id: u64,
         home_players: &[MatchPlayerInfo],
         away_players: &[MatchPlayerInfo],
+        home_bench: &[MatchPlayerInfo],
+        away_bench: &[MatchPlayerInfo],
         sim_ctx: &MatchSimContext,
         meta_weights: &MetaWeights,
+        home_personality: &AITeamPersonality,
+        away_personality: &AITeamPersonality,
+        current_season: u32,
     ) -> MatchResult {
-        // 如果任一方没有选手数据，回退到默认战力模拟
+        self.last_games_played.lock().unwrap().clear();
+
         if home_players.is_empty() || away_players.is_empty() {
             return self.simulate_match(
-                match_id, tournament_id, stage, format,
-                home_team_id, away_team_id, 70.0, 70.0,
+                match_id,
+                tournament_id,
+                stage,
+                format,
+                home_team_id,
+                away_team_id,
+                70.0,
+                70.0,
             );
         }
 
-        // 检测 TeamLeader 特性：如果队内有人拥有 TeamLeader，其余队友 condition +1
-        let home_has_leader = home_players.iter().any(|p| p.traits.contains(&TraitType::TeamLeader));
-        let away_has_leader = away_players.iter().any(|p| p.traits.contains(&TraitType::TeamLeader));
+        let mut current_home: Vec<MatchPlayerInfo> = home_players.to_vec();
+        let mut current_away: Vec<MatchPlayerInfo> = away_players.to_vec();
+        let mut home_bench_mut: Vec<MatchPlayerInfo> = home_bench.to_vec();
+        let mut away_bench_mut: Vec<MatchPlayerInfo> = away_bench.to_vec();
+
+        let bo_count: u8 = match format {
+            MatchFormat::Bo1 => 1,
+            MatchFormat::Bo3 => 3,
+            MatchFormat::Bo5 => 5,
+        };
 
         let wins_needed = format.wins_needed();
         let mut home_score: u8 = 0;
         let mut away_score: u8 = 0;
         let mut games = Vec::new();
         let mut game_number: u8 = 1;
+        let mut games_played_series: HashMap<u64, u8> = HashMap::new();
 
         while home_score < wins_needed && away_score < wins_needed {
+            let home_has_leader = current_home
+                .iter()
+                .any(|p| p.traits.contains(&TraitType::TeamLeader));
+            let away_has_leader = current_away
+                .iter()
+                .any(|p| p.traits.contains(&TraitType::TeamLeader));
+
             let score_diff_home = home_score as i8 - away_score as i8;
 
-            // 计算双方特性修正后的队伍战力
             let home_power = self.calculate_trait_adjusted_power(
-                home_players, game_number, score_diff_home,
-                sim_ctx, meta_weights, home_has_leader,
+                &current_home,
+                game_number,
+                score_diff_home,
+                sim_ctx,
+                meta_weights,
+                home_has_leader,
             );
             let away_power = self.calculate_trait_adjusted_power(
-                away_players, game_number, -score_diff_home,
-                sim_ctx, meta_weights, away_has_leader,
+                &current_away,
+                game_number,
+                -score_diff_home,
+                sim_ctx,
+                meta_weights,
+                away_has_leader,
             );
 
-            // 使用已有的正态分布采样决定胜负
             let (home_perf, away_perf, winner_id) =
                 self.simulate_game(home_power, away_power, home_team_id, away_team_id);
 
@@ -220,14 +277,52 @@ impl MatchSimulationEngine {
 
             games.push(game);
 
+            for p in current_home.iter().chain(current_away.iter()) {
+                *games_played_series.entry(p.player_id).or_insert(0) += 1;
+            }
+
             if winner_id == home_team_id {
                 home_score += 1;
             } else {
                 away_score += 1;
             }
 
+            // 局间换人（BO系列赛且比赛未结束）
+            if bo_count > 1 && home_score < wins_needed && away_score < wins_needed {
+                Self::try_substitution(
+                    &mut current_home,
+                    &mut home_bench_mut,
+                    &sim_ctx.tournament_type,
+                    stage,
+                    bo_count,
+                    game_number,
+                    home_score,
+                    away_score,
+                    true,
+                    home_personality,
+                    current_season,
+                    &games_played_series,
+                );
+                Self::try_substitution(
+                    &mut current_away,
+                    &mut away_bench_mut,
+                    &sim_ctx.tournament_type,
+                    stage,
+                    bo_count,
+                    game_number,
+                    home_score,
+                    away_score,
+                    false,
+                    away_personality,
+                    current_season,
+                    &games_played_series,
+                );
+            }
+
             game_number += 1;
         }
+
+        *self.last_games_played.lock().unwrap() = games_played_series;
 
         let winner_id = if home_score > away_score {
             home_team_id
@@ -256,6 +351,105 @@ impl MatchSimulationEngine {
             winner_id,
             home_score,
             away_score,
+        }
+    }
+
+    fn try_substitution(
+        lineup: &mut Vec<MatchPlayerInfo>,
+        bench: &mut Vec<MatchPlayerInfo>,
+        tournament_type: &str,
+        stage: &str,
+        bo_count: u8,
+        game_number: u8,
+        home_score: u8,
+        away_score: u8,
+        is_home: bool,
+        personality: &AITeamPersonality,
+        current_season: u32,
+        games_played_series: &HashMap<u64, u8>,
+    ) {
+        if bench.is_empty() {
+            return;
+        }
+
+        let sub_ctx = SubstitutionContext {
+            tournament_type: tournament_type.to_string(),
+            round: stage.to_string(),
+            bo_count,
+            game_number,
+            home_score,
+            away_score,
+            is_home,
+            current_season,
+        };
+
+        let starter_candidates: Vec<LineupCandidate> = lineup
+            .iter()
+            .map(|p| Self::to_candidate(p, current_season))
+            .collect();
+        let bench_candidates: Vec<LineupCandidate> = bench
+            .iter()
+            .map(|p| Self::to_candidate(p, current_season))
+            .collect();
+
+        let decisions = LineupEngine::check_substitutions(
+            &starter_candidates,
+            &bench_candidates,
+            &sub_ctx,
+            personality,
+            current_season,
+            games_played_series,
+        );
+
+        for decision in &decisions {
+            let sub_out_idx = lineup
+                .iter()
+                .position(|p| p.player_id == decision.sub_out_player_id);
+            let sub_in_idx = bench
+                .iter()
+                .position(|p| p.player_id == decision.sub_in_player_id);
+
+            if let (Some(out_idx), Some(in_idx)) = (sub_out_idx, sub_in_idx) {
+                let mut sub_in = bench.remove(in_idx);
+                sub_in.is_starter = true;
+                let mut sub_out = lineup[out_idx].clone();
+                sub_out.is_starter = false;
+                lineup[out_idx] = sub_in;
+                bench.push(sub_out);
+            }
+        }
+    }
+
+    fn to_candidate(p: &MatchPlayerInfo, _current_season: u32) -> LineupCandidate {
+        let position = match p.position.to_uppercase().as_str() {
+            "TOP" => Position::Top,
+            "JUG" | "JUNGLE" => Position::Jug,
+            "MID" => Position::Mid,
+            "ADC" | "BOT" => Position::Adc,
+            "SUP" | "SUPPORT" => Position::Sup,
+            _ => Position::Mid,
+        };
+        LineupCandidate {
+            player_id: p.player_id,
+            game_id: format!("P{}", p.player_id),
+            position,
+            ability: p.ability,
+            age: p.age,
+            potential: p.potential,
+            condition: p.condition,
+            form_factors: p.form_factors.clone().unwrap_or(PlayerFormFactors {
+                player_id: p.player_id,
+                form_cycle: 50.0,
+                momentum: 0,
+                last_performance: 0.0,
+                last_match_won: false,
+                games_since_rest: 0,
+            }),
+            is_starter: p.is_starter,
+            join_season: p.join_season as u32,
+            traits: p.traits.clone(),
+            satisfaction: p.satisfaction,
+            champion_version_score: p.champion_version_score,
         }
     }
 
@@ -311,7 +505,8 @@ impl MatchSimulationEngine {
             let noise: f64 = normal.sample(&mut rng);
 
             // 实际能力 = modified_ability + modified_condition + noise
-            let raw_ability = modified_ability as f64 + modified_condition as f64 + noise;
+            let raw_ability =
+                modified_ability as f64 + player.bp_modifier + modified_condition as f64 + noise;
 
             // 钳位到 [ability - 15, ability_ceiling]
             let min_ability = (modified_ability as f64 - 15.0).max(0.0);
@@ -410,23 +605,21 @@ mod tests {
     #[test]
     fn test_simulate_match_bo1() {
         let engine = MatchSimulationEngine::default();
-        let result = engine.simulate_match(
-            1, 1, "GROUP", MatchFormat::Bo1, 1, 2, 75.0, 75.0
-        );
+        let result = engine.simulate_match(1, 1, "GROUP", MatchFormat::Bo1, 1, 2, 75.0, 75.0);
 
         // BO1只有1局
         assert_eq!(result.games.len(), 1);
         // 比分应该是1:0
-        assert!((result.home_score == 1 && result.away_score == 0) ||
-                (result.home_score == 0 && result.away_score == 1));
+        assert!(
+            (result.home_score == 1 && result.away_score == 0)
+                || (result.home_score == 0 && result.away_score == 1)
+        );
     }
 
     #[test]
     fn test_simulate_match_bo3() {
         let engine = MatchSimulationEngine::default();
-        let result = engine.simulate_match(
-            1, 1, "GROUP", MatchFormat::Bo3, 1, 2, 75.0, 75.0
-        );
+        let result = engine.simulate_match(1, 1, "GROUP", MatchFormat::Bo3, 1, 2, 75.0, 75.0);
 
         // BO3应该有2-3局
         assert!(result.games.len() >= 2 && result.games.len() <= 3);
@@ -439,9 +632,7 @@ mod tests {
     #[test]
     fn test_simulate_match_bo5() {
         let engine = MatchSimulationEngine::default();
-        let result = engine.simulate_match(
-            1, 1, "FINAL", MatchFormat::Bo5, 1, 2, 75.0, 75.0
-        );
+        let result = engine.simulate_match(1, 1, "FINAL", MatchFormat::Bo5, 1, 2, 75.0, 75.0);
 
         // BO5应该有3-5局
         assert!(result.games.len() >= 3 && result.games.len() <= 5);
@@ -507,9 +698,7 @@ mod tests {
     #[test]
     fn test_match_result_consistency() {
         let engine = MatchSimulationEngine::default();
-        let result = engine.simulate_match(
-            1, 1, "PLAYOFF", MatchFormat::Bo5, 1, 2, 80.0, 75.0
-        );
+        let result = engine.simulate_match(1, 1, "PLAYOFF", MatchFormat::Bo5, 1, 2, 80.0, 75.0);
 
         // 验证结果一致性
         assert_eq!(result.match_info.home_score, result.home_score);
@@ -518,10 +707,16 @@ mod tests {
         assert_eq!(result.match_info.status, MatchStatus::Completed);
 
         // 验证小局数量
-        let game_wins: u8 = result.games.iter()
+        let game_wins: u8 = result
+            .games
+            .iter()
             .filter(|g| g.winner_id == result.winner_id)
             .count() as u8;
-        let winner_score = if result.winner_id == 1 { result.home_score } else { result.away_score };
+        let winner_score = if result.winner_id == 1 {
+            result.home_score
+        } else {
+            result.away_score
+        };
         assert_eq!(game_wins, winner_score);
     }
 
@@ -537,6 +732,13 @@ mod tests {
             position: position.to_string(),
             traits,
             is_first_season: false,
+            is_starter: true,
+            join_season: 1,
+            potential: ability,
+            satisfaction: 60,
+            form_factors: None,
+            bp_modifier: 0.0,
+            champion_version_score: 0.0,
         }
     }
 
@@ -563,8 +765,21 @@ mod tests {
         let weights = MetaWeights::balanced();
 
         let result = engine.simulate_match_with_traits(
-            1, 1, "GROUP", MatchFormat::Bo3, 1, 2,
-            &home, &away, &ctx, &weights,
+            1,
+            1,
+            "GROUP",
+            MatchFormat::Bo3,
+            1,
+            2,
+            &home,
+            &away,
+            &[],
+            &[],
+            &ctx,
+            &weights,
+            &AITeamPersonality::Balanced,
+            &AITeamPersonality::Balanced,
+            1,
         );
 
         assert!(result.games.len() >= 2 && result.games.len() <= 3);
@@ -584,8 +799,21 @@ mod tests {
         let weights = MetaWeights::balanced();
 
         let result = engine.simulate_match_with_traits(
-            1, 1, "PLAYOFF", MatchFormat::Bo5, 1, 2,
-            &home, &away, &ctx, &weights,
+            1,
+            1,
+            "PLAYOFF",
+            MatchFormat::Bo5,
+            1,
+            2,
+            &home,
+            &away,
+            &[],
+            &[],
+            &ctx,
+            &weights,
+            &AITeamPersonality::Balanced,
+            &AITeamPersonality::Balanced,
+            1,
         );
 
         assert!(result.games.len() >= 3 && result.games.len() <= 5);
@@ -607,8 +835,21 @@ mod tests {
         let mut home_wins = 0;
         for _ in 0..500 {
             let result = engine.simulate_match_with_traits(
-                1, 1, "PLAYOFF", MatchFormat::Bo3, 1, 2,
-                &home, &away, &ctx, &weights,
+                1,
+                1,
+                "PLAYOFF",
+                MatchFormat::Bo3,
+                1,
+                2,
+                &home,
+                &away,
+                &[],
+                &[],
+                &ctx,
+                &weights,
+                &AITeamPersonality::Balanced,
+                &AITeamPersonality::Balanced,
+                1,
             );
             if result.winner_id == 1 {
                 home_wins += 1;
@@ -616,7 +857,11 @@ mod tests {
         }
 
         // Clutch 在季后赛应提升胜率，主队应赢得超过 50%
-        assert!(home_wins > 250, "Clutch 特性在季后赛中应有提升，实际胜场: {}/500", home_wins);
+        assert!(
+            home_wins > 250,
+            "Clutch 特性在季后赛中应有提升，实际胜场: {}/500",
+            home_wins
+        );
     }
 
     #[test]
@@ -636,14 +881,31 @@ mod tests {
         let mut leader_wins = 0;
         for _ in 0..500 {
             let result = engine.simulate_match_with_traits(
-                1, 1, "GROUP", MatchFormat::Bo3, 1, 2,
-                &team_with_leader, &team_without, &ctx, &weights,
+                1,
+                1,
+                "GROUP",
+                MatchFormat::Bo3,
+                1,
+                2,
+                &team_with_leader,
+                &team_without,
+                &[],
+                &[],
+                &ctx,
+                &weights,
+                &AITeamPersonality::Balanced,
+                &AITeamPersonality::Balanced,
+                1,
             );
             if result.winner_id == 1 {
                 leader_wins += 1;
             }
         }
 
-        assert!(leader_wins > 230, "TeamLeader 应有微弱提升，实际胜场: {}/500", leader_wins);
+        assert!(
+            leader_wins > 230,
+            "TeamLeader 应有微弱提升，实际胜场: {}/500",
+            leader_wins
+        );
     }
 }

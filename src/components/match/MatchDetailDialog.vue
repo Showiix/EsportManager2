@@ -101,8 +101,46 @@
         </button>
       </div>
 
+      <!-- 阵容信息 -->
+      <div v-if="currentLineup" class="lineup-section">
+        <div class="lineup-header">
+          <span class="lineup-title">阵容</span>
+        </div>
+        <div class="lineup-body">
+          <div class="lineup-team">
+            <div class="lineup-team-label">{{ matchDetail.teamAName }}</div>
+            <div class="lineup-players">
+              <span v-for="p in currentLineup.home_players" :key="p.player_id" class="lineup-player">
+                <span class="lineup-pos">{{ p.position }}</span>
+                <span class="lineup-name">{{ p.player_name }}</span>
+              </span>
+            </div>
+          </div>
+          <div class="lineup-vs">VS</div>
+          <div class="lineup-team">
+            <div class="lineup-team-label">{{ matchDetail.teamBName }}</div>
+            <div class="lineup-players">
+              <span v-for="p in currentLineup.away_players" :key="p.player_id" class="lineup-player">
+                <span class="lineup-pos">{{ p.position }}</span>
+                <span class="lineup-name">{{ p.player_name }}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div v-if="currentLineup.substitutions.length > 0" class="lineup-subs">
+          <div class="lineup-subs-title">换人</div>
+          <div v-for="s in currentLineup.substitutions" :key="`sub-${s.player_id}-${s.game_number}`" class="lineup-sub-item">
+            <span class="sub-arrow">↔</span>
+            <span class="sub-in">{{ s.player_name }}</span>
+            <span class="sub-pos">({{ s.position }})</span>
+            <span v-if="s.replaced_player_name" class="sub-out">替换 {{ s.replaced_player_name }}</span>
+            <span v-if="s.substitution_reason" class="sub-reason">· {{ s.substitution_reason }}</span>
+          </div>
+        </div>
+      </div>
+
       <!-- 当前局详情 -->
-      <GameDetailView v-if="currentGame" :game="currentGame" />
+      <GameDetailView v-if="currentGame" :game="currentGame" :match-id="matchDetail?.matchId" />
 
       <!-- 底部统计栏 -->
       <div class="match-stats">
@@ -143,7 +181,7 @@ import { ref, computed, watch } from 'vue'
 import type { MatchDetail } from '@/types/matchDetail'
 import GameDetailView from './GameDetailView.vue'
 import { ElMessage } from 'element-plus'
-import { traitCenterApi, type TeamSynergyInfo } from '@/api/tauri'
+import { traitCenterApi, matchApi, type TeamSynergyInfo, type MatchLineupsResult, type MatchGameLineup } from '@/api/tauri'
 
 interface Props {
   visible: boolean
@@ -167,6 +205,14 @@ const activeTab = ref('1')
 const synergyA = ref<TeamSynergyInfo | null>(null)
 const synergyB = ref<TeamSynergyInfo | null>(null)
 
+// 阵容数据
+const lineups = ref<MatchLineupsResult | null>(null)
+
+const currentLineup = computed<MatchGameLineup | undefined>(() => {
+  if (!lineups.value) return undefined
+  return lineups.value.games.find(g => String(g.game_number) === activeTab.value)
+})
+
 // 加载协同值
 const loadSynergy = async () => {
   if (!props.matchDetail) return
@@ -182,6 +228,12 @@ const loadSynergy = async () => {
     synergyA.value = null
     synergyB.value = null
   }
+
+  try {
+    lineups.value = await matchApi.getMatchLineups(Number(props.matchDetail.matchId))
+  } catch {
+    lineups.value = null
+  }
 }
 
 // 重置选项卡
@@ -192,6 +244,7 @@ watch(() => props.matchDetail, (newVal) => {
   } else {
     synergyA.value = null
     synergyB.value = null
+    lineups.value = null
   }
 }, { immediate: true })
 
@@ -667,5 +720,131 @@ const handleExport = () => {
 
 .stat-value.upset {
   color: #f59e0b;
+}
+
+/* 阵容区 */
+.lineup-section {
+  margin: 0 24px;
+  padding: 16px 20px;
+  background: #f7f8fa;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.lineup-header {
+  margin-bottom: 12px;
+}
+
+.lineup-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1d2129;
+  letter-spacing: 1px;
+}
+
+.lineup-body {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.lineup-team {
+  flex: 1;
+  text-align: center;
+}
+
+.lineup-team-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #4e5969;
+  margin-bottom: 8px;
+}
+
+.lineup-players {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lineup-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  font-size: 12px;
+}
+
+.lineup-pos {
+  font-weight: 800;
+  color: #667eea;
+  min-width: 48px;
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.lineup-name {
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.lineup-vs {
+  font-size: 11px;
+  font-weight: 700;
+  color: #c0c4cc;
+  letter-spacing: 2px;
+  padding-top: 28px;
+}
+
+.lineup-subs {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.lineup-subs-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #86909c;
+  margin-bottom: 8px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.lineup-sub-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: #4e5969;
+}
+
+.sub-arrow {
+  color: #667eea;
+  font-weight: 700;
+}
+
+.sub-in {
+  font-weight: 700;
+  color: #10b981;
+}
+
+.sub-pos {
+  color: #86909c;
+  font-size: 11px;
+}
+
+.sub-out {
+  color: #ef4444;
+}
+
+.sub-reason {
+  color: #86909c;
+  font-size: 11px;
 }
 </style>

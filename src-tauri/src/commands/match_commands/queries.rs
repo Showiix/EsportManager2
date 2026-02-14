@@ -3,7 +3,9 @@ use crate::engines::MatchSimulationEngine;
 use sqlx::Row;
 use tauri::State;
 
-use super::{PlayerSeasonStats, MatchPrediction};
+use super::{
+    MatchGameLineup, MatchLineupEntry, MatchLineupsResult, MatchPrediction, PlayerSeasonStats,
+};
 
 /// 获取球员赛季统计
 #[tauri::command]
@@ -118,6 +120,116 @@ pub async fn get_match_prediction(
         away_power,
         away_win_probability: 1.0 - home_win_prob,
         predicted_score: predict_score(home_win_prob, &match_row.get::<String, _>("format")),
+    }))
+}
+
+#[tauri::command]
+pub async fn get_match_lineups(
+    state: State<'_, AppState>,
+    match_id: u64,
+) -> Result<CommandResult<MatchLineupsResult>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let match_row = sqlx::query(
+        "SELECT home_team_id, away_team_id FROM matches WHERE id = ?"
+    )
+    .bind(match_id as i64)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let match_row = match match_row {
+        Some(r) => r,
+        None => return Ok(CommandResult::err("Match not found")),
+    };
+
+    let home_team_id = match_row.get::<i64, _>("home_team_id") as u64;
+    let away_team_id = match_row.get::<i64, _>("away_team_id") as u64;
+
+    let rows = sqlx::query(
+        r#"
+        SELECT ml.game_number, ml.team_id, ml.player_id, ml.position,
+               ml.is_substitution, ml.replaced_player_id, ml.substitution_reason,
+               p.game_id as player_name,
+               rp.game_id as replaced_player_name
+        FROM match_lineups ml
+        JOIN players p ON ml.player_id = p.id AND ml.save_id = p.save_id
+        LEFT JOIN players rp ON ml.replaced_player_id = rp.id AND ml.save_id = rp.save_id
+        WHERE ml.save_id = ? AND ml.match_id = ?
+        ORDER BY ml.game_number, ml.team_id, ml.is_substitution, ml.position
+        "#,
+    )
+    .bind(&save_id)
+    .bind(match_id as i64)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut games_map: std::collections::BTreeMap<u8, (Vec<MatchLineupEntry>, Vec<MatchLineupEntry>, Vec<MatchLineupEntry>)> =
+        std::collections::BTreeMap::new();
+
+    for row in &rows {
+        let game_number = row.get::<i64, _>("game_number") as u8;
+        let team_id = row.get::<i64, _>("team_id") as u64;
+        let is_sub = row.get::<i64, _>("is_substitution") != 0;
+
+        let entry = MatchLineupEntry {
+            game_number,
+            team_id,
+            player_id: row.get::<i64, _>("player_id") as u64,
+            player_name: row.get::<String, _>("player_name"),
+            position: row.get::<String, _>("position"),
+            is_substitution: is_sub,
+            replaced_player_id: row
+                .get::<Option<i64>, _>("replaced_player_id")
+                .map(|id| id as u64),
+            replaced_player_name: row.get::<Option<String>, _>("replaced_player_name"),
+            substitution_reason: row.get::<Option<String>, _>("substitution_reason"),
+        };
+
+        let (home, away, subs) = games_map.entry(game_number).or_insert_with(|| {
+            (Vec::new(), Vec::new(), Vec::new())
+        });
+
+        if is_sub {
+            subs.push(entry);
+        } else if team_id == home_team_id {
+            home.push(entry);
+        } else if team_id == away_team_id {
+            away.push(entry);
+        }
+    }
+
+    let games: Vec<MatchGameLineup> = games_map
+        .into_iter()
+        .map(|(game_number, (home_players, away_players, substitutions))| {
+            MatchGameLineup {
+                game_number,
+                home_players,
+                away_players,
+                substitutions,
+            }
+        })
+        .collect();
+
+    Ok(CommandResult::ok(MatchLineupsResult {
+        match_id,
+        games,
     }))
 }
 
