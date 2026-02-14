@@ -958,8 +958,7 @@ impl TransferEngine {
                 loy_change -= 3;
             }
 
-            // 长期替补
-            if !player.is_starter && seasons_with_team >= 2 {
+            if play_rate < 0.2 && seasons_with_team >= 2 {
                 loy_change -= 5;
             }
 

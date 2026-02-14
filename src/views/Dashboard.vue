@@ -20,6 +20,128 @@
       <span class="sf-phase">{{ currentPhaseDisplay }}</span>
     </div>
 
+    <!-- 赛事仪表盘浮框 -->
+    <div v-if="hasSaveLoaded" class="roster-float" @click="showRosterPanel = true">
+      <el-icon :size="18"><DataAnalysis /></el-icon>
+      <span class="rf-text">赛事</span>
+    </div>
+
+    <!-- 赛事仪表盘侧边栏 -->
+    <transition name="slide-panel">
+      <div v-if="showRosterPanel" class="roster-panel-overlay" @click.self="showRosterPanel = false">
+        <div class="roster-panel">
+          <div class="panel-header">
+            <h3>赛事仪表盘</h3>
+            <el-button link @click="showRosterPanel = false">
+              <el-icon><Close /></el-icon>
+            </el-button>
+          </div>
+          
+          <div class="panel-content">
+            <div v-for="(teams, regionId) in groupedRosters" :key="regionId" class="region-group">
+              <div class="region-header">
+                <span class="region-tag" :class="getRegionNameByCode(Number(regionId)).toLowerCase()">
+                  {{ getRegionNameByCode(Number(regionId)) }}
+                </span>
+                <span class="team-count">{{ teams.length }} 支队伍</span>
+              </div>
+              
+              <div class="team-grid">
+                <div 
+                  v-for="team in teams" 
+                  :key="team.team_id" 
+                  class="team-mini-card"
+                  @click="openTeamDialog(team)"
+                >
+                  <div class="tm-name">{{ team.short_name || team.team_name.substring(0, 3) }}</div>
+                  <div class="tm-full">{{ team.team_name }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- 队伍大名单弹窗 -->
+    <el-dialog
+      v-model="showTeamDialog"
+      :title="selectedTeam?.team_name + ' 大名单'"
+      width="800px"
+      class="roster-dialog"
+      align-center
+      destroy-on-close
+    >
+      <div v-if="selectedTeam" class="roster-dialog-content">
+        <div class="roster-section">
+          <div class="section-header">
+            <h4>首发阵容</h4>
+            <span class="section-badge starter">Starting Lineup</span>
+          </div>
+          <div class="player-grid">
+            <div 
+              v-for="player in getTeamPlayers(selectedTeam, true)" 
+              :key="player.player_id" 
+              class="player-card starter"
+            >
+              <div class="pc-header">
+                <el-tag :type="getPositionColor(player.position)" effect="dark" size="small" class="pos-tag">
+                  {{ player.position }}
+                </el-tag>
+                <div class="pc-condition" :class="player.condition > 0 ? 'good' : (player.condition < 0 ? 'bad' : 'normal')">
+                  {{ player.condition > 0 ? '+' : '' }}{{ player.condition }}
+                </div>
+              </div>
+              <div class="pc-body">
+                <div class="pc-id">{{ player.game_id }}</div>
+                <div class="pc-stats">
+                  <span class="pc-age">{{ player.age }}岁</span>
+                  <span class="pc-ability" :class="player.ability >= 90 ? 'elite' : (player.ability >= 80 ? 'high' : '')">
+                    {{ player.ability }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="roster-section" style="margin-top: 24px;">
+          <div class="section-header">
+            <h4>替补阵容</h4>
+            <span class="section-badge sub">Substitutes</span>
+          </div>
+          <div class="player-grid" v-if="getTeamPlayers(selectedTeam, false).length > 0">
+            <div 
+              v-for="player in getTeamPlayers(selectedTeam, false)" 
+              :key="player.player_id" 
+              class="player-card sub"
+            >
+              <div class="pc-header">
+                <el-tag :type="getPositionColor(player.position)" effect="plain" size="small" class="pos-tag">
+                  {{ player.position }}
+                </el-tag>
+                <div class="pc-condition" :class="player.condition > 0 ? 'good' : (player.condition < 0 ? 'bad' : 'normal')">
+                  {{ player.condition > 0 ? '+' : '' }}{{ player.condition }}
+                </div>
+              </div>
+              <div class="pc-body">
+                <div class="pc-id">{{ player.game_id }}</div>
+                <div class="pc-stats">
+                  <span class="pc-age">{{ player.age }}岁</span>
+                  <span class="pc-ability" :class="player.ability >= 90 ? 'elite' : (player.ability >= 80 ? 'high' : '')">
+                    {{ player.ability }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="empty-subs">
+            <el-empty description="暂无替补选手" :image-size="60" />
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+
     <!-- 欢迎区域 -->
     <div class="welcome-section">
       <div class="welcome-content">
@@ -153,19 +275,81 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { onMounted, computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import {
   Trophy, Medal, Sort, Stamp,
-  FolderRemove, Setting
+  FolderRemove, Setting, DataAnalysis, Close
 } from '@element-plus/icons-vue'
 import { useGameStore } from '@/stores/useGameStore'
 import { useTeamStoreTauri } from '@/stores/useTeamStoreTauri'
+import { teamApi, type TeamRosterInfo } from '@/api/tauri'
 
 const router = useRouter()
 const gameStore = useGameStore()
 const teamStore = useTeamStoreTauri()
+
+// Roster Dashboard State
+const showRosterPanel = ref(false)
+const rosterData = ref<TeamRosterInfo[]>([])
+const selectedTeam = ref<TeamRosterInfo | null>(null)
+const showTeamDialog = ref(false)
+
+// Position Order for sorting
+const positionOrder: Record<string, number> = {
+  'Top': 1, 'Jug': 2, 'Mid': 3, 'Adc': 4, 'Sup': 5
+}
+
+// Fetch Roster Data
+const fetchRosters = async () => {
+  try {
+    const data = await teamApi.getAllTeamRosters()
+    rosterData.value = data
+  } catch (error) {
+    console.error('Failed to fetch rosters:', error)
+  }
+}
+
+// Grouped Rosters by Region
+const groupedRosters = computed(() => {
+  const groups: Record<number, TeamRosterInfo[]> = {}
+  rosterData.value.forEach(team => {
+    if (!groups[team.region_id]) {
+      groups[team.region_id] = []
+    }
+    groups[team.region_id].push(team)
+  })
+  return groups
+})
+
+// Region Names Mapping (using existing store/helper or hardcoded for display)
+const getRegionNameByCode = (id: number) => {
+  const map: Record<number, string> = { 1: 'LPL', 2: 'LCK', 3: 'LEC', 4: 'LCS' }
+  return map[id] || `Region ${id}`
+}
+
+// Open Team Dialog
+const openTeamDialog = (team: TeamRosterInfo) => {
+  selectedTeam.value = team
+  showTeamDialog.value = true
+}
+
+// Helper to get players by starter status and sorted by position
+const getTeamPlayers = (team: TeamRosterInfo | null, isStarter: boolean) => {
+  if (!team) return []
+  return team.players
+    .filter(p => p.is_starter === isStarter)
+    .sort((a, b) => (positionOrder[a.position] || 99) - (positionOrder[b.position] || 99))
+}
+
+// Position Color Mapping
+const getPositionColor = (pos: string) => {
+  const colors: Record<string, string> = {
+    'Top': 'danger', 'Jug': 'warning', 'Mid': 'primary', 'Adc': 'success', 'Sup': 'info'
+  }
+  return colors[pos] || 'info'
+}
 
 // 从 store 获取响应式数据
 const {
@@ -235,6 +419,15 @@ const getRegionLocation = (code: string) => {
 onMounted(async () => {
   if (hasSaveLoaded.value) {
     await teamStore.loadRegions()
+    await fetchRosters()
+  }
+})
+
+// Watch save loaded state
+watch(hasSaveLoaded, async (val) => {
+  if (val) {
+    await teamStore.loadRegions()
+    await fetchRosters()
   }
 })
 </script>
@@ -684,5 +877,269 @@ onMounted(async () => {
 @media (max-width: 768px) {
   .welcome-title { font-size: 2rem; }
   .regions-grid { grid-template-columns: 1fr; }
+}
+
+/* 赛事仪表盘浮框 */
+.roster-float {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  color: #475569;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.roster-float:hover {
+  transform: translateY(-2px);
+  background: white;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  color: #3b82f6;
+}
+
+/* 侧边面板 */
+.roster-panel-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 2000;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.roster-panel {
+  width: 340px;
+  height: 100%;
+  background: white;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-header {
+  padding: 20px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.region-group {
+  margin-bottom: 24px;
+}
+
+.region-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.region-tag {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: white;
+}
+.region-tag.lpl { background: #ff4757; }
+.region-tag.lck { background: #3742fa; }
+.region-tag.lec { background: #2ed573; }
+.region-tag.lcs { background: #ffa502; }
+
+.team-count {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.team-mini-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.team-mini-card:hover {
+  background: #fff;
+  border-color: #3b82f6;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.tm-name {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.tm-full {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 动画 */
+.slide-panel-enter-active,
+.slide-panel-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.slide-panel-enter-from,
+.slide-panel-leave-to {
+  opacity: 0;
+}
+
+.slide-panel-enter-active .roster-panel,
+.slide-panel-leave-active .roster-panel {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.slide-panel-enter-from .roster-panel,
+.slide-panel-leave-to .roster-panel {
+  transform: translateX(-100%);
+}
+
+/* 弹窗样式 */
+.roster-dialog :deep(.el-dialog__body) {
+  padding: 0 0 24px;
+  background: #f8fafc;
+}
+
+.roster-dialog-content {
+  padding: 24px 32px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.section-header h4 {
+  margin: 0;
+  font-size: 16px;
+  color: #1e293b;
+}
+
+.section-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.section-badge.starter { background: #eff6ff; color: #3b82f6; }
+.section-badge.sub { background: #f1f5f9; color: #64748b; }
+
+.player-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+}
+
+.player-card {
+  background: white;
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s;
+}
+
+.player-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.player-card.starter { border-top: 3px solid #3b82f6; }
+.player-card.sub { border-top: 3px solid #94a3b8; }
+
+.pc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.pc-condition {
+  font-size: 12px;
+  font-weight: 700;
+}
+.pc-condition.good { color: #10b981; }
+.pc-condition.bad { color: #ef4444; }
+.pc-condition.normal { color: #94a3b8; }
+
+.pc-body {
+  text-align: center;
+}
+
+.pc-id {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 14px;
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pc-stats {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.pc-ability.elite { color: #f59e0b; font-weight: 700; }
+.pc-ability.high { color: #3b82f6; font-weight: 700; }
+
+.empty-subs {
+  text-align: center;
+  padding: 20px;
+  background: white;
+  border-radius: 10px;
+  border: 1px dashed #e2e8f0;
 }
 </style>

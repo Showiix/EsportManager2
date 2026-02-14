@@ -1363,3 +1363,117 @@ async fn get_or_create_form_factors(pool: &sqlx::SqlitePool, player_id: u64) -> 
         }
     }
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TeamRosterEntry {
+    pub player_id: u64,
+    pub game_id: String,
+    pub position: String,
+    pub ability: u8,
+    pub age: u8,
+    pub is_starter: bool,
+    pub condition: i8,
+    pub satisfaction: u8,
+    pub contract_role: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TeamRosterInfo {
+    pub team_id: u64,
+    pub team_name: String,
+    pub short_name: String,
+    pub region_id: u64,
+    pub players: Vec<TeamRosterEntry>,
+}
+
+#[tauri::command]
+pub async fn get_all_team_rosters(
+    state: State<'_, AppState>,
+) -> Result<CommandResult<Vec<TeamRosterInfo>>, String> {
+    let guard = state.db.read().await;
+    let db = match guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(CommandResult::err("Database not initialized")),
+    };
+
+    let current_save = state.current_save_id.read().await;
+    let save_id = match current_save.as_ref() {
+        Some(id) => id.clone(),
+        None => return Ok(CommandResult::err("No save loaded")),
+    };
+
+    let pool = match db.get_pool().await {
+        Ok(p) => p,
+        Err(e) => return Ok(CommandResult::err(format!("Failed to get pool: {}", e))),
+    };
+
+    let team_rows = sqlx::query(
+        "SELECT id, name, short_name, region_id FROM teams WHERE save_id = ? ORDER BY region_id, name"
+    )
+    .bind(&save_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut result: Vec<TeamRosterInfo> = Vec::new();
+
+    for tr in &team_rows {
+        let team_id = tr.get::<i64, _>("id") as u64;
+
+        let player_rows = sqlx::query(
+            r#"
+            SELECT p.id, p.game_id, p.position, p.ability, p.age, p.is_starter,
+                   p.satisfaction, p.contract_role,
+                   pff.form_cycle, pff.momentum, pff.last_performance,
+                   pff.last_match_won, pff.games_since_rest
+            FROM players p
+            LEFT JOIN player_form_factors pff ON p.id = pff.player_id
+            WHERE p.save_id = ? AND p.team_id = ? AND p.status = 'Active'
+            ORDER BY p.is_starter DESC, p.ability DESC
+            "#,
+        )
+        .bind(&save_id)
+        .bind(team_id as i64)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let players: Vec<TeamRosterEntry> = player_rows.iter().map(|r| {
+            let form_factors = PlayerFormFactors {
+                player_id: r.get::<i64, _>("id") as u64,
+                form_cycle: r.get::<Option<f64>, _>("form_cycle").unwrap_or(50.0),
+                momentum: r.get::<Option<i64>, _>("momentum").unwrap_or(0) as i8,
+                last_performance: r.get::<Option<f64>, _>("last_performance").unwrap_or(0.0),
+                last_match_won: r.get::<Option<i64>, _>("last_match_won").unwrap_or(0) != 0,
+                games_since_rest: r.get::<Option<i64>, _>("games_since_rest").unwrap_or(0) as u32,
+            };
+            let condition = ConditionEngine::calculate_condition(
+                r.get::<i64, _>("age") as u8,
+                r.get::<i64, _>("ability") as u8,
+                &form_factors,
+                None,
+            );
+            TeamRosterEntry {
+                player_id: r.get::<i64, _>("id") as u64,
+                game_id: r.get::<String, _>("game_id"),
+                position: r.get::<String, _>("position"),
+                ability: r.get::<i64, _>("ability") as u8,
+                age: r.get::<i64, _>("age") as u8,
+                is_starter: r.get::<Option<i64>, _>("is_starter").unwrap_or(0) == 1,
+                condition,
+                satisfaction: r.get::<i64, _>("satisfaction") as u8,
+                contract_role: r.get::<Option<String>, _>("contract_role").unwrap_or_else(|| "Starter".to_string()),
+            }
+        }).collect();
+
+        result.push(TeamRosterInfo {
+            team_id,
+            team_name: tr.get::<String, _>("name"),
+            short_name: tr.get::<Option<String>, _>("short_name").unwrap_or_default(),
+            region_id: tr.get::<i64, _>("region_id") as u64,
+            players,
+        });
+    }
+
+    Ok(CommandResult::ok(result))
+}

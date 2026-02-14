@@ -144,6 +144,7 @@ impl SatisfactionEngine {
         loyalty: u8,
         player: &Player,
         team_perf: &TeamSeasonPerformance,
+        play_rate: f64,
     ) -> (bool, Vec<DepartureReason>) {
         let threshold = Player::departure_threshold_static(loyalty);
         let mut reasons = Vec::new();
@@ -159,8 +160,8 @@ impl SatisfactionEngine {
             reasons.push(DepartureReason::SeekingChampionship);
         }
 
-        // 2. 寻找机会：年轻且不是首发
-        if player.age <= 24 && !player.is_starter {
+        // 2. 寻找机会：年轻且上场少
+        if player.age <= 24 && play_rate < 0.3 {
             reasons.push(DepartureReason::SeekingOpportunity);
         }
 
@@ -180,7 +181,7 @@ impl SatisfactionEngine {
         }
 
         // 5. 缺少上场时间
-        if !player.is_starter && player.ability >= 54 {
+        if play_rate < 0.3 && player.ability >= 54 {
             reasons.push(DepartureReason::LackOfPlaytime);
         }
 

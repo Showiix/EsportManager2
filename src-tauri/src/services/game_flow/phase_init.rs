@@ -1,5 +1,10 @@
 use crate::db::*;
+use crate::engines::condition::PlayerFormFactors;
+use crate::engines::lineup_engine::{LineupCandidate, LineupEngine};
+use crate::engines::traits::types::TraitType;
 use crate::models::*;
+use crate::models::player::Position;
+use crate::models::transfer::AITeamPersonality;
 use sqlx::{Pool, Row, Sqlite};
 
 use super::helpers::*;
@@ -762,6 +767,11 @@ impl GameFlowService {
             SeasonPhase::SeasonEnd => {}
         }
 
+        // 赛事阶段：AI阵容决策
+        if phase.to_tournament_type().is_some() {
+            self.run_ai_roster_decisions(pool, save_id, season_id, &phase).await?;
+        }
+
         let message = if tournaments_created.is_empty() {
             format!("{:?} 阶段无需创建赛事", phase)
         } else {
@@ -776,5 +786,160 @@ impl GameFlowService {
             tournaments_created,
             message,
         })
+    }
+
+    async fn run_ai_roster_decisions(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        season_id: u64,
+        phase: &SeasonPhase,
+    ) -> Result<(), String> {
+        let tournament_type = match phase {
+            SeasonPhase::SpringRegular | SeasonPhase::SummerRegular => "regular",
+            SeasonPhase::SpringPlayoffs | SeasonPhase::SummerPlayoffs => "playoff",
+            SeasonPhase::WorldChampionship => "worlds",
+            SeasonPhase::SuperIntercontinental => "super",
+            SeasonPhase::Msi => "msi",
+            _ => "international",
+        };
+
+        let team_rows = sqlx::query(
+            "SELECT id FROM teams WHERE save_id = ?"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("查询队伍失败: {}", e))?;
+
+        let mut roster_changes = 0u32;
+
+        for team_row in &team_rows {
+            let team_id = team_row.get::<i64, _>("id") as u64;
+
+            let personality = Self::load_team_personality(pool, team_id).await;
+            let weights = personality.default_weights();
+
+            let player_rows = sqlx::query(
+                r#"
+                SELECT p.id, p.game_id, p.position, p.ability, p.age, p.potential,
+                       p.satisfaction, p.is_starter, p.join_season,
+                       pff.form_cycle, pff.momentum, pff.last_performance,
+                       pff.last_match_won, pff.games_since_rest
+                FROM players p
+                LEFT JOIN player_form_factors pff ON p.id = pff.player_id
+                WHERE p.save_id = ? AND p.team_id = ? AND p.status = 'Active'
+                "#,
+            )
+            .bind(save_id)
+            .bind(team_id as i64)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("查询选手失败: {}", e))?;
+
+            if player_rows.len() <= 5 {
+                continue;
+            }
+
+            let mut candidates: Vec<LineupCandidate> = Vec::new();
+            for r in &player_rows {
+                let player_id = r.get::<i64, _>("id") as u64;
+                let position = match r.get::<String, _>("position").to_uppercase().as_str() {
+                    "TOP" => Position::Top,
+                    "JUG" | "JUNGLE" => Position::Jug,
+                    "MID" | "MIDDLE" => Position::Mid,
+                    "ADC" | "BOT" => Position::Adc,
+                    "SUP" | "SUPPORT" => Position::Sup,
+                    _ => Position::Mid,
+                };
+
+                let form_factors = PlayerFormFactors {
+                    player_id,
+                    form_cycle: r.get::<Option<f64>, _>("form_cycle").unwrap_or(0.0),
+                    momentum: r.get::<Option<i64>, _>("momentum").unwrap_or(0) as i8,
+                    last_performance: r.get::<Option<f64>, _>("last_performance").unwrap_or(0.0),
+                    last_match_won: r.get::<Option<i64>, _>("last_match_won").unwrap_or(0) != 0,
+                    games_since_rest: r.get::<Option<i64>, _>("games_since_rest").unwrap_or(0) as u32,
+                };
+
+                let trait_rows = sqlx::query(
+                    "SELECT trait_type FROM player_traits WHERE player_id = ?"
+                )
+                .bind(player_id as i64)
+                .fetch_all(pool)
+                .await
+                .unwrap_or_default();
+
+                let traits: Vec<TraitType> = trait_rows.iter()
+                    .filter_map(|tr| TraitType::from_str(&tr.get::<String, _>("trait_type")))
+                    .collect();
+
+                let condition = crate::engines::condition::ConditionEngine::calculate_condition(
+                    r.get::<i64, _>("age") as u8,
+                    r.get::<i64, _>("ability") as u8,
+                    &form_factors,
+                    None,
+                );
+
+                candidates.push(LineupCandidate {
+                    player_id,
+                    game_id: r.get::<String, _>("game_id"),
+                    position,
+                    ability: r.get::<i64, _>("ability") as u8,
+                    age: r.get::<i64, _>("age") as u8,
+                    potential: r.get::<i64, _>("potential") as u8,
+                    condition,
+                    form_factors,
+                    is_starter: r.get::<Option<i64>, _>("is_starter").unwrap_or(0) == 1,
+                    join_season: r.get::<Option<i64>, _>("join_season").unwrap_or(season_id as i64) as u32,
+                    traits,
+                    satisfaction: r.get::<i64, _>("satisfaction") as u8,
+                    champion_version_score: 0.0,
+                });
+            }
+
+            let (starters, _bench) = LineupEngine::submit_roster(
+                &candidates, &personality, &weights, tournament_type, season_id as u32,
+            );
+
+            let starter_ids: Vec<u64> = starters.iter().map(|s| s.player_id).collect();
+
+            for candidate in &candidates {
+                let should_be_starter = starter_ids.contains(&candidate.player_id);
+                if should_be_starter != candidate.is_starter {
+                    sqlx::query(
+                        "UPDATE players SET is_starter = ? WHERE id = ? AND save_id = ?"
+                    )
+                    .bind(if should_be_starter { 1i64 } else { 0i64 })
+                    .bind(candidate.player_id as i64)
+                    .bind(save_id)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| format!("更新首发状态失败: {}", e))?;
+                    roster_changes += 1;
+                }
+            }
+        }
+
+        if roster_changes > 0 {
+            log::info!("AI阵容决策完成: {} 次首发变更", roster_changes);
+        }
+
+        Ok(())
+    }
+
+    async fn load_team_personality(pool: &Pool<Sqlite>, team_id: u64) -> AITeamPersonality {
+        let result: Option<String> = sqlx::query_scalar(
+            "SELECT personality FROM team_personality_configs WHERE team_id = ? LIMIT 1"
+        )
+        .bind(team_id as i64)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+        result
+            .map(|s| AITeamPersonality::from_str(&s))
+            .unwrap_or(AITeamPersonality::Balanced)
     }
 }

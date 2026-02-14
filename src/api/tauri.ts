@@ -227,6 +227,29 @@ export const teamApi = {
 
   updateTeam: (request: { team_id: number; name?: string; short_name?: string }) =>
     invokeCommand<Team>('update_team', { request }),
+
+  getAllTeamRosters: () =>
+    invokeCommand<TeamRosterInfo[]>('get_all_team_rosters'),
+}
+
+export interface TeamRosterEntry {
+  player_id: number
+  game_id: string
+  position: string
+  ability: number
+  age: number
+  is_starter: boolean
+  condition: number
+  satisfaction: number
+  contract_role: string
+}
+
+export interface TeamRosterInfo {
+  team_id: number
+  team_name: string
+  short_name: string
+  region_id: number
+  players: TeamRosterEntry[]
 }
 
 // ========================================

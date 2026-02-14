@@ -12,6 +12,7 @@ use commands::{
     get_default_game_config, create_save_with_config,
     // 队伍命令
     get_teams_by_region, get_all_teams, get_all_players, get_team, get_team_roster, get_team_starters, get_player, set_starter,
+    get_all_team_rosters,
     update_player_market_value, update_all_market_values, update_player, update_team,
     // 游戏命令
     get_game_state, advance_phase, get_tournament_matches, get_standings,
@@ -154,6 +155,7 @@ pub fn run() {
             get_team,
             get_team_roster,
             get_team_starters,
+            get_all_team_rosters,
             get_player,
             set_starter,
             update_player_market_value,
