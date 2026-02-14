@@ -11,7 +11,112 @@
           查看当前和历史赛季的 Meta 版本信息与位置权重
         </p>
       </div>
+      <div class="header-actions">
+        <SeasonSelector v-model="selectedSeason" />
+      </div>
     </div>
+
+    <!-- 版本英雄 Tier List -->
+    <el-card class="tier-list-card" v-if="tierList.length > 0">
+      <template #header>
+        <div class="card-header">
+          <span class="card-title">版本英雄强度</span>
+          <span class="meta-type-label">{{ selectedMetaType }}</span>
+        </div>
+      </template>
+      
+      <div class="tier-groups">
+        <!-- T1 版本之子 -->
+        <div class="tier-group tier-t1" v-if="t1Champions.length > 0">
+          <div class="tier-label">
+            <span class="tier-badge t1">T1</span>
+            <span class="tier-name">版本之子</span>
+            <span class="tier-count">{{ t1Champions.length }}个</span>
+          </div>
+          <div class="champion-grid">
+            <div v-for="c in t1Champions" :key="c.id" class="champion-card t1">
+              <div class="champion-name">{{ c.name_cn }}</div>
+              <div class="champion-tags">
+                <el-tag :type="positionTagType(c.position)" size="small">{{ positionName(c.position) }}</el-tag>
+                <el-tag type="info" size="small" effect="plain">{{ c.archetype_name }}</el-tag>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- T2 强势 -->
+        <div class="tier-group tier-t2" v-if="t2Champions.length > 0">
+          <div class="tier-label">
+            <span class="tier-badge t2">T2</span>
+            <span class="tier-name">强势</span>
+            <span class="tier-count">{{ t2Champions.length }}个</span>
+          </div>
+          <div class="champion-grid">
+            <div v-for="c in t2Champions" :key="c.id" class="champion-card t2">
+              <div class="champion-name">{{ c.name_cn }}</div>
+              <div class="champion-tags">
+                <el-tag :type="positionTagType(c.position)" size="small">{{ positionName(c.position) }}</el-tag>
+                <el-tag type="info" size="small" effect="plain">{{ c.archetype_name }}</el-tag>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- T3 标准 -->
+        <div class="tier-group tier-t3" v-if="t3Champions.length > 0">
+          <div class="tier-label">
+            <span class="tier-badge t3">T3</span>
+            <span class="tier-name">标准</span>
+            <span class="tier-count">{{ t3Champions.length }}个</span>
+          </div>
+          <div class="champion-grid">
+            <div v-for="c in t3Champions" :key="c.id" class="champion-card t3">
+              <div class="champion-name">{{ c.name_cn }}</div>
+              <div class="champion-tags">
+                <el-tag :type="positionTagType(c.position)" size="small">{{ positionName(c.position) }}</el-tag>
+                <el-tag type="info" size="small" effect="plain">{{ c.archetype_name }}</el-tag>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- T4 弱势 -->
+        <div class="tier-group tier-t4" v-if="t4Champions.length > 0">
+          <div class="tier-label">
+            <span class="tier-badge t4">T4</span>
+            <span class="tier-name">弱势</span>
+            <span class="tier-count">{{ t4Champions.length }}个</span>
+          </div>
+          <div class="champion-grid">
+            <div v-for="c in t4Champions" :key="c.id" class="champion-card t4">
+              <div class="champion-name">{{ c.name_cn }}</div>
+              <div class="champion-tags">
+                <el-tag :type="positionTagType(c.position)" size="small">{{ positionName(c.position) }}</el-tag>
+                <el-tag type="info" size="small" effect="plain">{{ c.archetype_name }}</el-tag>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- T5 版本弃子 -->
+        <div class="tier-group tier-t5" v-if="t5Champions.length > 0">
+          <div class="tier-label">
+            <span class="tier-badge t5">T5</span>
+            <span class="tier-name">版本弃子</span>
+            <span class="tier-count">{{ t5Champions.length }}个</span>
+          </div>
+          <div class="champion-grid">
+            <div v-for="c in t5Champions" :key="c.id" class="champion-card t5">
+              <div class="champion-name">{{ c.name_cn }}</div>
+              <div class="champion-tags">
+                <el-tag :type="positionTagType(c.position)" size="small">{{ positionName(c.position) }}</el-tag>
+                <el-tag type="info" size="small" effect="plain">{{ c.archetype_name }}</el-tag>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-card>
 
     <!-- 当前版本卡片 -->
     <el-card class="current-meta-card" v-loading="loading">
@@ -134,17 +239,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
-import { getCurrentMeta, getMetaHistory } from '@/api/tauri'
-import type { MetaInfo, MetaHistoryEntry, MetaWeightsInfo } from '@/api/tauri'
+import { getCurrentMeta, getMetaHistory, getChampionList } from '@/api/tauri'
+import type { MetaInfo, MetaHistoryEntry, MetaWeightsInfo, ChampionInfo } from '@/api/tauri'
 import { useGameStore } from '@/stores/useGameStore'
+import { useTimeStore } from '@/stores/useTimeStore'
+import SeasonSelector from '@/components/common/SeasonSelector.vue'
 import { ElMessage } from 'element-plus'
 
 const gameStore = useGameStore()
+const timeStore = useTimeStore()
 const loading = ref(false)
 const currentMeta = ref<MetaInfo | null>(null)
 const history = ref<MetaHistoryEntry[]>([])
+const selectedSeason = ref(timeStore.currentSeasonFromTime || 1)
+const champions = ref<ChampionInfo[]>([])
 
 // Meta type -> favored archetypes mapping
 const META_FAVORED_ARCHETYPES: Record<string, string[]> = {
@@ -169,6 +279,112 @@ const META_FAVORED_ARCHETYPES: Record<string, string[]> = {
   MidJungleSynergy: ['Aggressive', 'Teamfight'],
   TopJungleSynergy: ['Splitpush', 'Aggressive'],
 }
+
+// Meta type -> disfavored archetypes mapping (mirrors backend disfavored_archetypes)
+const META_DISFAVORED_ARCHETYPES: Record<string, string[]> = {
+  Balanced: [],
+  EarlyGameAggro: ['Scaling'],
+  DiveComposition: ['Scaling'],
+  SkirmishMeta: ['Scaling'],
+  PickComposition: ['Scaling'],
+  JungleTempo: ['Scaling'],
+  LateGameScaling: ['Aggressive'],
+  ProtectTheCarry: ['Aggressive'],
+  DualCarry: ['Aggressive'],
+  BotLaneDominance: ['Aggressive'],
+  SplitPushMeta: ['Teamfight'],
+  SoloLaneMeta: ['Teamfight'],
+  TeamfightMeta: ['Splitpush'],
+  ObjectiveControl: ['Splitpush'],
+  VisionControl: [],
+  SupportEra: [],
+  MidKingdom: ['Splitpush'],
+  TopLaneCarry: ['Scaling', 'Teamfight'],
+  TopJungleSynergy: ['Scaling', 'Teamfight'],
+  MidJungleSynergy: ['Scaling', 'Splitpush'],
+}
+
+// Position key mapping for champion position -> weight lookup
+const POSITION_WEIGHT_KEY: Record<string, string> = {
+  Top: 'top', Jug: 'jug', Mid: 'mid', Adc: 'adc', Sup: 'sup',
+}
+
+const selectedMetaType = computed(() => {
+  const entry = history.value.find(h => h.season_id === selectedSeason.value)
+  return entry?.meta_type || 'Balanced'
+})
+
+// Get position weights for the selected season's meta
+const selectedMetaWeights = computed(() => {
+  const entry = history.value.find(h => h.season_id === selectedSeason.value)
+  if (!entry) return { top: 1, jug: 1, mid: 1, adc: 1, sup: 1 }
+  return {
+    top: entry.weight_top,
+    jug: entry.weight_jug,
+    mid: entry.weight_mid,
+    adc: entry.weight_adc,
+    sup: entry.weight_sup,
+  }
+})
+
+type TierLevel = 'T1' | 'T2' | 'T3' | 'T4' | 'T5'
+
+interface TierChampion extends ChampionInfo {
+  tier: TierLevel
+}
+
+const tierList = computed<TierChampion[]>(() => {
+  const metaType = selectedMetaType.value
+  const favoredArchetypes = META_FAVORED_ARCHETYPES[metaType] || []
+  const disfavoredArchetypes = META_DISFAVORED_ARCHETYPES[metaType] || []
+  const weights = selectedMetaWeights.value
+  
+  return champions.value.map(c => {
+    const archLower = c.archetype.toLowerCase()
+    const posKey = POSITION_WEIGHT_KEY[c.position] || 'mid'
+    const posWeight = weights[posKey as keyof typeof weights] ?? 1.0
+    
+    let tier: TierLevel
+    if (favoredArchetypes.length === 0) {
+      tier = 'T3' // Balanced meta: all standard
+    } else if (favoredArchetypes.some(f => f.toLowerCase() === archLower)) {
+      // Favored archetype: T1 if high-weight position, T2 otherwise
+      tier = posWeight >= 1.1 ? 'T1' : 'T2'
+    } else if (disfavoredArchetypes.some(f => f.toLowerCase() === archLower)) {
+      // Disfavored archetype: T5 if low-weight position, T4 otherwise
+      tier = posWeight <= 0.85 ? 'T5' : 'T4'
+    } else {
+      tier = 'T3' // Neutral
+    }
+    return { ...c, tier }
+  })
+})
+
+const t1Champions = computed(() => tierList.value.filter(c => c.tier === 'T1'))
+const t2Champions = computed(() => tierList.value.filter(c => c.tier === 'T2'))
+const t3Champions = computed(() => tierList.value.filter(c => c.tier === 'T3'))
+const t4Champions = computed(() => tierList.value.filter(c => c.tier === 'T4'))
+const t5Champions = computed(() => tierList.value.filter(c => c.tier === 'T5'))
+
+watch(selectedSeason, () => {
+  // 更新 currentMeta 为选中赛季的数据
+  const entry = history.value.find(h => h.season_id === selectedSeason.value)
+  if (entry) {
+    currentMeta.value = {
+      season_id: entry.season_id,
+      meta_type: entry.meta_type,
+      meta_name: entry.meta_name,
+      description: '', // MetaHistoryEntry 没有 description
+      weights: {
+        top: entry.weight_top,
+        jug: entry.weight_jug,
+        mid: entry.weight_mid,
+        adc: entry.weight_adc,
+        sup: entry.weight_sup,
+      }
+    }
+  }
+})
 
 // Comp type -> core archetypes mapping
 const COMP_CORE_ARCHETYPES: Record<string, string[]> = {
@@ -260,18 +476,36 @@ const getWeightClass = (weight: number) => {
   return 'weight-low'
 }
 
+const POSITION_NAME_MAP: Record<string, string> = {
+  Top: '上单', Jug: '打野', Mid: '中路', Adc: 'ADC', Sup: '辅助',
+}
+const positionName = (pos: string) => POSITION_NAME_MAP[pos] || pos
+const positionTagType = (pos: string): '' | 'success' | 'warning' | 'info' | 'danger' => {
+  const map: Record<string, '' | 'success' | 'warning' | 'info' | 'danger'> = {
+    Top: 'danger', Jug: 'warning', Mid: '', Adc: 'success', Sup: 'info',
+  }
+  return map[pos] || 'info'
+}
+
 const fetchData = async () => {
   const saveId = gameStore.currentSave?.id
   if (!saveId) return
 
   loading.value = true
   try {
-    const [meta, hist] = await Promise.all([
+    const [meta, hist, list] = await Promise.all([
       getCurrentMeta(saveId),
       getMetaHistory(saveId),
+      getChampionList(),
     ])
     currentMeta.value = meta
     history.value = hist
+    champions.value = list
+    
+    // 如果有当前meta，设置选中赛季
+    if (meta) {
+      selectedSeason.value = meta.season_id
+    }
   } catch (e: any) {
     ElMessage.error(`加载版本数据失败: ${e.message || e}`)
   } finally {
@@ -314,6 +548,140 @@ onMounted(() => {
         margin: 8px 0 0 0;
         color: #6b7280;
         font-size: 14px;
+      }
+    }
+  }
+
+  .tier-list-card {
+    margin-bottom: 24px;
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+
+      .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1f2937;
+      }
+
+      .meta-type-label {
+        font-family: monospace;
+        font-size: 13px;
+        color: #6b7280;
+      }
+    }
+
+    .tier-groups {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .tier-group {
+      .tier-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #f0f0f0;
+
+        .tier-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px;
+          height: 24px;
+          border-radius: 4px;
+          font-size: 13px;
+          font-weight: 700;
+          color: white;
+
+          &.t1 { background: linear-gradient(135deg, #f59e0b, #d97706); }
+          &.t2 { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+          &.t3 { background: linear-gradient(135deg, #6b7280, #4b5563); }
+          &.t4 { background: linear-gradient(135deg, #9ca3af, #d1d5db); color: #6b7280; }
+          &.t5 { background: linear-gradient(135deg, #e5e7eb, #f3f4f6); color: #9ca3af; }
+        }
+
+        .tier-name {
+          font-size: 15px;
+          font-weight: 600;
+          color: #374151;
+        }
+
+        .tier-count {
+          font-size: 12px;
+          color: #9ca3af;
+        }
+      }
+
+      .champion-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 8px;
+      }
+
+      .champion-card {
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+        transition: all 0.2s;
+
+        &:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        &.t1 {
+          background: linear-gradient(135deg, #fffbeb, #fef3c7);
+          border-color: #fbbf24;
+
+          .champion-name { color: #92400e; font-weight: 700; }
+        }
+
+        &.t2 {
+          background: linear-gradient(135deg, #eff6ff, #dbeafe);
+          border-color: #93c5fd;
+
+          .champion-name { color: #1e40af; font-weight: 600; }
+        }
+
+        &.t3 {
+          background: #f9fafb;
+          border-color: #e5e7eb;
+
+          .champion-name { color: #374151; font-weight: 600; }
+        }
+
+        &.t4 {
+          background: #f3f4f6;
+          border-color: #e5e7eb;
+          opacity: 0.75;
+
+          .champion-name { color: #9ca3af; font-weight: 500; }
+        }
+
+        &.t5 {
+          background: #f9fafb;
+          border-color: #f3f4f6;
+          opacity: 0.55;
+
+          .champion-name { color: #d1d5db; font-weight: 500; }
+        }
+
+        .champion-name {
+          font-size: 14px;
+          margin-bottom: 6px;
+        }
+
+        .champion-tags {
+          display: flex;
+          gap: 4px;
+          flex-wrap: wrap;
+        }
       }
     }
   }

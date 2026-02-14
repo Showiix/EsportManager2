@@ -105,22 +105,28 @@ pub enum VersionTier {
     T1,
     T2,
     T3,
+    T4,
+    T5,
 }
 
 impl VersionTier {
     pub fn modifier(&self) -> i8 {
         match self {
-            VersionTier::T1 => 4,
-            VersionTier::T2 => 0,
-            VersionTier::T3 => -3,
+            VersionTier::T1 => 5,
+            VersionTier::T2 => 2,
+            VersionTier::T3 => 0,
+            VersionTier::T4 => -2,
+            VersionTier::T5 => -4,
         }
     }
 
     pub fn ban_score(&self) -> i8 {
         match self {
-            VersionTier::T1 => 4,
-            VersionTier::T2 => 0,
-            VersionTier::T3 => -5,
+            VersionTier::T1 => 6,
+            VersionTier::T2 => 2,
+            VersionTier::T3 => 0,
+            VersionTier::T4 => -3,
+            VersionTier::T5 => -6,
         }
     }
 }
@@ -514,33 +520,45 @@ pub fn get_champion_by_name_en(name: &str) -> Option<&'static Champion> {
     CHAMPIONS.iter().find(|c| c.name_en == name)
 }
 
-use super::meta_engine::MetaType;
+use super::meta_engine::{get_meta_weights, MetaType};
+
+fn position_weight_id(position: Position) -> &'static str {
+    match position {
+        Position::Top => "top",
+        Position::Jug => "jug",
+        Position::Mid => "mid",
+        Position::Adc => "adc",
+        Position::Sup => "sup",
+    }
+}
 
 /// 根据当前 Meta 计算每个英雄的版本 Tier
-/// 逻辑：Meta 偏好的 Archetype → T1，中性 → T2，不偏好 → T3
-/// 每位置保证 2-3 个 T1, 4-5 个 T2, 2-3 个 T3
 pub fn calculate_version_tiers(meta: MetaType) -> Vec<(u8, VersionTier)> {
     let favored = meta.favored_archetypes();
+    let disfavored = meta.disfavored_archetypes();
+    let weights = get_meta_weights(meta);
+
     CHAMPIONS
         .iter()
         .map(|c| {
-            let tier = if favored.contains(&c.archetype) {
-                VersionTier::T1
-            } else {
-                // Balanced meta: 全部 T2
-                if favored.is_empty() {
-                    VersionTier::T2
+            let tier = if favored.is_empty() {
+                VersionTier::T3
+            } else if favored.contains(&c.archetype) {
+                let pos_weight = weights.weight_for_position(position_weight_id(c.position));
+                if pos_weight >= 1.1 {
+                    VersionTier::T1
                 } else {
-                    // 非偏好：根据 archetype 与 favored 的"距离"决定 T2/T3
-                    // Teamfight 和 Utility 是通用型，不容易 T3
-                    let is_universal =
-                        matches!(c.archetype, Archetype::Teamfight | Archetype::Utility);
-                    if is_universal {
-                        VersionTier::T2
-                    } else {
-                        VersionTier::T3
-                    }
+                    VersionTier::T2
                 }
+            } else if disfavored.contains(&c.archetype) {
+                let pos_weight = weights.weight_for_position(position_weight_id(c.position));
+                if pos_weight <= 0.85 {
+                    VersionTier::T5
+                } else {
+                    VersionTier::T4
+                }
+            } else {
+                VersionTier::T3
             };
             (c.id, tier)
         })
@@ -549,21 +567,32 @@ pub fn calculate_version_tiers(meta: MetaType) -> Vec<(u8, VersionTier)> {
 
 pub fn get_version_tier(champion_id: u8, meta: MetaType) -> VersionTier {
     let favored = meta.favored_archetypes();
+    let disfavored = meta.disfavored_archetypes();
+    let weights = get_meta_weights(meta);
+
     let champ = match get_champion(champion_id) {
         Some(c) => c,
-        None => return VersionTier::T2,
+        None => return VersionTier::T3,
     };
-    if favored.contains(&champ.archetype) {
-        VersionTier::T1
-    } else if favored.is_empty() {
-        VersionTier::T2
-    } else {
-        let is_universal = matches!(champ.archetype, Archetype::Teamfight | Archetype::Utility);
-        if is_universal {
-            VersionTier::T2
+
+    if favored.is_empty() {
+        VersionTier::T3
+    } else if favored.contains(&champ.archetype) {
+        let pos_weight = weights.weight_for_position(position_weight_id(champ.position));
+        if pos_weight >= 1.1 {
+            VersionTier::T1
         } else {
-            VersionTier::T3
+            VersionTier::T2
         }
+    } else if disfavored.contains(&champ.archetype) {
+        let pos_weight = weights.weight_for_position(position_weight_id(champ.position));
+        if pos_weight <= 0.85 {
+            VersionTier::T5
+        } else {
+            VersionTier::T4
+        }
+    } else {
+        VersionTier::T3
     }
 }
 

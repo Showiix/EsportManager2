@@ -169,6 +169,29 @@ impl MetaType {
             MetaType::TopJungleSynergy  => &[Archetype::Splitpush, Archetype::Aggressive],
         }
     }
+
+    pub fn disfavored_archetypes(&self) -> &'static [Archetype] {
+        match self {
+            MetaType::Balanced => &[],
+            MetaType::EarlyGameAggro
+            | MetaType::DiveComposition
+            | MetaType::SkirmishMeta
+            | MetaType::PickComposition
+            | MetaType::JungleTempo => &[Archetype::Scaling],
+            MetaType::LateGameScaling
+            | MetaType::ProtectTheCarry
+            | MetaType::DualCarry
+            | MetaType::BotLaneDominance => &[Archetype::Aggressive],
+            MetaType::SplitPushMeta | MetaType::SoloLaneMeta => &[Archetype::Teamfight],
+            MetaType::TeamfightMeta | MetaType::ObjectiveControl => &[Archetype::Splitpush],
+            MetaType::VisionControl | MetaType::SupportEra => &[],
+            MetaType::MidKingdom => &[Archetype::Splitpush],
+            MetaType::TopLaneCarry | MetaType::TopJungleSynergy => {
+                &[Archetype::Scaling, Archetype::Teamfight]
+            }
+            MetaType::MidJungleSynergy => &[Archetype::Scaling, Archetype::Splitpush],
+        }
+    }
 }
 
 /// 位置权重（5 个位置的权重之和 = 5.0）
