@@ -3,6 +3,7 @@ use rand::SeedableRng;
 use sqlx::{Pool, Row, Sqlite};
 use std::collections::{HashMap, HashSet};
 
+use crate::engines::champion::{self, MasteryTier};
 use crate::engines::market_value::MarketValueEngine;
 use crate::engines::traits::{TraitEngine, TraitType};
 use crate::models::transfer::*;
@@ -207,6 +208,16 @@ impl TransferEngine {
             let mut perf_desc = String::new();
             let prev_accumulator = player.growth_accumulator;
 
+            let mut log_base_growth: f64 = 0.0;
+            let mut log_age_coeff: f64 = 1.0;
+            let mut log_playtime_coeff: f64 = 1.0;
+            let mut log_mentor_coeff: f64 = 1.0;
+            let mut log_synergy_coeff: f64 = 1.0;
+            let mut log_facility_coeff: f64 = 1.0;
+            let mut log_prodigy_mod: f64 = 1.0;
+            let mut log_perf_bonus: f64 = 0.0;
+            let mut log_fluctuation: f64 = 0.0;
+
             let (new_ability, new_accumulator) = if new_age <= growth_cap && ability < potential {
                 // ========== 成长期（累积器模式） ==========
 
@@ -218,7 +229,7 @@ impl TransferEngine {
                 };
 
                 // ② 突破/停滞事件 (A) — 互斥，10%总事件率
-                let event_roll: f64 = rng.gen();
+                let event_roll: f64 = rng.r#gen();
                 let base_growth = if event_roll < 0.05 {
                     perf_desc = "突破赛季".to_string();
                     base_growth + 1
@@ -315,6 +326,14 @@ impl TransferEngine {
                 // ⑨ 环境系数后成长（精确小数）
                 let growth_after_env_f64 = base_growth as f64 * age_coeff * prodigy_mod * playtime_coeff * mentor_coeff * synergy_coeff * facility_coeff;
 
+                log_base_growth = base_growth as f64;
+                log_age_coeff = age_coeff;
+                log_playtime_coeff = playtime_coeff;
+                log_mentor_coeff = mentor_coeff;
+                log_synergy_coeff = synergy_coeff;
+                log_facility_coeff = facility_coeff;
+                log_prodigy_mod = prodigy_mod;
+
                 // ⑩ 表现加成 (D) — 基于赛季统计
                 let perf_bonus: f64 = match stats_map.get(&player_id) {
                     Some(&(gp, avg_perf)) if gp >= 20 && avg_perf > ability as f64 + 5.0 => {
@@ -339,6 +358,9 @@ impl TransferEngine {
 
                 // ⑪ 随机波动 ±1
                 let fluctuation: f64 = rng.gen_range(-1.0..=1.0);
+
+                log_perf_bonus = perf_bonus;
+                log_fluctuation = fluctuation;
 
                 // ⑫ 累积器模式：小数精确累积，攒够整数才涨
                 let raw_growth = (growth_after_env_f64 + perf_bonus + fluctuation).max(0.0);
@@ -374,6 +396,8 @@ impl TransferEngine {
 
                 // ④ 累积器模式：负数累积，攒够才降
                 let raw_decline = base_decline * tag_decay * trait_decay;
+
+                log_base_growth = -raw_decline;
                 // 衰退用负数累积（prev_accumulator 可能有正的残留，先抵消）
                 let accumulated = prev_accumulator - raw_decline;
                 let integer_part = accumulated.trunc() as i64; // 负数时 trunc 朝零取整，如 -1.3 → -1
@@ -408,7 +432,7 @@ impl TransferEngine {
             let mut new_potential = new_potential;
             let mut growth_event: Option<&str> = None;
 
-            let event_roll: f64 = rng.gen();
+            let event_roll: f64 = rng.r#gen();
             let mut threshold = 0.0;
 
             // 心态崩盘：满意度<30, 10%
@@ -496,6 +520,50 @@ impl TransferEngine {
             // 更新缓存
             cache.update_player_stats(player_id, team_id, new_age, new_ability, new_accumulator);
 
+            let log_team_name = if let Some(tid) = team_id {
+                cache.get_team_name(tid)
+            } else {
+                String::new()
+            };
+            let log_growth_event = growth_event.map(|s| s.to_string());
+            let log_desc = format!("{} → {} ({}{})",
+                ability, new_ability,
+                if !perf_desc.is_empty() { &perf_desc } else { "正常" },
+                if new_potential != potential { format!(", 潜力{}→{}", potential, new_potential) } else { String::new() }
+            );
+            sqlx::query(
+                r#"INSERT INTO player_growth_logs
+                    (save_id, season_id, player_id, player_name, team_name, age,
+                     old_ability, new_ability, old_potential, new_potential,
+                     base_growth, age_coeff, playtime_coeff, mentor_coeff, synergy_coeff,
+                     facility_coeff, prodigy_mod, perf_bonus, fluctuation, growth_event, description)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#
+            )
+            .bind(save_id)
+            .bind(season_id)
+            .bind(player_id)
+            .bind(game_id)
+            .bind(&log_team_name)
+            .bind(new_age)
+            .bind(ability)
+            .bind(new_ability)
+            .bind(potential)
+            .bind(new_potential)
+            .bind(log_base_growth)
+            .bind(log_age_coeff)
+            .bind(log_playtime_coeff)
+            .bind(log_mentor_coeff)
+            .bind(log_synergy_coeff)
+            .bind(log_facility_coeff)
+            .bind(log_prodigy_mod)
+            .bind(log_perf_bonus)
+            .bind(log_fluctuation)
+            .bind(&log_growth_event)
+            .bind(&log_desc)
+            .execute(pool)
+            .await
+            .ok();
+
             // ========== 事件记录 ==========
             let ability_change = new_ability - ability;
             let change_desc = if ability_change > 0 {
@@ -561,7 +629,7 @@ impl TransferEngine {
                 0.0
             };
 
-            if retire_chance > 0.0 && rng.gen::<f64>() < retire_chance {
+            if retire_chance > 0.0 && rng.r#gen::<f64>() < retire_chance {
                 sqlx::query(
                     "UPDATE players SET status = 'RETIRED', team_id = NULL WHERE id = ? AND save_id = ?"
                 )
@@ -1050,6 +1118,115 @@ impl TransferEngine {
         if awakening_count > 0 || decay_count > 0 {
             log::info!("✅ 特性觉醒/退化完成：{} 次觉醒，{} 次退化", awakening_count, decay_count);
         }
+
+        let mastery_rows = sqlx::query(
+            "SELECT pcm.player_id, pcm.champion_id, pcm.mastery_tier, pcm.games_played, p.game_id, p.team_id, p.ability
+             FROM player_champion_mastery pcm
+             JOIN players p ON pcm.player_id = p.id AND pcm.save_id = p.save_id
+             WHERE pcm.save_id = ? AND p.status = 'Active'"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("查询英雄熟练度失败: {}", e))?;
+
+        let mut upgrade_count = 0u32;
+        let mut downgrade_count = 0u32;
+
+        for row in &mastery_rows {
+            let player_id: i64 = row.get("player_id");
+            let champion_id: i64 = row.get("champion_id");
+            let tier_str: String = row.get("mastery_tier");
+            let games_played: i64 = row.get("games_played");
+            let game_id: String = row.get("game_id");
+            let team_id: Option<i64> = row.try_get::<i64, _>("team_id").ok();
+            let ability: i64 = row.get("ability");
+
+            let current = match MasteryTier::from_id(&tier_str) {
+                Some(t) => t,
+                None => continue,
+            };
+
+            let new_tier = champion::evolve_mastery(current, games_played as u32, &mut rng);
+
+            if new_tier != current {
+                if new_tier == MasteryTier::B {
+                    sqlx::query(
+                        "DELETE FROM player_champion_mastery WHERE save_id = ? AND player_id = ? AND champion_id = ?"
+                    )
+                    .bind(save_id)
+                    .bind(player_id)
+                    .bind(champion_id)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| format!("删除B级熟练度失败: {}", e))?;
+                } else {
+                    sqlx::query(
+                        "UPDATE player_champion_mastery SET mastery_tier = ?, games_played = 0 WHERE save_id = ? AND player_id = ? AND champion_id = ?"
+                    )
+                    .bind(new_tier.id())
+                    .bind(save_id)
+                    .bind(player_id)
+                    .bind(champion_id)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| format!("更新熟练度失败: {}", e))?;
+                }
+
+                let upgraded = new_tier.pick_score() > current.pick_score();
+                if upgraded {
+                    upgrade_count += 1;
+                } else {
+                    downgrade_count += 1;
+                }
+
+                let champion_name = champion::get_champion(champion_id as u8)
+                    .map(|c| c.name_cn.to_string())
+                    .unwrap_or_else(|| format!("英雄#{}", champion_id));
+
+                let desc = if upgraded {
+                    format!(
+                        "{}的{}熟练度提升: {} → {}",
+                        game_id,
+                        champion_name,
+                        current.display_name(),
+                        new_tier.display_name()
+                    )
+                } else {
+                    format!(
+                        "{}的{}熟练度下降: {} → {}",
+                        game_id,
+                        champion_name,
+                        current.display_name(),
+                        new_tier.display_name()
+                    )
+                };
+
+                let event = self.record_event(
+                    pool, window_id, 1,
+                    TransferEventType::SeasonSettlement,
+                    EventLevel::C,
+                    player_id, &game_id, ability,
+                    team_id, team_id.and_then(|tid| cache.team_names.get(&tid).map(|s| s.as_str())),
+                    team_id, team_id.and_then(|tid| cache.team_names.get(&tid).map(|s| s.as_str())),
+                    0, 0, 0,
+                    &desc,
+                ).await?;
+                events.push(event);
+            } else {
+                sqlx::query(
+                    "UPDATE player_champion_mastery SET games_played = 0 WHERE save_id = ? AND player_id = ? AND champion_id = ?"
+                )
+                .bind(save_id)
+                .bind(player_id)
+                .bind(champion_id)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("重置使用次数失败: {}", e))?;
+            }
+        }
+
+        eprintln!("[R1] 英雄池演变完成: {} 升级, {} 降级", upgrade_count, downgrade_count);
 
         // 更新所有球队战力
         self.recalculate_team_powers_optimized(pool, save_id).await?;
