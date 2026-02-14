@@ -596,30 +596,48 @@ pub fn get_version_tier(champion_id: u8, meta: MetaType) -> VersionTier {
     }
 }
 
-/// 赛季演变：根据使用次数决定熟练度升降
-/// games_played: 该选手该英雄本赛季使用场次
-/// 返回新的 MasteryTier（可能不变）
+/// 赛季演变：根据使用次数+胜率决定熟练度升降
+/// 一赛季最多约90场，门槛设计确保只有1-3个选手能升到信仰级(SS)
+///
+/// S→SS: ≥50场 + 胜率≥55% + 10%概率
+/// A→S:  ≥35场 + 胜率≥50% + 15%概率
+/// B→A:  ≥25场 + 30%概率
+/// SS→S: 0场使用 10%概率
+/// S→A:  0场使用 30%概率
+/// A→B:  0场使用 25%概率
 pub fn evolve_mastery(
     current: MasteryTier,
     games_played: u32,
+    games_won: u32,
     rng: &mut impl rand::Rng,
 ) -> MasteryTier {
+    let win_rate = if games_played > 0 {
+        games_won as f64 / games_played as f64
+    } else {
+        0.0
+    };
+
     match current {
         MasteryTier::SS => {
-            // SS 不降级
-            MasteryTier::SS
+            if games_played == 0 {
+                if rng.gen::<f64>() < 0.10 {
+                    MasteryTier::S
+                } else {
+                    MasteryTier::SS
+                }
+            } else {
+                MasteryTier::SS
+            }
         }
         MasteryTier::S => {
             if games_played == 0 {
-                // 未使用：30% 降为 A
                 if rng.gen::<f64>() < 0.30 {
                     MasteryTier::A
                 } else {
                     MasteryTier::S
                 }
-            } else if games_played >= 15 {
-                // 大量使用：20% 升为 SS
-                if rng.gen::<f64>() < 0.20 {
+            } else if games_played >= 50 && win_rate >= 0.55 {
+                if rng.gen::<f64>() < 0.10 {
                     MasteryTier::SS
                 } else {
                     MasteryTier::S
@@ -630,15 +648,13 @@ pub fn evolve_mastery(
         }
         MasteryTier::A => {
             if games_played == 0 {
-                // 未使用：40% 降为 B
-                if rng.gen::<f64>() < 0.40 {
+                if rng.gen::<f64>() < 0.25 {
                     MasteryTier::B
                 } else {
                     MasteryTier::A
                 }
-            } else if games_played >= 10 {
-                // 常用：25% 升为 S
-                if rng.gen::<f64>() < 0.25 {
+            } else if games_played >= 35 && win_rate >= 0.50 {
+                if rng.gen::<f64>() < 0.15 {
                     MasteryTier::S
                 } else {
                     MasteryTier::A
@@ -648,8 +664,7 @@ pub fn evolve_mastery(
             }
         }
         MasteryTier::B => {
-            if games_played >= 8 {
-                // 频繁使用生疏英雄：30% 升为 A
+            if games_played >= 25 {
                 if rng.gen::<f64>() < 0.30 {
                     MasteryTier::A
                 } else {

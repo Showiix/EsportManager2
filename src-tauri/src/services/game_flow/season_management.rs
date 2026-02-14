@@ -216,7 +216,7 @@ impl GameFlowService {
         _new_season: i64,
     ) -> Result<(), String> {
         let rows = sqlx::query(
-            "SELECT player_id, champion_id, mastery_tier, games_played FROM player_champion_mastery WHERE save_id = ?"
+            "SELECT player_id, champion_id, mastery_tier, games_played, games_won FROM player_champion_mastery WHERE save_id = ?"
         )
         .bind(save_id)
         .fetch_all(pool)
@@ -232,13 +232,14 @@ impl GameFlowService {
             let champion_id: i64 = row.get("champion_id");
             let tier_str: String = row.get("mastery_tier");
             let games_played: i64 = row.get("games_played");
+            let games_won: i64 = row.get("games_won");
 
             let current = match MasteryTier::from_id(&tier_str) {
                 Some(t) => t,
                 None => continue,
             };
 
-            let new_tier = champion::evolve_mastery(current, games_played as u32, &mut rng);
+            let new_tier = champion::evolve_mastery(current, games_played as u32, games_won as u32, &mut rng);
 
             if new_tier != current {
                 if new_tier == MasteryTier::B {

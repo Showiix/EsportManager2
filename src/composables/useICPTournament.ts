@@ -243,10 +243,24 @@ export function useICPTournament() {
             type: t.trait_type as any, name: t.name, effect: t.effect, value: t.value, isPositive: t.is_positive
           }))
         })),
-        teamAPerformance: game.home_performance, teamAMetaPower: game.home_performance,
-        teamBPerformance: game.away_performance, teamBMetaPower: game.away_performance,
+        teamAPerformance: game.home_performance,
+        teamBPerformance: game.away_performance,
+        teamAMetaPower: game.home_base_power != null
+          ? (game.home_base_power + (game.home_bp_bonus ?? 0) + (game.home_version_bonus ?? 0) + (game.home_synergy_bonus ?? 0))
+          : undefined,
+        teamBMetaPower: game.away_base_power != null
+          ? (game.away_base_power + (game.away_bp_bonus ?? 0) + (game.away_version_bonus ?? 0) + (game.away_synergy_bonus ?? 0))
+          : undefined,
         performanceDifference: game.home_performance - game.away_performance,
-        metaPowerDifference: game.home_performance - game.away_performance,
+        // MR Breakdown
+        teamABasePower: game.home_base_power ?? undefined,
+        teamBBasePower: game.away_base_power ?? undefined,
+        teamABpBonus: game.home_bp_bonus ?? undefined,
+        teamBBpBonus: game.away_bp_bonus ?? undefined,
+        teamAVersionBonus: game.home_version_bonus ?? undefined,
+        teamBVersionBonus: game.away_version_bonus ?? undefined,
+        teamASynergyBonus: game.home_synergy_bonus ?? undefined,
+        teamBSynergyBonus: game.away_synergy_bonus ?? undefined,
         gameNoise: 0,
         mvpPlayerId: game.game_mvp?.player_id?.toString(), mvpPlayerName: game.game_mvp?.player_name, mvpTeamId: game.game_mvp?.team_id?.toString()
       }

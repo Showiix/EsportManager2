@@ -1120,7 +1120,7 @@ impl TransferEngine {
         }
 
         let mastery_rows = sqlx::query(
-            "SELECT pcm.player_id, pcm.champion_id, pcm.mastery_tier, pcm.games_played, p.game_id, p.team_id, p.ability
+            "SELECT pcm.player_id, pcm.champion_id, pcm.mastery_tier, pcm.games_played, pcm.games_won, p.game_id, p.team_id, p.ability
              FROM player_champion_mastery pcm
              JOIN players p ON pcm.player_id = p.id AND pcm.save_id = p.save_id
              WHERE pcm.save_id = ? AND p.status = 'Active'"
@@ -1138,6 +1138,7 @@ impl TransferEngine {
             let champion_id: i64 = row.get("champion_id");
             let tier_str: String = row.get("mastery_tier");
             let games_played: i64 = row.get("games_played");
+            let games_won: i64 = row.get("games_won");
             let game_id: String = row.get("game_id");
             let team_id: Option<i64> = row.try_get::<i64, _>("team_id").ok();
             let ability: i64 = row.get("ability");
@@ -1147,7 +1148,7 @@ impl TransferEngine {
                 None => continue,
             };
 
-            let new_tier = champion::evolve_mastery(current, games_played as u32, &mut rng);
+            let new_tier = champion::evolve_mastery(current, games_played as u32, games_won as u32, &mut rng);
 
             if new_tier != current {
                 if new_tier == MasteryTier::B {
