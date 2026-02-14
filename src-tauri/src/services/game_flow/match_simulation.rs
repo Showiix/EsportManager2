@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use crate::db::*;
-use crate::engines::bp_engine::{BpEngine, DraftResult, PlayerChampionPool};
+use crate::engines::bp_engine::{
+    BpEngine, CompType, DraftResult, PlayerChampionPool, SeriesContext, TeamSide,
+};
 use crate::engines::champion::{self, MasteryTier, VersionTier};
 use crate::engines::meta_engine::MetaType;
 use crate::engines::{
@@ -43,7 +45,17 @@ impl GameFlowService {
         let is_playoff = matches!(phase, SeasonPhase::SpringPlayoffs | SeasonPhase::SummerPlayoffs);
 
         // === 特性系统：预加载选手数据 + form factors ===
-        let (mut team_players, team_bench, mut form_factors_map, team_personalities, player_mastery_map) = self.load_team_players(pool, save_id, save.current_season as i64).await?;
+        let (
+            mut team_players,
+            team_bench,
+            mut form_factors_map,
+            team_personalities,
+            player_mastery_map,
+            player_games_played_map,
+            player_games_won_map,
+        ) = self
+            .load_team_players(pool, save_id, save.current_season as i64)
+            .await?;
         let meta_weights = MetaEngine::get_current_weights(pool, save_id, save.current_season as i64)
             .await
             .unwrap_or_else(|_| crate::engines::MetaWeights::balanced());
@@ -123,9 +135,37 @@ impl GameFlowService {
                                 .map(|v| v.as_slice())
                                 .unwrap_or(&[]);
                             (
-                                Self::build_champion_pools(home_players, &player_mastery_map),
-                                Self::build_champion_pools(away_players, &player_mastery_map),
+                                Self::build_champion_pools(
+                                    home_players,
+                                    &player_mastery_map,
+                                    &player_games_played_map,
+                                    &player_games_won_map,
+                                ),
+                                Self::build_champion_pools(
+                                    away_players,
+                                    &player_mastery_map,
+                                    &player_games_played_map,
+                                    &player_games_won_map,
+                                ),
                             )
+                        };
+                        let home_team_comp_history =
+                            Self::load_team_comp_history(pool, save_id, match_info.home_team_id as i64)
+                                .await;
+                        let away_team_comp_history =
+                            Self::load_team_comp_history(pool, save_id, match_info.away_team_id as i64)
+                                .await;
+                        let series_ctx = if matches!(match_info.format.clone(), MatchFormat::Bo3 | MatchFormat::Bo5) {
+                            Self::load_previous_series_context(
+                                pool,
+                                save_id,
+                                match_info.id,
+                                match_info.home_team_id,
+                                match_info.away_team_id,
+                            )
+                            .await?
+                        } else {
+                            None
                         };
                         let draft = BpEngine::run_draft(
                             &home_pools,
@@ -133,6 +173,9 @@ impl GameFlowService {
                             &version_tiers,
                             meta_type,
                             &mut bp_rng,
+                            &home_team_comp_history,
+                            &away_team_comp_history,
+                            series_ctx.as_ref(),
                         );
 
                         Self::save_draft_result(pool, save_id, match_info.id, &draft).await?;
@@ -276,16 +319,35 @@ impl GameFlowService {
                                 .map(|v| v.as_slice())
                                 .unwrap_or(&[]);
                             (
-                                Self::build_champion_pools(home_players, &player_mastery_map),
-                                Self::build_champion_pools(away_players, &player_mastery_map),
+                                Self::build_champion_pools(
+                                    home_players,
+                                    &player_mastery_map,
+                                    &player_games_played_map,
+                                    &player_games_won_map,
+                                ),
+                                Self::build_champion_pools(
+                                    away_players,
+                                    &player_mastery_map,
+                                    &player_games_played_map,
+                                    &player_games_won_map,
+                                ),
                             )
                         };
+                        let home_team_comp_history =
+                            Self::load_team_comp_history(pool, save_id, match_info.home_team_id as i64)
+                                .await;
+                        let away_team_comp_history =
+                            Self::load_team_comp_history(pool, save_id, match_info.away_team_id as i64)
+                                .await;
                         let draft = BpEngine::run_draft(
                             &home_pools,
                             &away_pools,
                             &version_tiers,
                             meta_type,
                             &mut bp_rng,
+                            &home_team_comp_history,
+                            &away_team_comp_history,
+                            None,
                         );
 
                         Self::save_draft_result(pool, save_id, match_info.id, &draft).await?;
@@ -375,6 +437,8 @@ impl GameFlowService {
     fn build_champion_pools(
         players: &[MatchPlayerInfo],
         player_mastery_map: &HashMap<u64, HashMap<u8, MasteryTier>>,
+        player_games_played_map: &HashMap<u64, HashMap<u8, u32>>,
+        player_games_won_map: &HashMap<u64, HashMap<u8, u32>>,
     ) -> Vec<PlayerChampionPool> {
         players
             .iter()
@@ -395,14 +459,68 @@ impl GameFlowService {
                         .get(&p.player_id)
                         .cloned()
                         .unwrap_or_default(),
+                    games_played: player_games_played_map
+                        .get(&p.player_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                    games_won: player_games_won_map
+                        .get(&p.player_id)
+                        .cloned()
+                        .unwrap_or_default(),
                     traits: p.traits.clone(),
                 }
             })
             .collect()
     }
 
-    /// 计算选手的版本适配分：SS/S 英雄中最佳版本 Tier 的得分
-    /// SS+T1=+3, S+T1=+2, SS+T2=+1, S+T2=0, T3=-2 (SS 免疫 T3 → 0)
+    async fn load_team_comp_history(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        team_id: i64,
+    ) -> Vec<(CompType, u32)> {
+        let rows = match sqlx::query(
+            r#"
+            SELECT d.home_comp, d.away_comp, m.home_team_id, m.away_team_id
+            FROM game_draft_results d
+            JOIN matches m ON m.id = d.match_id
+            WHERE d.save_id = ? AND (m.home_team_id = ? OR m.away_team_id = ?)
+            "#,
+        )
+        .bind(save_id)
+        .bind(team_id)
+        .bind(team_id)
+        .fetch_all(pool)
+        .await
+        {
+            Ok(rows) => rows,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut comp_counts: HashMap<CompType, u32> = HashMap::new();
+        for row in rows {
+            let home_team_id: i64 = row.get("home_team_id");
+            let away_team_id: i64 = row.get("away_team_id");
+
+            let comp_str: Option<String> = if team_id == home_team_id {
+                row.get("home_comp")
+            } else if team_id == away_team_id {
+                row.get("away_comp")
+            } else {
+                None
+            };
+
+            if let Some(comp_str) = comp_str {
+                if let Some(comp) = CompType::from_id(comp_str.trim()) {
+                    *comp_counts.entry(comp).or_insert(0) += 1;
+                }
+            }
+        }
+
+        let mut history: Vec<(CompType, u32)> = comp_counts.into_iter().collect();
+        history.sort_by(|left, right| right.1.cmp(&left.1));
+        history
+    }
+
     fn calculate_champion_version_score(
         player_id: u64,
         player_mastery_map: &HashMap<u64, HashMap<u8, MasteryTier>>,
@@ -417,14 +535,18 @@ impl GameFlowService {
             if tier != MasteryTier::SS && tier != MasteryTier::S {
                 continue;
             }
-            let vt = version_tiers.get(&champion_id).copied().unwrap_or(VersionTier::T2);
+            let vt = version_tiers.get(&champion_id).copied().unwrap_or(VersionTier::T3);
             let score = match (tier, vt) {
                 (MasteryTier::SS, VersionTier::T1) => 3.0,
                 (MasteryTier::S, VersionTier::T1) => 2.0,
-                (MasteryTier::SS, VersionTier::T2) => 1.0,
-                (MasteryTier::S, VersionTier::T2) => 0.0,
-                (MasteryTier::SS, VersionTier::T3) => 0.0,
-                (MasteryTier::S, VersionTier::T3) => -2.0,
+                (MasteryTier::SS, VersionTier::T2) => 2.0,
+                (MasteryTier::S, VersionTier::T2) => 1.0,
+                (MasteryTier::SS, VersionTier::T3) => 1.0,
+                (MasteryTier::S, VersionTier::T3) => 0.0,
+                (MasteryTier::SS, VersionTier::T4) => 0.0,
+                (MasteryTier::S, VersionTier::T4) => -1.0,
+                (MasteryTier::SS, VersionTier::T5) => -0.5,
+                (MasteryTier::S, VersionTier::T5) => -2.0,
                 _ => 0.0,
             };
             best_score = best_score.max(score);
@@ -444,6 +566,8 @@ impl GameFlowService {
         HashMap<u64, PlayerFormFactors>,
         HashMap<u64, AITeamPersonality>,
         HashMap<u64, HashMap<u8, MasteryTier>>,
+        HashMap<u64, HashMap<u8, u32>>,
+        HashMap<u64, HashMap<u8, u32>>,
     ), String> {
         let rows = sqlx::query(
             r#"
@@ -490,10 +614,12 @@ impl GameFlowService {
         }
 
         let mut player_mastery_map: HashMap<u64, HashMap<u8, MasteryTier>> = HashMap::new();
+        let mut player_games_played_map: HashMap<u64, HashMap<u8, u32>> = HashMap::new();
+        let mut player_games_won_map: HashMap<u64, HashMap<u8, u32>> = HashMap::new();
         if !player_ids.is_empty() {
             let placeholders: String = player_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
             let query_str = format!(
-                "SELECT player_id, champion_id, mastery_tier FROM player_champion_mastery WHERE save_id = ? AND player_id IN ({})",
+                "SELECT player_id, champion_id, mastery_tier, games_played, games_won FROM player_champion_mastery WHERE save_id = ? AND player_id IN ({})",
                 placeholders
             );
             let mut query = sqlx::query(&query_str).bind(save_id);
@@ -509,6 +635,16 @@ impl GameFlowService {
                 let pid = row.get::<i64, _>("player_id") as u64;
                 let champion_id = row.get::<i64, _>("champion_id") as u8;
                 let tier_str: String = row.get("mastery_tier");
+                let games_played = row.get::<i64, _>("games_played").max(0) as u32;
+                let games_won_val = row.get::<i64, _>("games_won").max(0) as u32;
+                player_games_played_map
+                    .entry(pid)
+                    .or_default()
+                    .insert(champion_id, games_played);
+                player_games_won_map
+                    .entry(pid)
+                    .or_default()
+                    .insert(champion_id, games_won_val);
                 if let Some(tier) = MasteryTier::from_id(&tier_str) {
                     player_mastery_map
                         .entry(pid)
@@ -616,6 +752,8 @@ impl GameFlowService {
             form_factors_map,
             team_personalities,
             player_mastery_map,
+            player_games_played_map,
+            player_games_won_map,
         ))
     }
 
@@ -785,6 +923,76 @@ impl GameFlowService {
         .map_err(|e| format!("存储BP结果失败: {}", e))?;
 
         Ok(())
+    }
+
+    async fn load_previous_series_context(
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        match_id: u64,
+        home_team_id: u64,
+        away_team_id: u64,
+    ) -> Result<Option<SeriesContext>, String> {
+        #[derive(serde::Deserialize)]
+        struct StoredPick {
+            champion_id: u8,
+        }
+
+        let row = sqlx::query(
+            r#"
+            SELECT d.home_picks_json, d.away_picks_json, g.winner_id
+            FROM game_draft_results d
+            JOIN match_games g
+                ON g.match_id = d.match_id
+               AND g.game_number = d.game_number
+            WHERE d.save_id = ? AND d.match_id = ?
+            ORDER BY d.game_number DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(save_id)
+        .bind(match_id as i64)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("加载上一局BP上下文失败: {}", e))?;
+
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        let winner_id = row.get::<i64, _>("winner_id") as u64;
+        let winner_is_home = if winner_id == home_team_id {
+            true
+        } else if winner_id == away_team_id {
+            false
+        } else {
+            return Ok(None);
+        };
+
+        let home_picks_json: String = row.get("home_picks_json");
+        let away_picks_json: String = row.get("away_picks_json");
+        let home_picks: Vec<StoredPick> = serde_json::from_str(&home_picks_json).unwrap_or_default();
+        let away_picks: Vec<StoredPick> = serde_json::from_str(&away_picks_json).unwrap_or_default();
+
+        let prev_winner_picks: Vec<u8> = if winner_is_home {
+            home_picks.into_iter().map(|pick| pick.champion_id).collect()
+        } else {
+            away_picks.into_iter().map(|pick| pick.champion_id).collect()
+        };
+
+        if prev_winner_picks.is_empty() {
+            return Ok(None);
+        }
+
+        let prev_loser_side = if winner_is_home {
+            Some(TeamSide::Away)
+        } else {
+            Some(TeamSide::Home)
+        };
+
+        Ok(Some(SeriesContext {
+            prev_winner_picks,
+            prev_loser_side,
+        }))
     }
 
     pub(crate) fn calculate_avg_performance(result: &crate::models::MatchResult, team_id: u64) -> f64 {
