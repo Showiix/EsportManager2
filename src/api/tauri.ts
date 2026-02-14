@@ -477,6 +477,24 @@ export const honorApi = {
   /** 重新生成所有已完成赛事的荣誉 */
   regenerateAllHonors: () =>
     invokeCommand<{ deleted_count: number; created_count: number; message: string }>('regenerate_all_honors'),
+
+  /** 获取名人堂 */
+  getHallOfFame: () =>
+    invoke<HallOfFameEntry[]>('get_hall_of_fame'),
+}
+
+export interface HallOfFameEntry {
+  id: number
+  player_id: number
+  player_name: string
+  position: string
+  region_id: number | null
+  induction_season: number
+  total_score: number
+  tier: string  // 'Legend' | 'HallOfFame'
+  peak_ability: number | null
+  career_seasons: number | null
+  honors_json: string  // JSON string of honor details
 }
 
 // 荣誉类型中文转换
@@ -1697,6 +1715,33 @@ export interface MatchPrediction {
   key_factors: string[]
 }
 
+/** 比赛阵容记录（单条） */
+export interface MatchLineupEntry {
+  game_number: number
+  team_id: number
+  player_id: number
+  player_name: string
+  position: string
+  is_substitution: boolean
+  replaced_player_id: number | null
+  replaced_player_name: string | null
+  substitution_reason: string | null
+}
+
+/** 单局阵容 */
+export interface MatchGameLineup {
+  game_number: number
+  home_players: MatchLineupEntry[]
+  away_players: MatchLineupEntry[]
+  substitutions: MatchLineupEntry[]
+}
+
+/** 某场比赛的完整阵容信息 */
+export interface MatchLineupsResult {
+  match_id: number
+  games: MatchGameLineup[]
+}
+
 export const matchApi = {
   simulateMatchDetailed: (matchId: number) =>
     invokeCommand<DetailedMatchResult>('simulate_match_detailed', { matchId }),
@@ -1721,6 +1766,9 @@ export const matchApi = {
   /** 取消比赛（标记为 CANCELLED） */
   cancelMatch: (matchId: number) =>
     invokeCommand<boolean>('cancel_match', { matchId }),
+
+  getMatchLineups: (matchId: number) =>
+    invokeCommand<MatchLineupsResult>('get_match_lineups', { matchId }),
 }
 
 // ========================================
@@ -3489,4 +3537,59 @@ export const traitCenterApi = {
 
   getTeamSynergy: (teamId: number) =>
     invokeCommand<TeamSynergyInfo>('get_team_synergy', { teamId }),
+}
+
+// ========================================
+// 英雄/BP系统
+// ========================================
+
+export interface ChampionInfo {
+  id: number
+  name_cn: string
+  name_en: string
+  position: string
+  archetype: string
+  archetype_name: string
+}
+
+export interface ChampionStatInfo {
+  champion_id: number
+  name_cn: string
+  name_en: string
+  position: string
+  pick_count: number
+  win_count: number
+  ban_count: number
+}
+
+export interface DraftResultInfo {
+  match_id: number
+  game_number: number
+  bans_json: string
+  home_picks_json: string
+  away_picks_json: string
+  home_comp: string | null
+  away_comp: string | null
+}
+
+export interface CompStatInfo {
+  comp_type: string
+  pick_count: number
+  win_count: number
+}
+
+export function getChampionList() {
+  return invokeCommand<ChampionInfo[]>('get_champion_list')
+}
+
+export function getChampionStats(saveId: string) {
+  return invokeCommand<ChampionStatInfo[]>('get_champion_stats', { saveId })
+}
+
+export function getDraftResult(saveId: string, matchId: number, gameNumber: number) {
+  return invokeCommand<DraftResultInfo | null>('get_draft_result', { saveId, matchId, gameNumber })
+}
+
+export function getCompStats(saveId: string) {
+  return invokeCommand<CompStatInfo[]>('get_comp_stats', { saveId })
 }

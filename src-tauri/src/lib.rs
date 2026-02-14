@@ -31,6 +31,7 @@ use commands::{
     get_international_champions, get_champion_detail, get_player_honor_rankings,
     get_team_honor_rankings, get_player_honor_detail, get_team_honor_detail,
     cleanup_duplicate_honors, regenerate_tournament_honors, regenerate_all_honors,
+    get_hall_of_fame,
     // 选秀命令
     generate_draft_pool, run_draft_lottery, get_draft_order, get_available_draft_players,
     make_draft_pick, ai_auto_draft, get_draft_region_status,
@@ -60,7 +61,7 @@ use commands::{
     regenerate_icp_bracket, generate_champion_prep_stage, generate_final_stage,
     // 比赛模拟命令
     simulate_match_detailed, simulate_all_matches_detailed, get_player_season_stats, get_match_prediction,
-    update_match_result, update_match_teams, cancel_match,
+    get_match_lineups, update_match_result, update_match_teams, cancel_match,
     // 事件系统命令
     preview_season_settlement, execute_season_settlement, get_season_events,
     get_player_events, get_events_by_type, update_players_age,
@@ -106,6 +107,8 @@ use commands::{
     get_perf_records, get_perf_summary, toggle_perf_monitoring, clear_perf_records,
     // 版本系统命令
     get_current_meta, get_meta_history, get_all_meta_types, get_meta_detail,
+    // 英雄/BP系统命令
+    get_champion_list, get_champion_stats, get_draft_result, get_comp_stats,
     // 应用状态
     AppState,
 };
@@ -191,6 +194,7 @@ pub fn run() {
             cleanup_duplicate_honors,
             regenerate_tournament_honors,
             regenerate_all_honors,
+            get_hall_of_fame,
             // 选秀命令
             generate_draft_pool,
             run_draft_lottery,
@@ -263,6 +267,7 @@ pub fn run() {
             simulate_all_matches_detailed,
             get_player_season_stats,
             get_match_prediction,
+            get_match_lineups,
             update_match_result,
             update_match_teams,
             cancel_match,
@@ -375,6 +380,11 @@ pub fn run() {
             get_meta_history,
             get_all_meta_types,
             get_meta_detail,
+            // 英雄/BP系统命令
+            get_champion_list,
+            get_champion_stats,
+            get_draft_result,
+            get_comp_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -138,6 +138,11 @@
             <span>版本历史</span>
           </el-menu-item>
 
+          <el-menu-item index="/champion-data" :disabled="isMenuDisabled('/champion-data')">
+            <el-icon><Aim /></el-icon>
+            <span>英雄数据</span>
+          </el-menu-item>
+
           <el-menu-item index="/annual-top" :disabled="isMenuDisabled('/annual-top')">
             <el-icon><Star /></el-icon>
             <span>IM年度评选</span>
@@ -151,6 +156,11 @@
           <el-menu-item index="/honors" :disabled="isMenuDisabled('/honors')">
             <el-icon><Trophy /></el-icon>
             <span>荣誉殿堂</span>
+          </el-menu-item>
+
+          <el-menu-item index="/hall-of-fame" :disabled="isMenuDisabled('/hall-of-fame')">
+            <el-icon><Trophy /></el-icon>
+            <span>名人堂</span>
           </el-menu-item>
 
           <el-menu-item index="/performance">
@@ -223,6 +233,7 @@ import {
   Refresh,
   Reading,
   MagicStick,
+  Aim,
 } from '@element-plus/icons-vue'
 import { useGameStore } from '@/stores/useGameStore'
 import { useTimeStore } from '@/stores/useTimeStore'
@@ -322,6 +333,7 @@ const breadcrumbs = computed(() => {
     'data-center': '数据中心',
     'trait-center': '特性中心',
     'meta-version': '版本历史',
+    'champion-data': '英雄数据',
     'annual-top': 'IM年度评选',
     'annual-awards': '年度颁奖典礼',
     honors: '荣誉殿堂',
@@ -333,6 +345,7 @@ const breadcrumbs = computed(() => {
     lck: 'LCK 韩国赛区',
     lec: 'LEC 欧洲赛区',
     lcs: 'LCS 北美赛区',
+    'hall-of-fame': '名人堂',
   }
 
   let currentPath = ''

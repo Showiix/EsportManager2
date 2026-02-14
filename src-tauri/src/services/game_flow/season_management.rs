@@ -1,6 +1,9 @@
 use crate::db::*;
 use crate::engines::MetaEngine;
+use crate::engines::champion::{self, MasteryTier};
 use crate::models::*;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use sqlx::{Pool, Row, Sqlite};
 
 use super::{GameFlowService, NewSeasonResult};
@@ -12,8 +15,8 @@ impl GameFlowService {
         pool: &Pool<Sqlite>,
         save_id: &str,
     ) -> Result<u32, String> {
-        // 清除所有首发标记
-        sqlx::query("UPDATE players SET is_starter = 0 WHERE save_id = ? AND status = 'Active'")
+        // 清除所有首发标记 & 默认设为 Sub
+        sqlx::query("UPDATE players SET is_starter = 0, contract_role = 'Sub' WHERE save_id = ? AND status = 'Active'")
             .bind(save_id)
             .execute(pool)
             .await
@@ -49,7 +52,7 @@ impl GameFlowService {
 
                 if let Some(row) = result {
                     let player_id: i64 = row.get("id");
-                    sqlx::query("UPDATE players SET is_starter = 1 WHERE id = ?")
+                    sqlx::query("UPDATE players SET is_starter = 1, contract_role = 'Starter' WHERE id = ?")
                         .bind(player_id)
                         .execute(pool)
                         .await
@@ -169,9 +172,21 @@ impl GameFlowService {
         .await
         .map_err(|e| format!("重置 form factors 失败: {}", e))?;
 
+        // 2.55 重置赛季出场统计
+        sqlx::query(
+            "UPDATE players SET season_games_played = 0, season_games_total = 0 WHERE save_id = ? AND status = 'Active'"
+        )
+        .bind(save_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("重置赛季出场统计失败: {}", e))?;
+
         // 2.6 为新赛季生成 Meta 版本
         MetaEngine::roll_new_meta(pool, save_id, save.current_season as i64).await
             .map_err(|e| format!("生成 Meta 版本失败: {}", e))?;
+
+        // 2.7 英雄池赛季演变
+        self.evolve_champion_masteries(pool, save_id, save.current_season as i64).await?;
 
         // 3. 自动确认首发
         let starters_confirmed = self.auto_confirm_starters(pool, save_id).await?;
@@ -192,5 +207,83 @@ impl GameFlowService {
             starters_confirmed,
             message,
         })
+    }
+
+    async fn evolve_champion_masteries(
+        &self,
+        pool: &Pool<Sqlite>,
+        save_id: &str,
+        _new_season: i64,
+    ) -> Result<(), String> {
+        let rows = sqlx::query(
+            "SELECT player_id, champion_id, mastery_tier, games_played FROM player_champion_mastery WHERE save_id = ?"
+        )
+        .bind(save_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("查询英雄熟练度失败: {}", e))?;
+
+        let mut rng = StdRng::from_entropy();
+        let mut upgraded = 0u32;
+        let mut downgraded = 0u32;
+
+        for row in &rows {
+            let player_id: i64 = row.get("player_id");
+            let champion_id: i64 = row.get("champion_id");
+            let tier_str: String = row.get("mastery_tier");
+            let games_played: i64 = row.get("games_played");
+
+            let current = match MasteryTier::from_id(&tier_str) {
+                Some(t) => t,
+                None => continue,
+            };
+
+            let new_tier = champion::evolve_mastery(current, games_played as u32, &mut rng);
+
+            if new_tier != current {
+                if new_tier == MasteryTier::B {
+                    sqlx::query(
+                        "DELETE FROM player_champion_mastery WHERE save_id = ? AND player_id = ? AND champion_id = ?"
+                    )
+                    .bind(save_id)
+                    .bind(player_id)
+                    .bind(champion_id)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| format!("删除B级熟练度失败: {}", e))?;
+                    downgraded += 1;
+                } else {
+                    sqlx::query(
+                        "UPDATE player_champion_mastery SET mastery_tier = ?, games_played = 0 WHERE save_id = ? AND player_id = ? AND champion_id = ?"
+                    )
+                    .bind(new_tier.id())
+                    .bind(save_id)
+                    .bind(player_id)
+                    .bind(champion_id)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| format!("更新熟练度失败: {}", e))?;
+
+                    if new_tier.pick_score() > current.pick_score() {
+                        upgraded += 1;
+                    } else {
+                        downgraded += 1;
+                    }
+                }
+            } else {
+                sqlx::query(
+                    "UPDATE player_champion_mastery SET games_played = 0 WHERE save_id = ? AND player_id = ? AND champion_id = ?"
+                )
+                .bind(save_id)
+                .bind(player_id)
+                .bind(champion_id)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("重置使用次数失败: {}", e))?;
+            }
+        }
+
+        log::debug!("英雄池演变完成: {} 升级, {} 降级", upgraded, downgraded);
+        Ok(())
     }
 }

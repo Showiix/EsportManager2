@@ -19,6 +19,7 @@ pub mod transfer_commands;
 pub mod log_commands;
 pub mod perf_commands;
 pub mod meta_commands;
+pub mod champion_commands;
 
 pub use save_commands::*;
 pub use team_commands::*;
@@ -36,7 +37,7 @@ pub use match_commands::{
     PlayerGameStats, ActivatedTraitInfo, GameEvent, BatchDetailedResult,
     PlayerSeasonStats, MatchPrediction,
     simulate_match_detailed, simulate_all_matches_detailed,
-    get_player_season_stats, get_match_prediction,
+    get_player_season_stats, get_match_prediction, get_match_lineups,
     update_match_result, update_match_teams, cancel_match,
 };
 pub use honor_commands::*;
@@ -56,6 +57,7 @@ pub use transfer_commands::*;
 pub use log_commands::*;
 pub use perf_commands::*;
 pub use meta_commands::*;
+pub use champion_commands::*;
 
 use serde::{Deserialize, Serialize};
 

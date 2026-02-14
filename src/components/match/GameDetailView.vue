@@ -398,23 +398,139 @@
         <span>未激活特性</span>
       </div>
     </div>
+
+    <!-- BP 面板 -->
+    <div v-if="draftData" class="bp-panel">
+      <button class="breakdown-toggle" @click="bpOpen = !bpOpen">
+        <span class="toggle-arrow" :class="{ open: bpOpen }">&#9654;</span>
+        <span>Ban/Pick</span>
+      </button>
+      <div v-if="bpOpen" class="breakdown-content">
+        <div class="bp-section">
+          <div class="bp-label">Ban</div>
+          <div class="bp-list">
+            <el-tag
+              v-for="ban in parsedBans"
+              :key="'ban-' + ban.champion_id"
+              type="danger"
+              size="small"
+              effect="dark"
+              class="bp-tag"
+            >
+              {{ getChampionName(ban.champion_id) }}
+            </el-tag>
+            <span v-if="parsedBans.length === 0" class="bp-empty">无</span>
+          </div>
+        </div>
+        <div class="bp-teams-row">
+          <div class="bp-team-col">
+            <div class="bp-team-label team-a-accent">{{ game.teamAName }}</div>
+            <div class="bp-pick-list">
+              <div v-for="pick in parsedHomePicks" :key="'hp-' + pick.champion_id" class="bp-pick-item">
+                <el-tag size="small" effect="plain">{{ getChampionName(pick.champion_id) }}</el-tag>
+                <span v-if="pick.mastery_tier" class="bp-mastery" :class="'mastery-' + pick.mastery_tier">{{ pick.mastery_tier }}</span>
+              </div>
+            </div>
+            <div v-if="draftData.home_comp" class="bp-comp">
+              体系: <el-tag type="warning" size="small">{{ compDisplayName(draftData.home_comp) }}</el-tag>
+            </div>
+          </div>
+          <div class="bp-team-col">
+            <div class="bp-team-label team-b-accent">{{ game.teamBName }}</div>
+            <div class="bp-pick-list">
+              <div v-for="pick in parsedAwayPicks" :key="'ap-' + pick.champion_id" class="bp-pick-item">
+                <el-tag size="small" effect="plain">{{ getChampionName(pick.champion_id) }}</el-tag>
+                <span v-if="pick.mastery_tier" class="bp-mastery" :class="'mastery-' + pick.mastery_tier">{{ pick.mastery_tier }}</span>
+              </div>
+            </div>
+            <div v-if="draftData.away_comp" class="bp-comp">
+              体系: <el-tag type="warning" size="small">{{ compDisplayName(draftData.away_comp) }}</el-tag>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import type { GameDetail } from '@/types/matchDetail'
 import type { PlayerPosition } from '@/types/player'
 import { POSITION_NAMES, getTraitDescription, getTraitName } from '@/types/player'
+import { getDraftResult, getChampionList } from '@/api/tauri'
+import type { DraftResultInfo, ChampionInfo } from '@/api/tauri'
+import { useGameStore } from '@/stores/useGameStore'
 
 interface Props {
   game: GameDetail
+  matchId?: number | string
 }
 
 const props = defineProps<Props>()
 
 const breakdownOpen = ref(false)
 const matchupOpen = ref(false)
+const bpOpen = ref(false)
+
+const gameStore = useGameStore()
+const draftData = ref<DraftResultInfo | null>(null)
+const championMap = ref<Map<number, ChampionInfo>>(new Map())
+
+interface StoredBanEntry { champion_id: number; team_side: string; ban_phase: number }
+interface StoredPickEntry { champion_id: number; player_id: number; position: string; mastery_tier: string }
+
+const parsedBans = computed<StoredBanEntry[]>(() => {
+  if (!draftData.value) return []
+  try { return JSON.parse(draftData.value.bans_json) } catch { return [] }
+})
+
+const parsedHomePicks = computed<StoredPickEntry[]>(() => {
+  if (!draftData.value) return []
+  try { return JSON.parse(draftData.value.home_picks_json) } catch { return [] }
+})
+
+const parsedAwayPicks = computed<StoredPickEntry[]>(() => {
+  if (!draftData.value) return []
+  try { return JSON.parse(draftData.value.away_picks_json) } catch { return [] }
+})
+
+const COMP_NAMES: Record<string, string> = {
+  Rush: '速推', PickOff: '抓单', AllIn: '莽夫', MidJungle: '中野联动', TopJungle: '上野联动',
+  Protect: '保C', Fortress: '铁桶阵', UtilityComp: '功能流', Stall: '龟缩', BotLane: '下路统治',
+  Teamfight: '团战', Dive: '开团', Skirmish: '小规模团战', DualCarry: '双C', Flex: '全能',
+  Splitpush: '分推', SideLane: '4-1分带', Control: '运营', TripleThreat: '三线施压', LateGame: '后期发育',
+}
+
+const compDisplayName = (type: string) => COMP_NAMES[type] || type
+
+const getChampionName = (id: number): string => {
+  const champ = championMap.value.get(id)
+  return champ ? champ.name_cn : `#${id}`
+}
+
+const loadBpData = async () => {
+  const saveId = gameStore.currentSave?.id
+  const mid = props.matchId
+  if (!saveId || !mid) return
+
+  try {
+    if (championMap.value.size === 0) {
+      const list = await getChampionList()
+      const map = new Map<number, ChampionInfo>()
+      for (const c of list) map.set(c.id, c)
+      championMap.value = map
+    }
+
+    const result = await getDraftResult(saveId, Number(mid), props.game.gameNumber)
+    draftData.value = result
+  } catch {
+    draftData.value = null
+  }
+}
+
+watch(() => [props.matchId, props.game.gameNumber], () => { loadBpData() })
+onMounted(() => { loadBpData() })
 
 // 位置排序顺序
 const POSITION_ORDER: Record<string, number> = { TOP: 0, JUG: 1, MID: 2, ADC: 3, SUP: 4 }
@@ -1393,5 +1509,105 @@ const keyMatchupPos = computed(() => {
 .no-trait {
   color: #c0c4cc;
   font-size: 11px;
+}
+
+.bp-panel {
+  margin-top: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.bp-section {
+  margin-bottom: 12px;
+}
+
+.bp-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #86909c;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.bp-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bp-tag {
+  font-size: 11px;
+}
+
+.bp-empty {
+  color: #c0c4cc;
+  font-size: 12px;
+}
+
+.bp-teams-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.bp-team-col {
+  padding: 8px 12px;
+  background: #f7f8fa;
+  border-radius: 8px;
+}
+
+.bp-team-label {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.bp-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bp-pick-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bp-mastery {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.bp-mastery.mastery-SS {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.bp-mastery.mastery-S {
+  color: #d97706;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.bp-mastery.mastery-A {
+  color: #059669;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.bp-mastery.mastery-B {
+  color: #86909c;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.bp-comp {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #4e5969;
 }
 </style>

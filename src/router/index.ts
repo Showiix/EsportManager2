@@ -247,6 +247,12 @@ const router = createRouter({
       meta: { title: '版本历史' }
     },
     {
+      path: '/champion-data',
+      name: 'ChampionData',
+      component: () => import('@/views/ChampionData.vue'),
+      meta: { title: '英雄数据' }
+    },
+    {
       path: '/data-center/player/:playerId',
       name: 'DataCenterPlayerDetail',
       component: () => import('@/views/DataCenterPlayerDetail.vue'),
@@ -287,6 +293,12 @@ const router = createRouter({
       name: 'TeamHonorRankings',
       component: () => import('@/views/TeamHonorRankings.vue'),
       meta: { title: '战队荣誉榜' }
+    },
+    {
+      path: '/hall-of-fame',
+      name: 'HallOfFame',
+      component: () => import('@/views/HallOfFame.vue'),
+      meta: { title: '名人堂' }
     },
     {
       path: '/performance',

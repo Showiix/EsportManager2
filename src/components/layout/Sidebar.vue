@@ -53,6 +53,7 @@ const menuItems: MenuItem[] = [
   { name: 'IM年度评选', path: '/annual-top', icon: 'star' },
   { name: '年度颁奖典礼', path: '/annual-awards', icon: 'award' },
   { name: '荣誉殿堂', path: '/honors', icon: 'medal' },
+  { name: '名人堂', path: '/hall-of-fame', icon: 'trophy' },
   { name: '游戏指南', path: '/guide', icon: 'book' },
   { name: '系统设置', path: '/settings', icon: 'settings' },
 ];

@@ -8,6 +8,7 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Row, Sqlite};
+use super::champion::Archetype;
 
 /// Meta 类型枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -142,6 +143,31 @@ impl MetaType {
     /// 从字符串解析 MetaType
     pub fn from_id(id: &str) -> Option<MetaType> {
         MetaType::all().iter().find(|m| m.id() == id).copied()
+    }
+
+    pub fn favored_archetypes(&self) -> &'static [Archetype] {
+        match self {
+            MetaType::Balanced          => &[],
+            MetaType::EarlyGameAggro    => &[Archetype::Aggressive],
+            MetaType::DiveComposition   => &[Archetype::Aggressive],
+            MetaType::SkirmishMeta      => &[Archetype::Aggressive],
+            MetaType::PickComposition   => &[Archetype::Aggressive, Archetype::Utility],
+            MetaType::LateGameScaling   => &[Archetype::Scaling],
+            MetaType::ProtectTheCarry   => &[Archetype::Scaling, Archetype::Utility],
+            MetaType::DualCarry         => &[Archetype::Scaling],
+            MetaType::VisionControl     => &[Archetype::Utility],
+            MetaType::SupportEra        => &[Archetype::Utility],
+            MetaType::SplitPushMeta     => &[Archetype::Splitpush],
+            MetaType::SoloLaneMeta      => &[Archetype::Splitpush],
+            MetaType::TeamfightMeta     => &[Archetype::Teamfight],
+            MetaType::ObjectiveControl  => &[Archetype::Teamfight, Archetype::Utility],
+            MetaType::MidKingdom        => &[Archetype::Aggressive, Archetype::Scaling],
+            MetaType::BotLaneDominance  => &[Archetype::Scaling, Archetype::Utility],
+            MetaType::TopLaneCarry      => &[Archetype::Splitpush, Archetype::Aggressive],
+            MetaType::JungleTempo       => &[Archetype::Aggressive],
+            MetaType::MidJungleSynergy  => &[Archetype::Aggressive, Archetype::Teamfight],
+            MetaType::TopJungleSynergy  => &[Archetype::Splitpush, Archetype::Aggressive],
+        }
     }
 }
 
