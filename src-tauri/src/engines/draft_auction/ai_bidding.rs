@@ -17,6 +17,31 @@ impl DraftAuctionEngine {
         current_round: u32,
         rng: &mut impl Rng,
     ) -> Option<i64> {
+        // 已持有更靠前签位且新秀位置重叠 → 跳过
+        if let Some(&owned_pos) = self.draft_orders.get(&team_info.team_id) {
+            if owned_pos < draft_position {
+                let owned_rookie_position = self
+                    .draft_rookies
+                    .iter()
+                    .filter(|r| r.draft_rank <= owned_pos + 1)
+                    .min_by_key(|r| (r.draft_rank as i32 - owned_pos as i32).unsigned_abs())
+                    .map(|r| r.position.clone());
+                let target_rookie_position = self
+                    .draft_rookies
+                    .iter()
+                    .filter(|r| r.draft_rank <= draft_position + 1)
+                    .min_by_key(|r| (r.draft_rank as i32 - draft_position as i32).unsigned_abs())
+                    .map(|r| r.position.clone());
+                if let (Some(owned_rp), Some(target_rp)) =
+                    (owned_rookie_position, target_rookie_position)
+                {
+                    if owned_rp == target_rp {
+                        return None;
+                    }
+                }
+            }
+        }
+
         let budget_ratio = match team_info.financial_status {
             FinancialStatus::Wealthy => 0.40,
             FinancialStatus::Healthy => 0.30,
@@ -74,7 +99,7 @@ impl DraftAuctionEngine {
         if let Some(pricing) = get_price_for_position(draft_position) {
             let price_ratio = current_price as f64 / pricing.starting_price as f64;
             if price_ratio > 1.0 {
-                bid_prob *= (0.6_f64).powf(price_ratio - 1.0);
+                bid_prob *= (0.75_f64).powf(price_ratio - 1.0);
             }
         }
 
@@ -95,9 +120,9 @@ impl DraftAuctionEngine {
         }
 
         let aggression = match team_info.financial_status {
-            FinancialStatus::Wealthy => 1.5,
-            FinancialStatus::Healthy => 1.3,
-            FinancialStatus::Tight => 1.15,
+            FinancialStatus::Wealthy => 1.6,
+            FinancialStatus::Healthy => 1.4,
+            FinancialStatus::Tight => 1.2,
             _ => 1.05,
         };
         let max_bid = (min_bid as f64 * aggression).min(available_budget as f64) as i64;

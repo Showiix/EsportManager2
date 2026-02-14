@@ -34,6 +34,9 @@ fn make_cached_player(id: i64, ability: i64, age: i64, position: &str) -> Cached
         status: "Active".to_string(),
         stability: 70,
         growth_accumulator: 0.0,
+        contract_role: "Starter".to_string(),
+        season_games_played: 0,
+        season_games_total: 0,
     }
 }
 

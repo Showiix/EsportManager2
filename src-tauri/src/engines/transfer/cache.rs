@@ -25,6 +25,9 @@ pub struct CachedPlayer {
     pub status: String,
     pub stability: i64,
     pub growth_accumulator: f64,
+    pub contract_role: String,
+    pub season_games_played: i64,
+    pub season_games_total: i64,
 }
 
 impl CachedPlayer {
@@ -48,6 +51,9 @@ impl CachedPlayer {
             status: row.try_get("status").unwrap_or_else(|_| "Active".to_string()),
             stability: row.try_get("stability").unwrap_or(60),
             growth_accumulator: row.try_get("growth_accumulator").unwrap_or(0.0),
+            contract_role: row.try_get("contract_role").unwrap_or_else(|_| "Starter".to_string()),
+            season_games_played: row.try_get("season_games_played").unwrap_or(0),
+            season_games_total: row.try_get("season_games_total").unwrap_or(0),
         }
     }
 }

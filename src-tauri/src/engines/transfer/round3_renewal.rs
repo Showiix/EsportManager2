@@ -27,7 +27,7 @@ impl TransferEngine {
         // 获取合同即将到期的选手（contract_end_season = 当前赛季）
         let expiring_players: Vec<sqlx::sqlite::SqliteRow> = sqlx::query(
             r#"SELECT p.id, p.game_id, p.ability, p.salary, p.loyalty, p.satisfaction,
-                      p.team_id, p.age, p.potential, p.tag, p.calculated_market_value, t.name as team_name
+                      p.team_id, p.age, p.potential, p.tag, p.calculated_market_value, p.contract_role, t.name as team_name
                FROM players p
                LEFT JOIN teams t ON p.team_id = t.id
                WHERE p.save_id = ? AND p.status = 'Active'
@@ -52,6 +52,7 @@ impl TransferEngine {
             let team_name: String = player.get("team_name");
             let age: i64 = player.get("age");
             let calculated_market_value: i64 = player.try_get("calculated_market_value").unwrap_or(0);
+            let contract_role: String = player.try_get("contract_role").unwrap_or_else(|_| "Starter".to_string());
 
             // 续约谈判逻辑
             let loyalty_bonus = loyalty as f64 / 100.0;
@@ -84,8 +85,9 @@ impl TransferEngine {
                 -0.20
             };
 
+            let salary_weight = if ability >= 70 { 1.5 } else if ability >= 60 { 1.0 } else { 0.5 };
             let renewal_chance = (loyalty_bonus * 0.3 + satisfaction_bonus * 0.3 + 0.15
-                + team_rank_bonus + salary_competitiveness).clamp(0.05, 0.95);
+                + team_rank_bonus + salary_competitiveness * salary_weight).clamp(0.05, 0.95);
 
             let mut renewed = false;
 
@@ -105,7 +107,14 @@ impl TransferEngine {
                         let age_factor = if age <= 24 { 0.05 } else if age >= 30 { -0.05 } else { 0.0 };
                         (1.0_f64 + ability_factor + loyalty_factor + satisfaction_factor + age_factor).clamp(0.85, 1.15)
                     };
-                    let new_salary = (expected_salary as f64 * player_leverage) as i64;
+                    let new_salary = {
+                        let base = (expected_salary as f64 * player_leverage) as i64;
+                        if contract_role == "Sub" && satisfaction >= 40 {
+                            (base as f64 * 0.7) as i64
+                        } else {
+                            base
+                        }
+                    };
 
                     sqlx::query(
                         "UPDATE players SET salary = ?, contract_end_season = ?, loyalty = MIN(loyalty + 5, 100) WHERE id = ?"

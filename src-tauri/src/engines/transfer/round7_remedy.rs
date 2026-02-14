@@ -40,7 +40,7 @@ impl TransferEngine {
             let team_name = cache.get_team_name(team_id);
             let roster = cache.get_roster(team_id);
 
-            if roster.len() >= 13 {
+            if roster.len() >= 15 {
                 continue;
             }
 
@@ -190,6 +190,9 @@ impl TransferEngine {
                         status: "Active".to_string(),
                         stability: 60,
                         growth_accumulator: 0.0,
+                        contract_role: "Starter".to_string(),
+                        season_games_played: 0,
+                        season_games_total: 0,
                     };
                     cache.team_rosters.entry(team_id).or_default().push(new_player);
 

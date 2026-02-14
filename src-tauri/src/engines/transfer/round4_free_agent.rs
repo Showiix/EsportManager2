@@ -156,7 +156,15 @@ impl TransferEngine {
                     match_score
                 };
 
-                if match_score < 50.0 {
+                let match_score_threshold = if roster_count < 7 {
+                    35.0
+                } else if roster_count <= 8 {
+                    50.0
+                } else {
+                    60.0
+                };
+
+                if match_score < match_score_threshold {
                     continue;
                 }
 
@@ -170,12 +178,18 @@ impl TransferEngine {
                     let random_factor = 0.92 + rng.gen::<f64>() * 0.16;
                     base_mult * random_factor
                 };
-                let offered_salary = (expected_salary as f64 * salary_multiplier) as i64;
+                let is_bench_signing = pos_count == 1;
+
+                let offered_salary = {
+                    let base = (expected_salary as f64 * salary_multiplier) as i64;
+                    if is_bench_signing { (base as f64 * 0.7) as i64 } else { base }
+                };
                 let contract_years = {
                     let base: i64 = if age <= 22 { 3 } else if age <= 25 { 2 } else if age <= 28 { 2 } else { 1 };
                     let personality_adj: i64 = if weights.long_term_focus > 0.7 { 1 } else if weights.short_term_focus > 0.7 { -1 } else { 0 };
                     let random_adj: i64 = if rng.gen::<f64>() < 0.3 { 1 } else if rng.gen::<f64>() < 0.25 { -1 } else { 0 };
-                    (base + personality_adj + random_adj).clamp(1, 4)
+                    let max_years = if is_bench_signing { 2 } else { 4 };
+                    (base + personality_adj + random_adj).clamp(1, max_years)
                 };
                 let target_region_id = cache.team_region_ids.get(&team_id).copied().flatten();
 
@@ -278,15 +292,19 @@ impl TransferEngine {
             if let Some(offer) = best_offer {
                 let to_team_id = offer.team_id;
                 let to_team_name = cache.get_team_name(to_team_id);
+                let to_roster = cache.get_roster(to_team_id);
+                let signing_as_bench = to_roster.iter().any(|p| p.position.eq_ignore_ascii_case(&position));
+                let new_contract_role = if signing_as_bench { "Sub" } else { "Starter" };
 
-                // 执行签约
                 sqlx::query(
-                    "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = 50, satisfaction = 60, join_season = ? WHERE id = ?"
+                    "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = 50, satisfaction = 60, join_season = ?, contract_role = ?, is_starter = ? WHERE id = ?"
                 )
                 .bind(to_team_id)
                 .bind(offer.offered_salary)
                 .bind(season_id + offer.contract_years)
                 .bind(season_id)
+                .bind(new_contract_role)
+                .bind(!signing_as_bench)
                 .bind(player_id)
                 .execute(pool)
                 .await
@@ -328,13 +346,16 @@ impl TransferEngine {
                     position: position.clone(),
                     tag: free_agent.try_get("tag").unwrap_or_else(|_| "NORMAL".to_string()),
                     team_id: Some(to_team_id),
-                    is_starter: false,
+                    is_starter: !signing_as_bench,
                     home_region_id,
                     region_loyalty,
                     contract_end_season: Some(season_id + offer.contract_years),
                     status: "Active".to_string(),
                     stability: free_agent.try_get("stability").unwrap_or(60),
                     growth_accumulator: free_agent.try_get("growth_accumulator").unwrap_or(0.0),
+                    contract_role: new_contract_role.to_string(),
+                    season_games_played: 0,
+                    season_games_total: 0,
                 };
                 cache.team_rosters.entry(to_team_id).or_default().push(new_player);
 

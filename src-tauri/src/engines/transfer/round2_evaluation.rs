@@ -53,7 +53,21 @@ impl TransferEngine {
                 ) as i64;
                 let salary_ratio = if estimated_salary > 0 { player.salary as f64 / estimated_salary as f64 } else { 1.0 };
 
-                if salary_ratio < 0.85 && player.salary > 0 {
+                // 涨薪门槛：薪资低于市场估值 + 能力不能远低于队伍首发平均
+                let starter_avg_ability = {
+                    let starters: Vec<i64> = roster.iter()
+                        .filter(|p| p.is_starter)
+                        .map(|p| p.ability)
+                        .collect();
+                    if starters.is_empty() {
+                        roster.iter().map(|p| p.ability).sum::<i64>() / roster.len().max(1) as i64
+                    } else {
+                        starters.iter().sum::<i64>() / starters.len() as i64
+                    }
+                };
+                let ability_qualifies = player.ability >= starter_avg_ability - 5;
+
+                if salary_ratio < 0.85 && player.salary > 0 && ability_qualifies {
                     let raise_target = (estimated_salary as f64 * 0.90) as i64;
                     let raise_amount = raise_target - player.salary;
 
@@ -444,6 +458,34 @@ impl TransferEngine {
                 .execute(pool)
                 .await
                 .map_err(|e| format!("保存位置需求失败: {}", e))?;
+            }
+
+            // 替补需求：如果该位置只有1人（无替补），且不是 DYNASTY 策略
+            if strategy != "DYNASTY" {
+                let pos_player_count = roster.iter().filter(|p| p.position == *pos).count();
+                if pos_player_count == 1 {
+                    let bench_min_ability = starter_ability.unwrap_or(50) as i32 - 15;
+                    let bench_max_salary = (budget as f64 * 0.06) as i64;
+                    sqlx::query(
+                        r#"INSERT INTO team_position_needs
+                        (evaluation_id, position, current_starter_id, current_starter_name,
+                         current_starter_ability, current_starter_age,
+                         need_level, min_ability_target, max_salary_budget, prefer_young, reason)
+                        VALUES (?, ?, ?, ?, ?, ?, 'OPTIONAL', ?, ?, 1, ?)"#
+                    )
+                    .bind(evaluation_id)
+                    .bind(format!("{}_BENCH", pos))
+                    .bind(starter_id)
+                    .bind(&starter_name)
+                    .bind(starter_ability)
+                    .bind(starter_age)
+                    .bind(bench_min_ability)
+                    .bind(bench_max_salary)
+                    .bind(format!("{}位置缺少替补", pos))
+                    .execute(pool)
+                    .await
+                    .map_err(|e| format!("保存替补需求失败: {}", e))?;
+                }
             }
         }
 

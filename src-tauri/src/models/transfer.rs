@@ -413,7 +413,7 @@ impl Default for TransferConfig {
             max_transfers_per_round: 2,
             max_transfers_per_window: 10,
             negotiation_max_rounds: 3,
-            luxury_tax_threshold: 8,
+            luxury_tax_threshold: 10,
             luxury_tax_per_player: 5_000_000, // 500万/人
         }
     }

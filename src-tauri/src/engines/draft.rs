@@ -31,7 +31,7 @@ impl DraftEngine {
 
     /// 生成选秀顺位 (基于夏季赛排名的加权概率算法)
     /// 排名越靠后，获得高顺位的概率越高
-    /// 权重公式: weight = summer_rank^2，即排名数字越大（成绩越差）权重越高
+    /// 权重公式: weight = summer_rank^1.5
     pub fn generate_draft_order(
         &mut self,
         save_id: &str,
@@ -42,11 +42,10 @@ impl DraftEngine {
         let mut rng = rand::thread_rng();
         let mut draft_orders = Vec::new();
 
-        // 构建候选池: (team_id, summer_rank, weight)
-        // weight = summer_rank^2 → 排名越靠后权重越大
+        // weight = summer_rank^1.5 → 排名越靠后权重越大，但差距不至于 rank² 那么极端
         let mut remaining: Vec<(u64, u32, f64)> = teams
             .iter()
-            .map(|&(team_id, rank)| (team_id, rank, (rank as f64).powi(2)))
+            .map(|&(team_id, rank)| (team_id, rank, (rank as f64).powf(1.5)))
             .collect();
 
         // 按顺位从第1顺位开始逐个抽取
