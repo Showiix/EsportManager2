@@ -171,10 +171,186 @@ impl DatabaseManager {
             }
         }
 
+        // 迁移17: 为 teams 表添加 training_facility 字段（训练设施等级）
+        {
+            let team_cols: Vec<(String,)> = sqlx::query_as(
+                "SELECT name FROM pragma_table_info('teams')"
+            )
+            .fetch_all(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+            let team_col_names: Vec<&str> = team_cols.iter().map(|c| c.0.as_str()).collect();
+
+            if !team_col_names.contains(&"training_facility") {
+                // 添加训练设施字段，默认基于品牌价值初始化
+                sqlx::query("ALTER TABLE teams ADD COLUMN training_facility INTEGER NOT NULL DEFAULT 0")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+                // 根据品牌价值初始化训练设施等级
+                // brand_value / 1000000 = 训练设施等级 (例如 5000000 -> 5级)
+                sqlx::query(r#"
+                    UPDATE teams SET training_facility = 
+                        CASE
+                            WHEN brand_value >= 10000000 THEN 10
+                            WHEN brand_value >= 8000000 THEN 8
+                            WHEN brand_value >= 6000000 THEN 7
+                            WHEN brand_value >= 4000000 THEN 6
+                            WHEN brand_value >= 2000000 THEN 5
+                            WHEN brand_value >= 1000000 THEN 4
+                            WHEN brand_value >= 500000 THEN 3
+                            WHEN brand_value >= 200000 THEN 2
+                            ELSE 1
+                        END
+                    WHERE training_facility = 0
+                "#)
+                .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+        }
+
+        // 迁移18: 为 players 表添加 growth_event_state 字段（成长事件状态）
+        {
+            if !player_column_names.contains(&"growth_event_state") {
+                sqlx::query("ALTER TABLE players ADD COLUMN growth_event_state TEXT DEFAULT '{}'")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+        }
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS hall_of_fame (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                save_id TEXT NOT NULL,
+                player_id INTEGER NOT NULL,
+                player_name TEXT NOT NULL,
+                position TEXT NOT NULL,
+                region_id INTEGER,
+                induction_season INTEGER NOT NULL,
+                total_score INTEGER NOT NULL,
+                tier TEXT NOT NULL,
+                peak_ability INTEGER,
+                career_seasons INTEGER,
+                honors_json TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(save_id, player_id),
+                FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                FOREIGN KEY (player_id) REFERENCES players(id)
+            );
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        // 迁移20: 替补系统 — 新建 match_lineups 表
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS match_lineups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                save_id TEXT NOT NULL,
+                match_id INTEGER NOT NULL,
+                game_number INTEGER NOT NULL,
+                team_id INTEGER NOT NULL,
+                player_id INTEGER NOT NULL,
+                position TEXT NOT NULL,
+                is_substitution INTEGER DEFAULT 0,
+                replaced_player_id INTEGER,
+                substitution_reason TEXT,
+                FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                FOREIGN KEY (match_id) REFERENCES matches(id),
+                FOREIGN KEY (player_id) REFERENCES players(id)
+            );
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        // match_lineups 索引
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_lineups_match ON match_lineups(save_id, match_id, game_number, team_id)"
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        // 迁移21: 替补系统 — players 表新增字段
+        {
+            // contract_role: 合同角色 (Starter/Sub/Prospect)
+            if !player_column_names.contains(&"contract_role") {
+                sqlx::query("ALTER TABLE players ADD COLUMN contract_role TEXT DEFAULT 'Starter'")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+            // season_games_played: 本赛季出场小局数
+            if !player_column_names.contains(&"season_games_played") {
+                sqlx::query("ALTER TABLE players ADD COLUMN season_games_played INTEGER DEFAULT 0")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+            // season_games_total: 所在队伍本赛季总小局数
+            if !player_column_names.contains(&"season_games_total") {
+                sqlx::query("ALTER TABLE players ADD COLUMN season_games_total INTEGER DEFAULT 0")
+                    .execute(pool).await.map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+        }
+
+        // 迁移22: BP系统 — player_champion_mastery 表
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS player_champion_mastery (
+                save_id TEXT NOT NULL,
+                player_id INTEGER NOT NULL,
+                champion_id INTEGER NOT NULL,
+                mastery_tier TEXT NOT NULL,
+                games_played INTEGER NOT NULL DEFAULT 0,
+                games_won INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(save_id, player_id, champion_id),
+                FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                FOREIGN KEY (player_id) REFERENCES players(id)
+            );
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_champion_mastery_player ON player_champion_mastery(save_id, player_id)"
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        // 迁移23: BP系统 — game_draft_results 表
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS game_draft_results (
+                save_id TEXT NOT NULL,
+                match_id INTEGER NOT NULL,
+                game_number INTEGER NOT NULL,
+                bans_json TEXT NOT NULL,
+                home_picks_json TEXT NOT NULL,
+                away_picks_json TEXT NOT NULL,
+                home_comp TEXT,
+                away_comp TEXT,
+                UNIQUE(save_id, match_id, game_number),
+                FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                FOREIGN KEY (match_id) REFERENCES matches(id)
+            );
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_draft_results_match ON game_draft_results(save_id, match_id)"
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
         Ok(())
     }
-
-    /// 运行满意度系统相关表的迁移
     async fn run_satisfaction_tables_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
         // 检查表是否已存在
         let tables: Vec<(String,)> = sqlx::query_as(

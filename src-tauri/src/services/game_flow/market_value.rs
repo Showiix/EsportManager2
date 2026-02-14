@@ -202,8 +202,7 @@ impl GameFlowService {
             let team_id: i64 = row.get("id");
             let old_brand: f64 = row.get("brand_value");
 
-            // 15%自然衰减
-            let mut new_brand = old_brand * 0.85;
+            let mut new_brand = old_brand * 0.90;
 
             // 查询本赛季该队伍的所有荣誉记录
             let honors = sqlx::query(

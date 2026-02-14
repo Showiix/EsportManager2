@@ -147,7 +147,7 @@ impl Default for FinancialConfig {
             },
         );
 
-        // 春季季后赛奖金池 (1000万元)
+        // 春季季后赛奖金池
         let mut spring_dist = HashMap::new();
         spring_dist.insert("CHAMPION".to_string(), 0.30);
         spring_dist.insert("RUNNER_UP".to_string(), 0.20);
@@ -157,12 +157,12 @@ impl Default for FinancialConfig {
         prize_pools.insert(
             TournamentType::SpringPlayoffs,
             PrizePool {
-                total: 10000000, // 1000万元
+                total: 15000000,
                 distribution: spring_dist,
             },
         );
 
-        // 夏季季后赛奖金池 (1000万元)
+        // 夏季季后赛奖金池
         let mut summer_dist = HashMap::new();
         summer_dist.insert("CHAMPION".to_string(), 0.30);
         summer_dist.insert("RUNNER_UP".to_string(), 0.20);
@@ -172,7 +172,7 @@ impl Default for FinancialConfig {
         prize_pools.insert(
             TournamentType::SummerPlayoffs,
             PrizePool {
-                total: 10000000, // 1000万元
+                total: 15000000,
                 distribution: summer_dist,
             },
         );
@@ -220,13 +220,11 @@ impl FinancialEngine {
 
     /// 计算赞助收入（品牌价值驱动）
     pub fn calculate_sponsorship(&self, team: &Team) -> u64 {
-        // 品牌基础：brand_value 0-100 映射到 50万-500万
         let brand_factor = (team.brand_value / 100.0).clamp(0.1, 1.0);
-        let base = 500_000.0 + brand_factor * 4_500_000.0; // 50万~500万
+        let base = 1_000_000.0 + brand_factor * 7_000_000.0;
 
-        // 战力系数
         let power_factor = match team.power_rating as u32 {
-            70..=100 => 1.4,
+            70..=100 => 1.5,
             65..=69 => 1.2,
             60..=64 => 1.0,
             55..=59 => 0.85,
@@ -234,7 +232,6 @@ impl FinancialEngine {
             _ => 0.5,
         };
 
-        // 胜率加成
         let win_bonus = if team.win_rate > 0.7 {
             1.3
         } else if team.win_rate > 0.5 {
@@ -249,17 +246,19 @@ impl FinancialEngine {
     /// 计算联赛分成（赛区+排名差异化）
     pub fn calculate_league_share(&self, region_code: &str, rank: Option<u32>) -> u64 {
         let base = match region_code {
-            "CN" => 2_000_000, // LPL 200万
-            "KR" => 1_750_000, // LCK 175万
-            "EU" => 1_500_000, // LEC 150万
-            "NA" => 1_250_000, // LCS 125万
-            _ => 1_500_000,
+            "CN" => 8_000_000,
+            "KR" => 7_500_000,
+            "EU" => 6_500_000,
+            "NA" => 6_000_000,
+            _ => 6_500_000,
         };
         let rank_bonus = match rank {
-            Some(1..=3) => 500_000,  // 前三 +50万
-            Some(4..=7) => 250_000,  // 中上 +25万
-            Some(8..=10) => 100_000, // 中游 +10万
-            _ => 0,                  // 下游或无排名
+            Some(1) => 2_000_000,
+            Some(2) => 1_500_000,
+            Some(3) => 1_000_000,
+            Some(4..=7) => 500_000,
+            Some(8..=10) => 250_000,
+            _ => 0,
         };
         (base + rank_bonus) as u64
     }
@@ -269,6 +268,30 @@ impl FinancialEngine {
         let base = 1_500_000_u64; // 150万基础
         let salary_overhead = (total_salary as f64 * 0.15) as u64; // 薪资的15%作为附加运营成本
         base + salary_overhead
+    }
+
+    /// 计算训练设施维护费（每赛季）
+    /// 1-10级，每级50万维护费（1级=50万，10级=500万）
+    pub fn calculate_facility_maintenance(facility_level: u32) -> u64 {
+        let level = facility_level.clamp(1, 10);
+        level as u64 * 500_000 // 每级50万
+    }
+
+    /// 计算训练设施升级费用
+    /// 从 current_level 升到 current_level+1 的花费
+    pub fn calculate_facility_upgrade_cost(current_level: u32) -> u64 {
+        match current_level {
+            1 => 10_000_000, // 1→2: 1000万
+            2 => 15_000_000, // 2→3: 1500万
+            3 => 20_000_000, // 3→4: 2000万
+            4 => 25_000_000, // 4→5: 2500万
+            5 => 30_000_000, // 5→6: 3000万
+            6 => 35_000_000, // 6→7: 3500万
+            7 => 40_000_000, // 7→8: 4000万
+            8 => 45_000_000, // 8→9: 4500万
+            9 => 50_000_000, // 9→10: 5000万
+            _ => 0,          // 已满级
+        }
     }
 
     /// 计算弱队补贴金
@@ -574,5 +597,36 @@ mod tests {
         let budget = engine.suggest_transfer_budget(&team);
 
         assert_eq!(budget, 7_000_000); // 10_000_000 * 0.70
+    }
+
+    #[test]
+    fn test_facility_maintenance() {
+        assert_eq!(FinancialEngine::calculate_facility_maintenance(1), 500_000);
+        assert_eq!(
+            FinancialEngine::calculate_facility_maintenance(5),
+            2_500_000
+        );
+        assert_eq!(
+            FinancialEngine::calculate_facility_maintenance(10),
+            5_000_000
+        );
+        assert_eq!(FinancialEngine::calculate_facility_maintenance(0), 500_000);
+        assert_eq!(
+            FinancialEngine::calculate_facility_maintenance(15),
+            5_000_000
+        );
+    }
+
+    #[test]
+    fn test_facility_upgrade_cost() {
+        assert_eq!(
+            FinancialEngine::calculate_facility_upgrade_cost(1),
+            10_000_000
+        );
+        assert_eq!(
+            FinancialEngine::calculate_facility_upgrade_cost(9),
+            50_000_000
+        );
+        assert_eq!(FinancialEngine::calculate_facility_upgrade_cost(10), 0);
     }
 }

@@ -1,5 +1,6 @@
 use sqlx::{Pool, Row, Sqlite};
 
+use crate::engines::financial::FinancialEngine;
 use crate::engines::market_value::MarketValueEngine;
 use crate::models::transfer::*;
 
@@ -113,8 +114,212 @@ impl TransferEngine {
         }
 
         // ============================================
-        // 1.5 奢侈税结算（阵容超过起征线的球队）
+        // 1.5 赞助收入发放 + 运营成本扣除 + 训练设施维护费
         // ============================================
+        let financial_engine = FinancialEngine::new();
+
+        for team in &all_teams {
+            let team_id: i64 = team.get("id");
+            let team_name: String = team.get("name");
+
+            let already_sponsored: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM financial_transactions WHERE team_id = ? AND save_id = ? AND season_id = ? AND transaction_type = 'Sponsorship'"
+            )
+            .bind(team_id)
+            .bind(save_id)
+            .bind(season_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+
+            if already_sponsored == 0 {
+                let team_row: Option<(i64, f64, f64, i64)> = sqlx::query(
+                    "SELECT balance, power_rating, win_rate, brand_value FROM teams WHERE id = ? AND save_id = ?"
+                )
+                .bind(team_id)
+                .bind(save_id)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+                .map(|row| (row.get::<i64, _>("balance"), row.get::<f64, _>("power_rating"), row.get::<f64, _>("win_rate"), row.get::<i64, _>("brand_value")));
+
+                if let Some((balance, power_rating, win_rate, brand_value)) = team_row {
+                    let temp_team = crate::models::Team {
+                        id: team_id as u64,
+                        region_id: 0,
+                        name: team_name.clone(),
+                        short_name: None,
+                        power_rating,
+                        total_matches: 0,
+                        wins: 0,
+                        win_rate,
+                        annual_points: 0,
+                        cross_year_points: 0,
+                        balance,
+                        brand_value: brand_value as f64,
+                    };
+                    let sponsorship = financial_engine.calculate_sponsorship(&temp_team);
+                    if sponsorship > 0 {
+                        sqlx::query("UPDATE teams SET balance = balance + ? WHERE id = ? AND save_id = ?")
+                            .bind(sponsorship as i64)
+                            .bind(team_id)
+                            .bind(save_id)
+                            .execute(pool)
+                            .await
+                            .ok();
+
+                        sqlx::query(
+                            "INSERT INTO financial_transactions (save_id, team_id, season_id, transaction_type, amount, description) VALUES (?, ?, ?, ?, ?, ?)"
+                        )
+                        .bind(save_id)
+                        .bind(team_id)
+                        .bind(season_id)
+                        .bind("Sponsorship")
+                        .bind(sponsorship as i64)
+                        .bind(format!("S{}赛季赞助收入", season_id))
+                        .execute(pool)
+                        .await
+                        .ok();
+                    }
+
+                    let team_annual_salary: i64 = sqlx::query_scalar(
+                        r#"SELECT COALESCE(SUM(pc.annual_salary), 0)
+                           FROM player_contracts pc
+                           JOIN players p ON pc.player_id = p.id
+                           WHERE p.team_id = ? AND p.save_id = ? AND p.status = 'Active' AND pc.is_active = 1"#
+                    )
+                    .bind(team_id)
+                    .bind(save_id)
+                    .fetch_one(pool)
+                    .await
+                    .unwrap_or(0);
+
+                    let operating_cost = financial_engine.calculate_operating_cost(team_annual_salary as u64);
+                    if operating_cost > 0 {
+                        sqlx::query("UPDATE teams SET balance = balance - ? WHERE id = ? AND save_id = ?")
+                            .bind(operating_cost as i64)
+                            .bind(team_id)
+                            .bind(save_id)
+                            .execute(pool)
+                            .await
+                            .ok();
+
+                        sqlx::query(
+                            "INSERT INTO financial_transactions (save_id, team_id, season_id, transaction_type, amount, description) VALUES (?, ?, ?, ?, ?, ?)"
+                        )
+                        .bind(save_id)
+                        .bind(team_id)
+                        .bind(season_id)
+                        .bind("OperatingCost")
+                        .bind(-(operating_cost as i64))
+                        .bind(format!("S{}赛季运营成本", season_id))
+                        .execute(pool)
+                        .await
+                        .ok();
+                    }
+                }
+            }
+        }
+
+        // ============================================
+        // 1.55 训练设施维护费扣除 + 余额不足自动降级
+        // ============================================
+        for team in &all_teams {
+            let team_id: i64 = team.get("id");
+            let team_name: String = team.get("name");
+
+            let already_maintained: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM financial_transactions WHERE team_id = ? AND save_id = ? AND season_id = ? AND transaction_type = 'FacilityMaintenance'"
+            )
+            .bind(team_id)
+            .bind(save_id)
+            .bind(season_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+
+            if already_maintained > 0 {
+                continue;
+            }
+
+            let facility_row = sqlx::query(
+                "SELECT training_facility, balance FROM teams WHERE id = ? AND save_id = ?"
+            )
+            .bind(team_id)
+            .bind(save_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+
+            if let Some(row) = facility_row {
+                let mut facility_level: i64 = row.get("training_facility");
+                let balance: i64 = row.get("balance");
+
+                if facility_level <= 0 {
+                    continue;
+                }
+
+                let maintenance = FinancialEngine::calculate_facility_maintenance(facility_level as u32) as i64;
+
+                if balance < maintenance {
+                    // 余额不足维护 → 自动降级直到能付得起
+                    let mut new_level = facility_level;
+                    let mut cost = maintenance;
+                    while new_level > 1 && balance < cost {
+                        new_level -= 1;
+                        cost = FinancialEngine::calculate_facility_maintenance(new_level as u32) as i64;
+                    }
+
+                    if new_level < facility_level {
+                        log::info!(
+                            "R6设施降级: {}设施{}级→{}级（余额{}万不足维护费{}万）",
+                            team_name, facility_level, new_level,
+                            balance / 10000, maintenance / 10000
+                        );
+
+                        sqlx::query("UPDATE teams SET training_facility = ? WHERE id = ? AND save_id = ?")
+                            .bind(new_level)
+                            .bind(team_id)
+                            .bind(save_id)
+                            .execute(pool)
+                            .await
+                            .ok();
+
+                        facility_level = new_level;
+                    }
+                }
+
+                let actual_maintenance = FinancialEngine::calculate_facility_maintenance(facility_level as u32) as i64;
+                if actual_maintenance > 0 {
+                    sqlx::query("UPDATE teams SET balance = balance - ? WHERE id = ? AND save_id = ?")
+                        .bind(actual_maintenance)
+                        .bind(team_id)
+                        .bind(save_id)
+                        .execute(pool)
+                        .await
+                        .ok();
+
+                    sqlx::query(
+                        "INSERT INTO financial_transactions (save_id, team_id, season_id, transaction_type, amount, description) VALUES (?, ?, ?, ?, ?, ?)"
+                    )
+                    .bind(save_id)
+                    .bind(team_id)
+                    .bind(season_id)
+                    .bind("FacilityMaintenance")
+                    .bind(-actual_maintenance)
+                    .bind(format!("S{}训练设施维护费（{}级，{}万/赛季）", season_id, facility_level, actual_maintenance / 10000))
+                    .execute(pool)
+                    .await
+                    .ok();
+                }
+            }
+        }
+
+        // ============================================
+        // 1.6 奢侈税结算（阵容超过起征线的球队）
+        // ====================================
         let mut luxury_tax_count = 0i64;
         let mut total_luxury_tax = 0i64;
 
