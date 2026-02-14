@@ -684,7 +684,7 @@ const convertBackendToMatchDetail = (result: any, match: any): MatchDetail => {
   const teamBName = teamBInfo?.teamName || match.teamBName || '队伍B'
 
   return {
-    matchId: match.id,
+    matchId: match.backendMatchId || match.id,
     tournamentType: 'worlds',
     seasonId: String(worldsBracket.seasonYear),
     teamAId: match.teamAId,
@@ -779,7 +779,15 @@ const convertBackendToMatchDetail = (result: any, match: any): MatchDetail => {
         performanceDifference: (game.home_performance || 0) - (game.away_performance || 0),
         metaPowerDifference: (game.home_performance || 0) - (game.away_performance || 0),
         isUpset: (teamAPower < teamBPower && game.winner_id === result.home_team_id) ||
-                 (teamAPower > teamBPower && game.winner_id === result.away_team_id)
+                 (teamAPower > teamBPower && game.winner_id === result.away_team_id),
+        teamABasePower: game.home_base_power ?? undefined,
+        teamBBasePower: game.away_base_power ?? undefined,
+        teamASynergyBonus: game.home_synergy_bonus ?? undefined,
+        teamBSynergyBonus: game.away_synergy_bonus ?? undefined,
+        teamABpBonus: game.home_bp_bonus ?? undefined,
+        teamBBpBonus: game.away_bp_bonus ?? undefined,
+        teamAVersionBonus: game.home_version_bonus ?? undefined,
+        teamBVersionBonus: game.away_version_bonus ?? undefined,
       }
     }),
     mvpPlayerId: result.match_mvp ? String(result.match_mvp.player_id) : undefined,

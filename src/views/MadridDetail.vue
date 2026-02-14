@@ -696,7 +696,7 @@ const handleSimulateMatch = async (match: ClauchMatch) => {
 
     // 保存比赛详情到 Store (用于展示)
     const matchDetail = buildMatchDetail({
-      matchId: match.id,
+      matchId: match.backendMatchId || match.id,
       tournamentType: 'madrid',
       seasonId: String(madridBracket.seasonYear),
       teamAId: String(match.teamAId || ''),

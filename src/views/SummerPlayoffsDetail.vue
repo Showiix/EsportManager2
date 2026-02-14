@@ -960,7 +960,7 @@ const viewMatchDetail = async (match: any) => {
   if (match.status !== 'completed') return
 
   // 首先尝试从本地缓存获取
-  const key = match.matchDetailKey || match.id
+  const key = match.dbMatchId || match.matchDetailKey || match.id
   let detail = matchDetailStore.getMatchDetail(`summer-playoffs-${key}`)
 
   // 如果本地没有，尝试从数据库加载
@@ -1115,7 +1115,7 @@ const convertPlayerPerformance = (p: PlayerGameStats, teamId: string) => ({
 })
 
 // 模拟单场比赛的核心函数 - 使用后端API
-const doSimulateMatch = async (match: any, dbMatchId: number, matchIdPrefix: string): Promise<number> => {
+const doSimulateMatch = async (match: any, dbMatchId: number, _matchIdPrefix: string): Promise<number> => {
   const regionName = getRegionName(selectedRegion.value)
 
   // 调用后端API模拟比赛
@@ -1163,6 +1163,14 @@ const doSimulateMatch = async (match: any, dbMatchId: number, matchIdPrefix: str
       metaPowerDifference: game.home_performance - game.away_performance,
       isUpset: powerDifference > 0 && game.winner_id !== result.home_team_id ||
                powerDifference < 0 && game.winner_id === result.home_team_id,
+      teamABasePower: game.home_base_power ?? undefined,
+      teamBBasePower: game.away_base_power ?? undefined,
+      teamASynergyBonus: game.home_synergy_bonus ?? undefined,
+      teamBSynergyBonus: game.away_synergy_bonus ?? undefined,
+      teamABpBonus: game.home_bp_bonus ?? undefined,
+      teamBBpBonus: game.away_bp_bonus ?? undefined,
+      teamAVersionBonus: game.home_version_bonus ?? undefined,
+      teamBVersionBonus: game.away_version_bonus ?? undefined,
       duration: game.duration_minutes,
       mvp: game.game_mvp ? {
         playerId: String(game.game_mvp.player_id),
@@ -1223,7 +1231,7 @@ const doSimulateMatch = async (match: any, dbMatchId: number, matchIdPrefix: str
 
   // 构建 MatchDetail 用于展示
   const matchDetail: MatchDetail = {
-    matchId: `summer-playoffs-${matchIdPrefix}`,
+    matchId: `summer-playoffs-${dbMatchId}`,
     tournamentType: 'summer-playoffs',
     seasonId: String(gameStore.currentSeason),
     teamAId: String(result.home_team_id),

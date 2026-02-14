@@ -705,6 +705,14 @@ const convertToMatchDetail = (result: any, match: any): MatchDetail => {
       performanceDifference: g.home_performance - g.away_performance,
       metaPowerDifference: g.home_performance - g.away_performance,
       isUpset: false,
+      teamABasePower: g.home_base_power ?? undefined,
+      teamBBasePower: g.away_base_power ?? undefined,
+      teamASynergyBonus: g.home_synergy_bonus ?? undefined,
+      teamBSynergyBonus: g.away_synergy_bonus ?? undefined,
+      teamABpBonus: g.home_bp_bonus ?? undefined,
+      teamBBpBonus: g.away_bp_bonus ?? undefined,
+      teamAVersionBonus: g.home_version_bonus ?? undefined,
+      teamBVersionBonus: g.away_version_bonus ?? undefined,
     }
   })
 

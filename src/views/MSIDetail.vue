@@ -824,7 +824,7 @@ const simulateMSIMatch = async (match: any) => {
 
       // 转换后端结果为 MatchDetail 格式并保存
       const matchDetail = buildMatchDetail({
-        matchId: match.id,
+        matchId: match.backendMatchId || match.id,
         tournamentType: 'msi',
         seasonId: String(mockMSIBracket.seasonYear),
         teamAId: String(match.teamAId || ''),
@@ -1107,7 +1107,7 @@ const batchSimulateMSI = async () => {
           const teamAName = getTeamName(match.teamAId) || ''
           const teamBName = getTeamName(match.teamBId) || ''
           const matchDetail = buildMatchDetail({
-            matchId: match.id,
+            matchId: match.backendMatchId || match.id,
             tournamentType: 'msi',
             seasonId: String(mockMSIBracket.seasonYear),
             teamAId: String(match.teamAId),

@@ -828,7 +828,7 @@ const handleSimulateMatch = async (match: SuperMatch) => {
 
     // 保存比赛详情到 Store (使用 composable)
     const matchDetail = buildMatchDetail({
-      matchId: match.id,
+      matchId: match.backendMatchId || match.id,
       tournamentType: 'super',
       seasonId: String(superBracket.seasonYear),
       teamAId: String(match.teamAId || ''),
@@ -1333,7 +1333,7 @@ const simulateMatchInternal = async (match: SuperMatch) => {
 
     // 保存比赛详情 (使用 composable)
     const matchDetail = buildMatchDetail({
-      matchId: match.id,
+      matchId: match.backendMatchId || match.id,
       tournamentType: 'super',
       seasonId: String(superBracket.seasonYear),
       teamAId: String(match.teamAId || ''),

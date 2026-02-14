@@ -348,7 +348,7 @@ const handleSimulateMatch = async (match: ClauchMatch) => {
     match.completedAt = new Date()
 
     const matchDetail = buildMatchDetail({
-      matchId: match.id,
+      matchId: match.backendMatchId || match.id,
       tournamentType: 'clauch',
       seasonId: String(clauchBracket.seasonYear),
       teamAId: String(match.teamAId || ''),
