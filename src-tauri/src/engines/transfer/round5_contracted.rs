@@ -195,7 +195,7 @@ impl TransferEngine {
 
             // 竞价升温：多个球队竞标时推高出价
             if all_bids.len() >= 2 {
-                let bid_premium = (1.0 + (all_bids.len() as f64 - 1.0) * 0.04).min(1.20);
+                let bid_premium = (1.0 + (all_bids.len() as f64 - 1.0) * 0.06).min(1.30);
                 for bid in all_bids.iter_mut() {
                     bid.2 = (bid.2 as f64 * bid_premium) as i64;  // 推高转会费
                 }
@@ -276,13 +276,21 @@ impl TransferEngine {
             if let Some(widx) = winner_idx {
                 let (to_team_id, ref to_team_name, bid_price, new_salary, contract_years, _target_region_id, _match_score) = all_bids[widx];
 
+                let base_loyalty: i64 = 55;
+                let base_satisfaction: i64 = 60;
+                let youth_bonus: i64 = if age <= 23 { 5 } else { 0 };
+                let r5_loyalty = (base_loyalty + youth_bonus).min(100);
+                let r5_satisfaction = (base_satisfaction + youth_bonus).min(100);
+
                 // 执行转会
                 sqlx::query(
-                    "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = 50, satisfaction = 55, join_season = ? WHERE id = ?"
+                    "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = ?, satisfaction = ?, join_season = ? WHERE id = ?"
                 )
                 .bind(to_team_id)
                 .bind(new_salary)
                 .bind(season_id + contract_years)
+                .bind(r5_loyalty)
+                .bind(r5_satisfaction)
                 .bind(season_id)
                 .bind(player_id)
                 .execute(pool)
@@ -325,8 +333,8 @@ impl TransferEngine {
                 // 更新缓存
                 cache.transfer_player(player_id, Some(from_team_id), Some(to_team_id), Some(PlayerCacheUpdate {
                     salary: Some(new_salary),
-                    loyalty: Some(50),
-                    satisfaction: Some(55),
+                    loyalty: Some(r5_loyalty),
+                    satisfaction: Some(r5_satisfaction),
                     contract_end_season: Some(season_id + contract_years),
                 }));
                 cache.update_balance(to_team_id, -bid_price);
@@ -354,7 +362,7 @@ impl TransferEngine {
                     Some(from_team_id), Some(&from_team_name),
                     Some(to_team_id), Some(&to_team_name),
                     bid_price, new_salary, contract_years,
-                    &format!("{}从{}转会至{}，转会费{}万", game_id, from_team_name, to_team_name, bid_price / 10000),
+                    &format!("{}从{}转会至{}，转会费{}万 | {}岁{}位 潜力{}", game_id, from_team_name, to_team_name, bid_price / 10000, age, position, potential),
                 ).await?;
                 events.push(event);
             }

@@ -825,7 +825,7 @@ impl GameFlowService {
                 SELECT p.id, p.game_id, p.position, p.ability, p.age, p.potential,
                        p.satisfaction, p.is_starter, p.join_season,
                        pff.form_cycle, pff.momentum, pff.last_performance,
-                       pff.last_match_won, pff.games_since_rest
+                       pff.last_match_won, pff.perf_history, pff.games_since_rest
                 FROM players p
                 LEFT JOIN player_form_factors pff ON p.id = pff.player_id
                 WHERE p.save_id = ? AND p.team_id = ? AND p.status = 'Active'
@@ -859,6 +859,9 @@ impl GameFlowService {
                     momentum: r.get::<Option<i64>, _>("momentum").unwrap_or(0) as i8,
                     last_performance: r.get::<Option<f64>, _>("last_performance").unwrap_or(0.0),
                     last_match_won: r.get::<Option<i64>, _>("last_match_won").unwrap_or(0) != 0,
+                    perf_history: r
+                        .get::<Option<String>, _>("perf_history")
+                        .unwrap_or_default(),
                     games_since_rest: r.get::<Option<i64>, _>("games_since_rest").unwrap_or(0) as u32,
                 };
 

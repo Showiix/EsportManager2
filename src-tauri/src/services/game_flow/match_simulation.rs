@@ -577,6 +577,7 @@ impl GameFlowService {
                    COALESCE(pff.momentum, 0) as momentum,
                    COALESCE(pff.last_performance, 0.0) as last_performance,
                    COALESCE(pff.last_match_won, 0) as last_match_won,
+                   COALESCE(pff.perf_history, '') as perf_history,
                    COALESCE(pff.games_since_rest, 0) as games_since_rest
             FROM players p
             LEFT JOIN player_form_factors pff ON p.id = pff.player_id AND pff.save_id = ?
@@ -674,6 +675,9 @@ impl GameFlowService {
                 momentum: row.get::<i64, _>("momentum") as i8,
                 last_performance: row.get::<f64, _>("last_performance"),
                 last_match_won: row.get::<i64, _>("last_match_won") != 0,
+                perf_history: row
+                    .get::<Option<String>, _>("perf_history")
+                    .unwrap_or_default(),
                 games_since_rest: row.get::<i64, _>("games_since_rest") as u32,
             };
 
@@ -804,13 +808,14 @@ impl GameFlowService {
         for (player_id, factors) in form_factors_map {
             sqlx::query(
                 r#"
-                INSERT INTO player_form_factors (save_id, player_id, form_cycle, momentum, last_performance, last_match_won, games_since_rest, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                INSERT INTO player_form_factors (save_id, player_id, form_cycle, momentum, last_performance, last_match_won, perf_history, games_since_rest, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                 ON CONFLICT(save_id, player_id) DO UPDATE SET
                     form_cycle = excluded.form_cycle,
                     momentum = excluded.momentum,
                     last_performance = excluded.last_performance,
                     last_match_won = excluded.last_match_won,
+                    perf_history = excluded.perf_history,
                     games_since_rest = excluded.games_since_rest,
                     updated_at = datetime('now')
                 "#,
@@ -821,6 +826,7 @@ impl GameFlowService {
             .bind(factors.momentum as i64)
             .bind(factors.last_performance)
             .bind(if factors.last_match_won { 1i64 } else { 0i64 })
+            .bind(&factors.perf_history)
             .bind(factors.games_since_rest as i64)
             .execute(&mut *tx)
             .await

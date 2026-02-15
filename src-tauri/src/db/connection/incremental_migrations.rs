@@ -100,6 +100,25 @@ impl DatabaseManager {
             .map_err(|e| DatabaseError::Migration(e.to_string()))?;
         }
 
+        let form_factor_columns: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM pragma_table_info('player_form_factors')",
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        let form_factor_column_names: Vec<&str> =
+            form_factor_columns.iter().map(|c| c.0.as_str()).collect();
+
+        if !form_factor_column_names.contains(&"perf_history") {
+            sqlx::query(
+                "ALTER TABLE player_form_factors ADD COLUMN perf_history TEXT NOT NULL DEFAULT ''",
+            )
+            .execute(pool)
+            .await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
         // 迁移3: 运行 005_player_satisfaction.sql 的表创建
         self.run_satisfaction_tables_migration(pool).await?;
 

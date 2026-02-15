@@ -25,6 +25,11 @@ impl TransferEngine {
         let mut events = Vec::new();
 
         // ============================================
+        // 0-pre. 解除续约黑名单，允许R7补救阶段重新匹配
+        // ============================================
+        cache.renewal_failed_pairs.clear();
+
+        // ============================================
         // 0. 复用R5逻辑：处理所有活跃挂牌选手（含R6破产挂牌）
         // ============================================
         let r5_repeat = self.execute_contracted_player_transfer(pool, window_id, save_id, season_id, cache, 7).await?;
@@ -204,7 +209,7 @@ impl TransferEngine {
                         None, None,
                         Some(team_id), Some(&team_name),
                         0, salary, contract_years,
-                        &format!("{}紧急签约{}补充阵容", team_name, game_id),
+                        &format!("{}紧急签约{}补充阵容 | {}岁{}位", team_name, game_id, age, pos_str),
                     ).await?;
                     events.push(event);
                 }

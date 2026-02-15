@@ -509,8 +509,8 @@ impl InitService {
                             r#"
                             INSERT INTO player_form_factors (
                                 save_id, player_id, form_cycle, momentum,
-                                last_performance, last_match_won, games_since_rest
-                            ) VALUES (?, ?, ?, 0, 0.0, 1, 0)
+                                last_performance, last_match_won, perf_history, games_since_rest
+                            ) VALUES (?, ?, ?, 0, 0.0, 1, '', 0)
                             "#
                         )
                         .bind(save_id)
@@ -536,8 +536,8 @@ impl InitService {
                             r#"
                             INSERT INTO player_form_factors (
                                 save_id, player_id, form_cycle, momentum,
-                                last_performance, last_match_won, games_since_rest
-                            ) VALUES (?, ?, ?, 0, 0.0, 1, 0)
+                                last_performance, last_match_won, perf_history, games_since_rest
+                            ) VALUES (?, ?, ?, 0, 0.0, 1, '', 0)
                             "#
                         )
                         .bind(save_id)
@@ -764,8 +764,8 @@ impl InitService {
                     r#"
                     INSERT INTO player_form_factors (
                         save_id, player_id, form_cycle, momentum,
-                        last_performance, last_match_won, games_since_rest
-                    ) VALUES (?, ?, ?, 0, 0.0, 1, 0)
+                        last_performance, last_match_won, perf_history, games_since_rest
+                    ) VALUES (?, ?, ?, 0, 0.0, 1, '', 0)
                     "#
                 )
                 .bind(save_id)
@@ -1033,8 +1033,8 @@ impl InitService {
                         r#"
                         INSERT INTO player_form_factors (
                             save_id, player_id, form_cycle, momentum,
-                            last_performance, last_match_won, games_since_rest
-                        ) VALUES (?, ?, ?, 0, 0.0, 1, 0)
+                            last_performance, last_match_won, perf_history, games_since_rest
+                        ) VALUES (?, ?, ?, 0, 0.0, 1, '', 0)
                         "#
                     )
                     .bind(save_id)
@@ -1100,8 +1100,8 @@ impl InitService {
                     r#"
                     INSERT INTO player_form_factors (
                         save_id, player_id, form_cycle, momentum,
-                        last_performance, last_match_won, games_since_rest
-                    ) VALUES (?, ?, ?, 0, 0.0, 1, 0)
+                        last_performance, last_match_won, perf_history, games_since_rest
+                    ) VALUES (?, ?, ?, 0, 0.0, 1, '', 0)
                     "#
                 )
                 .bind(save_id)
@@ -1176,4 +1176,3 @@ impl InitService {
         Ok(())
     }
 }
-

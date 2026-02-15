@@ -214,9 +214,22 @@ const LINEUP_POS_ORDER: Record<string, number> = { Top: 0, Jug: 1, Mid: 2, Adc: 
 const sortedLineup = computed(() => {
   if (!currentLineup.value) return null
   const sortFn = (a: any, b: any) => (LINEUP_POS_ORDER[a.position] ?? 99) - (LINEUP_POS_ORDER[b.position] ?? 99)
+
+  const mergeSubstitutions = (players: typeof currentLineup.value.home_players, subs: typeof currentLineup.value.substitutions, teamId: number) => {
+    const result = [...players]
+    for (const sub of subs) {
+      if (sub.team_id !== teamId) continue
+      result.push(sub)
+    }
+    return result
+  }
+
+  const homeTeamId = currentLineup.value.home_players[0]?.team_id
+  const awayTeamId = currentLineup.value.away_players[0]?.team_id
+
   return {
-    home: [...currentLineup.value.home_players].sort(sortFn),
-    away: [...currentLineup.value.away_players].sort(sortFn),
+    home: mergeSubstitutions(currentLineup.value.home_players, currentLineup.value.substitutions, homeTeamId).sort(sortFn),
+    away: mergeSubstitutions(currentLineup.value.away_players, currentLineup.value.substitutions, awayTeamId).sort(sortFn),
     substitutions: currentLineup.value.substitutions,
   }
 })

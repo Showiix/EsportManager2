@@ -468,6 +468,7 @@ impl MatchSimulationEngine {
                 momentum: 0,
                 last_performance: 0.0,
                 last_match_won: false,
+                perf_history: String::new(),
                 games_since_rest: 0,
             }),
             is_starter: p.is_starter,

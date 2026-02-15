@@ -161,6 +161,7 @@ impl GameFlowService {
             SET momentum = 0,
                 last_performance = 0.0,
                 last_match_won = 0,
+                perf_history = '',
                 games_since_rest = 0,
                 form_cycle = (ABS(RANDOM()) % 10000) / 100.0,
                 updated_at = datetime('now')

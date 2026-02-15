@@ -363,6 +363,7 @@ CREATE TABLE IF NOT EXISTS player_form_factors (
     momentum INTEGER NOT NULL DEFAULT 0,
     last_performance REAL NOT NULL DEFAULT 0.0,
     last_match_won INTEGER NOT NULL DEFAULT 0,
+    perf_history TEXT NOT NULL DEFAULT '',
     games_since_rest INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,

@@ -485,6 +485,7 @@
             <div class="bp-pick-list">
               <div v-for="pick in parsedHomePicks" :key="'hp-' + pick.champion_id" class="bp-pick-item">
                 <span class="bp-pick-pos">{{ pick.position }}</span>
+                <span class="bp-player-name">{{ getPlayerName(pick.player_id) }}</span>
                 <el-tag size="small" effect="plain">{{ getChampionName(pick.champion_id) }}</el-tag>
                 <span v-if="pick.mastery_tier" class="bp-mastery" :class="'mastery-' + pick.mastery_tier">{{ pick.mastery_tier }}</span>
                 <span v-if="getPlayerBpModifier(pick.player_id) !== undefined" class="bp-modifier" :class="getPlayerBpModifier(pick.player_id)! >= 0 ? 'positive' : 'negative'">
@@ -501,6 +502,7 @@
             <div class="bp-pick-list">
               <div v-for="pick in parsedAwayPicks" :key="'ap-' + pick.champion_id" class="bp-pick-item">
                 <span class="bp-pick-pos">{{ pick.position }}</span>
+                <span class="bp-player-name">{{ getPlayerName(pick.player_id) }}</span>
                 <el-tag size="small" effect="plain">{{ getChampionName(pick.champion_id) }}</el-tag>
                 <span v-if="pick.mastery_tier" class="bp-mastery" :class="'mastery-' + pick.mastery_tier">{{ pick.mastery_tier }}</span>
                 <span v-if="getPlayerBpModifier(pick.player_id) !== undefined" class="bp-modifier" :class="getPlayerBpModifier(pick.player_id)! >= 0 ? 'positive' : 'negative'">
@@ -597,6 +599,12 @@ const getPlayerBpModifier = (playerId: number): number | undefined => {
   const allPlayers = [...(props.game.teamAPlayers || []), ...(props.game.teamBPlayers || [])]
   const player = allPlayers.find(p => String(p.playerId) === String(playerId))
   return player?.bpModifier
+}
+
+const getPlayerName = (playerId: number): string => {
+  const allPlayers = [...(props.game.teamAPlayers || []), ...(props.game.teamBPlayers || [])]
+  const player = allPlayers.find(p => String(p.playerId) === String(playerId))
+  return player?.playerName || ''
 }
 
 const loadBpData = async () => {
@@ -1868,8 +1876,17 @@ const keyMatchupPos = computed(() => {
 
 .bp-pick-pos {
   font-size: 10px;
-  color: #86909c;
-  width: 28px;
+  font-weight: 800;
+  color: #667eea;
+  text-transform: uppercase;
+  min-width: 28px;
+}
+
+.bp-player-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1d2129;
+  min-width: 60px;
 }
 
 .bp-modifier {

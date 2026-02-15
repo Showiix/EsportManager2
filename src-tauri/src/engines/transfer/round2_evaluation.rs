@@ -515,13 +515,13 @@ impl TransferEngine {
     ) -> Result<PlayerEvaluation, String> {
         let mut stay_score: f64 = 60.0;
 
-        // 1. 战队排名评分（基础分提高，排名惩罚梯度更平滑）
+        // 1. 战队排名评分
         let team_rank_score = match team_eval.current_rank {
             1..=4 => 10.0,
             5..=8 => 5.0,
-            9..=11 => -3.0,
-            12..=13 => -6.0,
-            _ => -8.0,
+            9..=11 => -2.0,
+            12..=13 => -3.0,
+            _ => -5.0,
         };
         stay_score += team_rank_score;
 
@@ -530,14 +530,14 @@ impl TransferEngine {
         let team_trend_score = (rank_change as f64 * 3.0).clamp(-15.0, 15.0);
         stay_score += team_trend_score;
 
-        // 3. 队友水平评分（使用缓存阵容）
+        // 3. 队友水平评分
         let teammate_avg: f64 = roster.iter()
             .filter(|p| p.id != player_id)
             .map(|p| p.ability as f64)
             .sum::<f64>() / (roster.len() - 1).max(1) as f64;
 
         let teammate_score = if ability > teammate_avg as i64 + 10 {
-            -8.0
+            -5.0
         } else if ability < teammate_avg as i64 - 5 {
             10.0
         } else {
@@ -559,12 +559,12 @@ impl TransferEngine {
         };
         stay_score += salary_score;
 
-        // 5. 荣誉渴望：只有真正的高水平选手在弱队才会感到屈才
+        // 5. 荣誉渴望
         let has_recent_honor = cache.has_recent_honor(player_id);
         let honor_score = if has_recent_honor {
             5.0
         } else if ability >= 70 && team_eval.current_rank > 8 {
-            -8.0
+            -5.0
         } else {
             0.0
         };
@@ -582,7 +582,7 @@ impl TransferEngine {
         // 8. 忠诚度加成
         stay_score += (loyalty as f64 - 70.0) * 0.5;
 
-        // 9. 数据中心统计：个人表现 vs 队伍实力
+        // 9. 数据中心统计
         let performance_score = if let Some(stats) = cache.get_player_stats(player_id) {
             if stats.games_played >= 10 {
                 let impact = stats.avg_impact;
@@ -603,7 +603,7 @@ impl TransferEngine {
         };
         stay_score += performance_score;
 
-        // 10. 国际赛表现：大赛型选手在弱队更想走
+        // 10. 国际赛表现
         let intl_score = if let Some(stats) = cache.get_player_stats(player_id) {
             if stats.international_games >= 5 {
                 let intl_impact = stats.international_avg_impact;
@@ -624,7 +624,7 @@ impl TransferEngine {
         };
         stay_score += intl_score;
 
-        // 11. 状态动量：连胜/连败影响留队意愿
+        // 11. 状态动量
         let momentum_score = if let Some(stats) = cache.get_player_stats(player_id) {
             let m = stats.momentum;
             if m >= 3 {
@@ -639,6 +639,16 @@ impl TransferEngine {
         };
         stay_score += momentum_score;
 
+        // 12. 忠诚老将保护
+        if loyalty >= 80 {
+            stay_score += 10.0;
+        }
+
+        // 13. 青训归属感：年轻+忠诚度不低 = 自己培养的选手不轻易走
+        if age <= 24 && loyalty >= 65 {
+            stay_score += 8.0;
+        }
+
         let stay_score = stay_score.clamp(0.0, 100.0);
         let wants_to_leave = stay_score < 40.0;
 
@@ -651,7 +661,7 @@ impl TransferEngine {
                 factors.push((salary_score, "对薪资待遇不满"));
             }
 
-            if team_rank_score <= -6.0 {
+            if team_rank_score <= -4.0 {
                 factors.push((team_rank_score, "战队战绩太差"));
             } else if team_rank_score < 0.0 {
                 factors.push((team_rank_score, "战队缺乏竞争力"));

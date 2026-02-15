@@ -53,7 +53,8 @@ async fn get_starting_players(
     let rows = sqlx::query(
         r#"
         SELECT p.id, p.game_id, p.position, p.ability, p.age, p.stability, p.join_season,
-               pff.form_cycle, pff.momentum, pff.last_performance, pff.last_match_won
+               pff.form_cycle, pff.momentum, pff.last_performance, pff.last_match_won,
+               pff.games_since_rest, pff.perf_history
         FROM players p
         LEFT JOIN player_form_factors pff ON p.id = pff.player_id
         WHERE p.save_id = ? AND p.team_id = ? AND p.status = 'Active' AND p.is_starter = 1
@@ -81,7 +82,10 @@ async fn get_starting_players(
             momentum: r.get::<Option<i64>, _>("momentum").unwrap_or(0) as i8,
             last_performance: r.get::<Option<f64>, _>("last_performance").unwrap_or(0.0),
             last_match_won: r.get::<Option<i64>, _>("last_match_won").unwrap_or(0) == 1,
-            games_since_rest: 0,
+            perf_history: r
+                .get::<Option<String>, _>("perf_history")
+                .unwrap_or_default(),
+            games_since_rest: r.get::<Option<i64>, _>("games_since_rest").unwrap_or(0) as u32,
         };
 
         let traits = load_player_traits(pool, player_id).await?;
@@ -112,7 +116,8 @@ async fn get_starting_players(
         let bench_rows = sqlx::query(
             r#"
             SELECT p.id, p.game_id, p.position, p.ability, p.age, p.stability, p.join_season,
-                   pff.form_cycle, pff.momentum, pff.last_performance, pff.last_match_won
+                   pff.form_cycle, pff.momentum, pff.last_performance, pff.last_match_won,
+                   pff.games_since_rest, pff.perf_history
             FROM players p
             LEFT JOIN player_form_factors pff ON p.id = pff.player_id
             WHERE p.save_id = ? AND p.team_id = ? AND p.status = 'Active' AND p.is_starter = 0
@@ -140,7 +145,10 @@ async fn get_starting_players(
                 momentum: r.get::<Option<i64>, _>("momentum").unwrap_or(0) as i8,
                 last_performance: r.get::<Option<f64>, _>("last_performance").unwrap_or(0.0),
                 last_match_won: r.get::<Option<i64>, _>("last_match_won").unwrap_or(0) == 1,
-                games_since_rest: 0,
+                perf_history: r
+                    .get::<Option<String>, _>("perf_history")
+                    .unwrap_or_default(),
+                games_since_rest: r.get::<Option<i64>, _>("games_since_rest").unwrap_or(0) as u32,
             };
 
             let traits = load_player_traits(pool, player_id).await?;
@@ -893,13 +901,14 @@ async fn update_player_form_factors_internal(
 
         sqlx::query(
             r#"
-            INSERT INTO player_form_factors (save_id, player_id, form_cycle, momentum, last_performance, last_match_won, games_since_rest, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            INSERT INTO player_form_factors (save_id, player_id, form_cycle, momentum, last_performance, last_match_won, perf_history, games_since_rest, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(save_id, player_id) DO UPDATE SET
                 form_cycle = excluded.form_cycle,
                 momentum = excluded.momentum,
                 last_performance = excluded.last_performance,
                 last_match_won = excluded.last_match_won,
+                perf_history = excluded.perf_history,
                 games_since_rest = excluded.games_since_rest,
                 updated_at = datetime('now')
             "#,
@@ -910,6 +919,7 @@ async fn update_player_form_factors_internal(
         .bind(updated_factors.momentum as i64)
         .bind(updated_factors.last_performance)
         .bind(if updated_factors.last_match_won { 1i64 } else { 0i64 })
+        .bind(&updated_factors.perf_history)
         .bind(updated_factors.games_since_rest as i64)
         .execute(pool)
         .await

@@ -144,19 +144,99 @@ impl RookieGenerator {
             return id;
         }
 
-        let suffixes: &[char] = &[
-            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
-            'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-        ];
-        loop {
-            let base = pool[self.rng.gen_range(0..pool.len())];
-            let s1 = suffixes[self.rng.gen_range(0..suffixes.len())];
-            let candidate = format!("{}{}", base, s1);
-            if !used.contains(&candidate) {
+        let consonants: &[u8] = b"bcdfghjklmnpqrstvwxyz";
+        let vowels: &[u8] = b"aeiou";
+        let max_attempts = 500;
+
+        // 策略1: 双词组合 — 取两个基础词的前半+后半
+        for _ in 0..max_attempts {
+            let a = pool[self.rng.gen_range(0..pool.len())];
+            let b = pool[self.rng.gen_range(0..pool.len())];
+            if a == b {
+                continue;
+            }
+            let a_chars: Vec<char> = a.chars().collect();
+            let b_chars: Vec<char> = b.chars().collect();
+            let split_a = (a_chars.len() + 1) / 2;
+            let split_b = b_chars.len() / 2;
+            let front: String = a_chars[..split_a].iter().collect();
+            let back: String = b_chars[split_b..].iter().collect::<String>().to_lowercase();
+            let mut candidate = format!("{}{}", front, back);
+            let mut chars: Vec<char> = candidate.chars().collect();
+            if let Some(c) = chars.first_mut() {
+                *c = c.to_uppercase().next().unwrap_or(*c);
+            }
+            candidate = chars.into_iter().collect();
+            if candidate.len() >= 3 && candidate.len() <= 7 && !used.contains(&candidate) {
                 used.insert(candidate.clone());
                 return candidate;
             }
         }
+
+        // 策略2: 中间插辅音字母
+        for _ in 0..max_attempts {
+            let base = pool[self.rng.gen_range(0..pool.len())];
+            let chars: Vec<char> = base.chars().collect();
+            if chars.len() < 3 {
+                continue;
+            }
+            let insert_pos = self.rng.gen_range(1..chars.len());
+            let c = consonants[self.rng.gen_range(0..consonants.len())] as char;
+            let mut new_chars = chars.clone();
+            new_chars.insert(insert_pos, c);
+            let candidate: String = new_chars.into_iter().collect();
+            if candidate.len() <= 7 && !used.contains(&candidate) {
+                used.insert(candidate.clone());
+                return candidate;
+            }
+        }
+
+        // 策略3: 替换元音
+        for _ in 0..max_attempts {
+            let base = pool[self.rng.gen_range(0..pool.len())];
+            let mut chars: Vec<char> = base.chars().collect();
+            let vowel_positions: Vec<usize> = chars
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| vowels.contains(&(c.to_ascii_lowercase() as u8)))
+                .map(|(i, _)| i)
+                .collect();
+            if vowel_positions.is_empty() {
+                continue;
+            }
+            let pos = vowel_positions[self.rng.gen_range(0..vowel_positions.len())];
+            let new_vowel = vowels[self.rng.gen_range(0..vowels.len())] as char;
+            let is_upper = chars[pos].is_uppercase();
+            chars[pos] = if is_upper {
+                new_vowel.to_uppercase().next().unwrap_or(new_vowel)
+            } else {
+                new_vowel
+            };
+            let candidate: String = chars.into_iter().collect();
+            if candidate != base && !used.contains(&candidate) {
+                used.insert(candidate.clone());
+                return candidate;
+            }
+        }
+
+        // 兜底: 前缀 + 递增序号风格的组合词
+        let prefixes = [
+            "Neo", "Pro", "Ace", "Top", "Max", "Sky", "Sun", "Red", "Blu", "Jet",
+        ];
+        for prefix in prefixes {
+            for base in pool.iter().take(50) {
+                let short_base: String = base.chars().take(3).collect();
+                let candidate = format!("{}{}", prefix, short_base);
+                if !used.contains(&candidate) {
+                    used.insert(candidate.clone());
+                    return candidate;
+                }
+            }
+        }
+
+        let fallback = format!("Rookie{}", used.len());
+        used.insert(fallback.clone());
+        fallback
     }
 
     /// 按赛区生成拟真真实姓名
@@ -184,11 +264,11 @@ impl RookieGenerator {
                 format!("{}·{}", f, l)
             }
             _ => {
-                // LPL (1) 及其他: 中式 "{名}·{姓}"
-                let (first_names, last_names) = get_lpl_name_pool();
-                let f = first_names[self.rng.gen_range(0..first_names.len())];
-                let l = last_names[self.rng.gen_range(0..last_names.len())];
-                format!("{}·{}", f, l)
+                // LPL (1) 及其他: 中式 "{姓}{名}"
+                let (given_names, surnames) = get_lpl_name_pool();
+                let s = surnames[self.rng.gen_range(0..surnames.len())];
+                let g = given_names[self.rng.gen_range(0..given_names.len())];
+                format!("{}{}", s, g)
             }
         }
     }
@@ -288,6 +368,15 @@ fn get_lck_game_ids() -> Vec<&'static str> {
         "Blaz", "Cruz", "Dyre", "Echo", "Finn", "Ghor", "Haze", "Igni", "Juze", "Kira", "Lux",
         "Myst", "Nyx", "Obex", "Pyre", "Raze", "Sora", "Tael", "Uran", "Veil", "Wrex", "Xael",
         "Ymir", "Zeno", "Axle", "Bolt", "Coda", "Dray", "Enix", "Foss", "Gyro", "Hexa", "Izar",
+        "Rune", "Vox", "Drim", "Syx", "Tera", "Mox", "Kor", "Lev", "Pax", "Trix", "Oze", "Sek",
+        "Nex", "Dax", "Gex", "Arn", "Cyn", "Ael", "Bel", "Cel", "Kel", "Mel", "Vel", "Zel", "Kuro",
+        "Haru", "Miko", "Rein", "Tora", "Suji", "Hana", "Yuna", "Seki", "Ryo", "Taku", "Nao",
+        "Kou", "Sei", "Ren", "Kai", "Mori", "Shu", "Aki", "Umi", "Tsuki", "Kumo", "Yuki", "Hiro",
+        "Tomo", "Masa", "Kei", "Jun", "Rui", "Sho", "Yuu", "Asa", "Iku", "Oto", "Rin", "Sui",
+        "Teru", "Waka", "Yori", "Zui", "Aoi", "Fuji", "Gaku", "Haku", "Ichi", "Jiro", "Kazu",
+        "Mana", "Nagi", "Oki", "Riku", "Saku", "Taka", "Uki", "Yume", "Zora", "Aya", "Baku",
+        "Chie", "Dai", "Emi", "Fuu", "Gin", "Hei", "Ise", "Jin", "Kyo", "Lan", "Mei", "Nio", "Osa",
+        "Pei", "Rai", "Sai", "Tai", "Ura",
     ]
 }
 
@@ -305,6 +394,14 @@ fn get_lec_game_ids() -> Vec<&'static str> {
         "Ingmar", "Jareth", "Kellan", "Lander", "Morris", "Nestor", "Obelix", "Patrik", "Quincy",
         "Rupert", "Sigurd", "Tancred", "Ulrich", "Volker", "Wendel", "Xerxes", "Yorick", "Zephyr",
         "Anselm", "Benoit", "Clarus", "Dagmar", "Erland", "Floris", "Gideon", "Helios", "Isidor",
+        "Alaric", "Bastian", "Corvin", "Draven", "Elric", "Faust", "Gareth", "Hagen", "Idris",
+        "Jaspar", "Kilian", "Lucian", "Merlin", "Niklot", "Osmund", "Perciv", "Ragnar", "Sevrin",
+        "Torben", "Ulfric", "Valter", "Wilfrd", "Xavian", "Yohan", "Zander", "Armond", "Brecht",
+        "Colton", "Dietr", "Edmond", "Folker", "Gunter", "Harlan", "Ingolf", "Justus", "Kaspar",
+        "Lothar", "Mattis", "Nikita", "Ortwin", "Primus", "Reiner", "Silvan", "Toralf", "Ulbert",
+        "Vilmar", "Waltar", "Xander", "Yannis", "Zelmar", "Ansgar", "Birger", "Claes", "Detlef",
+        "Eilert", "Fridol", "Gerrit", "Helmut", "Imants", "Jorgen", "Klaas", "Lennox", "Marten",
+        "Norwin", "Osvald", "Pieter", "Renaud", "Stelio", "Tjaard", "Ulfred", "Viggo", "Wolter",
     ]
 }
 
@@ -320,7 +417,17 @@ fn get_lcs_game_ids() -> Vec<&'static str> {
         "Zeus", "Arrow", "Blaze", "Crew", "Drift", "Ember", "Frost", "Gale", "Haze", "Iron",
         "Jade", "Karma", "Lynx", "Mako", "Nova", "Onyx", "Pulse", "Rogue", "Surge", "Titan",
         "Ultra", "Volt", "Warp", "Xeno", "Yolo", "Zinc", "Ace", "Bolt", "Code", "Dusk", "Enzo",
-        "Flex", "Gust", "Hex", "Ibex", "Jolt",
+        "Flex", "Gust", "Hex", "Ibex", "Jolt", "Bravo", "Clash", "Dread", "Exile", "Flash",
+        "Ghost", "Havoc", "Ionic", "Joker", "Knave", "Locus", "Metro", "Nexus", "Omega", "Prism",
+        "Quake", "Razor", "Spark", "Turbo", "Umbra", "Vigor", "Wraith", "Xenon", "Yield", "Zonal",
+        "Atlas", "Baron", "Cyrus", "Delta", "Epoch", "Forge", "Grail", "Hydra", "Index", "Jubal",
+        "Krait", "Lever", "Morph", "Nerve", "Oxide", "Plank", "Quaff", "Rivet", "Shale", "Thorn",
+        "Usher", "Vapor", "Wedge", "Xerox", "Yawl", "Zenith", "Anvil", "Birch", "Cedar", "Draco",
+        "Elbow", "Fable", "Grain", "Hitch", "Ivory", "Jaunt", "Knack", "Latch", "Marsh", "Notch",
+        "Orbit", "Plume", "Ranch", "Slate", "Truce", "Valve", "Whisk", "Yacht", "Zonal", "Abyss",
+        "Bison", "Cloak", "Dwarf", "Eagle", "Fjord", "Glint", "Heron", "Ingot", "Jewel", "Kiosk",
+        "Llama", "Moose", "Nomad", "Otter", "Pixel", "Quilt", "Robin", "Stork", "Tulip", "Viper",
+        "Waltz", "Yucca", "Zebra", "Amber", "Basil",
     ]
 }
 
@@ -336,7 +443,16 @@ fn get_lpl_game_ids() -> Vec<&'static str> {
         "Dune", "Etch", "Flam", "Gaze", "Helm", "Icon", "Jolt", "Knot", "Lynx", "Morn", "Nest",
         "Oath", "Pond", "Rave", "Soot", "Trek", "Unit", "Vow", "Wasp", "Yoke", "Zone", "Aura",
         "Bolt", "Core", "Dash", "Elms", "Fern", "Gulf", "Hymn", "Ikon", "Jinn", "Kelp", "Lace",
-        "Myth",
+        "Myth", "Apex", "Bard", "Cove", "Dew", "Emit", "Fold", "Gust", "Husk", "Isle", "Jinx",
+        "Koi", "Lush", "Mist", "Nook", "Orb", "Pyre", "Quay", "Rime", "Sway", "Turf", "Urn",
+        "Veil", "Wren", "Yawn", "Zest", "Ashe", "Birch", "Cask", "Deft", "Elm", "Fuse", "Gilt",
+        "Haze", "Ink", "Jab", "Keg", "Loft", "Meld", "Nib", "Ore", "Pith", "Quip", "Rusk", "Slab",
+        "Twig", "Vent", "Wax", "Yam", "Zen", "Aloe", "Bask", "Clad", "Dusk", "Eel", "Fawn", "Gild",
+        "Hew", "Imp", "Jig", "Kin", "Lug", "Mop", "Nap", "Oat", "Peg", "Rig", "Sip", "Tap", "Vim",
+        "Wok", "Yak", "Zap", "Axe", "Bog", "Cub", "Dab", "Fig", "Gum", "Hop", "Jot", "Kit", "Lip",
+        "Mud", "Nub", "Owl", "Pip", "Rut", "Sod", "Tub", "Wag", "Yip", "Zig", "Amp", "Bud", "Cup",
+        "Dip", "Fin", "Gap", "Hub", "Jug", "Lap", "Mug", "Nod", "Opt", "Pun", "Rum", "Sub", "Tag",
+        "Van", "Web", "Yap", "Zip", "Ant", "Bat", "Cod",
     ]
 }
 
@@ -455,12 +571,12 @@ fn get_lcs_name_pool() -> (&'static [&'static str], &'static [&'static str]) {
 
 /// LPL: 名(20) × 姓(15) = 300 组合
 fn get_lpl_name_pool() -> (&'static [&'static str], &'static [&'static str]) {
-    static FIRST_NAMES: &[&str] = &[
+    static GIVEN_NAMES: &[&str] = &[
         "安森", "迪恩", "伊凡", "杰克", "利奥", "保罗", "威尔", "彦", "本", "亨利", "尼克", "加文",
         "山姆", "汤姆", "雷", "凯", "维克", "赛恩", "波", "蒂姆",
     ];
-    static LAST_NAMES: &[&str] = &[
+    static SURNAMES: &[&str] = &[
         "林", "陈", "王", "李", "张", "黄", "周", "吴", "郑", "徐", "杨", "郭", "何", "谢", "马",
     ];
-    (FIRST_NAMES, LAST_NAMES)
+    (GIVEN_NAMES, SURNAMES)
 }

@@ -1,5 +1,5 @@
 use crate::commands::save_commands::{AppState, CommandResult};
-use crate::engines::{ConditionEngine, PlayerFormFactors, TraitType, TraitEngine, TraitContext, MetaEngine, MetaWeights};
+use crate::engines::{ConditionContext, ConditionEngine, PlayerFormFactors, TraitType, TraitEngine, TraitContext, MetaEngine, MetaWeights};
 use crate::engines::lineup_engine::{LineupCandidate, LineupEngine, SubstitutionContext, SubstitutionDecision};
 use crate::engines::bp_engine::{BpEngine, CompType, PlayerChampionPool, SeriesContext, TeamSide};
 use crate::engines::champion::{self, MasteryTier, VersionTier};
@@ -45,6 +45,7 @@ struct PlayerData {
     is_first_season: bool,
     potential: u8,
     satisfaction: u8,
+    season_games_played: u32,
     join_season: i64,
     is_starter: bool,
 }
@@ -305,7 +306,13 @@ async fn simulate_single_match_internal(
     // === BP系统：加载选手英雄池 ===
     let home_player_ids: Vec<u64> = home_players.iter().map(|p| p.id).collect();
     let away_player_ids: Vec<u64> = away_players.iter().map(|p| p.id).collect();
-    let all_player_ids: Vec<u64> = home_player_ids.iter().chain(away_player_ids.iter()).cloned().collect();
+    let home_bench_ids: Vec<u64> = home_bench.iter().map(|p| p.id).collect();
+    let away_bench_ids: Vec<u64> = away_bench.iter().map(|p| p.id).collect();
+    let all_player_ids: Vec<u64> = home_player_ids.iter()
+        .chain(away_player_ids.iter())
+        .chain(home_bench_ids.iter())
+        .chain(away_bench_ids.iter())
+        .cloned().collect();
     
     // 创建选手的英雄池映射
     let mut home_champion_pools: HashMap<u64, PlayerChampionPool> = HashMap::new();
@@ -332,6 +339,44 @@ async fn simulate_single_match_internal(
         });
     }
     for p in &away_players {
+        let pos = match p.position.to_uppercase().as_str() {
+            "TOP" => Position::Top,
+            "JUG" | "JUNGLE" => Position::Jug,
+            "MID" | "MIDDLE" => Position::Mid,
+            "ADC" | "BOT" => Position::Adc,
+            "SUP" | "SUPPORT" => Position::Sup,
+            _ => Position::Mid,
+        };
+        away_champion_pools.insert(p.id, PlayerChampionPool {
+            player_id: p.id,
+            position: pos,
+            ability: p.ability,
+            masteries: HashMap::new(),
+            games_played: HashMap::new(),
+            games_won: HashMap::new(),
+            traits: p.traits.clone(),
+        });
+    }
+    for p in &home_bench {
+        let pos = match p.position.to_uppercase().as_str() {
+            "TOP" => Position::Top,
+            "JUG" | "JUNGLE" => Position::Jug,
+            "MID" | "MIDDLE" => Position::Mid,
+            "ADC" | "BOT" => Position::Adc,
+            "SUP" | "SUPPORT" => Position::Sup,
+            _ => Position::Mid,
+        };
+        home_champion_pools.insert(p.id, PlayerChampionPool {
+            player_id: p.id,
+            position: pos,
+            ability: p.ability,
+            masteries: HashMap::new(),
+            games_played: HashMap::new(),
+            games_won: HashMap::new(),
+            traits: p.traits.clone(),
+        });
+    }
+    for p in &away_bench {
         let pos = match p.position.to_uppercase().as_str() {
             "TOP" => Position::Top,
             "JUG" | "JUNGLE" => Position::Jug,
@@ -641,6 +686,46 @@ async fn simulate_single_match_internal(
             .execute(pool)
             .await
             .ok();
+        }
+
+        // 局间状态更新：出场选手累加疲劳，板凳选手休息恢复
+        if bo_count > 1 && home_score < wins_needed && away_score < wins_needed {
+            // 出场选手：games_since_rest +1，更新 condition
+            for player in home_players.iter_mut().chain(away_players.iter_mut()) {
+                player.form_factors.games_since_rest += 1;
+                let season_games_played = player.season_games_played.saturating_add(
+                    player_games_in_match.get(&player.id).copied().unwrap_or(0),
+                );
+                let condition_ctx = build_condition_context(
+                    player.satisfaction,
+                    season_games_played,
+                    player.traits.contains(&TraitType::Ironman),
+                );
+                player.condition = ConditionEngine::calculate_condition_full(
+                    player.age,
+                    player.ability,
+                    &player.form_factors,
+                    &condition_ctx,
+                );
+            }
+            // 板凳选手：rest recovery（games_since_rest=0, momentum衰减, 重算condition）
+            for player in home_bench.iter_mut().chain(away_bench.iter_mut()) {
+                player.form_factors = ConditionEngine::update_form_factors_bench(player.form_factors.clone());
+                let season_games_played = player.season_games_played.saturating_add(
+                    player_games_in_match.get(&player.id).copied().unwrap_or(0),
+                );
+                let condition_ctx = build_condition_context(
+                    player.satisfaction,
+                    season_games_played,
+                    player.traits.contains(&TraitType::Ironman),
+                );
+                player.condition = ConditionEngine::calculate_condition_full(
+                    player.age,
+                    player.ability,
+                    &player.form_factors,
+                    &condition_ctx,
+                );
+            }
         }
 
         // 局间换人：仅在 BO 系列赛且比赛未结束时执行
@@ -1105,6 +1190,20 @@ async fn load_team_comp_history(
     history
 }
 
+fn build_condition_context(
+    satisfaction: u8,
+    season_games_played: u32,
+    has_ironman: bool,
+) -> ConditionContext {
+    ConditionContext {
+        season_games_played,
+        satisfaction,
+        international_events: 0,
+        has_ironman,
+        ..Default::default()
+    }
+}
+
 /// 从 SQL Row 构建 PlayerData
 fn build_player_data(
     r: &sqlx::sqlite::SqliteRow,
@@ -1115,6 +1214,10 @@ fn build_player_data(
 ) -> PlayerData {
     let age = r.get::<i64, _>("age") as u8;
     let ability = r.get::<i64, _>("ability") as u8;
+    let satisfaction = r.get::<Option<i64>, _>("satisfaction").unwrap_or(60) as u8;
+    let season_games_played = r
+        .get::<Option<i64>, _>("season_games_played")
+        .unwrap_or(0) as u32;
     let join_season = r.get::<Option<i64>, _>("join_season").unwrap_or(1);
     let is_first_season = join_season == current_season;
 
@@ -1124,10 +1227,19 @@ fn build_player_data(
         momentum: r.get::<Option<i64>, _>("momentum").unwrap_or(0) as i8,
         last_performance: r.get::<Option<f64>, _>("last_performance").unwrap_or(0.0),
         last_match_won: r.get::<Option<i64>, _>("last_match_won").unwrap_or(0) == 1,
+        perf_history: r
+            .get::<Option<String>, _>("perf_history")
+            .unwrap_or_default(),
         games_since_rest: r.get::<Option<i64>, _>("games_since_rest").unwrap_or(0) as u32,
     };
 
-    let condition = ConditionEngine::calculate_condition(age, ability, &form_factors, None);
+    let condition_ctx = build_condition_context(
+        satisfaction,
+        season_games_played,
+        traits.contains(&TraitType::Ironman),
+    );
+    let condition =
+        ConditionEngine::calculate_condition_full(age, ability, &form_factors, &condition_ctx);
 
     PlayerData {
         id: player_id,
@@ -1145,7 +1257,8 @@ fn build_player_data(
         traits,
         is_first_season,
         potential: r.get::<Option<i64>, _>("potential").unwrap_or(ability as i64) as u8,
-        satisfaction: r.get::<Option<i64>, _>("satisfaction").unwrap_or(60) as u8,
+        satisfaction,
+        season_games_played,
         join_season,
         is_starter,
     }
@@ -1162,8 +1275,8 @@ async fn get_match_roster(
     let rows = sqlx::query(
         r#"
         SELECT p.id, p.game_id, p.position, p.ability, p.age, p.stability, p.join_season,
-               p.potential, p.satisfaction, p.is_starter,
-               pff.form_cycle, pff.momentum, pff.last_performance, pff.last_match_won, pff.games_since_rest
+               p.potential, p.satisfaction, p.season_games_played, p.is_starter,
+               pff.form_cycle, pff.momentum, pff.last_performance, pff.last_match_won, pff.perf_history, pff.games_since_rest
         FROM players p
         LEFT JOIN player_form_factors pff ON p.id = pff.player_id
         WHERE p.save_id = ? AND p.team_id = ? AND p.status = 'Active'
@@ -1701,13 +1814,14 @@ async fn update_player_form_factors(
         // 更新或插入到数据库
         sqlx::query(
             r#"
-            INSERT INTO player_form_factors (save_id, player_id, form_cycle, momentum, last_performance, last_match_won, games_since_rest, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            INSERT INTO player_form_factors (save_id, player_id, form_cycle, momentum, last_performance, last_match_won, perf_history, games_since_rest, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(save_id, player_id) DO UPDATE SET
                 form_cycle = excluded.form_cycle,
                 momentum = excluded.momentum,
                 last_performance = excluded.last_performance,
                 last_match_won = excluded.last_match_won,
+                perf_history = excluded.perf_history,
                 games_since_rest = excluded.games_since_rest,
                 updated_at = datetime('now')
             "#,
@@ -1718,6 +1832,7 @@ async fn update_player_form_factors(
         .bind(updated_factors.momentum as i64)
         .bind(updated_factors.last_performance)
         .bind(if updated_factors.last_match_won { 1i64 } else { 0i64 })
+        .bind(&updated_factors.perf_history)
         .bind(updated_factors.games_since_rest as i64)
         .execute(&mut *tx)
         .await
@@ -1740,8 +1855,8 @@ async fn update_bench_form_factors(
 
         sqlx::query(
             r#"
-            INSERT INTO player_form_factors (save_id, player_id, form_cycle, momentum, last_performance, last_match_won, games_since_rest, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            INSERT INTO player_form_factors (save_id, player_id, form_cycle, momentum, last_performance, last_match_won, perf_history, games_since_rest, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(save_id, player_id) DO UPDATE SET
                 form_cycle = excluded.form_cycle,
                 momentum = excluded.momentum,
@@ -1755,6 +1870,7 @@ async fn update_bench_form_factors(
         .bind(updated.momentum as i64)
         .bind(updated.last_performance)
         .bind(if updated.last_match_won { 1i64 } else { 0i64 })
+        .bind(&updated.perf_history)
         .bind(updated.games_since_rest as i64)
         .execute(&mut *tx)
         .await

@@ -109,8 +109,8 @@ impl TransferEngine {
                     };
                     let new_salary = {
                         let base = (expected_salary as f64 * player_leverage) as i64;
-                        if contract_role == "Sub" && satisfaction >= 40 {
-                            (base as f64 * 0.7) as i64
+                        if contract_role == "Sub" {
+                            (base as f64 * 0.85) as i64
                         } else {
                             base
                         }
@@ -141,7 +141,8 @@ impl TransferEngine {
                         Some(team_id), Some(&team_name),
                         Some(team_id), Some(&team_name),
                         0, new_salary, new_contract_years,
-                        &format!("[合同到期] 续约{}年，年薪{}万", new_contract_years, new_salary / 10000),
+                        &format!("[合同到期] 续约{}年，年薪{}万 | {}岁{}",
+                                 new_contract_years, new_salary / 10000, age, contract_role),
                     ).await?;
                     events.push(event);
                     renewed = true;
@@ -179,7 +180,7 @@ impl TransferEngine {
                     Some(team_id), Some(&team_name),
                     None, None,
                     0, salary, 0,
-                    &format!("[合同到期] 续约谈判失败，{}成为自由球员", game_id),
+                    &format!("[合同到期] 续约谈判失败，{}成为自由球员 | {}岁 忠诚{}满意{}", game_id, age, loyalty, satisfaction),
                 ).await?;
                 events.push(event);
             }

@@ -182,7 +182,7 @@ impl TransferEngine {
 
                 let offered_salary = {
                     let base = (expected_salary as f64 * salary_multiplier) as i64;
-                    if is_bench_signing { (base as f64 * 0.7) as i64 } else { base }
+                    if is_bench_signing { (base as f64 * 0.85) as i64 } else { base }
                 };
                 let contract_years = {
                     let base: i64 = if age <= 22 { 3 } else if age <= 25 { 2 } else if age <= 28 { 2 } else { 1 };
@@ -219,8 +219,8 @@ impl TransferEngine {
 
             // 市场竞争效应：多个球队竞争时，选手提高薪资期望基准
             let offer_count = offers.len();
-            let market_premium = if offer_count >= 3 {
-                1.0 + ((offer_count as f64 - 2.0) * 0.01).min(0.15)
+            let market_premium = if offer_count >= 2 {
+                1.0 + ((offer_count as f64 - 1.0) * 0.05).min(0.25)
             } else {
                 1.0
             };
@@ -296,12 +296,20 @@ impl TransferEngine {
                 let signing_as_bench = to_roster.iter().any(|p| p.position.eq_ignore_ascii_case(&position));
                 let new_contract_role = if signing_as_bench { "Sub" } else { "Starter" };
 
+                let base_loyalty: i64 = 55;
+                let base_satisfaction: i64 = 65;
+                let youth_bonus: i64 = if age <= 23 { 5 } else { 0 };
+                let new_loyalty = (base_loyalty + youth_bonus).min(100);
+                let new_satisfaction = (base_satisfaction + youth_bonus).min(100);
+
                 sqlx::query(
-                    "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = 50, satisfaction = 60, join_season = ?, contract_role = ?, is_starter = ? WHERE id = ?"
+                    "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = ?, satisfaction = ?, join_season = ?, contract_role = ?, is_starter = ? WHERE id = ?"
                 )
                 .bind(to_team_id)
                 .bind(offer.offered_salary)
                 .bind(season_id + offer.contract_years)
+                .bind(new_loyalty)
+                .bind(new_satisfaction)
                 .bind(season_id)
                 .bind(new_contract_role)
                 .bind(!signing_as_bench)
@@ -341,8 +349,8 @@ impl TransferEngine {
                     potential: free_agent.try_get("potential").unwrap_or(0),
                     age,
                     salary: offer.offered_salary,
-                    loyalty: 50,
-                    satisfaction: 60,
+                    loyalty: new_loyalty,
+                    satisfaction: new_satisfaction,
                     position: position.clone(),
                     tag: free_agent.try_get("tag").unwrap_or_else(|_| "NORMAL".to_string()),
                     team_id: Some(to_team_id),
@@ -372,8 +380,9 @@ impl TransferEngine {
                     None, None,
                     Some(to_team_id), Some(&to_team_name),
                     0, offer.offered_salary, offer.contract_years,
-                    &format!("{}以自由球员身份加入{}，年薪{}万，合同{}年",
-                             game_id, to_team_name, offer.offered_salary / 10000, offer.contract_years),
+                    &format!("{}以自由球员身份加入{}，年薪{}万，合同{}年 | {}岁{}位 潜力{}",
+                             game_id, to_team_name, offer.offered_salary / 10000, offer.contract_years,
+                             age, position, potential),
                 ).await?;
                 events.push(event);
             }

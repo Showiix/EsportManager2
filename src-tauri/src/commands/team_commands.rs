@@ -1320,7 +1320,7 @@ pub async fn update_player(
 async fn get_or_create_form_factors(pool: &sqlx::SqlitePool, player_id: u64) -> PlayerFormFactors {
     let row = sqlx::query(
         r#"
-        SELECT form_cycle, momentum, last_performance, last_match_won, games_since_rest
+        SELECT form_cycle, momentum, last_performance, last_match_won, perf_history, games_since_rest
         FROM player_form_factors WHERE player_id = ?
         "#
     )
@@ -1337,6 +1337,9 @@ async fn get_or_create_form_factors(pool: &sqlx::SqlitePool, player_id: u64) -> 
             momentum: row.get::<i32, _>("momentum") as i8,
             last_performance: row.get("last_performance"),
             last_match_won: row.get::<i32, _>("last_match_won") != 0,
+            perf_history: row
+                .get::<Option<String>, _>("perf_history")
+                .unwrap_or_default(),
             games_since_rest: row.get::<i32, _>("games_since_rest") as u32,
         },
         None => {
@@ -1346,8 +1349,8 @@ async fn get_or_create_form_factors(pool: &sqlx::SqlitePool, player_id: u64) -> 
             // 插入数据库
             let _ = sqlx::query(
                 r#"
-                INSERT INTO player_form_factors (player_id, form_cycle, momentum, last_performance, last_match_won, games_since_rest)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO player_form_factors (player_id, form_cycle, momentum, last_performance, last_match_won, perf_history, games_since_rest)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 "#
             )
             .bind(player_id as i64)
@@ -1355,6 +1358,7 @@ async fn get_or_create_form_factors(pool: &sqlx::SqlitePool, player_id: u64) -> 
             .bind(factors.momentum as i32)
             .bind(factors.last_performance)
             .bind(if factors.last_match_won { 1 } else { 0 })
+            .bind(&factors.perf_history)
             .bind(factors.games_since_rest as i32)
             .execute(pool)
             .await;
@@ -1425,7 +1429,7 @@ pub async fn get_all_team_rosters(
             SELECT p.id, p.game_id, p.position, p.ability, p.age, p.is_starter,
                    p.satisfaction, p.contract_role,
                    pff.form_cycle, pff.momentum, pff.last_performance,
-                   pff.last_match_won, pff.games_since_rest
+                   pff.last_match_won, pff.perf_history, pff.games_since_rest
             FROM players p
             LEFT JOIN player_form_factors pff ON p.id = pff.player_id
             WHERE p.save_id = ? AND p.team_id = ? AND p.status = 'Active'
@@ -1445,6 +1449,9 @@ pub async fn get_all_team_rosters(
                 momentum: r.get::<Option<i64>, _>("momentum").unwrap_or(0) as i8,
                 last_performance: r.get::<Option<f64>, _>("last_performance").unwrap_or(0.0),
                 last_match_won: r.get::<Option<i64>, _>("last_match_won").unwrap_or(0) != 0,
+                perf_history: r
+                    .get::<Option<String>, _>("perf_history")
+                    .unwrap_or_default(),
                 games_since_rest: r.get::<Option<i64>, _>("games_since_rest").unwrap_or(0) as u32,
             };
             let condition = ConditionEngine::calculate_condition(
