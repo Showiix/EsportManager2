@@ -15,7 +15,8 @@
       </div>
     </div>
 
-    <el-tabs v-model="activeTab" type="border-card">
+
+    <el-tabs v-model="activeTab" type="border-card" class="data-tabs">
       <el-tab-pane label="英雄列表" name="list">
         <div class="filter-bar">
           <el-select v-model="positionFilter" placeholder="位置" clearable style="width: 120px">
@@ -36,10 +37,14 @@
           </el-select>
         </div>
 
-        <el-table :data="filteredChampions" stripe style="width: 100%">
-          <el-table-column prop="id" label="ID" width="60" align="center" />
-          <el-table-column prop="name_cn" label="中文名" width="120" />
-          <el-table-column prop="name_en" label="英文名" width="140" />
+        <el-table :data="filteredChampions" class="data-table" style="width: 100%">
+          <el-table-column prop="id" label="ID" width="80" align="center" />
+          <el-table-column prop="name_cn" label="中文名" min-width="120">
+            <template #default="{ row }">
+              <span class="champion-name">{{ row.name_cn }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="name_en" label="英文名" min-width="140" />
           <el-table-column prop="position" label="位置" width="100" align="center">
             <template #default="{ row }">
               <el-tag :type="positionTagType(row.position)" size="small">
@@ -47,7 +52,7 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="archetype_name" label="定位" width="100" align="center">
+          <el-table-column prop="archetype_name" label="定位" width="120" align="center">
             <template #default="{ row }">
               <el-tag type="info" size="small" effect="plain">{{ row.archetype_name }}</el-tag>
             </template>
@@ -59,11 +64,15 @@
         <el-table
           v-if="championStats.length > 0"
           :data="championStats"
-          stripe
+          class="data-table"
           style="width: 100%"
           :default-sort="{ prop: 'pick_count', order: 'descending' }"
         >
-          <el-table-column prop="name_cn" label="英雄" width="120" />
+          <el-table-column prop="name_cn" label="英雄" min-width="140">
+            <template #default="{ row }">
+              <span class="champion-name">{{ row.name_cn }}</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="position" label="位置" width="100" align="center">
             <template #default="{ row }">
               <el-tag :type="positionTagType(row.position)" size="small">
@@ -71,16 +80,16 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="pick_count" label="选用" width="90" align="center" sortable />
-          <el-table-column prop="win_count" label="胜场" width="90" align="center" sortable />
-          <el-table-column label="胜率" width="100" align="center" sortable :sort-method="sortByWinRate">
+          <el-table-column prop="pick_count" label="选用" width="100" align="center" sortable />
+          <el-table-column prop="win_count" label="胜场" width="100" align="center" sortable />
+          <el-table-column label="胜率" width="120" align="center" sortable :sort-method="sortByWinRate">
             <template #default="{ row }">
               <span :class="winRateClass(row)">
                 {{ row.pick_count > 0 ? ((row.win_count / row.pick_count) * 100).toFixed(1) + '%' : '-' }}
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="ban_count" label="Ban" width="90" align="center" sortable />
+          <el-table-column prop="ban_count" label="Ban" width="100" align="center" sortable />
         </el-table>
         <el-empty v-else description="暂无比赛数据" />
       </el-tab-pane>
@@ -98,18 +107,18 @@
         <el-table
           v-if="compViewMode === 'overall' && compStats.length > 0"
           :data="compStats"
-          stripe
+          class="data-table"
           style="width: 100%"
           :default-sort="{ prop: 'pick_count', order: 'descending' }"
         >
-          <el-table-column label="体系" width="160">
+          <el-table-column label="体系" min-width="160">
             <template #default="{ row }">
               <span class="comp-name-text">{{ compName(row.comp_type) }}</span>
             </template>
           </el-table-column>
           <el-table-column prop="pick_count" label="使用次数" width="120" align="center" sortable />
           <el-table-column prop="win_count" label="胜场" width="100" align="center" sortable />
-          <el-table-column label="胜率" width="100" align="center" sortable :sort-method="sortCompByWinRate">
+          <el-table-column label="胜率" width="120" align="center" sortable :sort-method="sortCompByWinRate">
             <template #default="{ row }">
               <span :class="compWinRateClass(row)">
                 {{ row.pick_count > 0 ? ((row.win_count / row.pick_count) * 100).toFixed(1) + '%' : '-' }}
@@ -120,19 +129,19 @@
         <el-table
           v-if="compViewMode === 'team' && filteredTeamCompUsage.length > 0"
           :data="filteredTeamCompUsage"
-          stripe
+          class="data-table"
           style="width: 100%"
           :default-sort="{ prop: 'games', order: 'descending' }"
         >
-          <el-table-column prop="team_name" label="战队" width="140" />
-          <el-table-column label="体系" width="140">
+          <el-table-column prop="team_name" label="战队" min-width="140" />
+          <el-table-column label="体系" min-width="140">
             <template #default="{ row }">
               <span class="comp-name-text">{{ row.comp_name }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="games" label="使用次数" width="100" align="center" sortable />
-          <el-table-column prop="wins" label="胜场" width="80" align="center" sortable />
-          <el-table-column label="胜率" width="100" align="center" sortable :sort-method="sortTeamCompWinRate">
+          <el-table-column prop="games" label="使用次数" width="120" align="center" sortable />
+          <el-table-column prop="wins" label="胜场" width="100" align="center" sortable />
+          <el-table-column label="胜率" width="120" align="center" sortable :sort-method="sortTeamCompWinRate">
             <template #default="{ row }">
               <span :class="teamCompWinRateClass(row)">
                 {{ row.games > 0 ? ((row.wins / row.games) * 100).toFixed(1) + '%' : '-' }}
@@ -144,62 +153,49 @@
       </el-tab-pane>
 
       <el-tab-pane label="体系图鉴" name="matchup">
+
         <div class="matchup-grid">
-          <el-card v-for="comp in compMatchups" :key="comp.id" class="comp-card" shadow="hover">
-            <template #header>
-              <div class="comp-card-header">
-                <div class="comp-title">
-                  <span class="name">{{ comp.name }}</span>
-                  <el-tag :type="getDifficultyType(comp.difficulty)" size="small" effect="plain">
-                    难度: {{ comp.difficulty }}
-                  </el-tag>
-                </div>
-                <div class="archetypes">
-                  <el-tag v-for="arch in comp.archetypes" :key="arch" type="info" size="small" class="arch-tag">
-                    {{ arch }}
-                  </el-tag>
-                </div>
+          <div v-for="comp in compMatchups" :key="comp.id" class="comp-card-wrap">
+            <div class="comp-card-top">
+              <div class="comp-card-name">{{ comp.name }}</div>
+              <div class="comp-card-meta">
+                <span class="comp-diff" :class="'diff-' + comp.difficulty">{{ comp.difficulty }}</span>
+                <el-tag v-for="arch in comp.archetypes" :key="arch" size="small" effect="plain" class="arch-tag">
+                  {{ arch }}
+                </el-tag>
               </div>
-            </template>
-            <div class="comp-relationships">
-              <div class="rel-section condition-section">
-                <span class="rel-label">触发条件:</span>
-                <div class="condition-text">{{ COMP_CONDITIONS[comp.id] }}</div>
-              </div>
-              <div class="rel-section" v-if="comp.hardCounters.length">
-                <span class="rel-label">克制:</span>
-                <div class="tags">
-                  <el-tag v-for="t in comp.hardCounters" :key="t" type="danger" size="small" effect="light">
-                    {{ COMP_NAME_MAP[t] || t }}
-                  </el-tag>
+            </div>
+            <div class="comp-card-condition">
+              <span class="cond-label">触发</span>
+              <span class="cond-text">{{ COMP_CONDITIONS[comp.id] }}</span>
+            </div>
+            <div class="comp-card-rels">
+              <div v-if="comp.hardCounters.length" class="rel-row">
+                <span class="rel-icon rel-strong">&#9650;</span>
+                <div class="rel-tags">
+                  <span v-for="t in comp.hardCounters" :key="t" class="rel-tag rel-tag-strong">{{ COMP_NAME_MAP[t] || t }}</span>
                 </div>
               </div>
-              <div class="rel-section" v-if="comp.hardCounteredBy.length">
-                <span class="rel-label">被克制:</span>
-                <div class="tags">
-                  <el-tag v-for="t in comp.hardCounteredBy" :key="t" type="" size="small" effect="light">
-                    {{ COMP_NAME_MAP[t] || t }}
-                  </el-tag>
+              <div v-if="comp.hardCounteredBy.length" class="rel-row">
+                <span class="rel-icon rel-weak">&#9660;</span>
+                <div class="rel-tags">
+                  <span v-for="t in comp.hardCounteredBy" :key="t" class="rel-tag rel-tag-weak">{{ COMP_NAME_MAP[t] || t }}</span>
                 </div>
               </div>
-              <div class="rel-section" v-if="comp.softCounters.length">
-                <span class="rel-label">小克:</span>
-                <div class="tags">
-                  <el-tag v-for="t in comp.softCounters" :key="t" type="warning" size="small" effect="plain">
-                    {{ COMP_NAME_MAP[t] || t }}
-                  </el-tag>
+              <div v-if="comp.softCounters.length" class="rel-row">
+                <span class="rel-icon rel-soft-strong">&#9651;</span>
+                <div class="rel-tags">
+                  <span v-for="t in comp.softCounters" :key="t" class="rel-tag rel-tag-soft-strong">{{ COMP_NAME_MAP[t] || t }}</span>
                 </div>
               </div>
-              <div class="rel-section" v-if="comp.softCounteredBy.length">
-                <span class="rel-label">被小克:</span>
-                <div class="tags">
-                  <el-tag v-for="t in comp.softCounteredBy" :key="t" type="success" size="small" effect="plain">
-                    {{ COMP_NAME_MAP[t] || t }}
-                  </el-tag>
+              <div v-if="comp.softCounteredBy.length" class="rel-row">
+                <span class="rel-icon rel-soft-weak">&#9661;</span>
+                <div class="rel-tags">
+                  <span v-for="t in comp.softCounteredBy" :key="t" class="rel-tag rel-tag-soft-weak">{{ COMP_NAME_MAP[t] || t }}</span>
                 </div>
               </div>
             </div>
-          </el-card>
+          </div>
         </div>
       </el-tab-pane>
 
@@ -218,24 +214,28 @@
         <el-table
           v-if="filteredPlayerUsage.length > 0"
           :data="pagedPlayerUsage"
-          stripe
+          class="data-table"
           style="width: 100%"
           :default-sort="{ prop: 'games', order: 'descending' }"
         >
-          <el-table-column prop="player_name" label="选手" width="130">
+          <el-table-column prop="player_name" label="选手" min-width="130">
             <template #default="{ row }">
               <span class="player-name">{{ row.player_name }}</span>
             </template>
           </el-table-column>
           <el-table-column prop="team_name" label="战队" width="120" />
-          <el-table-column prop="position" label="位置" width="80" align="center">
+          <el-table-column prop="position" label="位置" width="100" align="center">
             <template #default="{ row }">
               <el-tag :type="positionTagType(row.position)" size="small">
                 {{ positionName(row.position.charAt(0).toUpperCase() + row.position.slice(1).toLowerCase()) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="champion_name" label="英雄" width="120" />
+          <el-table-column prop="champion_name" label="英雄" min-width="120">
+            <template #default="{ row }">
+              <span class="champion-name">{{ row.champion_name }}</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="games" label="使用次数" width="100" align="center" sortable />
           <el-table-column prop="wins" label="胜场" width="80" align="center" sortable />
           <el-table-column label="胜率" width="100" align="center" sortable :sort-method="sortPlayerUsageWinRate">
@@ -416,12 +416,6 @@ const compMatchups = computed<CompMatchup[]>(() => {
   return list
 })
 
-const getDifficultyType = (diff: string): '' | 'success' | 'warning' | 'danger' => {
-  if (diff === '高') return 'danger'
-  if (diff === '中') return 'warning'
-  return 'success'
-}
-
 const POSITION_NAME_MAP: Record<string, string> = {
   Top: '上单', Jug: '打野', Mid: '中路', Adc: 'ADC', Sup: '辅助',
 }
@@ -555,11 +549,12 @@ onMounted(() => {
 
 <style scoped lang="scss">
 .champion-data {
-  padding: 24px;
-  min-height: 100%;
+  padding: 0;
+  min-height: 100vh;
+  background-color: #fff;
 
   .page-header {
-    margin-bottom: 24px;
+    margin-bottom: 20px;
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
@@ -575,20 +570,46 @@ onMounted(() => {
         display: flex;
         align-items: center;
         gap: 12px;
-        font-size: 28px;
+        font-size: 24px;
         font-weight: 700;
-        margin: 0;
-        color: #1f2937;
+        margin: 0 0 4px 0;
+        color: #0f172a;
+        letter-spacing: -0.3px;
 
         .el-icon {
-          color: #409eff;
+          color: #6366f1;
         }
       }
 
       .page-description {
-        margin: 8px 0 0 0;
-        color: #6b7280;
-        font-size: 14px;
+        margin: 0;
+        color: #94a3b8;
+        font-size: 13px;
+      }
+    }
+  }
+
+  .data-tabs {
+    border: none;
+    box-shadow: none;
+    
+    :deep(.el-tabs__header) {
+      background-color: transparent;
+      border-bottom: 1px solid #e2e8f0;
+      margin-bottom: 20px;
+    }
+
+    :deep(.el-tabs__content) {
+      padding: 0;
+    }
+    
+    :deep(.el-tabs__item) {
+      font-weight: 500;
+      color: #64748b;
+      
+      &.is-active {
+        color: #6366f1;
+        font-weight: 600;
       }
     }
   }
@@ -600,79 +621,203 @@ onMounted(() => {
   }
 }
 
+.data-table {
+  width: 100%;
+  
+  :deep(.el-table__inner-wrapper::before) {
+    display: none;
+  }
+  
+  :deep(.el-table__header) {
+    th.el-table__cell {
+      background-color: #ffffff;
+      color: #94a3b8;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 12px 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+  }
+
+  :deep(.el-table__row) {
+    transition: background-color 0.2s;
+    
+    td {
+      padding: 12px 0;
+      border-bottom: 1px solid #f8fafc;
+    }
+
+    &:hover {
+      background-color: #f0f9ff !important;
+      
+      td {
+        background-color: #f0f9ff !important;
+      }
+    }
+    
+    &:last-child td {
+      border-bottom: none;
+    }
+  }
+}
+
+.champion-name,
+.player-name,
+.comp-name-text {
+  font-weight: 600;
+  color: #1f2937;
+}
+
 .rate-high {
-  color: #67c23a;
+  color: #10b981;
   font-weight: 600;
 }
 
 .rate-low {
-  color: #f56c6c;
+  color: #ef4444;
   font-weight: 600;
 }
 
 .matchup-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 16px;
-  
-  .comp-card {
-    .comp-card-header {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      
-      .comp-title {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        
-        .name {
-          font-size: 16px;
-          font-weight: 700;
-          color: #1f2937;
-        }
-      }
-      
-      .archetypes {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-      }
-    }
-    
-    .comp-relationships {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      
-      .rel-section {
-        .rel-label {
-          display: block;
-          font-size: 12px;
-          color: #6b7280;
-          margin-bottom: 4px;
-        }
-        
-        .tags {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 4px;
-        }
+}
 
-        &.condition-section {
-          background: #f8f9fa;
-          border-radius: 6px;
-          padding: 8px 10px;
+.comp-card-wrap {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.2s;
+  background: #fff;
 
-          .condition-text {
-            font-size: 13px;
-            color: #374151;
-            font-family: monospace;
-            line-height: 1.5;
-          }
-        }
-      }
-    }
+  &:hover {
+    border-color: #6366f1;
+    transform: translateY(-2px);
+  }
+}
+
+.comp-card-top {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  background: linear-gradient(135deg, #f8fafc 0%, #fff 100%);
+
+  .comp-card-name {
+    font-size: 17px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 8px;
+  }
+
+  .comp-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .comp-diff {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+
+    &.diff-低 { background: #dcfce7; color: #166534; }
+    &.diff-中 { background: #fef3c7; color: #92400e; }
+    &.diff-高 { background: #fee2e2; color: #991b1b; }
+  }
+
+  .arch-tag {
+    font-size: 11px;
+  }
+}
+
+.comp-card-condition {
+  padding: 10px 16px;
+  background: #f8fafc;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+
+  .cond-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  .cond-text {
+    font-size: 12px;
+    color: #475569;
+    font-family: 'SF Mono', 'Menlo', monospace;
+    line-height: 1.6;
+  }
+}
+
+.comp-card-rels {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rel-icon {
+  font-size: 10px;
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+
+  &.rel-strong { color: #ef4444; }
+  &.rel-weak { color: #6366f1; }
+  &.rel-soft-strong { color: #f59e0b; }
+  &.rel-soft-weak { color: #10b981; }
+}
+
+.rel-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rel-tag {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+
+  &.rel-tag-strong {
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+  }
+
+  &.rel-tag-weak {
+    background: #eef2ff;
+    color: #4f46e5;
+    border: 1px solid #c7d2fe;
+  }
+
+  &.rel-tag-soft-strong {
+    background: #fffbeb;
+    color: #d97706;
+    border: 1px solid #fde68a;
+  }
+
+  &.rel-tag-soft-weak {
+    background: #ecfdf5;
+    color: #059669;
+    border: 1px solid #a7f3d0;
   }
 }
 
@@ -684,12 +829,12 @@ onMounted(() => {
 .score-text {
   font-family: monospace;
   font-weight: 600;
-  color: #409eff;
+  color: #6366f1;
 }
 
 .comp-name-text {
   font-weight: 600;
-  color: #374151;
+  color: #1f2937;
 }
 
 .pagination-wrapper {
