@@ -495,12 +495,16 @@ async fn simulate_single_match_internal(
         let away_picks_json = serde_json::to_string(&draft.away_picks).unwrap_or_default();
         let home_comp = draft.home_comp.as_ref().map(|c| format!("{:?}", c));
         let away_comp = draft.away_comp.as_ref().map(|c| format!("{:?}", c));
+        let narrative_json = draft
+            .narrative
+            .as_ref()
+            .map(|n| serde_json::to_string(n).unwrap_or_default());
         
         sqlx::query(
             r#"
             INSERT OR REPLACE INTO game_draft_results
-                (save_id, match_id, game_number, bans_json, home_picks_json, away_picks_json, home_comp, away_comp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (save_id, match_id, game_number, bans_json, home_picks_json, away_picks_json, home_comp, away_comp, draft_narrative_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
         .bind(&ctx.save_id)
@@ -511,6 +515,7 @@ async fn simulate_single_match_internal(
         .bind(&away_picks_json)
         .bind(&home_comp)
         .bind(&away_comp)
+        .bind(&narrative_json)
         .execute(pool)
         .await
         .ok();
@@ -658,6 +663,12 @@ async fn simulate_single_match_internal(
         series_ctx = Some(SeriesContext {
             prev_winner_picks,
             prev_loser_side,
+            prev_home_comp: draft.home_comp,
+            prev_away_comp: draft.away_comp,
+            home_score,
+            away_score,
+            game_number,
+            wins_needed,
         });
 
         // === 更新选手英雄池 games_played / games_won ===

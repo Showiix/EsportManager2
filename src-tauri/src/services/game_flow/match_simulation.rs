@@ -945,7 +945,7 @@ impl GameFlowService {
 
         let row = sqlx::query(
             r#"
-            SELECT d.home_picks_json, d.away_picks_json, g.winner_id
+            SELECT d.game_number, d.home_picks_json, d.away_picks_json, d.home_comp, d.away_comp, g.winner_id
             FROM game_draft_results d
             JOIN match_games g
                 ON g.match_id = d.match_id
@@ -994,10 +994,52 @@ impl GameFlowService {
         } else {
             Some(TeamSide::Home)
         };
+        let prev_home_comp = row
+            .get::<Option<String>, _>("home_comp")
+            .and_then(|comp| CompType::from_id(comp.trim()));
+        let prev_away_comp = row
+            .get::<Option<String>, _>("away_comp")
+            .and_then(|comp| CompType::from_id(comp.trim()));
+        let game_number = row
+            .get::<i64, _>("game_number")
+            .saturating_add(1)
+            .clamp(1, i64::from(u8::MAX)) as u8;
+
+        let match_meta_row = sqlx::query("SELECT home_score, away_score, format FROM matches WHERE id = ?")
+            .bind(match_id as i64)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+
+        let (home_score, away_score, wins_needed) = if let Some(match_meta) = match_meta_row {
+            let home_score_val = match_meta.get::<i64, _>("home_score").max(0);
+            let away_score_val = match_meta.get::<i64, _>("away_score").max(0);
+            let format_str = match_meta.get::<String, _>("format");
+            let wins_needed = match format_str.to_ascii_uppercase().as_str() {
+                "BO5" => 3,
+                "BO3" => 2,
+                _ => 1,
+            };
+
+            (
+                home_score_val.clamp(0, i64::from(u8::MAX)) as u8,
+                away_score_val.clamp(0, i64::from(u8::MAX)) as u8,
+                wins_needed,
+            )
+        } else {
+            (0, 0, 1)
+        };
 
         Ok(Some(SeriesContext {
             prev_winner_picks,
             prev_loser_side,
+            prev_home_comp,
+            prev_away_comp,
+            home_score,
+            away_score,
+            game_number,
+            wins_needed,
         }))
     }
 

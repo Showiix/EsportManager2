@@ -42,6 +42,7 @@ pub struct DraftResultInfo {
     pub away_picks_json: String,
     pub home_comp: Option<String>,
     pub away_comp: Option<String>,
+    pub draft_narrative_json: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -278,7 +279,7 @@ pub async fn get_draft_result(
 
     let row = sqlx::query(
         "SELECT match_id, game_number, bans_json, home_picks_json, away_picks_json,
-                home_comp, away_comp
+                home_comp, away_comp, draft_narrative_json
          FROM game_draft_results
          WHERE save_id = ? AND match_id = ? AND game_number = ?",
     )
@@ -297,6 +298,7 @@ pub async fn get_draft_result(
         away_picks_json: r.get("away_picks_json"),
         home_comp: r.get("home_comp"),
         away_comp: r.get("away_comp"),
+        draft_narrative_json: r.get("draft_narrative_json"),
     });
 
     Ok(CommandResult::ok(info))

@@ -400,6 +400,21 @@ impl DatabaseManager {
         .await
         .map_err(|e| DatabaseError::Migration(e.to_string()))?;
 
+        {
+            let columns: Vec<String> =
+                sqlx::query_scalar("SELECT name FROM pragma_table_info('game_draft_results')")
+                    .fetch_all(pool)
+                    .await
+                    .unwrap_or_default();
+
+            if !columns.contains(&"draft_narrative_json".to_string()) {
+                sqlx::query("ALTER TABLE game_draft_results ADD COLUMN draft_narrative_json TEXT")
+                    .execute(pool)
+                    .await
+                    .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            }
+        }
+
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS player_growth_logs (
