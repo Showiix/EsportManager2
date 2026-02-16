@@ -1246,6 +1246,8 @@ pub async fn generate_rookies(
     seed: Option<u64>,
     ability_min: Option<u8>,
     ability_max: Option<u8>,
+    potential_min: Option<u8>,
+    potential_max: Option<u8>,
 ) -> Result<CommandResult<Vec<DraftPoolPlayer>>, String> {
     let count = count.unwrap_or(14) as usize;
 
@@ -1304,6 +1306,12 @@ pub async fn generate_rookies(
         ability_range: match (ability_min, ability_max) {
             (Some(min), Some(max)) => Some((min, max)),
             (Some(min), None) => Some((min, 80)),
+            (None, Some(max)) => Some((30, max)),
+            _ => None,
+        },
+        potential_range: match (potential_min, potential_max) {
+            (Some(min), Some(max)) => Some((min, max)),
+            (Some(min), None) => Some((min, 100)),
             (None, Some(max)) => Some((30, max)),
             _ => None,
         },

@@ -271,6 +271,7 @@
                 :max="generateAbilityMax"
                 :step="1"
                 controls-position="right"
+                :disabled="!useCustomAbility"
                 style="width: 120px"
               />
               <span class="range-separator">~</span>
@@ -280,14 +281,37 @@
                 :max="80"
                 :step="1"
                 controls-position="right"
+                :disabled="!useCustomAbility"
                 style="width: 120px"
               />
+              <el-switch v-model="useCustomAbility" style="margin-left: 12px" />
             </div>
             <div class="form-hint">默认按天赋标签自动分配（天才 64-67，普通 61-64，平庸 59-61）</div>
           </el-form-item>
-          <el-form-item label="自定义范围">
-            <el-switch v-model="useCustomAbility" />
-            <div class="form-hint">关闭时按天赋标签自动分配能力值</div>
+          <el-form-item label="潜力范围">
+            <div class="ability-range-row">
+              <el-input-number
+                v-model="generatePotentialMin"
+                :min="30"
+                :max="generatePotentialMax"
+                :step="1"
+                controls-position="right"
+                :disabled="!useCustomPotential"
+                style="width: 120px"
+              />
+              <span class="range-separator">~</span>
+              <el-input-number
+                v-model="generatePotentialMax"
+                :min="generatePotentialMin"
+                :max="100"
+                :step="1"
+                controls-position="right"
+                :disabled="!useCustomPotential"
+                style="width: 120px"
+              />
+              <el-switch v-model="useCustomPotential" style="margin-left: 12px" />
+            </div>
+            <div class="form-hint">默认按天赋标签自动分配（能力值 + 天才 3-5，普通 2-4，平庸 2-3）</div>
           </el-form-item>
         </el-form>
         <div class="generate-preview">
@@ -555,7 +579,10 @@ const generateCount = ref(14)
 const isGenerating = ref(false)
 const generateAbilityMin = ref(59)
 const generateAbilityMax = ref(67)
+const generatePotentialMin = ref(62)
+const generatePotentialMax = ref(72)
 const useCustomAbility = ref(false)
+const useCustomPotential = ref(false)
 
 // 导入表单
 const importForm = ref({
@@ -1011,7 +1038,9 @@ const handleGenerateRookies = async () => {
     const regionId = await getRegionId(selectedRegion.value)
     const abilityMin = useCustomAbility.value ? generateAbilityMin.value : undefined
     const abilityMax = useCustomAbility.value ? generateAbilityMax.value : undefined
-    const generated = await draftApi.generateRookies(regionId, generateCount.value, undefined, abilityMin, abilityMax)
+    const potentialMin = useCustomPotential.value ? generatePotentialMin.value : undefined
+    const potentialMax = useCustomPotential.value ? generatePotentialMax.value : undefined
+    const generated = await draftApi.generateRookies(regionId, generateCount.value, undefined, abilityMin, abilityMax, potentialMin, potentialMax)
     showGenerateDialog.value = false
     await loadPoolData(selectedRegion.value)
     ElMessage.success(`成功生成 ${generated.length} 名 ${currentRegionName.value} 新秀`)
