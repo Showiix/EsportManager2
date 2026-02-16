@@ -184,6 +184,29 @@ pub enum TeamSide {
 pub struct SeriesContext {
     pub prev_winner_picks: Vec<u8>,
     pub prev_loser_side: Option<TeamSide>,
+    pub prev_home_comp: Option<CompType>,
+    pub prev_away_comp: Option<CompType>,
+    pub home_score: u8,
+    pub away_score: u8,
+    pub game_number: u8,
+    pub wins_needed: u8,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DraftPlan {
+    primary_comp: CompType,
+    backup_comp: CompType,
+    switched_to_backup: bool,
+}
+
+impl DraftPlan {
+    fn active_comp(&self) -> CompType {
+        if self.switched_to_backup {
+            self.backup_comp
+        } else {
+            self.primary_comp
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -251,6 +274,18 @@ pub struct PickEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DraftNarrative {
+    pub home_entries: Vec<NarrativeEntry>,
+    pub away_entries: Vec<NarrativeEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NarrativeEntry {
+    pub phase: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DraftResult {
     pub bans: Vec<BanEntry>,
     pub home_picks: Vec<PickEntry>,
@@ -259,6 +294,7 @@ pub struct DraftResult {
     pub away_comp: Option<CompType>,
     pub home_bp_modifiers: HashMap<u64, f64>,
     pub away_bp_modifiers: HashMap<u64, f64>,
+    pub narrative: Option<DraftNarrative>,
 }
 
 #[derive(Debug, Clone)]
@@ -289,23 +325,69 @@ impl BpEngine {
         let mut draft_state = DraftState::new();
         let phase_one_pick_count = BAN_ORDER.iter().filter(|(_, phase)| *phase == 1).count();
 
+        let mut home_plan = plan_comp(
+            home_players,
+            version_tiers,
+            home_team_comp_history,
+            meta_type,
+            series_ctx,
+            TeamSide::Home,
+            rng,
+        );
+        let mut away_plan = plan_comp(
+            away_players,
+            version_tiers,
+            away_team_comp_history,
+            meta_type,
+            series_ctx,
+            TeamSide::Away,
+            rng,
+        );
+
+        let mut narrative = DraftNarrative {
+            home_entries: Vec::new(),
+            away_entries: Vec::new(),
+        };
+
+        narrative.home_entries.push(NarrativeEntry {
+            phase: "plan".to_string(),
+            message: format!(
+                "规划主体系: {}，备选: {}",
+                comp_display_name(home_plan.primary_comp),
+                comp_display_name(home_plan.backup_comp)
+            ),
+        });
+        narrative.away_entries.push(NarrativeEntry {
+            phase: "plan".to_string(),
+            message: format!(
+                "规划主体系: {}，备选: {}",
+                comp_display_name(away_plan.primary_comp),
+                comp_display_name(away_plan.backup_comp)
+            ),
+        });
+
         for (team_side, ban_phase) in BAN_ORDER {
             if ban_phase != 1 {
                 continue;
             }
 
-            let (target_players, target_comp_history, target_picks) = match team_side {
-                TeamSide::Home => (
-                    away_players,
-                    away_team_comp_history,
-                    draft_state.away_picks.as_slice(),
-                ),
-                TeamSide::Away => (
-                    home_players,
-                    home_team_comp_history,
-                    draft_state.home_picks.as_slice(),
-                ),
-            };
+            let (target_players, target_comp_history, target_picks, my_plan, my_picks) =
+                match team_side {
+                    TeamSide::Home => (
+                        away_players,
+                        away_team_comp_history,
+                        draft_state.away_picks.as_slice(),
+                        &home_plan,
+                        draft_state.home_picks.as_slice(),
+                    ),
+                    TeamSide::Away => (
+                        home_players,
+                        home_team_comp_history,
+                        draft_state.home_picks.as_slice(),
+                        &away_plan,
+                        draft_state.away_picks.as_slice(),
+                    ),
+                };
 
             if let Some(champion_id) = select_best_ban(
                 target_players,
@@ -318,6 +400,8 @@ impl BpEngine {
                 target_picks,
                 team_side,
                 series_ctx,
+                Some(my_plan),
+                my_picks,
             ) {
                 draft_state.banned.insert(champion_id);
                 bans.push(BanEntry {
@@ -325,40 +409,129 @@ impl BpEngine {
                     champion_id,
                     ban_phase,
                 });
+
+                let ban_msg = comp_history_ban_narrative(champion_id, target_comp_history)
+                    .unwrap_or_else(|| {
+                        generate_ban_narrative(
+                            champion_id,
+                            ban_phase,
+                            target_players,
+                            series_ctx,
+                            team_side,
+                            my_plan,
+                            my_picks,
+                            target_picks,
+                        )
+                    });
+                match team_side {
+                    TeamSide::Home => narrative.home_entries.push(NarrativeEntry {
+                        phase: "ban_phase1".to_string(),
+                        message: ban_msg,
+                    }),
+                    TeamSide::Away => narrative.away_entries.push(NarrativeEntry {
+                        phase: "ban_phase1".to_string(),
+                        message: ban_msg,
+                    }),
+                }
             }
         }
 
+        let mut pick_index = 0usize;
         for team_side in PICK_ORDER.iter().copied().take(phase_one_pick_count) {
-            let next_pick = match team_side {
-                TeamSide::Home => select_best_pick(
+            let (plan, players, opponent_players, team_picks, opponent_picks) = match team_side {
+                TeamSide::Home => (
+                    &home_plan,
                     home_players,
                     away_players,
                     &draft_state.home_picks,
                     &draft_state.away_picks,
-                    &draft_state.banned,
-                    &draft_state.picked,
-                    version_tiers,
-                    rng,
                 ),
-                TeamSide::Away => select_best_pick(
+                TeamSide::Away => (
+                    &away_plan,
                     away_players,
                     home_players,
                     &draft_state.away_picks,
                     &draft_state.home_picks,
-                    &draft_state.banned,
-                    &draft_state.picked,
-                    version_tiers,
-                    rng,
                 ),
             };
+            let next_pick = select_best_pick(
+                players,
+                opponent_players,
+                team_picks,
+                opponent_picks,
+                &draft_state.banned,
+                &draft_state.picked,
+                version_tiers,
+                rng,
+                plan,
+                pick_index,
+            );
 
             if let Some(pick) = next_pick {
                 if draft_state.picked.insert(pick.champion_id) {
+                    let pick_msg = generate_pick_narrative(
+                        &pick,
+                        plan,
+                        opponent_picks,
+                        opponent_players,
+                        pick_index,
+                        version_tiers,
+                    );
                     match team_side {
-                        TeamSide::Home => draft_state.home_picks.push(pick),
-                        TeamSide::Away => draft_state.away_picks.push(pick),
+                        TeamSide::Home => {
+                            draft_state.home_picks.push(pick);
+                            narrative.home_entries.push(NarrativeEntry {
+                                phase: "pick".to_string(),
+                                message: pick_msg,
+                            });
+                        }
+                        TeamSide::Away => {
+                            draft_state.away_picks.push(pick);
+                            narrative.away_entries.push(NarrativeEntry {
+                                phase: "pick".to_string(),
+                                message: pick_msg,
+                            });
+                        }
                     }
                 }
+            }
+
+            pick_index += 1;
+        }
+
+        if should_switch_to_backup(&home_plan, &draft_state.home_picks, &draft_state.away_picks) {
+            home_plan.switched_to_backup = true;
+        }
+        if should_switch_to_backup(&away_plan, &draft_state.away_picks, &draft_state.home_picks) {
+            away_plan.switched_to_backup = true;
+        }
+
+        if home_plan.switched_to_backup {
+            if let Some(opponent_direction) =
+                detect_partial_comp_direction(&picks_to_comp_view(&draft_state.away_picks))
+            {
+                narrative.home_entries.push(NarrativeEntry {
+                    phase: "switch".to_string(),
+                    message: format!(
+                        "检测到对手可能打{}方向，切换到备选体系: {}",
+                        comp_display_name(opponent_direction),
+                        comp_display_name(home_plan.backup_comp)
+                    ),
+                });
+            }
+        }
+        if away_plan.switched_to_backup {
+            if let Some(opponent_direction) =
+                detect_partial_comp_direction(&picks_to_comp_view(&draft_state.home_picks))
+            {
+                narrative.away_entries.push(NarrativeEntry {
+                    phase: "switch".to_string(),
+                    message: format!(
+                        "检测到对手可能打{}方向，切换到备选体系: {}",
+                        comp_display_name(opponent_direction),
+                        comp_display_name(away_plan.backup_comp)
+                    ),
+                });
             }
         }
 
@@ -369,15 +542,23 @@ impl BpEngine {
                 continue;
             }
 
-            let (target_players, target_comp_history) = match team_side {
-                TeamSide::Home => (away_players, away_team_comp_history),
-                TeamSide::Away => (home_players, home_team_comp_history),
-            };
-
-            let target_picks = match team_side {
-                TeamSide::Home => draft_state.away_picks.as_slice(),
-                TeamSide::Away => draft_state.home_picks.as_slice(),
-            };
+            let (target_players, target_comp_history, target_picks, my_plan, my_picks) =
+                match team_side {
+                    TeamSide::Home => (
+                        away_players,
+                        away_team_comp_history,
+                        draft_state.away_picks.as_slice(),
+                        &home_plan,
+                        draft_state.home_picks.as_slice(),
+                    ),
+                    TeamSide::Away => (
+                        home_players,
+                        home_team_comp_history,
+                        draft_state.home_picks.as_slice(),
+                        &away_plan,
+                        draft_state.away_picks.as_slice(),
+                    ),
+                };
 
             if let Some(champion_id) = select_best_ban(
                 target_players,
@@ -390,6 +571,8 @@ impl BpEngine {
                 target_picks,
                 team_side,
                 series_ctx,
+                Some(my_plan),
+                my_picks,
             ) {
                 draft_state.banned.insert(champion_id);
                 bans.push(BanEntry {
@@ -397,41 +580,138 @@ impl BpEngine {
                     champion_id,
                     ban_phase,
                 });
+
+                let ban_msg = comp_history_ban_narrative(champion_id, target_comp_history)
+                    .unwrap_or_else(|| {
+                        generate_ban_narrative(
+                            champion_id,
+                            ban_phase,
+                            target_players,
+                            series_ctx,
+                            team_side,
+                            my_plan,
+                            my_picks,
+                            target_picks,
+                        )
+                    });
+                match team_side {
+                    TeamSide::Home => narrative.home_entries.push(NarrativeEntry {
+                        phase: "ban_phase2".to_string(),
+                        message: ban_msg,
+                    }),
+                    TeamSide::Away => narrative.away_entries.push(NarrativeEntry {
+                        phase: "ban_phase2".to_string(),
+                        message: ban_msg,
+                    }),
+                }
             }
         }
 
         for team_side in PICK_ORDER.iter().copied().skip(phase_one_pick_count) {
-            let next_pick = match team_side {
-                TeamSide::Home => select_best_pick(
+            let is_home = matches!(team_side, TeamSide::Home);
+            if is_home {
+                if !home_plan.switched_to_backup
+                    && should_switch_to_backup(
+                        &home_plan,
+                        &draft_state.home_picks,
+                        &draft_state.away_picks,
+                    )
+                {
+                    home_plan.switched_to_backup = true;
+                    if let Some(opp_dir) =
+                        detect_partial_comp_direction(&picks_to_comp_view(&draft_state.away_picks))
+                    {
+                        narrative.home_entries.push(NarrativeEntry {
+                            phase: "switch".to_string(),
+                            message: format!(
+                                "Phase 2检测到对手{}方向加强，紧急切换到备选体系: {}",
+                                comp_display_name(opp_dir),
+                                comp_display_name(home_plan.backup_comp)
+                            ),
+                        });
+                    }
+                }
+            } else if !away_plan.switched_to_backup
+                && should_switch_to_backup(
+                    &away_plan,
+                    &draft_state.away_picks,
+                    &draft_state.home_picks,
+                )
+            {
+                away_plan.switched_to_backup = true;
+                if let Some(opp_dir) =
+                    detect_partial_comp_direction(&picks_to_comp_view(&draft_state.home_picks))
+                {
+                    narrative.away_entries.push(NarrativeEntry {
+                        phase: "switch".to_string(),
+                        message: format!(
+                            "Phase 2检测到对手{}方向加强，紧急切换到备选体系: {}",
+                            comp_display_name(opp_dir),
+                            comp_display_name(away_plan.backup_comp)
+                        ),
+                    });
+                }
+            }
+
+            let (plan, players, opponent_players, team_picks, opponent_picks) = match team_side {
+                TeamSide::Home => (
+                    &home_plan,
                     home_players,
                     away_players,
                     &draft_state.home_picks,
                     &draft_state.away_picks,
-                    &draft_state.banned,
-                    &draft_state.picked,
-                    version_tiers,
-                    rng,
                 ),
-                TeamSide::Away => select_best_pick(
+                TeamSide::Away => (
+                    &away_plan,
                     away_players,
                     home_players,
                     &draft_state.away_picks,
                     &draft_state.home_picks,
-                    &draft_state.banned,
-                    &draft_state.picked,
-                    version_tiers,
-                    rng,
                 ),
             };
+            let next_pick = select_best_pick(
+                players,
+                opponent_players,
+                team_picks,
+                opponent_picks,
+                &draft_state.banned,
+                &draft_state.picked,
+                version_tiers,
+                rng,
+                plan,
+                pick_index,
+            );
 
             if let Some(pick) = next_pick {
                 if draft_state.picked.insert(pick.champion_id) {
+                    let pick_msg = generate_pick_narrative(
+                        &pick,
+                        plan,
+                        opponent_picks,
+                        opponent_players,
+                        pick_index,
+                        version_tiers,
+                    );
                     match team_side {
-                        TeamSide::Home => draft_state.home_picks.push(pick),
-                        TeamSide::Away => draft_state.away_picks.push(pick),
+                        TeamSide::Home => {
+                            draft_state.home_picks.push(pick);
+                            narrative.home_entries.push(NarrativeEntry {
+                                phase: "pick".to_string(),
+                                message: pick_msg,
+                            });
+                        }
+                        TeamSide::Away => {
+                            draft_state.away_picks.push(pick);
+                            narrative.away_entries.push(NarrativeEntry {
+                                phase: "pick".to_string(),
+                                message: pick_msg,
+                            });
+                        }
                     }
                 }
             }
+
+            pick_index += 1;
         }
 
         fill_missing_positions(
@@ -449,8 +729,10 @@ impl BpEngine {
             rng,
         );
 
-        let home_comp = detect_comp(&picks_to_comp_view(&draft_state.home_picks));
-        let away_comp = detect_comp(&picks_to_comp_view(&draft_state.away_picks));
+        let home_comp =
+            detect_comp_with_plan(&picks_to_comp_view(&draft_state.home_picks), &home_plan);
+        let away_comp =
+            detect_comp_with_plan(&picks_to_comp_view(&draft_state.away_picks), &away_plan);
 
         let home_bp_modifiers = calculate_team_bp_modifiers(
             &draft_state.home_picks,
@@ -475,14 +757,248 @@ impl BpEngine {
             away_comp,
             home_bp_modifiers,
             away_bp_modifiers,
+            narrative: Some(narrative),
         }
     }
+}
+
+fn comp_display_name(comp: CompType) -> &'static str {
+    match comp {
+        CompType::Rush => "速推",
+        CompType::PickOff => "抓单",
+        CompType::AllIn => "莽夫",
+        CompType::MidJungle => "中野联动",
+        CompType::TopJungle => "上野联动",
+        CompType::Protect => "保C",
+        CompType::Fortress => "铁桶阵",
+        CompType::UtilityComp => "功能流",
+        CompType::Stall => "龟缩",
+        CompType::BotLane => "下路统治",
+        CompType::Teamfight => "团战",
+        CompType::Dive => "开团",
+        CompType::Skirmish => "小规模团战",
+        CompType::DualCarry => "双C",
+        CompType::Flex => "全能",
+        CompType::Splitpush => "分推",
+        CompType::SideLane => "4-1分带",
+        CompType::Control => "运营",
+        CompType::TripleThreat => "三线施压",
+        CompType::LateGame => "后期发育",
+    }
+}
+
+fn comp_history_ban_narrative(
+    champion_id: u8,
+    opponent_comp_history: &[(CompType, u32)],
+) -> Option<String> {
+    let champion = champion::get_champion(champion_id)?;
+
+    let mut sorted_history: Vec<(CompType, u32)> = opponent_comp_history.to_vec();
+    sorted_history.sort_by(|a, b| b.1.cmp(&a.1));
+
+    for (comp, usage_count) in sorted_history.into_iter().take(2) {
+        if usage_count < 3 {
+            continue;
+        }
+        if !comp_core_positions(comp).contains(&champion.position) {
+            continue;
+        }
+        if !comp.core_archetypes().contains(&champion.archetype) {
+            continue;
+        }
+
+        return Some(format!(
+            "Ban {}，预判对手常用{}体系",
+            champion.name_cn,
+            comp_display_name(comp)
+        ));
+    }
+
+    None
+}
+
+fn generate_ban_narrative(
+    champion_id: u8,
+    ban_phase: u8,
+    opponent_players: &[PlayerChampionPool],
+    series_ctx: Option<&SeriesContext>,
+    banning_team_side: TeamSide,
+    my_plan: &DraftPlan,
+    my_picks: &[PickEntry],
+    opponent_picks: &[PickEntry],
+) -> String {
+    let champion_name = champion::get_champion(champion_id)
+        .map(|c| c.name_cn)
+        .unwrap_or("未知");
+
+    if ban_phase == 2 {
+        let self_prot = self_protection_ban_bonus(champion_id, my_plan, my_picks, opponent_players);
+        if self_prot >= 5 {
+            return format!(
+                "Ban {}，保护己方{}体系不被克制",
+                champion_name,
+                comp_display_name(my_plan.active_comp())
+            );
+        }
+    }
+
+    if series_revenge_bonus(champion_id, banning_team_side, series_ctx) > 0 {
+        return format!("Ban {}，针对对手上局获胜阵容", champion_name);
+    }
+
+    if let Some(ctx) = series_ctx {
+        if ctx.prev_winner_picks.contains(&champion_id) {
+            return format!("Ban {}，针对对手上局获胜阵容", champion_name);
+        }
+    }
+
+    for player in opponent_players {
+        let mastery = mastery_for_player(player, champion_id);
+        if mastery == MasteryTier::SS {
+            return format!(
+                "Ban {}，对手{:?}位有SS级熟练度",
+                champion_name, player.position
+            );
+        }
+    }
+
+    if ban_phase == 2 {
+        if let Some(opp_direction) =
+            detect_partial_comp_direction(&picks_to_comp_view(opponent_picks))
+        {
+            let core_positions = comp_core_positions(opp_direction);
+            if let Some(champ) = champion::get_champion(champion_id) {
+                if core_positions.contains(&champ.position) {
+                    return format!(
+                        "Ban {}，破坏对手{}体系核心位",
+                        champion_name,
+                        comp_display_name(opp_direction)
+                    );
+                }
+            }
+        }
+    }
+
+    format!("Ban {}，削弱对手英雄池", champion_name)
+}
+
+fn generate_pick_narrative(
+    pick: &PickEntry,
+    plan: &DraftPlan,
+    opponent_picks: &[PickEntry],
+    opponent_players: &[PlayerChampionPool],
+    pick_index: usize,
+    version_tiers: &HashMap<u8, VersionTier>,
+) -> String {
+    let champion_name = champion::get_champion(pick.champion_id)
+        .map(|c| c.name_cn)
+        .unwrap_or("未知");
+    let position_name = format!("{:?}", pick.position);
+
+    let mut reasons: Vec<&str> = Vec::new();
+
+    if let Some(champ) = champion::get_champion(pick.champion_id) {
+        let target_comp = plan.active_comp();
+        if target_comp.core_archetypes().contains(&champ.archetype)
+            && comp_core_positions(target_comp).contains(&champ.position)
+        {
+            reasons.push("体系核心");
+        }
+    }
+
+    let version_tier = version_tier_for(pick.champion_id, version_tiers);
+    if matches!(version_tier, VersionTier::T1) {
+        reasons.push("版本强势");
+    }
+
+    if pick.mastery_tier == MasteryTier::SS {
+        reasons.push("签名英雄");
+    } else if pick.mastery_tier == MasteryTier::S {
+        reasons.push("高熟练度");
+    }
+
+    if opponent_picks
+        .iter()
+        .any(|entry| entry.position == pick.position)
+    {
+        if let Some(my_champ) = champion::get_champion(pick.champion_id) {
+            let matchup = lane_matchup_bonus(my_champ.position, my_champ.archetype, opponent_picks);
+            if matchup >= 2 {
+                reasons.push(if pick_index >= 4 {
+                    "后手对线克制"
+                } else {
+                    "对线克制"
+                });
+            }
+        }
+    }
+
+    if pick_index < 4 {
+        let contested = opponent_players.iter().any(|player| {
+            player.position == pick.position
+                && matches!(
+                    mastery_for_player(player, pick.champion_id),
+                    MasteryTier::SS | MasteryTier::S
+                )
+        });
+        if contested && matches!(version_tier, VersionTier::T1 | VersionTier::T2) {
+            reasons.push("抢选热门");
+        }
+    }
+
+    let denial = denial_pick_bonus(
+        pick.champion_id,
+        pick.position,
+        version_tier,
+        opponent_players,
+    );
+    if denial >= 5 {
+        reasons.push("拒绝对手");
+    }
+
+    let reason_str = if reasons.is_empty() {
+        "综合评分最优".to_string()
+    } else {
+        reasons.join("、")
+    };
+
+    format!(
+        "{}位选{}（{}），{}",
+        position_name,
+        champion_name,
+        match pick.mastery_tier {
+            MasteryTier::SS => "SS",
+            MasteryTier::S => "S",
+            MasteryTier::A => "A",
+            MasteryTier::B => "B",
+        },
+        reason_str
+    )
 }
 
 pub fn detect_comp(picks: &[(Position, Archetype)]) -> Option<CompType> {
     let snapshot = CompSnapshot::from_picks(picks);
     if snapshot.total != POSITIONS.len() {
         return None;
+    }
+
+    for comp in CompType::detection_priority() {
+        if comp_matches_full(*comp, &snapshot) {
+            return Some(*comp);
+        }
+    }
+    None
+}
+
+fn detect_comp_with_plan(picks: &[(Position, Archetype)], plan: &DraftPlan) -> Option<CompType> {
+    let snapshot = CompSnapshot::from_picks(picks);
+    if snapshot.total != POSITIONS.len() {
+        return None;
+    }
+
+    let planned = plan.active_comp();
+    if comp_matches_full(planned, &snapshot) {
+        return Some(planned);
     }
 
     for comp in CompType::detection_priority() {
@@ -762,6 +1278,8 @@ fn select_best_ban(
     opponent_picks: &[PickEntry],
     banning_team_side: TeamSide,
     series_ctx: Option<&SeriesContext>,
+    my_plan: Option<&DraftPlan>,
+    my_picks: &[PickEntry],
 ) -> Option<u8> {
     let mut candidate_set = HashSet::new();
     for player in opponent_players {
@@ -808,6 +1326,8 @@ fn select_best_ban(
                     opponent_picks,
                     banning_team_side,
                     series_ctx,
+                    my_plan,
+                    my_picks,
                 ),
             )
         })
@@ -838,6 +1358,8 @@ fn calculate_ban_score(
     opponent_picks: &[PickEntry],
     banning_team_side: TeamSide,
     series_ctx: Option<&SeriesContext>,
+    my_plan: Option<&DraftPlan>,
+    my_picks: &[PickEntry],
 ) -> i32 {
     let mut threat_score = 0i32;
     let mut has_ss_master = false;
@@ -869,6 +1391,14 @@ fn calculate_ban_score(
     let disruption_score = if has_ss_master { 5 } else { 0 };
     let phase2_targeting_score = phase2_targeting_bonus(champion_id, ban_phase, opponent_picks);
     let series_revenge_score = series_revenge_bonus(champion_id, banning_team_side, series_ctx);
+    let self_protection_score = if ban_phase == 2 {
+        my_plan
+            .map(|plan| self_protection_ban_bonus(champion_id, plan, my_picks, opponent_players))
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let comp_history_score = comp_history_ban_bonus(champion_id, opponent_comp_history);
     let random_noise = rng.gen_range(0..3) as i32;
 
     threat_score
@@ -878,6 +1408,8 @@ fn calculate_ban_score(
         + comp_target_score
         + phase2_targeting_score
         + series_revenge_score
+        + self_protection_score
+        + comp_history_score
         + random_noise
 }
 
@@ -941,6 +1473,85 @@ fn series_revenge_bonus(
         }
         _ => 0,
     }
+}
+
+fn self_protection_ban_bonus(
+    champion_id: u8,
+    my_plan: &DraftPlan,
+    my_picks: &[PickEntry],
+    opponent_players: &[PlayerChampionPool],
+) -> i32 {
+    let my_comp = my_plan.active_comp();
+    let my_comp_view = picks_to_comp_view(my_picks);
+    let my_direction = detect_partial_comp_direction(&my_comp_view).unwrap_or(my_comp);
+
+    let counter_comps: Vec<CompType> = HARD_COUNTERS
+        .iter()
+        .filter(|(_, victim)| *victim == my_direction)
+        .map(|(attacker, _)| *attacker)
+        .collect();
+
+    let Some(champion) = champion::get_champion(champion_id) else {
+        return 0;
+    };
+
+    let mut bonus = 0i32;
+    for counter_comp in &counter_comps {
+        let core_positions = comp_core_positions(*counter_comp);
+        if !core_positions.contains(&champion.position) {
+            continue;
+        }
+        if !counter_comp.core_archetypes().contains(&champion.archetype) {
+            continue;
+        }
+
+        for opponent in opponent_players {
+            if opponent.position != champion.position {
+                continue;
+            }
+
+            let mastery = mastery_for_player(opponent, champion_id);
+            if matches!(mastery, MasteryTier::SS | MasteryTier::S) {
+                bonus = bonus.max(10);
+            } else if mastery == MasteryTier::A {
+                bonus = bonus.max(5);
+            }
+        }
+    }
+
+    bonus
+}
+
+fn comp_history_ban_bonus(champion_id: u8, opponent_comp_history: &[(CompType, u32)]) -> i32 {
+    let Some(champion) = champion::get_champion(champion_id) else {
+        return 0;
+    };
+
+    let mut sorted_history: Vec<(CompType, u32)> = opponent_comp_history.to_vec();
+    sorted_history.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let mut bonus = 0i32;
+    for (comp, usage_count) in sorted_history.iter().take(2) {
+        let core_positions = comp_core_positions(*comp);
+        let core_archetypes = comp.core_archetypes();
+
+        if !core_positions.contains(&champion.position) {
+            continue;
+        }
+        if !core_archetypes.contains(&champion.archetype) {
+            continue;
+        }
+
+        let usage_bonus = match usage_count {
+            10.. => 8,
+            5..=9 => 5,
+            3..=4 => 3,
+            _ => 0,
+        };
+        bonus = bonus.max(usage_bonus);
+    }
+
+    bonus
 }
 
 fn games_played_ban_bonus(games_played: u32) -> i32 {
@@ -1023,6 +1634,506 @@ fn comp_core_positions(comp: CompType) -> &'static [Position] {
     }
 }
 
+fn plan_comp(
+    players: &[PlayerChampionPool],
+    version_tiers: &HashMap<u8, VersionTier>,
+    comp_history: &[(CompType, u32)],
+    meta_type: MetaType,
+    series_ctx: Option<&SeriesContext>,
+    team_side: TeamSide,
+    rng: &mut StdRng,
+) -> DraftPlan {
+    let mut scored: Vec<(CompType, i32)> = CompType::all()
+        .iter()
+        .copied()
+        .map(|comp| {
+            let player_pool_score = player_pool_fit_score(comp, players);
+            let version_score = version_fit_score(comp, version_tiers);
+            let meta_score = if comp.is_meta_favored(meta_type) {
+                15
+            } else {
+                0
+            };
+            let history_score = history_proficiency_score(comp, comp_history);
+            let rotation_score = tactical_rotation_score(comp, series_ctx, team_side);
+            let random_noise = rng.gen_range(0..8) as i32;
+
+            (
+                comp,
+                player_pool_score
+                    + version_score
+                    + meta_score
+                    + history_score
+                    + rotation_score
+                    + random_noise,
+            )
+        })
+        .collect();
+
+    scored.sort_by(|left, right| right.1.cmp(&left.1));
+
+    let fallback = CompType::all().first().copied().unwrap_or(CompType::Flex);
+    let primary_comp = scored.first().map(|(comp, _)| *comp).unwrap_or(fallback);
+    let backup_comp = scored.get(1).map(|(comp, _)| *comp).unwrap_or(primary_comp);
+
+    DraftPlan {
+        primary_comp,
+        backup_comp,
+        switched_to_backup: false,
+    }
+}
+
+fn player_pool_fit_score(comp: CompType, players: &[PlayerChampionPool]) -> i32 {
+    let core_archetypes = comp.core_archetypes();
+    let mut raw_score = 0i32;
+    let mut max_score = 0i32;
+
+    for position in comp_core_positions(comp) {
+        let Some(player) = players
+            .iter()
+            .find(|candidate| candidate.position == *position)
+        else {
+            continue;
+        };
+
+        let archetype_champions: Vec<&Champion> = get_champions_by_position(*position)
+            .into_iter()
+            .filter(|champion| core_archetypes.contains(&champion.archetype))
+            .collect();
+
+        if archetype_champions.is_empty() {
+            continue;
+        }
+
+        max_score += (archetype_champions.len() as i32) * 4;
+        for champion in archetype_champions {
+            raw_score += mastery_planning_weight(mastery_for_player(player, champion.id));
+        }
+    }
+
+    if max_score == 0 {
+        0
+    } else {
+        (((raw_score as f64 / max_score as f64) * 40.0).round() as i32).clamp(0, 40)
+    }
+}
+
+fn mastery_planning_weight(mastery: MasteryTier) -> i32 {
+    match mastery {
+        MasteryTier::SS => 4,
+        MasteryTier::S => 2,
+        MasteryTier::A => 1,
+        MasteryTier::B => 0,
+    }
+}
+
+fn version_fit_score(comp: CompType, version_tiers: &HashMap<u8, VersionTier>) -> i32 {
+    let core_archetypes = comp.core_archetypes();
+    let mut total = 0usize;
+    let mut tier_one_or_two = 0usize;
+
+    for champion in champion::CHAMPIONS
+        .iter()
+        .filter(|champion| core_archetypes.contains(&champion.archetype))
+    {
+        total += 1;
+        if matches!(
+            version_tier_for(champion.id, version_tiers),
+            VersionTier::T1 | VersionTier::T2
+        ) {
+            tier_one_or_two += 1;
+        }
+    }
+
+    if total == 0 {
+        0
+    } else {
+        (((tier_one_or_two as f64 / total as f64) * 20.0).round() as i32).clamp(0, 20)
+    }
+}
+
+fn history_proficiency_score(comp: CompType, comp_history: &[(CompType, u32)]) -> i32 {
+    let usage = comp_history
+        .iter()
+        .find_map(|(history_comp, count)| {
+            if *history_comp == comp {
+                Some(*count)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0);
+
+    match usage {
+        10.. => 15,
+        5..=9 => 10,
+        3..=4 => 7,
+        1..=2 => 4,
+        _ => 0,
+    }
+}
+
+fn tactical_rotation_score(
+    comp: CompType,
+    series_ctx: Option<&SeriesContext>,
+    team_side: TeamSide,
+) -> i32 {
+    let mut score = 5;
+
+    let Some(ctx) = series_ctx else {
+        return score;
+    };
+
+    let prev_winner_side = match ctx.prev_loser_side {
+        Some(TeamSide::Home) => Some(TeamSide::Away),
+        Some(TeamSide::Away) => Some(TeamSide::Home),
+        None => None,
+    };
+
+    let my_prev_comp = match team_side {
+        TeamSide::Home => ctx.prev_home_comp,
+        TeamSide::Away => ctx.prev_away_comp,
+    };
+
+    let (my_score, opp_score) = match team_side {
+        TeamSide::Home => (ctx.home_score, ctx.away_score),
+        TeamSide::Away => (ctx.away_score, ctx.home_score),
+    };
+
+    let is_match_point = my_score + 1 >= ctx.wins_needed && ctx.wins_needed > 0;
+    let is_desperate = opp_score + 1 >= ctx.wins_needed && ctx.wins_needed > 0;
+    let _is_big_lead = my_score >= 2 && opp_score == 0;
+
+    if my_prev_comp == Some(comp) {
+        match prev_winner_side {
+            Some(side) if side == team_side => {
+                score -= 2;
+            }
+            Some(_) => {
+                if is_desperate {
+                    score -= 10;
+                } else {
+                    score -= 5;
+                }
+            }
+            None => {}
+        }
+    }
+
+    let opponent_side = match team_side {
+        TeamSide::Home => TeamSide::Away,
+        TeamSide::Away => TeamSide::Home,
+    };
+    let opponent_prev_comp = match team_side {
+        TeamSide::Home => ctx.prev_away_comp,
+        TeamSide::Away => ctx.prev_home_comp,
+    };
+    if prev_winner_side == Some(opponent_side) {
+        if opponent_prev_comp.is_some_and(|opp_comp| {
+            HARD_COUNTERS
+                .iter()
+                .any(|(attacker, victim)| *attacker == comp && *victim == opp_comp)
+        }) {
+            if is_desperate {
+                score += 8;
+            } else {
+                score += 5;
+            }
+        }
+    }
+
+    if is_match_point {
+        score += 3;
+    }
+
+    score.clamp(0, 15)
+}
+
+fn comp_target_synergy_score(
+    target_comp: CompType,
+    current_picks: &[(Position, Archetype)],
+    candidate_pick: (Position, Archetype),
+) -> i32 {
+    let (position, archetype) = candidate_pick;
+    let core_archetypes = target_comp.core_archetypes();
+    let core_positions = comp_core_positions(target_comp);
+    let mut score = 0;
+
+    if core_archetypes.contains(&archetype) {
+        // 体系核心 archetype 大幅加分
+        score += 8;
+        if core_positions.contains(&position) {
+            // 核心位置 + 核心 archetype = 最高优先
+            score += 10;
+        }
+    } else if core_positions.contains(&position) {
+        // 核心位置但非核心 archetype — 惩罚，浪费了关键位
+        score -= 6;
+    } else {
+        // 非核心位置、非核心 archetype — 轻微惩罚
+        score -= 2;
+    }
+
+    if pick_conflicts_with_target_comp(target_comp, current_picks, candidate_pick) {
+        score -= 5;
+    }
+
+    score
+}
+
+fn pick_conflicts_with_target_comp(
+    target_comp: CompType,
+    current_picks: &[(Position, Archetype)],
+    candidate_pick: (Position, Archetype),
+) -> bool {
+    let current_snapshot = CompSnapshot::from_picks(current_picks);
+
+    let mut next_picks = current_picks.to_vec();
+    next_picks.push(candidate_pick);
+    let next_snapshot = CompSnapshot::from_picks(&next_picks);
+
+    let current_score = comp_partial_score(target_comp, &current_snapshot);
+    let next_score = comp_partial_score(target_comp, &next_snapshot);
+
+    current_score >= 0 && next_score < 0
+}
+
+fn priority_urgency_bonus(
+    mastery: MasteryTier,
+    version_tier: VersionTier,
+    pick_index: usize,
+    champion_id: u8,
+    position: Position,
+    opponent_players: &[PlayerChampionPool],
+) -> i32 {
+    if pick_index >= 4 {
+        return 0;
+    }
+
+    let base = match (version_tier, mastery) {
+        (VersionTier::T1, MasteryTier::SS) => 8,
+        (VersionTier::T1, MasteryTier::S) => 4,
+        (VersionTier::T2, MasteryTier::SS) => 3,
+        _ => 0,
+    };
+    let decay = match pick_index {
+        0..=1 => 1.0,
+        2..=3 => 0.5,
+        _ => 0.0,
+    };
+    let opponent_contest = if opponent_players.iter().any(|player| {
+        player.position == position
+            && matches!(
+                mastery_for_player(player, champion_id),
+                MasteryTier::SS | MasteryTier::S
+            )
+    }) {
+        3
+    } else {
+        0
+    };
+
+    ((base as f64 * decay) as i32) + opponent_contest
+}
+
+fn archetype_preference_bonus(player: &PlayerChampionPool, champion_id: u8) -> i32 {
+    let Some(champion) = champion::get_champion(champion_id) else {
+        return 0;
+    };
+
+    let total_games: u32 = player.games_played.values().copied().sum();
+    if total_games < 5 {
+        return 0;
+    }
+
+    let archetype_games: u32 = player
+        .games_played
+        .iter()
+        .filter_map(|(cid, count)| {
+            champion::get_champion(*cid)
+                .filter(|candidate| candidate.archetype == champion.archetype)
+                .map(|_| *count)
+        })
+        .sum();
+    let ratio = archetype_games as f64 / total_games as f64;
+
+    if ratio >= 0.50 {
+        3
+    } else if ratio >= 0.30 {
+        1
+    } else {
+        0
+    }
+}
+
+fn signature_hero_bonus(
+    player: &PlayerChampionPool,
+    champion_id: u8,
+    pick_index: usize,
+    opponent_players: &[PlayerChampionPool],
+) -> i32 {
+    let mastery = mastery_for_player(player, champion_id);
+    if mastery != MasteryTier::SS {
+        return 0;
+    }
+
+    let gp = player.games_played.get(&champion_id).copied().unwrap_or(0);
+    let gw = player.games_won.get(&champion_id).copied().unwrap_or(0);
+    if gp < 15 {
+        return 0;
+    }
+    let win_rate = if gp > 0 {
+        (gw as f64 / gp as f64) * 100.0
+    } else {
+        0.0
+    };
+    if win_rate < 60.0 {
+        return 0;
+    }
+
+    let base = match pick_index {
+        0..=1 => 10,
+        2..=3 => 5,
+        _ => 2,
+    };
+
+    let contested = opponent_players.iter().any(|p| {
+        p.position == player.position
+            && matches!(
+                mastery_for_player(p, champion_id),
+                MasteryTier::SS | MasteryTier::S
+            )
+    });
+    let contest_bonus = if contested { 4 } else { 0 };
+
+    base + contest_bonus
+}
+
+fn pick_order_strategy_bonus(
+    champion_id: u8,
+    position: Position,
+    pick_index: usize,
+    plan: &DraftPlan,
+    opponent_picks: &[PickEntry],
+    current_comp_view: &[(Position, Archetype)],
+    version_tier: VersionTier,
+) -> i32 {
+    let Some(champion) = champion::get_champion(champion_id) else {
+        return 0;
+    };
+
+    let target_comp = plan.active_comp();
+    let core_archetypes = target_comp.core_archetypes();
+    let core_positions = comp_core_positions(target_comp);
+
+    match pick_index {
+        0..=1 => {
+            let mut bonus = 0i32;
+            if matches!(version_tier, VersionTier::T1) {
+                bonus += 3;
+            }
+            if core_archetypes.contains(&champion.archetype) && !core_positions.contains(&position)
+            {
+                bonus += 3;
+            }
+            let backup_archetypes = plan.backup_comp.core_archetypes();
+            if core_archetypes.contains(&champion.archetype)
+                && backup_archetypes.contains(&champion.archetype)
+            {
+                bonus += 5;
+            }
+            bonus
+        }
+        4.. => {
+            let mut bonus = 0i32;
+            let matchup = lane_matchup_bonus(position, champion.archetype, opponent_picks);
+            if matchup > 0 {
+                bonus += matchup;
+            }
+            let opp_comp_view = picks_to_comp_view(opponent_picks);
+            if let Some(opp_dir) = detect_partial_comp_direction(&opp_comp_view) {
+                let mut projected = current_comp_view.to_vec();
+                projected.push((position, champion.archetype));
+                if let Some(my_dir) = detect_partial_comp_direction(&projected) {
+                    if HARD_COUNTERS
+                        .iter()
+                        .any(|(a, v)| *a == my_dir && *v == opp_dir)
+                    {
+                        bonus += 6;
+                    }
+                }
+            }
+            let unfilled_core = core_positions
+                .iter()
+                .any(|pos| !current_comp_view.iter().any(|(p, _)| p == pos) && *pos == position);
+            if unfilled_core && core_archetypes.contains(&champion.archetype) {
+                bonus += 6;
+            }
+            bonus
+        }
+        _ => 0,
+    }
+}
+
+fn lane_matchup_bonus(
+    position: Position,
+    champion_archetype: Archetype,
+    opponent_picks: &[PickEntry],
+) -> i32 {
+    let opponent_pick = opponent_picks.iter().find(|pick| pick.position == position);
+    let Some(opp_pick) = opponent_pick else {
+        return 0;
+    };
+
+    let Some(opp_archetype) =
+        champion::get_champion(opp_pick.champion_id).map(|champion| champion.archetype)
+    else {
+        return 0;
+    };
+
+    match (champion_archetype, opp_archetype) {
+        (Archetype::Aggressive, Archetype::Scaling) => 3,
+        (Archetype::Aggressive, Archetype::Utility) => 2,
+        (Archetype::Scaling, Archetype::Aggressive) => -2,
+        (Archetype::Scaling, Archetype::Splitpush) => -1,
+        (Archetype::Teamfight, Archetype::Splitpush) => 2,
+        (Archetype::Splitpush, Archetype::Utility) => 1,
+        _ => 0,
+    }
+}
+
+fn should_switch_to_backup(
+    plan: &DraftPlan,
+    my_picks: &[PickEntry],
+    opponent_picks: &[PickEntry],
+) -> bool {
+    if my_picks.is_empty() {
+        return false;
+    }
+
+    let opponent_direction = detect_partial_comp_direction(&picks_to_comp_view(opponent_picks));
+    let Some(opponent_direction) = opponent_direction else {
+        return false;
+    };
+
+    let is_hard_countered = HARD_COUNTERS
+        .iter()
+        .any(|(attacker, victim)| *attacker == opponent_direction && *victim == plan.primary_comp);
+    if !is_hard_countered {
+        return false;
+    }
+
+    let my_comp_view = picks_to_comp_view(my_picks);
+    let backup_archetypes: HashSet<Archetype> =
+        plan.backup_comp.core_archetypes().iter().copied().collect();
+    let compatible_count = my_comp_view
+        .iter()
+        .filter(|(_, archetype)| backup_archetypes.contains(archetype))
+        .count();
+
+    compatible_count * 2 >= my_picks.len()
+}
+
 fn select_best_pick(
     team_players: &[PlayerChampionPool],
     opponent_players: &[PlayerChampionPool],
@@ -1032,9 +2143,12 @@ fn select_best_pick(
     picked_champions: &HashSet<u8>,
     version_tiers: &HashMap<u8, VersionTier>,
     rng: &mut StdRng,
+    plan: &DraftPlan,
+    pick_index: usize,
 ) -> Option<PickEntry> {
     let current_comp_view = picks_to_comp_view(team_picks);
     let opponent_comp_view = picks_to_comp_view(opponent_picks);
+    let target_comp = plan.active_comp();
     let mut candidates: Vec<(PickEntry, i32)> = Vec::new();
 
     for player in team_players {
@@ -1052,14 +2166,33 @@ fn select_best_pick(
 
             let mastery_score = i32::from(mastery.pick_score());
             let version_score = pick_version_score(mastery, version_tier);
-            let comp_synergy_score = if pick_helps_form_comp(
+            let comp_synergy_score = comp_target_synergy_score(
+                target_comp,
                 &current_comp_view,
                 (player.position, champion.archetype),
-            ) {
-                3
-            } else {
-                0
-            };
+            );
+            let priority_urgency_score = priority_urgency_bonus(
+                mastery,
+                version_tier,
+                pick_index,
+                champion.id,
+                player.position,
+                opponent_players,
+            );
+            let archetype_preference_score = archetype_preference_bonus(player, champion.id);
+            let signature_hero_score =
+                signature_hero_bonus(player, champion.id, pick_index, opponent_players);
+            let pick_order_score = pick_order_strategy_bonus(
+                champion.id,
+                player.position,
+                pick_index,
+                plan,
+                opponent_picks,
+                &current_comp_view,
+                version_tier,
+            );
+            let lane_matchup_score =
+                lane_matchup_bonus(player.position, champion.archetype, opponent_picks);
             let usage_confidence_score = usage_confidence_pick_bonus(player, champion.id);
             let counter_pick_score = counter_pick_bonus(
                 &current_comp_view,
@@ -1068,13 +2201,20 @@ fn select_best_pick(
             );
             let denial_pick_score =
                 denial_pick_bonus(champion.id, player.position, version_tier, opponent_players);
+            let random_noise = rng.gen_range(0..3) as i32;
 
             let total_score = mastery_score
                 + version_score
                 + comp_synergy_score
+                + priority_urgency_score
+                + archetype_preference_score
+                + signature_hero_score
+                + pick_order_score
+                + lane_matchup_score
                 + usage_confidence_score
                 + counter_pick_score
-                + denial_pick_score;
+                + denial_pick_score
+                + random_noise;
             candidates.push((
                 PickEntry {
                     player_id: player.player_id,
@@ -1306,27 +2446,6 @@ fn denial_pick_bonus(
         score += 7;
     }
     score
-}
-
-fn pick_helps_form_comp(
-    current_picks: &[(Position, Archetype)],
-    candidate_pick: (Position, Archetype),
-) -> bool {
-    let current_snapshot = CompSnapshot::from_picks(current_picks);
-
-    let mut next_picks = current_picks.to_vec();
-    next_picks.push(candidate_pick);
-    let next_snapshot = CompSnapshot::from_picks(&next_picks);
-
-    let mut current_best = -1;
-    let mut next_best = -1;
-
-    for comp in CompType::all() {
-        current_best = current_best.max(comp_partial_score(*comp, &current_snapshot));
-        next_best = next_best.max(comp_partial_score(*comp, &next_snapshot));
-    }
-
-    next_best >= 0 && next_best > current_best
 }
 
 fn comp_partial_score(comp: CompType, snapshot: &CompSnapshot) -> i32 {
