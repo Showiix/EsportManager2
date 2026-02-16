@@ -127,26 +127,38 @@ impl TransferEngine {
                         &mut rng,
                     );
 
-                    if willingness >= 30.0 {
+                    if willingness >= 20.0 {
                         best_candidate = Some((c_id, c_game_id, c_ability, c_age, willingness));
                         break;
                     }
 
-                    if best_candidate.is_none() {
+                    if best_candidate.as_ref().map_or(true, |b| willingness > b.4) {
                         best_candidate = Some((c_id, c_game_id, c_ability, c_age, willingness));
                     }
                 }
 
                 if let Some((player_id, game_id, ability, age, _willingness)) = best_candidate {
-                    let salary = MarketValueEngine::estimate_salary(MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", pos_str), ability as u8, age as u8) as i64;
+                    let base_salary = MarketValueEngine::estimate_salary(MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", pos_str), ability as u8, age as u8) as i64;
+                    let salary = if ability >= 75 {
+                        (base_salary as f64 * 1.25) as i64
+                    } else if ability >= 65 {
+                        (base_salary as f64 * 1.15) as i64
+                    } else {
+                        (base_salary as f64 * 1.05) as i64
+                    };
                     let contract_years: i64 = if age <= 25 && rng.gen::<f64>() < 0.4 { 2 } else { 1 };
 
+                    let emergency_loyalty: i64 = if team_rank <= 4 { 50 } else if team_rank <= 8 { 45 } else { 35 };
+                    let emergency_satisfaction: i64 = if team_rank <= 4 { 60 } else if team_rank <= 8 { 55 } else { 45 };
+
                     sqlx::query(
-                        "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = 40, satisfaction = 50, join_season = ? WHERE id = ?"
+                        "UPDATE players SET team_id = ?, salary = ?, contract_end_season = ?, loyalty = ?, satisfaction = ?, join_season = ? WHERE id = ?"
                     )
                     .bind(team_id)
                     .bind(salary)
                     .bind(season_id + contract_years)
+                    .bind(emergency_loyalty)
+                    .bind(emergency_satisfaction)
                     .bind(season_id)
                     .bind(player_id)
                     .execute(pool)
@@ -183,8 +195,8 @@ impl TransferEngine {
                         potential: 0,
                         age,
                         salary,
-                        loyalty: 40,
-                        satisfaction: 50,
+                        loyalty: emergency_loyalty,
+                        satisfaction: emergency_satisfaction,
                         position: pos_str.to_string(),
                         tag: "NORMAL".to_string(),
                         team_id: Some(team_id),

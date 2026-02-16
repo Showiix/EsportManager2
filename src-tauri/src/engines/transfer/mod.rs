@@ -426,7 +426,7 @@ impl TransferEngine {
             let is_player_movement = matches!(
                 event.event_type.as_str(),
                 "CONTRACT_TERMINATION" | "FREE_AGENT_SIGNING" | "TRANSFER_PURCHASE"
-                | "EMERGENCY_SIGNING" | "PLAYER_RETIREMENT" | "PLAYER_RELEASE"
+                | "EMERGENCY_SIGNING" | "PLAYER_RETIREMENT" | "RETIREMENT" | "PLAYER_RELEASE"
             );
 
             if !is_player_movement {

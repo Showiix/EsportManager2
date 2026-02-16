@@ -217,14 +217,22 @@ impl TransferEngine {
             // 按匹配度排序
             offers.sort_by(|a, b| b.match_score.partial_cmp(&a.match_score).unwrap_or(std::cmp::Ordering::Equal));
 
-            // 市场竞争效应：多个球队竞争时，选手提高薪资期望基准
             let offer_count = offers.len();
             let market_premium = if offer_count >= 2 {
-                1.0 + ((offer_count as f64 - 1.0) * 0.05).min(0.25)
+                1.0 + ((offer_count as f64 - 1.0) * 0.03).min(0.15)
             } else {
                 1.0
             };
             let adjusted_expected_salary = (expected_salary as f64 * market_premium) as i64;
+
+            let market_awareness = if offer_count >= 2 {
+                1.0 + ((offer_count as f64 - 1.0) * 0.02).min(0.10)
+            } else {
+                1.0
+            };
+            for offer in offers.iter_mut() {
+                offer.offered_salary = (offer.offered_salary as f64 * market_awareness) as i64;
+            }
 
             // 对所有 offers 计算 willingness，收集竞价数据
             struct BidRecord {
@@ -248,7 +256,15 @@ impl TransferEngine {
                     cache.get_player_stats(player_id),
                     &mut rng,
                 );
-                let willingness = (willingness + 15.0).min(100.0);
+                let is_renewal_failed = cache.renewal_failed_pairs.iter()
+                    .any(|(pid, _)| *pid == player_id);
+                let loyalty_correction = if loyalty > 50 {
+                    ((loyalty as f64 - 50.0) * 0.5 * 0.15) as f64
+                } else {
+                    0.0
+                };
+                let free_agent_bonus = if is_renewal_failed { 20.0 } else { 15.0 };
+                let willingness = (willingness + free_agent_bonus + loyalty_correction).min(100.0);
                 let team_name = cache.get_team_name(offer.team_id);
                 bid_records.push(BidRecord {
                     offer_idx: idx,
@@ -258,11 +274,42 @@ impl TransferEngine {
                 });
             }
 
+            let willingness_pressure_threshold = 45.0;
+            let mut best_willingness = bid_records
+                .iter()
+                .map(|b| b.willingness)
+                .fold(0.0_f64, f64::max);
+
+            if best_willingness < willingness_pressure_threshold && !bid_records.is_empty() {
+                for record in bid_records.iter_mut() {
+                    record.willingness = (record.willingness + 15.0).min(100.0);
+                }
+                best_willingness = bid_records
+                    .iter()
+                    .map(|b| b.willingness)
+                    .fold(0.0_f64, f64::max);
+            }
+
+            if best_willingness < willingness_pressure_threshold && !bid_records.is_empty() {
+                for record in bid_records.iter_mut() {
+                    record.willingness = (record.willingness + 15.0).min(100.0);
+                }
+            }
+
             // 选出最佳报价：选手选择意愿最高的队伍（自由球员有选择权）
             // 按 willingness 降序排列，选手优先去最想去的队伍
-            bid_records.sort_by(|a, b| b.willingness.partial_cmp(&a.willingness).unwrap_or(std::cmp::Ordering::Equal));
+            bid_records.sort_by(|a, b| {
+                let score_a = a.willingness * 0.7 + offers[a.offer_idx].match_score * 0.3;
+                let score_b = b.willingness * 0.7 + offers[b.offer_idx].match_score * 0.3;
+                score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let willingness_threshold = match ability {
+                80..=100 => 35.0,
+                70..=79 => 38.0,
+                _ => 40.0,
+            };
             let winner_idx = bid_records.iter()
-                .find(|r| r.willingness >= 40.0)
+                .find(|r| r.willingness >= willingness_threshold)
                 .map(|r| r.offer_idx);
 
             // 写入所有竞价记录
@@ -271,7 +318,7 @@ impl TransferEngine {
                 let is_winner = Some(record.offer_idx) == winner_idx;
                 let reject_reason = if is_winner {
                     None
-                } else if record.willingness < 40.0 {
+                } else if record.willingness < willingness_threshold {
                     Some("willingness_too_low")
                 } else {
                     Some("outbid")
