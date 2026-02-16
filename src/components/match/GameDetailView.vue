@@ -515,6 +515,40 @@
             </div>
           </div>
         </div>
+
+        <div v-if="parsedNarrative" class="bp-narrative">
+          <div class="bp-narrative-title">💭 BP博弈心理</div>
+          <div class="bp-narrative-row">
+            <div class="bp-narrative-col">
+              <div class="bp-team-label team-a-accent">{{ game.teamAName }}</div>
+              <div class="bp-narrative-list">
+                <div
+                  v-for="(entry, idx) in parsedNarrative.home_entries"
+                  :key="'hn-' + idx"
+                  class="bp-narrative-item"
+                  :class="'phase-' + entry.phase"
+                >
+                  <span class="narrative-phase">{{ phaseLabel(entry.phase) }}</span>
+                  <span class="narrative-msg">{{ entry.message }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="bp-narrative-col">
+              <div class="bp-team-label team-b-accent">{{ game.teamBName }}</div>
+              <div class="bp-narrative-list">
+                <div
+                  v-for="(entry, idx) in parsedNarrative.away_entries"
+                  :key="'an-' + idx"
+                  class="bp-narrative-item"
+                  :class="'phase-' + entry.phase"
+                >
+                  <span class="narrative-phase">{{ phaseLabel(entry.phase) }}</span>
+                  <span class="narrative-msg">{{ entry.message }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -549,6 +583,11 @@ const championMap = ref<Map<number, ChampionInfo>>(new Map())
 
 interface StoredBanEntry { champion_id: number; team_side: string; ban_phase: number }
 interface StoredPickEntry { champion_id: number; player_id: number; position: string; mastery_tier: string }
+interface NarrativeEntry { phase: string; message: string }
+interface DraftNarrativeData {
+  home_entries: NarrativeEntry[]
+  away_entries: NarrativeEntry[]
+}
 
 const parsedBans = computed<StoredBanEntry[]>(() => {
   if (!draftData.value) return []
@@ -581,6 +620,15 @@ const parsedAwayPicks = computed<StoredPickEntry[]>(() => {
   } catch { return [] }
 })
 
+const parsedNarrative = computed<DraftNarrativeData | null>(() => {
+  if (!draftData.value?.draft_narrative_json) return null
+  try {
+    return JSON.parse(draftData.value.draft_narrative_json)
+  } catch {
+    return null
+  }
+})
+
 const COMP_NAMES: Record<string, string> = {
   Rush: '速推', PickOff: '抓单', AllIn: '莽夫', MidJungle: '中野联动', TopJungle: '上野联动',
   Protect: '保C', Fortress: '铁桶阵', UtilityComp: '功能流', Stall: '龟缩', BotLane: '下路统治',
@@ -589,6 +637,17 @@ const COMP_NAMES: Record<string, string> = {
 }
 
 const compDisplayName = (type: string) => COMP_NAMES[type] || type
+
+const phaseLabel = (phase: string) => {
+  const labels: Record<string, string> = {
+    plan: '🎯 规划',
+    ban_phase1: '🚫 Ban①',
+    ban_phase2: '🚫 Ban②',
+    pick: '✅ Pick',
+    switch: '🔄 切换',
+  }
+  return labels[phase] || phase
+}
 
 const getChampionName = (id: number): string => {
   const champ = championMap.value.get(id)
@@ -1904,5 +1963,86 @@ const keyMatchupPos = computed(() => {
 .bp-modifier.negative {
   color: #dc2626;
   background: rgba(220, 38, 38, 0.1);
+}
+
+.bp-narrative {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bp-narrative-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(200, 200, 220, 0.9);
+  margin-bottom: 10px;
+}
+
+.bp-narrative-row {
+  display: flex;
+  gap: 16px;
+}
+
+.bp-narrative-col {
+  flex: 1;
+}
+
+.bp-narrative-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bp-narrative-item {
+  font-size: 12px;
+  color: rgba(200, 200, 220, 0.85);
+  padding: 5px 10px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1.5;
+}
+
+.bp-narrative-item.phase-plan {
+  background: rgba(64, 158, 255, 0.1);
+  color: rgba(130, 190, 255, 0.95);
+  border-left: 2px solid rgba(64, 158, 255, 0.5);
+}
+
+.bp-narrative-item.phase-ban_phase1,
+.bp-narrative-item.phase-ban_phase2 {
+  background: rgba(245, 108, 108, 0.08);
+  color: rgba(245, 160, 160, 0.9);
+  border-left: 2px solid rgba(245, 108, 108, 0.4);
+}
+
+.bp-narrative-item.phase-pick {
+  background: rgba(103, 194, 58, 0.08);
+  color: rgba(160, 220, 140, 0.9);
+  border-left: 2px solid rgba(103, 194, 58, 0.4);
+}
+
+.bp-narrative-item.phase-switch {
+  background: rgba(255, 165, 0, 0.12);
+  color: rgba(255, 200, 100, 0.95);
+  border-left: 2px solid rgba(255, 165, 0, 0.5);
+}
+
+.narrative-phase {
+  flex-shrink: 0;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.narrative-msg {
+  flex: 1;
+}
+
+@media (max-width: 768px) {
+  .bp-narrative-row {
+    flex-direction: column;
+  }
 }
 </style>

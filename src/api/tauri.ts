@@ -3617,6 +3617,7 @@ export interface DraftResultInfo {
   away_picks_json: string
   home_comp: string | null
   away_comp: string | null
+  draft_narrative_json: string | null
 }
 
 export interface CompStatInfo {
