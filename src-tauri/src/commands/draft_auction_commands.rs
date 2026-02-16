@@ -824,7 +824,7 @@ pub async fn finalize_auction(
         .bind(&save_id)
         .bind(current_season)
         .bind(buyer_team_id)
-        .bind(final_price)
+        .bind(-final_price)
         .bind(format!("求购第{}顺位选秀权", target_position))
         .execute(&pool)
         .await

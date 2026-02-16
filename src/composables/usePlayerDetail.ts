@@ -121,15 +121,19 @@ export function usePlayerDetail(playerId: string) {
     { type: 'teamleader', name: '团队核心', description: '带动队友发挥', rarity: 5, isNegative: false, icon: '🏅' },
   ])
 
-  // 计算属性
-  const careerYears = computed(() => {
-    const joinMatch = player.value.joinSeason.match(/S(\d+)/)
-    if (joinMatch) {
-      const joinYear = parseInt(joinMatch[1])
-      const currentYear = timeStore.currentSeason || 1
-      return Math.max(1, currentYear - joinYear + 1)
+  const debutSeason = computed(() => {
+    if (seasonHistory.value.length > 0) {
+      const match = seasonHistory.value[0].season.match(/S(\d+)/)
+      if (match) return parseInt(match[1])
     }
+    const joinMatch = player.value.joinSeason.match(/S(\d+)/)
+    if (joinMatch) return parseInt(joinMatch[1])
     return 1
+  })
+
+  const careerYears = computed(() => {
+    const currentYear = timeStore.currentSeason || 1
+    return Math.max(1, currentYear - debutSeason.value + 1)
   })
 
   const championCount = computed(() => {
@@ -397,6 +401,7 @@ export function usePlayerDetail(playerId: string) {
     allTraits,
     
     careerYears,
+    debutSeason,
     championCount,
     displayMarketValue,
     computeRadarData,

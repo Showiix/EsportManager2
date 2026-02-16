@@ -679,7 +679,18 @@ pub async fn get_player_season_history(
         _ => 2,
     };
 
-    let start_season = join_season.unwrap_or(1);
+    let debut_season: Option<i64> = sqlx::query_scalar(
+        "SELECT MIN(season_id) FROM player_season_stats WHERE save_id = ? AND player_id = ?"
+    )
+    .bind(&save_id)
+    .bind(player_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let start_season = debut_season
+        .or(join_season)
+        .unwrap_or(1);
 
     // 从 player_season_stats 获取每赛季的 team_id
     let stats_rows = sqlx::query(

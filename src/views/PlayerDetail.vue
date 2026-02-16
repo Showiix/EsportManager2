@@ -36,6 +36,7 @@
         <player-career-card
           :player="player"
           :career-years="careerYears"
+          :debut-season="debutSeason"
           :champion-count="championCount"
           :honors-count="honors.length"
         />
@@ -135,6 +136,7 @@ const {
   allTraits,
   
   careerYears,
+  debutSeason,
   championCount,
   displayMarketValue,
   computeRadarData,

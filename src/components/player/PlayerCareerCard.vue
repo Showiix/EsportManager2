@@ -11,7 +11,7 @@
     <div class="info-list">
       <div class="info-row">
         <span class="info-label">加入赛季</span>
-        <span class="info-value">{{ player.joinSeason }}</span>
+        <span class="info-value">S{{ debutSeason }}</span>
       </div>
       <div class="info-row">
         <span class="info-label">职业年数</span>
@@ -44,6 +44,10 @@ defineProps({
     required: true
   },
   careerYears: {
+    type: Number,
+    required: true
+  },
+  debutSeason: {
     type: Number,
     required: true
   },
