@@ -685,7 +685,7 @@ impl TransferEngine {
                 }
 
                 // 挂牌出售
-                let listing_price = MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", "MID") as i64;
+                let listing_price = MarketValueEngine::calculate_base_market_value(ability as u8, age as u8, ability as u8, "NORMAL", &player.position) as i64;
                 let discount_price = (listing_price as f64 * 0.7) as i64; // 财务困难打折
 
                 sqlx::query(

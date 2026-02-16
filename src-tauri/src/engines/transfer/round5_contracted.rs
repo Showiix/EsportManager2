@@ -247,9 +247,20 @@ impl TransferEngine {
                 bid_records.push(R5BidRecord { idx, willingness });
             }
 
-            // 按 bid_price 降序遍历，第一个 willingness >= 40 的中标（允许次高出价中标）
+            // 综合排序：出价和意愿各占50%权重
+            bid_records.sort_by(|a, b| {
+                let max_bid = all_bids.iter().map(|bid| bid.2).max().unwrap_or(1) as f64;
+                let score_a = (all_bids[a.idx].2 as f64 / max_bid) * 50.0 + a.willingness * 0.5;
+                let score_b = (all_bids[b.idx].2 as f64 / max_bid) * 50.0 + b.willingness * 0.5;
+                score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let willingness_threshold = match ability {
+                80..=100 => 35.0,
+                70..=79 => 38.0,
+                _ => 40.0,
+            };
             let winner_idx = bid_records.iter()
-                .find(|r| r.willingness >= 40.0)
+                .find(|r| r.willingness >= willingness_threshold)
                 .map(|r| r.idx);
 
             // 写入所有竞价记录
@@ -258,7 +269,7 @@ impl TransferEngine {
                 let is_winner = Some(record.idx) == winner_idx;
                 let reject_reason = if is_winner {
                     None
-                } else if record.willingness < 40.0 {
+                } else if record.willingness < willingness_threshold {
                     Some("willingness_too_low")
                 } else {
                     Some("outbid")

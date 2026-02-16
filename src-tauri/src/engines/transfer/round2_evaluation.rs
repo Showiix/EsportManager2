@@ -92,8 +92,7 @@ impl TransferEngine {
 
                     let mut rng = rand::rngs::StdRng::from_entropy();
                     if rng.gen::<f64>() < agree_prob {
-                        // 涨薪成功：签新合同（延长2年）
-                        let new_contract_years: i64 = 2;
+                        let new_contract_years: i64 = if player.age <= 24 { 3 } else if player.age <= 28 { 2 } else { 1 };
                         let new_end_season = season_id + new_contract_years;
 
                         sqlx::query("UPDATE players SET salary = ?, contract_end_season = ? WHERE id = ? AND save_id = ?")

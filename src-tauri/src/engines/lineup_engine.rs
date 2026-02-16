@@ -163,9 +163,17 @@ impl LineupEngine {
                     Self::calculate_synergy_cost(starters, starter, sub, current_season);
                 let inertia_penalty = Self::inertia_penalty(personality);
 
-                let delta = condition_gain + trait_gain + fatigue_gain + version_gain
-                    - synergy_cost
-                    - inertia_penalty;
+                let ability_gap = sub.ability as f64 - starter.ability as f64;
+                let ability_penalty = if ability_gap < -5.0 {
+                    (ability_gap + 5.0) * 0.5
+                } else {
+                    0.0
+                };
+
+                let delta =
+                    condition_gain + trait_gain + fatigue_gain + version_gain + ability_penalty
+                        - synergy_cost
+                        - inertia_penalty;
 
                 if !is_forced && delta < threshold {
                     continue;
@@ -291,6 +299,11 @@ impl LineupEngine {
     }
 
     fn is_forced_substitution(starter: &LineupCandidate, sub: &LineupCandidate) -> bool {
+        let ability_gap = starter.ability as i64 - sub.ability as i64;
+        if ability_gap > 15 {
+            return false;
+        }
+
         if starter.condition <= -4 && sub.condition >= 0 {
             return true;
         }
