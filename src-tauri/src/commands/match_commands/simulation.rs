@@ -699,11 +699,12 @@ async fn simulate_single_match_internal(
             .ok();
         }
 
-        // 局间状态更新：出场选手累加疲劳，板凳选手休息恢复
+        // 局间状态更新：出场选手独立随机波动（制造状态分化），板凳选手休息恢复
         if bo_count > 1 && home_score < wins_needed && away_score < wins_needed {
-            // 出场选手：games_since_rest +1，更新 condition
-            for player in home_players.iter_mut().chain(away_players.iter_mut()) {
-                player.form_factors.games_since_rest += 1;
+            for player in home_players.iter_mut() {
+                player.form_factors = ConditionEngine::update_form_factors_between_games(
+                    player.form_factors.clone(), home_won_this_game,
+                );
                 let season_games_played = player.season_games_played.saturating_add(
                     player_games_in_match.get(&player.id).copied().unwrap_or(0),
                 );
@@ -719,7 +720,25 @@ async fn simulate_single_match_internal(
                     &condition_ctx,
                 );
             }
-            // 板凳选手：rest recovery（games_since_rest=0, momentum衰减, 重算condition）
+            for player in away_players.iter_mut() {
+                player.form_factors = ConditionEngine::update_form_factors_between_games(
+                    player.form_factors.clone(), !home_won_this_game,
+                );
+                let season_games_played = player.season_games_played.saturating_add(
+                    player_games_in_match.get(&player.id).copied().unwrap_or(0),
+                );
+                let condition_ctx = build_condition_context(
+                    player.satisfaction,
+                    season_games_played,
+                    player.traits.contains(&TraitType::Ironman),
+                );
+                player.condition = ConditionEngine::calculate_condition_full(
+                    player.age,
+                    player.ability,
+                    &player.form_factors,
+                    &condition_ctx,
+                );
+            }
             for player in home_bench.iter_mut().chain(away_bench.iter_mut()) {
                 player.form_factors = ConditionEngine::update_form_factors_bench(player.form_factors.clone());
                 let season_games_played = player.season_games_played.saturating_add(

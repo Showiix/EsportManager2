@@ -155,7 +155,13 @@ impl LineupEngine {
                 let fatigue_gain = if starter.traits.contains(&TraitType::Ironman) {
                     0.0
                 } else {
-                    starter.form_factors.games_since_rest as f64 * 0.4
+                    let games = starter.form_factors.games_since_rest as f64;
+                    // 3局以下无疲劳，3局以上加速累积
+                    if games <= 3.0 {
+                        0.0
+                    } else {
+                        (games - 3.0) * 1.2
+                    }
                 };
                 let version_gain =
                     (sub.champion_version_score - starter.champion_version_score).max(0.0);
@@ -304,40 +310,45 @@ impl LineupEngine {
             return false;
         }
 
-        if starter.condition <= -4 && sub.condition >= 0 {
+        // 状态极差：starter condition <= -3 且替补状态明显更好（差距>=3）
+        if starter.condition <= -3 && sub.condition - starter.condition >= 3 {
             return true;
         }
 
-        if starter.form_factors.games_since_rest >= 10
+        // 疲劳累积：连续出场6局以上（跨系列赛累积）
+        if starter.form_factors.games_since_rest >= 6
             && !starter.traits.contains(&TraitType::Ironman)
         {
             return true;
         }
 
+        // 心态崩盘
         starter.form_factors.momentum <= -4 && starter.condition < -2
     }
 
     fn inertia_penalty(personality: &AITeamPersonality) -> f64 {
         match personality {
-            AITeamPersonality::Conservative => 2.0,
-            AITeamPersonality::Aggressive => 0.5,
-            AITeamPersonality::WinNow => 1.0,
-            AITeamPersonality::Development => 1.5,
-            AITeamPersonality::Balanced => 1.0,
+            AITeamPersonality::Conservative => 1.5,
+            AITeamPersonality::Aggressive => 0.2,
+            AITeamPersonality::WinNow => 0.5,
+            AITeamPersonality::Development => 0.8,
+            AITeamPersonality::Balanced => 0.5,
         }
     }
 
     fn calculate_threshold(context: &SubstitutionContext, personality: &AITeamPersonality) -> f64 {
         let mut threshold = match personality {
-            AITeamPersonality::Aggressive => 1.5,
-            AITeamPersonality::WinNow => 2.0,
-            AITeamPersonality::Balanced => 2.5,
-            AITeamPersonality::Development => 2.5,
-            AITeamPersonality::Conservative => 3.5,
+            AITeamPersonality::Aggressive => 1.0,
+            AITeamPersonality::WinNow => 1.5,
+            AITeamPersonality::Balanced => 2.0,
+            AITeamPersonality::Development => 1.5,
+            AITeamPersonality::Conservative => 3.0,
         };
 
         if Self::is_trailing_match_point(context) {
-            threshold *= 0.5;
+            threshold *= 0.4;
+        } else if context.game_number >= 3 {
+            threshold *= 0.7;
         }
 
         threshold
@@ -446,14 +457,14 @@ impl LineupEngine {
         context: &SubstitutionContext,
     ) -> String {
         if is_forced {
-            if starter.condition <= -4 && sub.condition >= 0 {
+            if starter.condition <= -3 && sub.condition - starter.condition >= 3 {
                 return format!(
                     "{}状态低迷(condition={})，{}状态更佳(condition={})，紧急替换",
                     starter.game_id, starter.condition, sub.game_id, sub.condition
                 );
             }
 
-            if starter.form_factors.games_since_rest >= 10
+            if starter.form_factors.games_since_rest >= 6
                 && !starter.traits.contains(&TraitType::Ironman)
             {
                 return format!(

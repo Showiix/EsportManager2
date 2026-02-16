@@ -245,6 +245,24 @@ impl ConditionEngine {
         factors
     }
 
+    /// 局间状态更新：每个选手独立的随机波动，制造状态分化
+    pub fn update_form_factors_between_games(
+        mut factors: PlayerFormFactors,
+        won: bool,
+    ) -> PlayerFormFactors {
+        let cycle_step = 2.0 + rand::random::<f64>() * 6.0;
+        factors.form_cycle = (factors.form_cycle + cycle_step) % 100.0;
+
+        if won {
+            factors.momentum = (factors.momentum + 1).min(5);
+        } else {
+            factors.momentum = (factors.momentum - 1).max(-5);
+        }
+
+        factors.games_since_rest += 1;
+        factors
+    }
+
     pub fn reset_form_factors(player_id: u64) -> PlayerFormFactors {
         PlayerFormFactors {
             player_id,

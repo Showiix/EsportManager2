@@ -1,3 +1,4 @@
+use super::condition::ConditionEngine;
 use super::lineup_engine::{LineupCandidate, LineupEngine, SubstitutionContext};
 use super::meta_engine::{MetaEngine, MetaWeights};
 use super::traits::{TraitContext, TraitEngine, TraitType};
@@ -314,6 +315,35 @@ impl MatchSimulationEngine {
 
             // 局间换人（BO系列赛且比赛未结束）
             if bo_count > 1 && home_score < wins_needed && away_score < wins_needed {
+                let home_won = winner_id == home_team_id;
+                for p in current_home.iter_mut() {
+                    if let Some(ref mut ff) = p.form_factors {
+                        *ff = ConditionEngine::update_form_factors_between_games(
+                            ff.clone(),
+                            home_won,
+                        );
+                        p.condition =
+                            ConditionEngine::calculate_condition(p.age, p.ability, ff, None);
+                    }
+                }
+                for p in current_away.iter_mut() {
+                    if let Some(ref mut ff) = p.form_factors {
+                        *ff = ConditionEngine::update_form_factors_between_games(
+                            ff.clone(),
+                            !home_won,
+                        );
+                        p.condition =
+                            ConditionEngine::calculate_condition(p.age, p.ability, ff, None);
+                    }
+                }
+                for p in home_bench_mut.iter_mut().chain(away_bench_mut.iter_mut()) {
+                    if let Some(ref mut ff) = p.form_factors {
+                        *ff = ConditionEngine::update_form_factors_bench(ff.clone());
+                        p.condition =
+                            ConditionEngine::calculate_condition(p.age, p.ability, ff, None);
+                    }
+                }
+
                 Self::try_substitution(
                     &mut current_home,
                     &mut home_bench_mut,
