@@ -93,6 +93,20 @@ impl DraftAuctionEngine {
 
         let rookie_desire = self.calculate_rookie_bid_factor(team_info, draft_position);
 
+        let target_rookie_position = self
+            .draft_rookies
+            .iter()
+            .filter(|r| r.draft_rank <= draft_position + 1)
+            .min_by_key(|r| (r.draft_rank as i32 - draft_position as i32).unsigned_abs())
+            .map(|r| r.position.clone());
+
+        if let Some(ref pos) = target_rookie_position {
+            let pos_need = team_info.position_needs.get(pos).copied().unwrap_or(50);
+            if pos_need <= 20 && draft_position > 3 {
+                return None;
+            }
+        }
+
         let mut bid_prob =
             (pick_value / 100.0) * 0.50 * need_score * strength_desire * rookie_desire;
 
@@ -163,11 +177,17 @@ impl DraftAuctionEngine {
             target_rookie.ability as f64 * 0.4 + target_rookie.potential as f64 * 0.6;
 
         if pos_need >= 80 && rookie_score >= 70.0 {
+            2.00
+        } else if pos_need >= 80 {
             1.60
         } else if pos_need >= 60 && rookie_score >= 60.0 {
-            1.30
+            1.40
+        } else if pos_need >= 60 {
+            1.15
         } else if pos_need <= 20 {
-            0.50
+            0.30
+        } else if pos_need <= 30 {
+            0.60
         } else {
             1.0
         }
