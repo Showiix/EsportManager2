@@ -447,6 +447,150 @@ impl DatabaseManager {
         .await
         .map_err(|e| DatabaseError::Migration(e.to_string()))?;
 
+        // 迁移24: 天梯赛系统 - 创建 ladder_tournament 表
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS ladder_tournament (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                save_id TEXT NOT NULL,
+                season INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                event_name TEXT NOT NULL,
+                edition INTEGER NOT NULL,
+                total_rounds INTEGER DEFAULT 12,
+                current_round INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'pending',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                completed_at TEXT,
+                UNIQUE(save_id, season, event_type),
+                FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_ladder_tournament_save_season ON ladder_tournament(save_id, season)"
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        // 迁移25: 天梯赛系统 - 创建 ladder_rating 表
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS ladder_rating (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                save_id TEXT NOT NULL,
+                ladder_tournament_id INTEGER NOT NULL,
+                player_id INTEGER NOT NULL,
+                player_name TEXT NOT NULL,
+                position TEXT NOT NULL,
+                team_name TEXT,
+                rating INTEGER DEFAULT 1200,
+                games_played INTEGER DEFAULT 0,
+                wins INTEGER DEFAULT 0,
+                losses INTEGER DEFAULT 0,
+                mvp_count INTEGER DEFAULT 0,
+                total_influence REAL DEFAULT 0.0,
+                avg_influence REAL DEFAULT 0.0,
+                max_rating INTEGER DEFAULT 1200,
+                final_rank INTEGER,
+                round_data_json TEXT,
+                UNIQUE(save_id, ladder_tournament_id, player_id),
+                FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                FOREIGN KEY (ladder_tournament_id) REFERENCES ladder_tournament(id) ON DELETE CASCADE,
+                FOREIGN KEY (player_id) REFERENCES players(id)
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_ladder_rating_tournament ON ladder_rating(ladder_tournament_id)"
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_ladder_rating_player ON ladder_rating(save_id, player_id)"
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        // 迁移26: 天梯赛系统 - 创建 ladder_match 表
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS ladder_match (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                save_id TEXT NOT NULL,
+                ladder_tournament_id INTEGER NOT NULL,
+                round_number INTEGER NOT NULL,
+                match_number INTEGER NOT NULL,
+                blue_team_json TEXT NOT NULL,
+                red_team_json TEXT NOT NULL,
+                blue_avg_rating INTEGER,
+                red_avg_rating INTEGER,
+                blue_power REAL,
+                red_power REAL,
+                winner_side TEXT,
+                mvp_player_id INTEGER,
+                mvp_player_name TEXT,
+                game_duration INTEGER,
+                performances_json TEXT,
+                draft_result_json TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
+                FOREIGN KEY (ladder_tournament_id) REFERENCES ladder_tournament(id) ON DELETE CASCADE
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_ladder_match_tournament_round ON ladder_match(ladder_tournament_id, round_number)"
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        // 增量: ladder_rating 加 game_id 列
+        let cols: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM pragma_table_info('ladder_rating') WHERE name = 'game_id'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if cols.is_empty() {
+            sqlx::query("ALTER TABLE ladder_rating ADD COLUMN game_id TEXT DEFAULT ''")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
+        let rc_cols: Vec<(String,)> = sqlx::query_as(
+            "SELECT name FROM pragma_table_info('ladder_match') WHERE name = 'rating_changes_json'"
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        if rc_cols.is_empty() {
+            sqlx::query("ALTER TABLE ladder_match ADD COLUMN rating_changes_json TEXT")
+                .execute(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        }
+
         Ok(())
     }
     async fn run_satisfaction_tables_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
