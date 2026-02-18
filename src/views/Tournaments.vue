@@ -64,7 +64,7 @@
             {{ group.isLeague ? '联赛' : '国际赛' }}
           </span>
           <el-tag
-            :type="group.status === 'active' ? 'success' : group.status === 'completed' ? '' : 'info'"
+            :type="group.status === 'active' ? 'success' : group.status === 'completed' ? 'info' : 'info'"
             size="small"
           >
             {{ group.status === 'active' ? '进行中' : group.status === 'completed' ? '已完成' : '未开始' }}
@@ -177,6 +177,7 @@ import { useTournamentStoreTauri } from '@/stores/useTournamentStoreTauri'
 import { useGameStore } from '@/stores/useGameStore'
 import { useTimeStore } from '@/stores/useTimeStore'
 import { queryApi, timeApi } from '@/api/tauri'
+import { getLadderTournaments } from '@/api/ladder'
 import { createLogger } from '@/utils/logger'
 import SeasonSelector from '@/components/common/SeasonSelector.vue'
 
@@ -231,13 +232,15 @@ const loadAllTournaments = async () => {
   logger.debug('Loading tournaments for season:', seasonId)
 
   try {
-    const [seasonTournaments, internationalTournaments] = await Promise.all([
+    const [seasonTournaments, internationalTournaments, ladderTournaments] = await Promise.all([
       queryApi.getSeasonTournaments(seasonId),
-      queryApi.getInternationalTournaments(seasonId)
+      queryApi.getInternationalTournaments(seasonId),
+      getLadderTournaments(seasonId)
     ])
 
     logger.debug('Season tournaments:', seasonTournaments)
     logger.debug('International tournaments:', internationalTournaments)
+    logger.debug('Ladder tournaments:', ladderTournaments)
 
     // 合并并去重
     const allTournaments = [...seasonTournaments]
@@ -246,6 +249,25 @@ const loadAllTournaments = async () => {
         allTournaments.push(intl)
       }
     }
+
+    // 合并天梯赛（转换为统一格式）
+    for (const ladder of ladderTournaments) {
+      const ladderTypeMap: Record<string, string> = {
+        'douyu': 'DouyuLadder',
+        'douyin': 'DouyinLadder',
+        'huya': 'HuyaLadder'
+      }
+      allTournaments.push({
+        id: ladder.id + 100000,
+        name: ladder.event_name,
+        tournament_type: ladderTypeMap[ladder.event_type] || ladder.event_type,
+        status: ladder.status === 'completed' ? 'Completed' : ladder.current_round > 0 ? 'InProgress' : 'Scheduled',
+        season_id: ladder.season,
+        region_id: null,
+        champion_team_id: null,
+      } as any)
+    }
+
     tournaments.value = allTournaments
     logger.debug(`Loaded ${allTournaments.length} tournaments (${seasonTournaments.length} season + ${internationalTournaments.length} international)`)
   } catch (e) {
@@ -299,13 +321,16 @@ const SEASON_PHASES = [
   { type: 'SpringPlayoffs', name: '春季季后赛', description: '四大赛区春季季后赛' },
   { type: 'Msi', name: 'MSI季中赛', description: '赛区冠军国际对抗' },
   { type: 'MadridMasters', name: '马德里大师赛', description: '国际邀请赛' },
+  { type: 'DouyuLadder', name: '斗鱼巅峰赛', description: '全员天梯对抗' },
   { type: 'SummerRegular', name: '夏季常规赛', description: '四大赛区夏季常规赛' },
   { type: 'SummerPlayoffs', name: '夏季季后赛', description: '四大赛区夏季季后赛' },
   { type: 'ClaudeIntercontinental', name: 'Claude洲际赛', description: '洲际对抗赛' },
   { type: 'WorldChampionship', name: 'S世界赛', description: '全球总决赛' },
+  { type: 'DouyinLadder', name: '抖音巅峰赛', description: '全员天梯对抗' },
   { type: 'ShanghaiMasters', name: '上海大师赛', description: '年终大师赛' },
   { type: 'IcpIntercontinental', name: 'ICP洲际对抗赛', description: '四赛区洲际对抗' },
   { type: 'SuperIntercontinental', name: 'Super洲际邀请赛', description: '年度邀请赛' },
+  { type: 'HuyaLadder', name: '虎牙巅峰赛', description: '全员天梯对抗' },
 ]
 
 // 计算赛季时间线
@@ -380,6 +405,7 @@ interface TournamentGroup {
 const groupedTournaments = computed<TournamentGroup[]>(() => {
   const leagueGroups: Record<string, TournamentGroup> = {}
   const internationalList: TournamentGroup[] = []
+  const ladderList: TournamentGroup[] = []
 
   logger.debug('Processing tournaments:', tournaments.value.length)
 
@@ -411,15 +437,49 @@ const groupedTournaments = computed<TournamentGroup[]>(() => {
       if (regionMatch && !leagueGroups[type].regions.includes(regionMatch[1])) {
         leagueGroups[type].regions.push(regionMatch[1])
       }
+    } else if (type === 'DouyuLadder' || type === 'DouyinLadder' || type === 'HuyaLadder') {
+      // 天梯赛 - 特殊处理
+      const ladderConfig: Record<string, { name: string, icon: string, order: number, desc: string }> = {
+        'DouyuLadder': { name: '斗鱼巅峰赛', icon: '🐟', order: 3.5, desc: '马德里大师赛后' },
+        'DouyinLadder': { name: '抖音巅峰赛', icon: '🎵', order: 8.5, desc: '世界赛前' },
+        'HuyaLadder': { name: '虎牙巅峰赛', icon: '🐯', order: 12.5, desc: 'Super洲际赛前' }
+      }
+      const config = ladderConfig[type]
+      ladderList.push({
+        type,
+        name: config.name,
+        icon: config.icon,
+        isLeague: false,
+        order: config.order,
+        tournaments: [t],
+        regions: [],
+        status: getTournamentStatus(t),
+        progress: getProgress(t),
+        originalTournament: t
+      })
     } else {
       // 国际赛事 - 保持原样单独显示
       logger.debug('International tournament:', t.name, t.tournament_type)
+      
+      // 根据赛事类型分配order
+      let order = 100
+      const orderMap: Record<string, number> = {
+        'Msi': 3,
+        'MadridMasters': 4,
+        'ClaudeIntercontinental': 7,
+        'WorldChampionship': 8,
+        'ShanghaiMasters': 9,
+        'IcpIntercontinental': 10,
+        'SuperIntercontinental': 11
+      }
+      order = orderMap[type] || 100
+      
       internationalList.push({
         type,
         name: t.name, // 使用原始名称
         icon: '', // 国际赛事用图片，不需要emoji
         isLeague: false,
-        order: 100, // 国际赛事排在后面
+        order,
         tournaments: [t],
         regions: [],
         status: getTournamentStatus(t),
@@ -445,9 +505,9 @@ const groupedTournaments = computed<TournamentGroup[]>(() => {
     group.progress = Math.round(progresses.reduce((a, b) => a + b, 0) / progresses.length)
   }
 
-  // 合并并排序：联赛在前，国际赛事在后
-  const allGroups = [...Object.values(leagueGroups), ...internationalList]
-  logger.debug('Grouped result:', allGroups.length, 'groups (', Object.keys(leagueGroups).length, 'leagues +', internationalList.length, 'international)')
+  // 合并并排序：联赛 + 国际赛事 + 天梯赛，按 order 排序
+  const allGroups = [...Object.values(leagueGroups), ...internationalList, ...ladderList]
+  logger.debug('Grouped result:', allGroups.length, 'groups (', Object.keys(leagueGroups).length, 'leagues +', internationalList.length, 'international +', ladderList.length, 'ladder)')
   logger.debug('All groups:', allGroups.map(g => ({ name: g.name, isLeague: g.isLeague, order: g.order })))
   return allGroups.sort((a, b) => a.order - b.order)
 })
@@ -508,6 +568,18 @@ const navigateToDetail = (tournament: any) => {
 // 导航到合并的赛事组详情
 const navigateToGroup = async (group: TournamentGroup) => {
   const seasonQuery = { season: String(selectedSeason.value) }
+
+  // 天梯赛 - 跳转到天梯赛页面
+  if (group.type === 'DouyuLadder') {
+    router.push({ path: '/ladder/douyu' })
+    return
+  } else if (group.type === 'DouyinLadder') {
+    router.push({ path: '/ladder/douyin' })
+    return
+  } else if (group.type === 'HuyaLadder') {
+    router.push({ path: '/ladder/huya' })
+    return
+  }
 
   // 国际赛事直接跳转到原有页面
   if (!group.isLeague && group.originalTournament) {
@@ -833,6 +905,10 @@ const navigateToGroup = async (group: TournamentGroup) => {
   color: #94a3b8;
   margin: 0;
 }
+
+/* 天梯赛区域 - 删除所有渐变色样式 */
+/* 天梯赛卡片现在使用与普通赛事卡片相同的样式 */
+
 
 /* 响应式 */
 @media (max-width: 1200px) {
