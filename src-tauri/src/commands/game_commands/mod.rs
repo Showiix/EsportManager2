@@ -53,20 +53,22 @@ pub struct FixTournamentStatusResult {
 
 // ==================== 辅助函数 ====================
 
-/// 获取阶段显示名称
 pub fn get_phase_display_name(phase: &SeasonPhase) -> String {
     match phase {
         SeasonPhase::SpringRegular => "春季常规赛".to_string(),
         SeasonPhase::SpringPlayoffs => "春季季后赛".to_string(),
         SeasonPhase::Msi => "MSI季中赛".to_string(),
         SeasonPhase::MadridMasters => "马德里大师赛".to_string(),
+        SeasonPhase::DouyuLadder => "斗鱼巅峰赛".to_string(),
         SeasonPhase::SummerRegular => "夏季常规赛".to_string(),
         SeasonPhase::SummerPlayoffs => "夏季季后赛".to_string(),
         SeasonPhase::ClaudeIntercontinental => "Claude洲际赛".to_string(),
         SeasonPhase::WorldChampionship => "世界赛".to_string(),
+        SeasonPhase::DouyinLadder => "抖音巅峰赛".to_string(),
         SeasonPhase::ShanghaiMasters => "上海大师赛".to_string(),
         SeasonPhase::IcpIntercontinental => "ICP洲际对抗赛".to_string(),
         SeasonPhase::SuperIntercontinental => "Super洲际邀请赛".to_string(),
+        SeasonPhase::HuyaLadder => "虎牙巅峰赛".to_string(),
         SeasonPhase::AnnualAwards => "年度颁奖典礼".to_string(),
         SeasonPhase::TransferWindow => "转会期".to_string(),
         SeasonPhase::Draft => "选秀大会".to_string(),

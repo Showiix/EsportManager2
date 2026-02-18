@@ -20,10 +20,10 @@ pub mod log_commands;
 pub mod perf_commands;
 pub mod meta_commands;
 pub mod champion_commands;
+pub mod ladder_commands;
 
 pub use save_commands::*;
 pub use team_commands::*;
-// Explicit re-exports to avoid ambiguous `simulation` module from both game_commands and match_commands
 pub use game_commands::{
     GameStateInfo, MatchInfo, StandingInfo, FixTournamentStatusResult,
     get_phase_display_name,
@@ -58,6 +58,7 @@ pub use log_commands::*;
 pub use perf_commands::*;
 pub use meta_commands::*;
 pub use champion_commands::*;
+pub use ladder_commands::*;
 
 use serde::{Deserialize, Serialize};
 

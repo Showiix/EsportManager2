@@ -112,6 +112,9 @@ use commands::{
     // 英雄/BP系统命令
     get_champion_list, get_champion_stats, get_draft_result, get_comp_stats, get_comp_matchups,
     get_meta_comp_effects, get_player_champion_mastery, get_player_champion_usage, get_team_comp_usage,
+    // 天梯赛系统命令
+    initialize_ladder_tournament, simulate_ladder_round, get_ladder_rankings, get_ladder_matches,
+    complete_ladder_tournament, get_ladder_tournaments, get_ladder_match_detail, get_player_ladder_rating_history,
     // 应用状态
     AppState,
 };
@@ -395,6 +398,15 @@ pub fn run() {
             get_player_champion_mastery,
             get_player_champion_usage,
             get_team_comp_usage,
+            // 天梯赛系统命令
+            initialize_ladder_tournament,
+            simulate_ladder_round,
+            get_ladder_rankings,
+            get_ladder_matches,
+            complete_ladder_tournament,
+            get_ladder_tournaments,
+            get_ladder_match_detail,
+            get_player_ladder_rating_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
