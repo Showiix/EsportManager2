@@ -65,6 +65,9 @@ impl GameFlowService {
 
         // 根据阶段颁发荣誉
         match phase {
+            SeasonPhase::DouyuLadder | SeasonPhase::DouyinLadder | SeasonPhase::HuyaLadder => {
+            }
+
             // 常规赛结束 - 颁发常规赛第一名和常规赛MVP
             SeasonPhase::SpringRegular | SeasonPhase::SummerRegular => {
                 let tournament_type = phase.to_tournament_type();
@@ -405,6 +408,8 @@ impl GameFlowService {
         // 颁发年度积分（季后赛和国际赛事，Super赛除外）
         // Super赛是年度积分的奖励，不颁发积分
         match phase {
+            SeasonPhase::DouyuLadder | SeasonPhase::DouyinLadder | SeasonPhase::HuyaLadder => {
+            }
             SeasonPhase::SpringPlayoffs
             | SeasonPhase::SummerPlayoffs
             | SeasonPhase::Msi
@@ -431,6 +436,8 @@ impl GameFlowService {
 
         // 发放赛事奖金（季后赛和国际赛事）
         match phase {
+            SeasonPhase::DouyuLadder | SeasonPhase::DouyinLadder | SeasonPhase::HuyaLadder => {
+            }
             SeasonPhase::SpringPlayoffs
             | SeasonPhase::SummerPlayoffs
             | SeasonPhase::Msi
@@ -458,6 +465,8 @@ impl GameFlowService {
 
         // 更新冠军选手的统计数据（增加冠军次数）
         match phase {
+            SeasonPhase::DouyuLadder | SeasonPhase::DouyinLadder | SeasonPhase::HuyaLadder => {
+            }
             SeasonPhase::SpringPlayoffs
             | SeasonPhase::SummerPlayoffs
             | SeasonPhase::Msi
@@ -489,9 +498,9 @@ impl GameFlowService {
             _ => {}
         }
 
-        // 每个赛事阶段结束后，重算 yearly_top_score（6维含大赛表现）
-        // 确保数据中心排行榜全程使用最新的6维分数
         match phase {
+            SeasonPhase::DouyuLadder | SeasonPhase::DouyinLadder | SeasonPhase::HuyaLadder => {
+            }
             SeasonPhase::SpringRegular
             | SeasonPhase::SpringPlayoffs
             | SeasonPhase::SummerRegular
@@ -510,16 +519,34 @@ impl GameFlowService {
             _ => {}
         }
 
-        // 更新赛事状态为已完成
-        let tournament_type = phase.to_tournament_type();
-        if let Some(t_type) = tournament_type {
-            let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
-            for tournament in &tournaments {
-                let _ = sqlx::query("UPDATE tournaments SET status = 'Completed' WHERE id = ?")
-                    .bind(tournament.id as i64)
+        match phase {
+            SeasonPhase::DouyuLadder | SeasonPhase::DouyinLadder | SeasonPhase::HuyaLadder => {
+                let event_type = match phase {
+                    SeasonPhase::DouyuLadder => "douyu",
+                    SeasonPhase::DouyinLadder => "douyin",
+                    SeasonPhase::HuyaLadder => "huya",
+                    _ => unreachable!(),
+                };
+                let _ = sqlx::query("UPDATE ladder_tournament SET status = 'Completed' WHERE save_id = ? AND season = ? AND event_type = ?")
+                    .bind(save_id)
+                    .bind(season_id as i64)
+                    .bind(event_type)
                     .execute(pool)
                     .await;
-                log::debug!("更新赛事 {} (id={}) 状态为 Completed", tournament.name, tournament.id);
+                log::debug!("更新天梯赛 {} 状态为 Completed", event_type);
+            }
+            _ => {
+                let tournament_type = phase.to_tournament_type();
+                if let Some(t_type) = tournament_type {
+                    let tournaments = self.get_phase_tournaments(pool, save_id, season_id, t_type).await?;
+                    for tournament in &tournaments {
+                        let _ = sqlx::query("UPDATE tournaments SET status = 'Completed' WHERE id = ?")
+                            .bind(tournament.id as i64)
+                            .execute(pool)
+                            .await;
+                        log::debug!("更新赛事 {} (id={}) 状态为 Completed", tournament.name, tournament.id);
+                    }
+                }
             }
         }
 

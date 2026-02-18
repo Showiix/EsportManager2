@@ -754,17 +754,115 @@ impl GameFlowService {
                 }
             }
 
-            // 年度颁奖典礼 - 不创建赛事，仅显示页面
             SeasonPhase::AnnualAwards => {}
 
-            // 转会期 - 不创建赛事
             SeasonPhase::TransferWindow => {}
 
-            // 选秀 - 不创建赛事
             SeasonPhase::Draft => {}
 
-            // 赛季结束 - 不创建赛事
             SeasonPhase::SeasonEnd => {}
+            
+            SeasonPhase::DouyuLadder | SeasonPhase::DouyinLadder | SeasonPhase::HuyaLadder => {
+                let (event_type, event_name) = match phase {
+                    SeasonPhase::DouyuLadder => ("douyu", "斗鱼巅峰赛"),
+                    SeasonPhase::DouyinLadder => ("douyin", "抖音巅峰赛"),
+                    SeasonPhase::HuyaLadder => ("huya", "虎牙巅峰赛"),
+                    _ => unreachable!(),
+                };
+
+                log::info!("[天梯赛初始化] 开始初始化 {} (event_type={})", event_name, event_type);
+
+                let existing = sqlx::query(
+                    "SELECT id FROM ladder_tournament WHERE save_id = ? AND season = ? AND event_type = ?"
+                )
+                .bind(save_id)
+                .bind(season_id as i64)
+                .bind(event_type)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                if existing.is_some() {
+                    log::info!("[天梯赛初始化] {} 已存在，跳过初始化", event_name);
+                }
+
+                if existing.is_none() {
+                    log::info!("[天梯赛初始化] {} 不存在，开始创建", event_name);
+                    let count: i64 = sqlx::query_scalar(
+                        "SELECT COUNT(*) FROM ladder_tournament WHERE save_id = ? AND event_type = ?"
+                    )
+                    .bind(save_id)
+                    .bind(event_type)
+                    .fetch_one(pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                    
+                    let edition = (count + 1) as i32;
+
+                    let tournament_id: i64 = sqlx::query_scalar(
+                        r#"
+                        INSERT INTO ladder_tournament (save_id, season, event_type, event_name, edition, total_rounds, current_round, status)
+                        VALUES (?, ?, ?, ?, ?, 12, 0, 'pending')
+                        RETURNING id
+                        "#
+                    )
+                    .bind(save_id)
+                    .bind(season_id as i64)
+                    .bind(event_type)
+                    .bind(event_name)
+                    .bind(edition)
+                    .fetch_one(pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                    let players: Vec<(i64, String, String, Option<i64>)> = sqlx::query_as(
+                        "SELECT id, real_name, position, team_id FROM players WHERE save_id = ? AND status = 'Active'"
+                    )
+                    .bind(save_id)
+                    .fetch_all(pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                    log::info!("[天梯赛初始化] 查询到 {} 名活跃选手", players.len());
+
+                    for (player_id, player_name, position, team_id) in players {
+                        let team_name: Option<String> = if let Some(tid) = team_id {
+                            sqlx::query_scalar("SELECT name FROM teams WHERE id = ?")
+                                .bind(tid)
+                                .fetch_optional(pool)
+                                .await
+                                .map_err(|e| e.to_string())?
+                        } else {
+                            None
+                        };
+
+                        sqlx::query(
+                            r#"
+                            INSERT INTO ladder_rating (save_id, ladder_tournament_id, player_id, player_name, position, team_name, rating)
+                            VALUES (?, ?, ?, ?, ?, ?, 1200)
+                            "#
+                        )
+                        .bind(save_id)
+                        .bind(tournament_id)
+                        .bind(player_id)
+                        .bind(player_name)
+                        .bind(position)
+                        .bind(team_name)
+                        .execute(pool)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    }
+
+                    tournaments_created.push(TournamentCreated {
+                        id: tournament_id as u64,
+                        name: format!("S{} {}", season_id, event_name),
+                        tournament_type: format!("{:?}", phase),
+                        region: None,
+                    });
+
+                    log::info!("初始化天梯赛: {} (id={})", event_name, tournament_id);
+                }
+            }
         }
 
         // 赛事阶段：AI阵容决策

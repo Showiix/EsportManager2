@@ -239,7 +239,6 @@ impl GameFlowService {
                     }
                 }
                 SeasonPhase::AnnualAwards => {
-                    // 检查是否已颁发年度荣誉
                     let awarded: (i64,) = sqlx::query_as(
                         "SELECT COUNT(*) FROM honors WHERE save_id = ? AND season_id = ? AND honor_type LIKE 'ANNUAL%'"
                     )
@@ -265,13 +264,79 @@ impl GameFlowService {
                         })
                     }
                 }
-                _ => {
-                    // SeasonEnd → 立即可推进
+                SeasonPhase::DouyuLadder | SeasonPhase::DouyinLadder | SeasonPhase::HuyaLadder => {
+                    let event_type = match phase {
+                        SeasonPhase::DouyuLadder => "douyu",
+                        SeasonPhase::DouyinLadder => "douyin",
+                        SeasonPhase::HuyaLadder => "huya",
+                        _ => unreachable!(),
+                    };
+
+                    let ladder_row = sqlx::query(
+                        "SELECT status, current_round, total_rounds FROM ladder_tournament WHERE save_id = ? AND season = ? AND event_type = ? ORDER BY id DESC LIMIT 1"
+                    )
+                    .bind(save_id)
+                    .bind(season_id as i64)
+                    .bind(event_type)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(|e| format!("查询天梯赛失败: {}", e))?;
+
+                    match ladder_row {
+                        None => {
+                            Ok(PhaseProgress {
+                                tournaments: Vec::new(),
+                                total_matches: 0,
+                                completed_matches: 0,
+                                percentage: 0.0,
+                            })
+                        }
+                        Some(row) => {
+                            let status: String = row.get("status");
+                            let current_round: i32 = row.get("current_round");
+                            let total_rounds: i32 = row.get("total_rounds");
+
+                            if status == "completed" {
+                                Ok(PhaseProgress {
+                                    tournaments: Vec::new(),
+                                    total_matches: 1,
+                                    completed_matches: 1,
+                                    percentage: 100.0,
+                                })
+                            } else if current_round > 0 {
+                                let percentage = (current_round as f32 / total_rounds as f32) * 100.0;
+                                Ok(PhaseProgress {
+                                    tournaments: Vec::new(),
+                                    total_matches: total_rounds as u32,
+                                    completed_matches: current_round as u32,
+                                    percentage,
+                                })
+                            } else {
+                                // pending 状态，current_round == 0：已初始化但未开始
+                                Ok(PhaseProgress {
+                                    tournaments: Vec::new(),
+                                    total_matches: total_rounds as u32,
+                                    completed_matches: 0,
+                                    percentage: 0.0,
+                                })
+                            }
+                        }
+                    }
+                }
+                SeasonPhase::SeasonEnd => {
                     Ok(PhaseProgress {
                         tournaments: Vec::new(),
                         total_matches: 1,
                         completed_matches: 1,
                         percentage: 100.0,
+                    })
+                }
+                _ => {
+                    Ok(PhaseProgress {
+                        tournaments: Vec::new(),
+                        total_matches: 0,
+                        completed_matches: 0,
+                        percentage: 0.0,
                     })
                 }
             }
@@ -285,13 +350,16 @@ impl GameFlowService {
             SeasonPhase::SpringPlayoffs,
             SeasonPhase::Msi,
             SeasonPhase::MadridMasters,
+            SeasonPhase::DouyuLadder,
             SeasonPhase::SummerRegular,
             SeasonPhase::SummerPlayoffs,
             SeasonPhase::ClaudeIntercontinental,
             SeasonPhase::WorldChampionship,
+            SeasonPhase::DouyinLadder,
             SeasonPhase::ShanghaiMasters,
             SeasonPhase::IcpIntercontinental,
             SeasonPhase::SuperIntercontinental,
+            SeasonPhase::HuyaLadder,
             SeasonPhase::AnnualAwards,
             SeasonPhase::TransferWindow,
             SeasonPhase::Draft,
