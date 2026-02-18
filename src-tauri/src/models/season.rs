@@ -4,53 +4,43 @@ use serde::{Deserialize, Serialize};
 /// 赛季阶段
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SeasonPhase {
-    /// 春季赛常规赛
     SpringRegular,
-    /// 春季赛季后赛
     SpringPlayoffs,
-    /// MSI季中赛
     Msi,
-    /// 马德里大师赛
     MadridMasters,
-    /// 夏季赛常规赛
+    DouyuLadder,
     SummerRegular,
-    /// 夏季赛季后赛
     SummerPlayoffs,
-    /// Claude洲际赛
     ClaudeIntercontinental,
-    /// S世界赛
     WorldChampionship,
-    /// 上海大师赛
+    DouyinLadder,
     ShanghaiMasters,
-    /// ICP四赛区洲际对抗赛
     IcpIntercontinental,
-    /// Super洲际年度邀请赛
     SuperIntercontinental,
-    /// 年度颁奖典礼
+    HuyaLadder,
     AnnualAwards,
-    /// 转会期
     TransferWindow,
-    /// 选秀
     Draft,
-    /// 赛季结束
     SeasonEnd,
 }
 
 impl SeasonPhase {
-    /// 获取阶段名称
     pub fn name(&self) -> &'static str {
         match self {
             SeasonPhase::SpringRegular => "春季赛常规赛",
             SeasonPhase::SpringPlayoffs => "春季赛季后赛",
             SeasonPhase::Msi => "MSI季中赛",
             SeasonPhase::MadridMasters => "马德里大师赛",
+            SeasonPhase::DouyuLadder => "斗鱼巅峰赛",
             SeasonPhase::SummerRegular => "夏季赛常规赛",
             SeasonPhase::SummerPlayoffs => "夏季赛季后赛",
             SeasonPhase::ClaudeIntercontinental => "Claude洲际赛",
             SeasonPhase::WorldChampionship => "S世界赛",
+            SeasonPhase::DouyinLadder => "抖音巅峰赛",
             SeasonPhase::ShanghaiMasters => "上海大师赛",
             SeasonPhase::IcpIntercontinental => "ICP四赛区洲际对抗赛",
             SeasonPhase::SuperIntercontinental => "Super洲际年度邀请赛",
+            SeasonPhase::HuyaLadder => "虎牙巅峰赛",
             SeasonPhase::AnnualAwards => "年度颁奖典礼",
             SeasonPhase::TransferWindow => "转会期",
             SeasonPhase::Draft => "选秀",
@@ -58,24 +48,26 @@ impl SeasonPhase {
         }
     }
 
-    /// 获取下一个阶段
     pub fn next(&self) -> Option<SeasonPhase> {
         match self {
             SeasonPhase::SpringRegular => Some(SeasonPhase::SpringPlayoffs),
             SeasonPhase::SpringPlayoffs => Some(SeasonPhase::Msi),
             SeasonPhase::Msi => Some(SeasonPhase::MadridMasters),
-            SeasonPhase::MadridMasters => Some(SeasonPhase::SummerRegular),
+            SeasonPhase::MadridMasters => Some(SeasonPhase::DouyuLadder),
+            SeasonPhase::DouyuLadder => Some(SeasonPhase::SummerRegular),
             SeasonPhase::SummerRegular => Some(SeasonPhase::SummerPlayoffs),
             SeasonPhase::SummerPlayoffs => Some(SeasonPhase::ClaudeIntercontinental),
             SeasonPhase::ClaudeIntercontinental => Some(SeasonPhase::WorldChampionship),
-            SeasonPhase::WorldChampionship => Some(SeasonPhase::ShanghaiMasters),
+            SeasonPhase::WorldChampionship => Some(SeasonPhase::DouyinLadder),
+            SeasonPhase::DouyinLadder => Some(SeasonPhase::ShanghaiMasters),
             SeasonPhase::ShanghaiMasters => Some(SeasonPhase::IcpIntercontinental),
             SeasonPhase::IcpIntercontinental => Some(SeasonPhase::SuperIntercontinental),
-            SeasonPhase::SuperIntercontinental => Some(SeasonPhase::AnnualAwards),
+            SeasonPhase::SuperIntercontinental => Some(SeasonPhase::HuyaLadder),
+            SeasonPhase::HuyaLadder => Some(SeasonPhase::AnnualAwards),
             SeasonPhase::AnnualAwards => Some(SeasonPhase::TransferWindow),
             SeasonPhase::TransferWindow => Some(SeasonPhase::Draft),
             SeasonPhase::Draft => Some(SeasonPhase::SeasonEnd),
-            SeasonPhase::SeasonEnd => None, // 需要新赛季
+            SeasonPhase::SeasonEnd => None,
         }
     }
 
@@ -122,7 +114,10 @@ impl SeasonPhase {
 
     /// 是否季后赛
     pub fn is_playoff(&self) -> bool {
-        matches!(self, SeasonPhase::SpringPlayoffs | SeasonPhase::SummerPlayoffs)
+        matches!(
+            self,
+            SeasonPhase::SpringPlayoffs | SeasonPhase::SummerPlayoffs
+        )
     }
 
     /// 是否国际赛
@@ -150,20 +145,22 @@ impl SeasonPhase {
         )
     }
 
-    /// 显示名称
     pub fn display_name(&self) -> &'static str {
         match self {
             SeasonPhase::SpringRegular => "春季常规赛",
             SeasonPhase::SpringPlayoffs => "春季季后赛",
             SeasonPhase::Msi => "MSI季中赛",
             SeasonPhase::MadridMasters => "马德里大师赛",
+            SeasonPhase::DouyuLadder => "斗鱼巅峰赛",
             SeasonPhase::SummerRegular => "夏季常规赛",
             SeasonPhase::SummerPlayoffs => "夏季季后赛",
             SeasonPhase::ClaudeIntercontinental => "Claude洲际赛",
             SeasonPhase::WorldChampionship => "世界赛",
+            SeasonPhase::DouyinLadder => "抖音巅峰赛",
             SeasonPhase::ShanghaiMasters => "上海大师赛",
             SeasonPhase::IcpIntercontinental => "ICP洲际对抗赛",
             SeasonPhase::SuperIntercontinental => "Super洲际邀请赛",
+            SeasonPhase::HuyaLadder => "虎牙巅峰赛",
             SeasonPhase::AnnualAwards => "年度颁奖典礼",
             SeasonPhase::TransferWindow => "转会期",
             SeasonPhase::Draft => "选秀大会",
@@ -171,28 +168,29 @@ impl SeasonPhase {
         }
     }
 
-    /// 阶段顺序号
     pub fn order(&self) -> u8 {
         match self {
             SeasonPhase::SpringRegular => 0,
             SeasonPhase::SpringPlayoffs => 1,
             SeasonPhase::Msi => 2,
             SeasonPhase::MadridMasters => 3,
-            SeasonPhase::SummerRegular => 4,
-            SeasonPhase::SummerPlayoffs => 5,
-            SeasonPhase::ClaudeIntercontinental => 6,
-            SeasonPhase::WorldChampionship => 7,
-            SeasonPhase::ShanghaiMasters => 8,
-            SeasonPhase::IcpIntercontinental => 9,
-            SeasonPhase::SuperIntercontinental => 10,
-            SeasonPhase::AnnualAwards => 11,
-            SeasonPhase::TransferWindow => 12,
-            SeasonPhase::Draft => 13,
-            SeasonPhase::SeasonEnd => 14,
+            SeasonPhase::DouyuLadder => 4,
+            SeasonPhase::SummerRegular => 5,
+            SeasonPhase::SummerPlayoffs => 6,
+            SeasonPhase::ClaudeIntercontinental => 7,
+            SeasonPhase::WorldChampionship => 8,
+            SeasonPhase::DouyinLadder => 9,
+            SeasonPhase::ShanghaiMasters => 10,
+            SeasonPhase::IcpIntercontinental => 11,
+            SeasonPhase::SuperIntercontinental => 12,
+            SeasonPhase::HuyaLadder => 13,
+            SeasonPhase::AnnualAwards => 14,
+            SeasonPhase::TransferWindow => 15,
+            SeasonPhase::Draft => 16,
+            SeasonPhase::SeasonEnd => 17,
         }
     }
 
-    /// 是否在目标阶段之前
     pub fn is_before(&self, target: SeasonPhase) -> bool {
         self.order() < target.order()
     }

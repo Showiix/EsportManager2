@@ -64,14 +64,24 @@ pub enum Position {
 }
 
 impl Position {
-    /// 获取位置身价系数
     pub fn market_value_factor(&self) -> f64 {
         match self {
-            Position::Mid => 1.2,  // 核心C位，最高溢价
-            Position::Adc => 1.15, // 团战输出核心
-            Position::Jug => 1.1,  // 节奏发动机
-            Position::Top => 1.0,  // 标准
-            Position::Sup => 0.9,  // 辅助位置较低
+            Position::Mid => 1.2,
+            Position::Adc => 1.15,
+            Position::Jug => 1.1,
+            Position::Top => 1.0,
+            Position::Sup => 0.9,
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "Top" => Position::Top,
+            "Jug" => Position::Jug,
+            "Mid" => Position::Mid,
+            "Adc" => Position::Adc,
+            "Sup" => Position::Sup,
+            _ => Position::Mid,
         }
     }
 }
