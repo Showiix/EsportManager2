@@ -124,21 +124,26 @@ impl SeasonProgressEngine {
         self.phase_completed = false;
     }
 
-    /// 获取当前阶段可执行的操作
     pub fn get_available_actions(&self) -> Vec<GameAction> {
         match self.current_phase {
             SeasonPhase::SpringRegular => {
                 if self.phase_completed {
                     vec![]
                 } else {
-                    vec![GameAction::GenerateSpringSchedule, GameAction::SimulateSpringMatch]
+                    vec![
+                        GameAction::GenerateSpringSchedule,
+                        GameAction::SimulateSpringMatch,
+                    ]
                 }
             }
             SeasonPhase::SpringPlayoffs => {
                 if self.phase_completed {
                     vec![]
                 } else {
-                    vec![GameAction::GeneratePlayoffs, GameAction::SimulatePlayoffMatch]
+                    vec![
+                        GameAction::GeneratePlayoffs,
+                        GameAction::SimulatePlayoffMatch,
+                    ]
                 }
             }
             SeasonPhase::Msi => {
@@ -155,18 +160,27 @@ impl SeasonProgressEngine {
                     vec![GameAction::GenerateMadrid, GameAction::SimulateMadridMatch]
                 }
             }
+            SeasonPhase::DouyuLadder | SeasonPhase::DouyinLadder | SeasonPhase::HuyaLadder => {
+                vec![]
+            }
             SeasonPhase::SummerRegular => {
                 if self.phase_completed {
                     vec![]
                 } else {
-                    vec![GameAction::GenerateSummerSchedule, GameAction::SimulateSummerMatch]
+                    vec![
+                        GameAction::GenerateSummerSchedule,
+                        GameAction::SimulateSummerMatch,
+                    ]
                 }
             }
             SeasonPhase::SummerPlayoffs => {
                 if self.phase_completed {
                     vec![]
                 } else {
-                    vec![GameAction::GeneratePlayoffs, GameAction::SimulatePlayoffMatch]
+                    vec![
+                        GameAction::GeneratePlayoffs,
+                        GameAction::SimulatePlayoffMatch,
+                    ]
                 }
             }
             SeasonPhase::ClaudeIntercontinental => {
@@ -187,7 +201,10 @@ impl SeasonProgressEngine {
                 if self.phase_completed {
                     vec![]
                 } else {
-                    vec![GameAction::GenerateShanghai, GameAction::SimulateShanghaiMatch]
+                    vec![
+                        GameAction::GenerateShanghai,
+                        GameAction::SimulateShanghaiMatch,
+                    ]
                 }
             }
             SeasonPhase::IcpIntercontinental => {
@@ -243,25 +260,27 @@ impl SeasonProgressEngine {
         self.get_available_actions().contains(action)
     }
 
-    /// 获取赛季进度 (已完成阶段数 / 总阶段数)
     pub fn get_progress(&self) -> (u32, u32) {
-        let total = 15u32; // 总共15个阶段（含年度颁奖典礼）
+        let total = 18u32;
         let completed = match self.current_phase {
             SeasonPhase::SpringRegular => 0,
             SeasonPhase::SpringPlayoffs => 1,
             SeasonPhase::Msi => 2,
             SeasonPhase::MadridMasters => 3,
-            SeasonPhase::SummerRegular => 4,
-            SeasonPhase::SummerPlayoffs => 5,
-            SeasonPhase::ClaudeIntercontinental => 6,
-            SeasonPhase::WorldChampionship => 7,
-            SeasonPhase::ShanghaiMasters => 8,
-            SeasonPhase::IcpIntercontinental => 9,
-            SeasonPhase::SuperIntercontinental => 10,
-            SeasonPhase::AnnualAwards => 11,
-            SeasonPhase::TransferWindow => 12,
-            SeasonPhase::Draft => 13,
-            SeasonPhase::SeasonEnd => 14,
+            SeasonPhase::DouyuLadder => 4,
+            SeasonPhase::SummerRegular => 5,
+            SeasonPhase::SummerPlayoffs => 6,
+            SeasonPhase::ClaudeIntercontinental => 7,
+            SeasonPhase::WorldChampionship => 8,
+            SeasonPhase::DouyinLadder => 9,
+            SeasonPhase::ShanghaiMasters => 10,
+            SeasonPhase::IcpIntercontinental => 11,
+            SeasonPhase::SuperIntercontinental => 12,
+            SeasonPhase::HuyaLadder => 13,
+            SeasonPhase::AnnualAwards => 14,
+            SeasonPhase::TransferWindow => 15,
+            SeasonPhase::Draft => 16,
+            SeasonPhase::SeasonEnd => 17,
         };
 
         let completed = if self.phase_completed {

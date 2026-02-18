@@ -18,6 +18,7 @@ pub mod rookie_generator;
 pub mod lineup_engine;
 pub mod champion;
 pub mod bp_engine;
+pub mod ladder;
 
 pub use match_simulation::*;
 pub use player_performance::*;
@@ -37,3 +38,4 @@ pub use transfer::*;
 pub use meta_engine::*;
 pub use rookie_generator::*;
 pub use lineup_engine::*;
+pub use ladder::*;
