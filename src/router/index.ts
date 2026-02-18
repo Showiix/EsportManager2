@@ -95,7 +95,24 @@ const router = createRouter({
       component: () => import('@/views/SuperDetail.vue'),
       meta: { title: 'Super 洲际年度邀请赛' }
     },
-    // 通用赛事详情路由放在最后（作为兜底）
+    {
+      path: '/ladder/douyu',
+      name: 'DouyuLadder',
+      component: () => import('@/views/ladder/DouyuLadder.vue'),
+      meta: { title: '斗鱼巅峰赛' }
+    },
+    {
+      path: '/ladder/douyin',
+      name: 'DouyinLadder',
+      component: () => import('@/views/ladder/DouyinLadder.vue'),
+      meta: { title: '抖音巅峰赛' }
+    },
+    {
+      path: '/ladder/huya',
+      name: 'HuyaLadder',
+      component: () => import('@/views/ladder/HuyaLadder.vue'),
+      meta: { title: '虎牙巅峰赛' }
+    },
     {
       path: '/tournaments/:id',
       name: 'TournamentDetail',
