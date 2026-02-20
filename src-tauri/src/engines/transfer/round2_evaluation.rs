@@ -873,7 +873,7 @@ impl TransferEngine {
             return (true, "能力低于队伍均值".to_string(), "".to_string());
         }
 
-        if roster_count > 8 {
+        if roster_count > 10 {
             let best_at_pos = roster.iter()
                 .filter(|p| p.position == _position)
                 .map(|p| p.ability)

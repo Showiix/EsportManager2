@@ -527,7 +527,7 @@ impl GameFlowService {
                     SeasonPhase::HuyaLadder => "huya",
                     _ => unreachable!(),
                 };
-                let _ = sqlx::query("UPDATE ladder_tournament SET status = 'Completed' WHERE save_id = ? AND season = ? AND event_type = ?")
+                let _ = sqlx::query("UPDATE ladder_tournament SET status = 'completed' WHERE save_id = ? AND season = ? AND event_type = ?")
                     .bind(save_id)
                     .bind(season_id as i64)
                     .bind(event_type)

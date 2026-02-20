@@ -167,11 +167,19 @@
 
       <!-- 交易记录 -->
       <div class="transactions-section" v-if="transactions.length > 0">
-        <div class="transactions-title">
-          <el-icon><List /></el-icon>
-          <span>近期交易记录</span>
+        <div class="transactions-title" @click="transactionsExpanded = !transactionsExpanded" style="cursor: pointer;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <el-icon><List /></el-icon>
+            <span>全部交易记录</span>
+            <el-tag size="small" type="info" effect="plain">{{ transactions.length }}条</el-tag>
+          </div>
+          <el-icon class="collapse-arrow" :class="{ expanded: transactionsExpanded }">
+            <ArrowRight />
+          </el-icon>
         </div>
-        <el-table :data="transactions" stripe max-height="250">
+        <el-collapse-transition>
+          <div v-show="transactionsExpanded">
+        <el-table :data="transactions" stripe max-height="400">
           <el-table-column prop="season_id" label="赛季" width="80" align="center">
             <template #default="{ row }">S{{ row.season_id }}</template>
           </el-table-column>
@@ -195,6 +203,8 @@
             </template>
           </el-table-column>
         </el-table>
+          </div>
+        </el-collapse-transition>
       </div>
     </template>
 
@@ -212,6 +222,7 @@ import {
   TrendCharts,
   List,
   Trophy,
+  ArrowRight,
 } from '@element-plus/icons-vue'
 import { useFinanceStore, type FinancialStatus } from '@/stores/useFinanceStore'
 import type { TeamFinanceSummary, FinanceTransaction, SeasonFinanceReport, TournamentPrizeDetail } from '@/api/tauri'
@@ -235,7 +246,7 @@ const financeStore = useFinanceStore()
 const transactions = ref<FinanceTransaction[]>([])
 const report = ref<SeasonFinanceReport | null>(null)
 const prizeDetails = ref<TournamentPrizeDetail[]>([])
-
+const transactionsExpanded = ref(false)
 // 计算累计奖金总额
 const totalPrizeMoney = computed(() => {
   return prizeDetails.value.reduce((sum, item) => sum + item.amount, 0)
@@ -252,7 +263,7 @@ watch(() => props.team, async (newTeam) => {
         financeApi.getTeamPrizeDetails(newTeam.team_id),
       ])
 
-      transactions.value = txns.slice(0, 10)
+      transactions.value = txns
       report.value = reportData
       prizeDetails.value = prizes
     } catch (e) {
@@ -658,11 +669,22 @@ function formatDescription(description: string): string {
 .transactions-title {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   font-size: 14px;
   font-weight: 700;
   color: #1d2129;
   margin-bottom: 14px;
+}
+
+.collapse-arrow {
+  transition: transform 0.3s ease;
+  color: #86909c;
+  font-size: 14px;
+}
+
+.collapse-arrow.expanded {
+  transform: rotate(90deg);
 }
 
 .transactions-section :deep(.el-table) {
