@@ -333,6 +333,6 @@ mod tests {
         let engine = SeasonProgressEngine::new(1, SeasonPhase::Msi);
         let (completed, total) = engine.get_progress();
         assert_eq!(completed, 2);
-        assert_eq!(total, 15);
+        assert_eq!(total, 18);
     }
 }
