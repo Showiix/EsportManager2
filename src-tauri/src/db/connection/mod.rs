@@ -88,11 +88,11 @@ impl DatabaseManager {
         let is_fresh = table_count.0 == 0;
 
         if is_fresh {
-            let baseline_sql = include_str!("../../migrations/000_baseline.sql");
+            let baseline_sql = include_str!("../../../migrations/000_baseline.sql");
             
             for statement in baseline_sql.split(';') {
                 let trimmed = statement.trim();
-                if trimmed.is_empty() || trimmed.lines().all(|l| l.trim().starts_with("--") || l.trim().is_empty()) {
+                if trimmed.is_empty() || trimmed.lines().all(|l: &str| l.trim().starts_with("--") || l.trim().is_empty()) {
                     continue;
                 }
                 
