@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS teams (
     annual_points INTEGER NOT NULL DEFAULT 0,
     cross_year_points INTEGER NOT NULL DEFAULT 0,
     balance INTEGER NOT NULL DEFAULT 5000000,
-    brand_value INTEGER NOT NULL DEFAULT 0,
+    brand_value REAL NOT NULL DEFAULT 0,
     training_facility INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
     FOREIGN KEY (region_id) REFERENCES regions(id)
@@ -721,16 +721,8 @@ CREATE TABLE IF NOT EXISTS player_growth_logs (
                 fluctuation REAL NOT NULL DEFAULT 0,
                 growth_event TEXT,
                 description TEXT NOT NULL DEFAULT ''
-            )
-            "#,
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            );
 
-        // 迁移24: 天梯赛系统 - 创建 ladder_tournament 表
-        sqlx::query(
-            r#"
             CREATE TABLE IF NOT EXISTS ladder_tournament (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 save_id TEXT NOT NULL,
@@ -745,23 +737,10 @@ CREATE TABLE IF NOT EXISTS player_growth_logs (
                 completed_at TEXT,
                 UNIQUE(save_id, season, event_type),
                 FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE
-            )
-            "#,
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            );
 
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_ladder_tournament_save_season ON ladder_tournament(save_id, season)"
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+CREATE INDEX IF NOT EXISTS idx_ladder_tournament_save_season ON ladder_tournament(save_id, season);
 
-        // 迁移25: 天梯赛系统 - 创建 ladder_rating 表
-        sqlx::query(
-            r#"
             CREATE TABLE IF NOT EXISTS ladder_rating (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 save_id TEXT NOT NULL,
@@ -784,30 +763,12 @@ CREATE TABLE IF NOT EXISTS player_growth_logs (
                 FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                 FOREIGN KEY (ladder_tournament_id) REFERENCES ladder_tournament(id) ON DELETE CASCADE,
                 FOREIGN KEY (player_id) REFERENCES players(id)
-            )
-            "#,
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            );
 
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_ladder_rating_tournament ON ladder_rating(ladder_tournament_id)"
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+CREATE INDEX IF NOT EXISTS idx_ladder_rating_tournament ON ladder_rating(ladder_tournament_id);
 
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_ladder_rating_player ON ladder_rating(save_id, player_id)"
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+CREATE INDEX IF NOT EXISTS idx_ladder_rating_player ON ladder_rating(save_id, player_id);
 
-        // 迁移26: 天梯赛系统 - 创建 ladder_match 表
-        sqlx::query(
-            r#"
             CREATE TABLE IF NOT EXISTS ladder_match (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 save_id TEXT NOT NULL,
@@ -829,63 +790,14 @@ CREATE TABLE IF NOT EXISTS player_growth_logs (
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                 FOREIGN KEY (ladder_tournament_id) REFERENCES ladder_tournament(id) ON DELETE CASCADE
-            )
-            "#,
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            );
 
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_ladder_match_tournament_round ON ladder_match(ladder_tournament_id, round_number)"
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+CREATE INDEX IF NOT EXISTS idx_ladder_match_tournament_round ON ladder_match(ladder_tournament_id, round_number);
 
-        // 增量: ladder_rating 加 game_id 列
-        let cols: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM pragma_table_info('ladder_rating') WHERE name = 'game_id'"
-        )
-        .fetch_all(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+ALTER TABLE ladder_rating ADD COLUMN game_id TEXT DEFAULT '';
 
-        if cols.is_empty() {
-            sqlx::query("ALTER TABLE ladder_rating ADD COLUMN game_id TEXT DEFAULT ''")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-        }
+ALTER TABLE ladder_match ADD COLUMN rating_changes_json TEXT;
 
-        let rc_cols: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM pragma_table_info('ladder_match') WHERE name = 'rating_changes_json'"
-        )
-        .fetch_all(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-        if rc_cols.is_empty() {
-            sqlx::query("ALTER TABLE ladder_match ADD COLUMN rating_changes_json TEXT")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-        }
-
-        Ok(())
-    }
-    async fn run_satisfaction_tables_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
-        // 检查表是否已存在
-        let tables: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='player_season_status'"
-        )
-        .fetch_all(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-        if tables.is_empty() {
-            // 创建选手赛季状态表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS player_season_status (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -899,14 +811,8 @@ CREATE TABLE IF NOT EXISTS player_growth_logs (
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(save_id, season_id, player_id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建球队赛季表现表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS team_season_performance (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -919,14 +825,8 @@ CREATE TABLE IF NOT EXISTS player_growth_logs (
                     consecutive_no_playoffs INTEGER DEFAULT 0,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(save_id, season_id, team_id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建忠诚度变化记录表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS loyalty_changes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -935,50 +835,8 @@ CREATE TABLE IF NOT EXISTS player_growth_logs (
                     change_amount INTEGER NOT NULL,
                     reason TEXT NOT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建索引
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_season_status_lookup ON player_season_status(save_id, season_id, player_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_season_status_departure ON player_season_status(save_id, season_id, wants_to_leave)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_season_performance_lookup ON team_season_performance(save_id, season_id, team_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_loyalty_changes_player ON loyalty_changes(save_id, player_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-        }
-
-        Ok(())
-    }
-
-    /// 运行选秀权拍卖系统相关表的迁移
-    async fn run_draft_auction_tables_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
-        // 检查表是否已存在
-        let tables: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='draft_pick_auctions'"
-        )
-        .fetch_all(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-        if tables.is_empty() {
-            // 创建选秀权拍卖主表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS draft_pick_auctions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -996,14 +854,8 @@ CREATE TABLE IF NOT EXISTS player_growth_logs (
                     created_at TEXT NOT NULL DEFAULT (datetime('now')),
                     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                     UNIQUE(save_id, season_id, region_id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建选秀权挂牌表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS draft_pick_listings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -1029,14 +881,8 @@ CREATE TABLE IF NOT EXISTS player_growth_logs (
                     FOREIGN KEY (auction_id) REFERENCES draft_pick_auctions(id) ON DELETE CASCADE,
                     FOREIGN KEY (seller_team_id) REFERENCES teams(id) ON DELETE CASCADE,
                     FOREIGN KEY (buyer_team_id) REFERENCES teams(id) ON DELETE SET NULL
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建竞拍出价记录表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS draft_pick_bids (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -1050,14 +896,8 @@ CREATE TABLE IF NOT EXISTS player_growth_logs (
                     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                     FOREIGN KEY (listing_id) REFERENCES draft_pick_listings(id) ON DELETE CASCADE,
                     FOREIGN KEY (bidder_team_id) REFERENCES teams(id) ON DELETE CASCADE
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建拍卖事件表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS draft_pick_auction_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -1075,49 +915,8 @@ CREATE TABLE IF NOT EXISTS player_growth_logs (
                     created_at TEXT NOT NULL DEFAULT (datetime('now')),
                     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                     FOREIGN KEY (auction_id) REFERENCES draft_pick_auctions(id) ON DELETE CASCADE
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建索引
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pick_auctions_save_season_region ON draft_pick_auctions(save_id, season_id, region_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pick_listings_auction ON draft_pick_listings(auction_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pick_listings_status ON draft_pick_listings(status)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pick_bids_listing ON draft_pick_bids(listing_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pick_auction_events_auction ON draft_pick_auction_events(auction_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-        }
-
-        // draft_pick_wanted 表迁移
-        let wanted_tables: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='draft_pick_wanted'"
-        )
-        .fetch_all(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-        if wanted_tables.is_empty() {
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS draft_pick_wanted (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -1140,27 +939,7 @@ CREATE TABLE IF NOT EXISTS player_growth_logs (
                     FOREIGN KEY (auction_id) REFERENCES draft_pick_auctions(id) ON DELETE CASCADE,
                     FOREIGN KEY (buyer_team_id) REFERENCES teams(id) ON DELETE CASCADE,
                     FOREIGN KEY (holder_team_id) REFERENCES teams(id) ON DELETE CASCADE
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pick_wanted_auction ON draft_pick_wanted(auction_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-        }
-
-        // 检查 draft_orders 表是否需要添加新字段
-        let order_columns: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM pragma_table_info('draft_orders')"
-        )
-        .fetch_all(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-        let order_column_names: Vec<&str> = order_columns.iter().map(|c| c.0.as_str()).collect();
+                );
 
 CREATE TABLE IF NOT EXISTS team_season_evaluations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1169,38 +948,28 @@ CREATE TABLE IF NOT EXISTS team_season_evaluations (
                     team_id INTEGER NOT NULL,
                     team_name TEXT NOT NULL,
                     season_id INTEGER NOT NULL,
-
                     -- 战绩评估
                     current_rank INTEGER,
                     last_season_rank INTEGER,
                     rank_trend TEXT,
                     rank_change INTEGER,
-
                     -- 阵容评估
                     roster_power REAL,
                     roster_age_avg REAL,
                     roster_salary_total INTEGER,
                     budget_remaining INTEGER,
                     roster_count INTEGER,
-
                     -- 评估结论
                     stability_score INTEGER,
                     urgency_level TEXT,
                     strategy TEXT,
                     strategy_reason TEXT,
-
                     created_at TEXT NOT NULL DEFAULT (datetime('now')),
                     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
                     FOREIGN KEY (window_id) REFERENCES transfer_windows(id) ON DELETE CASCADE
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建位置需求表（买人列表）
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS team_position_needs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     evaluation_id INTEGER NOT NULL,
@@ -1220,14 +989,8 @@ CREATE TABLE IF NOT EXISTS team_season_evaluations (
                     reason TEXT,
 
                     FOREIGN KEY (evaluation_id) REFERENCES team_season_evaluations(id) ON DELETE CASCADE
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建挂牌评估表（卖人列表）
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS team_listing_evaluations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     evaluation_id INTEGER NOT NULL,
@@ -1253,14 +1016,8 @@ CREATE TABLE IF NOT EXISTS team_season_evaluations (
 
                     FOREIGN KEY (evaluation_id) REFERENCES team_season_evaluations(id) ON DELETE CASCADE,
                     FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建选手赛季评估表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS player_season_evaluations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -1299,65 +1056,8 @@ CREATE TABLE IF NOT EXISTS team_season_evaluations (
                     FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
                     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
                     FOREIGN KEY (window_id) REFERENCES transfer_windows(id) ON DELETE CASCADE
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建索引
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_season_evaluations_save ON team_season_evaluations(save_id, season_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_season_evaluations_team ON team_season_evaluations(team_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_position_needs_evaluation ON team_position_needs(evaluation_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_listing_evaluations_evaluation ON team_listing_evaluations(evaluation_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_season_evaluations_save ON player_season_evaluations(save_id, window_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_season_evaluations_player ON player_season_evaluations(player_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_season_evaluations_team ON player_season_evaluations(team_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-        }
-
-        Ok(())
-    }
-
-    /// 运行 LLM 转会市场系统相关表的迁移
-    async fn run_transfer_market_tables_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
-        // 检查 transfer_market_states 表是否已存在
-        let tables: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='transfer_market_states'"
-        )
-        .fetch_all(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-        if tables.is_empty() {
-            // 创建转会市场整体状态表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS transfer_market_states (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -1378,14 +1078,8 @@ CREATE TABLE IF NOT EXISTS team_season_evaluations (
                     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
                     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                     UNIQUE(save_id, season_id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建球队市场状态表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS team_market_states (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -1411,14 +1105,8 @@ CREATE TABLE IF NOT EXISTS team_season_evaluations (
                     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
                     UNIQUE(save_id, season_id, team_id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建谈判记录表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS negotiations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -1444,14 +1132,8 @@ CREATE TABLE IF NOT EXISTS team_season_evaluations (
                     FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
                     FOREIGN KEY (from_team_id) REFERENCES teams(id) ON DELETE SET NULL,
                     FOREIGN KEY (final_team_id) REFERENCES teams(id) ON DELETE SET NULL
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建报价表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS offers (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     negotiation_id INTEGER NOT NULL,
@@ -1472,14 +1154,8 @@ CREATE TABLE IF NOT EXISTS team_season_evaluations (
                     FOREIGN KEY (negotiation_id) REFERENCES negotiations(id) ON DELETE CASCADE,
                     FOREIGN KEY (from_team_id) REFERENCES teams(id) ON DELETE CASCADE,
                     FOREIGN KEY (to_player_id) REFERENCES players(id) ON DELETE CASCADE
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建报价回应表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS offer_responses (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     offer_id INTEGER NOT NULL,
@@ -1493,14 +1169,8 @@ CREATE TABLE IF NOT EXISTS team_season_evaluations (
                     responded_at TEXT NOT NULL DEFAULT (datetime('now')),
                     FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE,
                     FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建市场事件表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS transfer_market_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -1524,14 +1194,8 @@ CREATE TABLE IF NOT EXISTS team_season_evaluations (
                     FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE SET NULL,
                     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL,
                     FOREIGN KEY (secondary_team_id) REFERENCES teams(id) ON DELETE SET NULL
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建球队转会策略表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS team_transfer_strategies (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     team_id INTEGER NOT NULL,
@@ -1553,50 +1217,8 @@ CREATE TABLE IF NOT EXISTS team_season_evaluations (
                     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
                     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                     UNIQUE(team_id, save_id, season_id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建索引
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_market_states_save ON transfer_market_states(save_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_market_save_season ON team_market_states(save_id, season_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_negotiations_save_season ON negotiations(save_id, season_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_negotiations_status ON negotiations(status)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_offers_negotiation ON offers(negotiation_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_market_events_save_season ON transfer_market_events(save_id, season_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_strategies_save_season ON team_transfer_strategies(save_id, season_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            // 创建 AI 球队策略表（简化版，存储 JSON）
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS ai_transfer_strategies (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     team_id INTEGER NOT NULL,
@@ -1607,28 +1229,8 @@ CREATE TABLE IF NOT EXISTS team_season_evaluations (
                     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
                     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                     UNIQUE(team_id, save_id, season_id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_ai_strategies_save_season ON ai_transfer_strategies(save_id, season_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-        }
-
-        // 确保 ai_transfer_strategies 表存在（即使其他表已存在）
-        let ai_strategy_tables: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_transfer_strategies'"
-        )
-        .fetch_all(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-        if ai_strategy_tables.is_empty() {
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS ai_transfer_strategies (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     team_id INTEGER NOT NULL,
@@ -1639,27 +1241,7 @@ CREATE TABLE IF NOT EXISTS team_season_evaluations (
                     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
                     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                     UNIQUE(team_id, save_id, season_id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_ai_strategies_save_season ON ai_transfer_strategies(save_id, season_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-        }
-
-        // 检查 player_transfer_strategies 表是否需要扩展字段
-        let strategy_columns: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM pragma_table_info('player_transfer_strategies')"
-        )
-        .fetch_all(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-        let strategy_column_names: Vec<&str> = strategy_columns.iter().map(|c| c.0.as_str()).collect();
+                );
 
 CREATE TABLE IF NOT EXISTS renewal_decisions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1685,39 +1267,8 @@ CREATE TABLE IF NOT EXISTS renewal_decisions (
                     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                     FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
                     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_renewal_decisions_save_season ON renewal_decisions(save_id, season_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_renewal_decisions_result ON renewal_decisions(renewal_successful)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-        }
-
-        Ok(())
-    }
-
-    /// 运行 LLM 任务日志表的迁移
-    async fn run_llm_task_log_migration(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
-        // 检查表是否已存在
-        let tables: Vec<(String,)> = sqlx::query_as(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='llm_task_log'"
-        )
-        .fetch_all(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-        if tables.is_empty() {
-            // 创建 LLM 任务日志表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS llm_task_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     save_id TEXT NOT NULL,
@@ -1735,34 +1286,7 @@ CREATE TABLE IF NOT EXISTS renewal_decisions (
                     completed_at TEXT,
                     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                     UNIQUE(save_id, season_id, task_type, entity_id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            // 创建索引
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_llm_task_status ON llm_task_log(save_id, season_id, status)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_llm_task_type ON llm_task_log(save_id, season_id, task_type)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_llm_task_entity ON llm_task_log(entity_type, entity_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_llm_task_updated ON llm_task_log(updated_at)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            log::info!("✅ LLM 任务日志表创建成功");
+                );
 
 CREATE TABLE IF NOT EXISTS team_personality_configs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1778,14 +1302,8 @@ CREATE TABLE IF NOT EXISTS team_personality_configs (
                     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
                     FOREIGN KEY (team_id) REFERENCES teams(id),
                     FOREIGN KEY (save_id) REFERENCES saves(id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建球队声望缓存表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS team_reputation_cache (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     team_id INTEGER NOT NULL,
@@ -1798,14 +1316,8 @@ CREATE TABLE IF NOT EXISTS team_personality_configs (
                     calculated_at TEXT NOT NULL DEFAULT (datetime('now')),
                     FOREIGN KEY (team_id) REFERENCES teams(id),
                     FOREIGN KEY (save_id) REFERENCES saves(id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建球员挂牌表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS player_listings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     player_id INTEGER NOT NULL,
@@ -1821,14 +1333,8 @@ CREATE TABLE IF NOT EXISTS team_personality_configs (
                     FOREIGN KEY (player_id) REFERENCES players(id),
                     FOREIGN KEY (window_id) REFERENCES transfer_windows(id),
                     FOREIGN KEY (listed_by_team_id) REFERENCES teams(id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            // 创建球员冷却期记录表
-            sqlx::query(r#"
                 CREATE TABLE IF NOT EXISTS player_cooldowns (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     player_id INTEGER NOT NULL,
@@ -1840,71 +1346,12 @@ CREATE TABLE IF NOT EXISTS team_personality_configs (
                     FOREIGN KEY (player_id) REFERENCES players(id),
                     FOREIGN KEY (team_id) REFERENCES teams(id),
                     FOREIGN KEY (window_id) REFERENCES transfer_windows(id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            // 创建索引
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_personality_save ON team_personality_configs(save_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_reputation_team ON team_reputation_cache(team_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_team_reputation_season ON team_reputation_cache(save_id, season_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_listings_window ON player_listings(window_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_listings_status ON player_listings(status)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_listings_player ON player_listings(player_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_cooldowns_window ON player_cooldowns(window_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_cooldowns_player ON player_cooldowns(player_id, team_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            log::info!("✅ 转会系统表创建成功");
+                );
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
                 migration_name TEXT PRIMARY KEY,
                 applied_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )"
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-        // v2 迁移：按值范围直接转换（修复 v1 用 MAX 检测导致混合数据跳过的问题）
-        let v2_applied: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM schema_migrations WHERE migration_name = 'unify_money_to_yuan_v2'"
-        )
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+            );
 
 CREATE TABLE IF NOT EXISTS transfer_bids (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1929,28 +1376,7 @@ CREATE TABLE IF NOT EXISTS transfer_bids (
                     is_winner INTEGER NOT NULL DEFAULT 0,
                     reject_reason TEXT,
                     created_at TEXT NOT NULL DEFAULT (datetime('now'))
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_transfer_bids_window ON transfer_bids(window_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_transfer_bids_round ON transfer_bids(window_id, round)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_transfer_bids_player ON transfer_bids(player_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            log::info!("✅ 转会竞价记录表创建成功");
+                );
 
 CREATE TABLE IF NOT EXISTS player_contracts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1970,29 +1396,8 @@ CREATE TABLE IF NOT EXISTS player_contracts (
                     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE,
                     FOREIGN KEY (player_id) REFERENCES players(id),
                     FOREIGN KEY (team_id) REFERENCES teams(id)
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_contracts_save_player ON player_contracts(save_id, player_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_contracts_save_team ON player_contracts(save_id, team_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_player_contracts_active ON player_contracts(is_active)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            // 回填初始数据（用 join_season 估算合同总年数，比剩余年数更准确）
-            sqlx::query(r#"
                 INSERT INTO player_contracts (save_id, player_id, team_id, contract_type, total_salary, annual_salary, contract_years, start_season, end_season, is_active)
                 SELECT
                     p.save_id,
@@ -2015,13 +1420,7 @@ CREATE TABLE IF NOT EXISTS player_contracts (
                     1
                 FROM players p
                 JOIN saves s ON p.save_id = s.id
-                WHERE p.status = 'Active' AND p.team_id IS NOT NULL
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            log::info!("✅ 选手合同历史表创建成功");
+                WHERE p.status = 'Active' AND p.team_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS draft_pool (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2040,31 +1439,9 @@ CREATE TABLE IF NOT EXISTS draft_pool (
                     drafted_by_team_id INTEGER,
                     created_season INTEGER NOT NULL,
                     FOREIGN KEY (save_id) REFERENCES saves(id) ON DELETE CASCADE
-                )
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+                );
 
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pool_save_region ON draft_pool(save_id, region_id)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            sqlx::query("CREATE INDEX IF NOT EXISTS idx_draft_pool_status ON draft_pool(save_id, region_id, status)")
-                .execute(pool)
-                .await
-                .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            // 迁移现有存档: 将 draft_players 中 is_picked=0 的数据复制到 draft_pool
-            sqlx::query(r#"
                 INSERT INTO draft_pool (save_id, region_id, game_id, real_name, nationality, age, ability, potential, position, tag, status, created_season)
                 SELECT save_id, region_id, game_id, real_name, nationality, age, ability, potential, position, tag, 'available', season_id
                 FROM draft_players
-                WHERE is_picked = 0
-            "#)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-            log::info!("✅ 选秀池持久化表创建成功");
+                WHERE is_picked = 0;
