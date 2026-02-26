@@ -4,9 +4,8 @@ use sqlx::{Pool, Sqlite};
 pub struct MigrationManager;
 
 impl MigrationManager {
-    /// 检查并运行需要的迁移
-    pub async fn run_pending_migrations(pool: &Pool<Sqlite>) -> Result<(), String> {
-        // 创建迁移记录表
+    /// 创建迁移记录表
+    async fn ensure_migrations_table(pool: &Pool<Sqlite>) -> Result<(), String> {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS _migrations (
@@ -19,13 +18,50 @@ impl MigrationManager {
         .execute(pool)
         .await
         .map_err(|e| e.to_string())?;
+        Ok(())
+    }
 
-        // 检查并运行迁移
-        let migrations = vec![
-            ("001_initial", include_str!("../../migrations/001_initial.sql")),
-            ("010_transfer_system", include_str!("../../migrations/010_transfer_system.sql")),
-            ("011_fix_transfer_events", include_str!("../../migrations/011_fix_transfer_events.sql")),
-            ("012_add_satisfaction", include_str!("../../migrations/012_add_satisfaction.sql")),
+    /// 标记 baseline 已应用
+    pub async fn mark_baseline_applied(pool: &Pool<Sqlite>) -> Result<(), String> {
+        Self::ensure_migrations_table(pool).await?;
+        
+        sqlx::query("INSERT OR IGNORE INTO _migrations (name) VALUES (?)")
+            .bind("000_baseline")
+            .execute(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// 确保旧数据库的 baseline 被标记为已应用
+    pub async fn ensure_baseline_marked(pool: &Pool<Sqlite>) -> Result<(), String> {
+        Self::ensure_migrations_table(pool).await?;
+        
+        let applied: Option<(i64,)> = sqlx::query_as(
+            "SELECT id FROM _migrations WHERE name = ?"
+        )
+        .bind("000_baseline")
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if applied.is_none() {
+            sqlx::query("INSERT INTO _migrations (name) VALUES (?)")
+                .bind("000_baseline")
+                .execute(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    /// 检查并运行需要的迁移
+    pub async fn run_pending_migrations(pool: &Pool<Sqlite>) -> Result<(), String> {
+        Self::ensure_migrations_table(pool).await?;
+
+        let migrations: Vec<(&str, &str)> = vec![
+            // 未来的增量迁移在这里注册
+            // ("001_feature_name", include_str!("../../migrations/001_feature_name.sql")),
         ];
 
         for (name, sql) in migrations {

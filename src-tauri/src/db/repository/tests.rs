@@ -1,9 +1,9 @@
 use super::*;
-use crate::db::connection::SCHEMA_SQL;
 use crate::models::*;
 use sqlx::{Pool, Sqlite};
 
-/// 创建内存数据库并执行 schema + 关键迁移
+const BASELINE_SQL: &str = include_str!("../../../migrations/000_baseline.sql");
+
 async fn setup_test_db() -> Pool<Sqlite> {
     use sqlx::sqlite::SqlitePoolOptions;
 
@@ -13,33 +13,18 @@ async fn setup_test_db() -> Pool<Sqlite> {
         .await
         .unwrap();
 
-    // 逐条执行 schema 语句
-    for stmt in SCHEMA_SQL.split(';') {
+    for stmt in BASELINE_SQL.split(';') {
         let trimmed = stmt.trim();
-        // 跳过空行和纯注释行
         if trimmed.is_empty() || trimmed.lines().all(|l| l.trim().starts_with("--") || l.trim().is_empty()) {
             continue;
         }
-        // 允许 INDEX 创建失败（可能引用了迁移才会创建的表）
         let result = sqlx::query(trimmed).execute(&pool).await;
         if let Err(e) = result {
             let is_index = trimmed.to_uppercase().contains("CREATE INDEX");
             if !is_index {
-                panic!("Failed to execute schema statement: {}\nSQL: {}", e, &trimmed[..trimmed.len().min(120)]);
+                panic!("Failed to execute baseline statement: {}\nSQL: {}", e, &trimmed[..trimmed.len().min(120)]);
             }
         }
-    }
-
-    // 执行关键迁移（添加测试需要的列）
-    let migrations = [
-        "ALTER TABLE teams ADD COLUMN brand_value REAL NOT NULL DEFAULT 50.0",
-        "ALTER TABLE players ADD COLUMN loyalty INTEGER NOT NULL DEFAULT 50",
-        "ALTER TABLE players ADD COLUMN satisfaction INTEGER NOT NULL DEFAULT 50",
-        "ALTER TABLE players ADD COLUMN home_region_id INTEGER",
-        "ALTER TABLE players ADD COLUMN region_loyalty INTEGER NOT NULL DEFAULT 70",
-    ];
-    for sql in &migrations {
-        sqlx::query(sql).execute(&pool).await.ok();
     }
 
     pool

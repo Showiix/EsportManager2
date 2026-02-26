@@ -304,7 +304,6 @@ if !column_names.contains(&"new_column") {
 ## 注意事项
 
 1. **金额单位**: 内部使用**元**，显示时转换为**万元**
-2. **选秀年**: S2, S6, S10... (公式: `(season - 2) % 4 == 0`)
-3. **首发限制**: 每队每位置最多1名首发
-4. **合同到期**: `contract_end_season == current_season` 时变为自由球员
-5. **跨赛区转会**: 受 `region_loyalty` 影响，LPL选手最不愿意外流
+2. **首发限制**: 每队每位置最多1名首发
+3. **合同到期**: `contract_end_season == current_season` 时变为自由球员
+4. **跨赛区转会**: 受 `region_loyalty` 影响，LPL选手最不愿意外流

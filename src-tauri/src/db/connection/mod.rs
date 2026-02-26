@@ -1,10 +1,6 @@
-mod legacy_patches;
-mod incremental_migrations;
 mod error;
-mod schema;
 
 pub use error::DatabaseError;
-pub(crate) use schema::SCHEMA_SQL;
 
 use sqlx::{Pool, Sqlite, SqlitePool};
 use std::path::PathBuf;
@@ -81,22 +77,46 @@ impl DatabaseManager {
 
     /// 运行数据库迁移
     async fn run_migrations(&self, pool: &Pool<Sqlite>) -> Result<(), DatabaseError> {
-        // 首先运行 SQL 文件迁移系统（处理表结构变更）
+        // 检查数据库是否为空（全新数据库）
+        let table_count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+        let is_fresh = table_count.0 == 0;
+
+        if is_fresh {
+            let baseline_sql = include_str!("../../migrations/000_baseline.sql");
+            
+            for statement in baseline_sql.split(';') {
+                let trimmed = statement.trim();
+                if trimmed.is_empty() || trimmed.lines().all(|l| l.trim().starts_with("--") || l.trim().is_empty()) {
+                    continue;
+                }
+                
+                sqlx::query(trimmed)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| DatabaseError::Migration(format!("Baseline migration failed at statement: {}\nError: {}", 
+                        &trimmed[..trimmed.len().min(100)], e)))?;
+            }
+            
+            MigrationManager::mark_baseline_applied(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e))?;
+        } else {
+            // 旧数据库：确保 baseline 被标记为已应用
+            MigrationManager::ensure_baseline_marked(pool)
+                .await
+                .map_err(|e| DatabaseError::Migration(e))?;
+        }
+
+        // 运行后续增量迁移（001_*.sql, 002_*.sql, ...）
         MigrationManager::run_pending_migrations(pool)
             .await
             .map_err(|e| DatabaseError::Migration(e))?;
-
-        // 修补旧表缺失列（必须在 SCHEMA_SQL 之前，否则索引创建会失败）
-        self.patch_legacy_tables(pool).await?;
-
-        // 创建基础表结构
-        sqlx::query(SCHEMA_SQL)
-            .execute(pool)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
-
-        // 运行增量迁移
-        self.run_incremental_migrations(pool).await?;
 
         Ok(())
     }
